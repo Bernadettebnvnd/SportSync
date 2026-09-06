@@ -26,8 +26,11 @@ export function BottomDock() {
   ];
 
   return (
-    <nav aria-label="Mobile navigation" className="md:hidden fixed bottom-3 left-4 right-4 z-40">
-      <div className="flex items-center justify-around rounded-2xl border border-[#EBEBE6] bg-white/95 px-2 py-2 shadow-lg backdrop-blur-md">
+    <nav
+      aria-label="Mobile navigation"
+      className="md:hidden fixed bottom-3 left-3 right-3 z-40 max-w-lg mx-auto"
+    >
+      <div className="flex items-center justify-around rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5]/95 px-1 py-1.5 shadow-xl backdrop-blur-lg">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
@@ -36,23 +39,23 @@ export function BottomDock() {
               key={item.href}
               href={item.href}
               className={cn(
-                'relative flex flex-col items-center gap-1 px-3 py-1 text-[11px] font-semibold transition-colors',
+                'relative flex flex-col items-center justify-center min-w-[56px] min-h-[48px] py-1 text-[11px] font-bold transition-all active:scale-95',
                 isActive
-                  ? 'text-[#1F9D55]'
-                  : 'text-[#6B7280] hover:text-[#171717]'
+                  ? 'text-[#2D724E]'
+                  : 'text-[#65756B] hover:text-[#1A241E]'
               )}
             >
               <div className="relative">
-                <Icon className="w-5 h-5" />
+                <Icon className={cn('w-5 h-5 transition-transform', isActive && 'scale-110')} />
                 {item.badge ? (
-                  <span className="absolute -top-1.5 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white">
+                  <span className="absolute -top-1.5 -right-2.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#C87D43] text-[9px] font-black text-white shadow-sm">
                     {item.badge}
                   </span>
                 ) : null}
               </div>
-              <span>{item.label}</span>
+              <span className="mt-0.5 tracking-tight">{item.label}</span>
               {isActive && (
-                <div className="absolute -bottom-1 h-1 w-6 rounded-full bg-[#1F9D55]" />
+                <div className="absolute -bottom-1 h-1 w-6 rounded-full bg-[#2D724E]" />
               )}
             </Link>
           );

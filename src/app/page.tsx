@@ -6,17 +6,16 @@ import { useMonkeyStore } from '@/lib/store';
 import { MonkeyMascot } from '@/components/mascot/MonkeyMascot';
 import { MascotBanner } from '@/components/mascot/MascotBanner';
 import { VenueCard } from '@/components/explore/VenueCard';
-import { formatCurrency, getSportEmoji, getSportDisplayName } from '@/lib/utils';
+import { formatCurrency, getSportDisplayName } from '@/lib/utils';
 import {
-  Flame,
   Zap,
   Clock,
   Compass,
   ArrowRight,
-  ShieldCheck,
   Users,
   Sparkles,
-  Award,
+  CreditCard,
+  Banknote,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -28,154 +27,177 @@ export default function HomePage() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
-      {/* Top Banner: Maligalig Monkey Mascot Hero */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1F9D55] via-[#147A40] to-[#0E542C] p-6 sm:p-8 text-white shadow-lg">
-        {/* Ambient background rings */}
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 sm:space-y-8">
+      {/* Top Hero Banner: Matchi Tarzan Aesthetic */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E4A32] via-[#2D724E] to-[#153423] p-5 sm:p-8 text-white shadow-lg">
+        {/* Ambient jungle canopy gradients */}
         <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-[#FF9F43]/20 blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-[#C87D43]/25 blur-2xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-3 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 backdrop-blur-md px-3 py-1 text-xs font-black uppercase tracking-wider text-white">
-              <Sparkles className="w-3.5 h-3.5 text-[#FF9F43]" />
-              Maligalig Energy: 100%
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-md px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white">
+              <Sparkles className="w-3.5 h-3.5 text-[#E9C46A]" />
+              Matchi Jungle Energy: 100%
             </div>
 
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight">
-              Ready to smash, <span className="text-[#FFC837]">{currentUser.nickname}</span>? 🏸
+            <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
+              Ready for the court, <span className="text-[#E9C46A]">{currentUser.nickname}</span>?
             </h1>
 
             <p className="text-xs sm:text-base text-emerald-100 leading-relaxed">
-              Find open courts in seconds, hop into live open-play queues, and rack up
-              Banana Points on the court!
+              Find badminton doubles &amp; singles courts in seconds. Hop into live open-play queues,
+              pay your way via E-Wallets, Banks, or Cash, and climb the ladder!
             </p>
 
-            <div className="flex flex-wrap gap-3 pt-2">
+            {/* CTAs with phone touch sizing */}
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
               <Link
                 href="/explore"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-[#147A40] font-extrabold text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition-all active:scale-95"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white text-[#1E4A32] font-black text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition-all active:scale-95 min-h-[46px]"
               >
                 <Compass className="w-4 h-4" />
                 <span>Explore Nearby Courts</span>
               </Link>
               <Link
                 href={`/sessions/${activeSession.id}`}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#FF9F43] hover:bg-[#E68529] text-white font-extrabold text-xs sm:text-sm shadow-md transition-all active:scale-95"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 min-h-[46px]"
               >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>Join Live Open Play</span>
+                <Zap className="w-4 h-4 fill-current text-[#E9C46A]" />
+                <span>Join Doubles Open Play</span>
               </Link>
             </div>
           </div>
 
           {/* Big Mascot Graphic in Hero */}
           <div className="flex flex-col items-center justify-center shrink-0">
-            <div className="relative p-2">
+            <div className="relative p-1">
               <MonkeyMascot
                 mood="hype"
                 size="xl"
                 equippedGear={currentUser.equipped_gear}
               />
             </div>
-            <div className="mt-2 text-center text-xs font-bold text-white/90">
-              Miki the Court Monkey
+            <div className="mt-1 text-center text-xs font-bold text-white/90">
+              Miki &bull; Matchi Court Mascot
             </div>
           </div>
         </div>
       </div>
 
+      {/* Payment & Format Perks Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
+          <Users className="w-4 h-4 text-[#2D724E] shrink-0" />
+          <span className="font-bold text-[#1A241E]">Doubles (2v2) &amp; Singles</span>
+        </div>
+        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
+          <CreditCard className="w-4 h-4 text-[#C87D43] shrink-0" />
+          <span className="font-bold text-[#1A241E]">GCash, Maya, GrabPay</span>
+        </div>
+        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
+          <Banknote className="w-4 h-4 text-[#2D724E] shrink-0" />
+          <span className="font-bold text-[#1A241E]">BDO, BPI &amp; UnionBank</span>
+        </div>
+        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
+          <Sparkles className="w-4 h-4 text-[#E9C46A] shrink-0" />
+          <span className="font-bold text-[#1A241E]">Pay Cash at Venue</span>
+        </div>
+      </div>
+
       {/* Next Activity / Active Status Card */}
-      <div className="rounded-3xl border border-[#EBEBE6] bg-white p-6 shadow-sm">
+      <div className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFF5EA] text-2xl shrink-0">
-              ⚡
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-[#EBF4EE] text-[#2D724E] shrink-0 font-black">
+              <Zap className="w-6 h-6 fill-current text-[#C87D43]" />
             </div>
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-[#FF9F43]">
-                Your Next Activity
+              <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
+                Your Active Rotation
               </span>
-              <h2 className="text-lg font-black text-[#171717]">
+              <h2 className="text-base sm:text-lg font-black text-[#1A241E] leading-snug">
                 {myQueueEntry
                   ? `You’re #${myQueueEntry.queue_number} in queue for ${activeSession.title}`
                   : `Next game is up: ${activeSession.title}`}
               </h2>
-              <p className="text-xs text-[#6B7280] mt-0.5">
-                The Upper Deck Sports Center &bull; Badminton Court 1 & 2
+              <p className="text-xs text-[#65756B] mt-0.5">
+                The Upper Deck Sports Center &bull; Badminton Court 1 &amp; 2
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {myQueueEntry ? (
-              <span className="rounded-xl bg-[#E9F8EE] px-3.5 py-2 text-xs font-bold text-[#147A40] flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-[#1F9D55]" />
-                <span>Estimated Wait: ~{myQueueEntry.estimated_wait_minutes} mins</span>
+              <span className="w-full sm:w-auto rounded-xl bg-[#EBF4EE] px-3.5 py-2.5 text-xs font-bold text-[#1E4A32] flex items-center justify-center gap-1.5 min-h-[44px]">
+                <Clock className="w-4 h-4 text-[#2D724E]" />
+                <span>Estimated Wait: ~{myQueueEntry.estimated_wait_minutes}m</span>
               </span>
             ) : (
               <Link
                 href={`/sessions/${activeSession.id}`}
-                className="px-4 py-2 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all"
+                className="w-full sm:w-auto text-center px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all min-h-[44px] flex items-center justify-center"
               >
-                Enter Open Play Queue &rarr;
+                Hop into Queue &rarr;
               </Link>
             )}
           </div>
         </div>
       </div>
 
-      {/* Mascot Conversational Tip */}
+      {/* Mascot Conversational Intel */}
       <MascotBanner
         mood="thinking"
-        title="Miki's Daily Court Tip"
+        title="Miki's Daily Court Intel"
         equippedGear={currentUser.equipped_gear}
       />
 
-      {/* Quick Join Open Play Carousel */}
+      {/* Recommended Open Play Sessions */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#1F9D55]">
-              Real-time Waitlists
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#2D724E]">
+              Real-time Rotations
             </span>
-            <h2 className="text-xl sm:text-2xl font-black text-[#171717]">
+            <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
               Recommended Open Play
             </h2>
           </div>
           <Link
             href="/explore"
-            className="text-xs font-bold text-[#1F9D55] hover:underline flex items-center gap-1"
+            className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
           >
-            View all sessions <ArrowRight className="w-3.5 h-3.5" />
+            View all <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
           {sessions.map((sess) => (
             <div
               key={sess.id}
-              className="rounded-3xl border border-[#EBEBE6] bg-white p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+              className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
             >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-2xl">{getSportEmoji(sess.sport)}</span>
-                  <span className="rounded-full bg-[#E9F8EE] px-2.5 py-0.5 text-[10px] font-bold text-[#147A40]">
-                    {sess.status === 'active' ? '🟢 Active Rotation' : 'Upcoming'}
+                  <span className="rounded-lg bg-[#EBF4EE] px-2.5 py-0.5 text-xs font-black text-[#1E4A32]">
+                    {getSportDisplayName(sess.sport)}
+                  </span>
+                  <span className="rounded-full bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[10px] font-bold text-[#65756B]">
+                    {sess.status === 'active' ? 'Active Now' : 'Upcoming'}
                   </span>
                 </div>
 
-                <h3 className="font-black text-base text-[#171717]">{sess.title}</h3>
-                <p className="text-xs text-[#6B7280] mt-1 line-clamp-2">
+                <h3 className="font-black text-sm sm:text-base text-[#1A241E] leading-snug">{sess.title}</h3>
+                <p className="text-xs text-[#65756B] mt-1 line-clamp-2">
                   {sess.description}
                 </p>
 
-                <div className="mt-3 flex items-center justify-between text-xs text-[#6B7280]">
+                <div className="mt-3 flex items-center justify-between text-xs text-[#65756B]">
                   <span className="flex items-center gap-1">
-                    <Users className="w-3.5 h-3.5 text-[#1F9D55]" />
+                    <Users className="w-3.5 h-3.5 text-[#2D724E]" />
                     {sess.current_players_count} / {sess.max_players} players
                   </span>
-                  <span className="font-extrabold text-[#1F9D55]">
+                  <span className="font-black text-[#2D724E]">
                     {formatCurrency(sess.fee_cents)}
                   </span>
                 </div>
@@ -183,7 +205,7 @@ export default function HomePage() {
 
               <Link
                 href={`/sessions/${sess.id}`}
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all text-center"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm transition-all text-center min-h-[42px]"
               >
                 <span>Check Live Queue Board</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -197,22 +219,22 @@ export default function HomePage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#FF9F43]">
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
               Metro Manila
             </span>
-            <h2 className="text-xl sm:text-2xl font-black text-[#171717]">
+            <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
               Nearby Sports Centers
             </h2>
           </div>
           <Link
             href="/explore"
-            className="text-xs font-bold text-[#1F9D55] hover:underline flex items-center gap-1"
+            className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
           >
             Explore on Map <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {venues.slice(0, 3).map((venue) => (
             <VenueCard key={venue.id} venue={venue} />
           ))}

@@ -6,11 +6,11 @@ import { EquippedGear } from '@/types';
 import { Sparkles } from 'lucide-react';
 
 const RANDOM_BANTER = [
-  "Courts are heating up! Time to unleash your inner monkey power! 🐒🔥",
-  "Rally, smash, hydrate, repeat! Don't let the shuttle touch the floor!",
-  "Open play rotation is moving fast today! Check Court 1 for insane rallies!",
-  "Win streaks give you Banana Points! Save up for that 24K golden paddle!",
-  "Stay maligalig on court! Quick feet win every drop shot! ⚡",
+  "Stay light on your feet! High-tempo doubles rallies win games! 🌿⚡",
+  "Rally, smash, reset! Clear communication with your doubles partner wins!",
+  "Open play rotation is in full swing! Jump in as a pair or get paired up!",
+  "Win streaks earn you Banana Points! Stock up for custom jungle gear!",
+  "Keep that maligalig energy rolling on the baseline and the kitchen! 🏸",
 ];
 
 interface MascotBannerProps {
@@ -26,7 +26,7 @@ interface MascotBannerProps {
 
 export function MascotBanner({
   mood = 'hype',
-  title = "Miki's Court Dispatch",
+  title = "Matchi Court Intel",
   message,
   equippedGear,
   interactive = true,
@@ -45,18 +45,17 @@ export function MascotBanner({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl bg-white border border-[#EBEBE6] p-4 sm:p-5 shadow-sm transition-all hover:shadow-md ${className}`}
+      className={`relative overflow-hidden rounded-3xl bg-white border border-[#E8E5DF] p-4 sm:p-5 shadow-sm transition-all hover:shadow-md ${className}`}
     >
-      {/* Subtle green ambient gradient */}
-      <div className="absolute top-0 right-0 -mt-8 -mr-8 h-32 w-32 rounded-full bg-[#1F9D55]/10 blur-2xl pointer-events-none" />
-      <div className="absolute bottom-0 left-12 -mb-8 h-24 w-24 rounded-full bg-[#FF9F43]/10 blur-xl pointer-events-none" />
+      {/* Ambient Tarzan color glow */}
+      <div className="absolute top-0 right-0 -mt-8 -mr-8 h-32 w-32 rounded-full bg-[#2D724E]/10 blur-2xl pointer-events-none" />
+      <div className="absolute bottom-0 left-12 -mb-8 h-24 w-24 rounded-full bg-[#C87D43]/10 blur-xl pointer-events-none" />
 
-      <div className="relative flex items-center gap-4">
-        {/* Mascot Avatar with poke interaction */}
+      <div className="relative flex items-center gap-3 sm:gap-4">
         <button
           type="button"
           onClick={interactive ? handlePoke : undefined}
-          title={interactive ? 'Poke Miki for more hype!' : undefined}
+          title={interactive ? 'Tap Miki for game tips!' : undefined}
           className={`shrink-0 cursor-pointer focus:outline-none transition-transform active:scale-95 ${
             interactive ? 'group' : ''
           }`}
@@ -65,20 +64,19 @@ export function MascotBanner({
             mood={mood}
             size="md"
             equippedGear={equippedGear}
-            className="group-hover:scale-110 transition-transform"
+            className="group-hover:scale-105 transition-transform"
           />
         </button>
 
-        {/* Speech Bubble */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#1F9D55] bg-[#1F9D55]/10 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[#FF9F43]" />
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#2D724E] bg-[#2D724E]/10 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-[#C87D43]" />
               {title}
             </span>
           </div>
 
-          <p className="text-sm sm:text-base font-medium text-[#171717] leading-snug">
+          <p className="text-xs sm:text-sm font-semibold text-[#1A241E] leading-snug">
             &ldquo;{displayMessage}&rdquo;
           </p>
 
@@ -87,7 +85,7 @@ export function MascotBanner({
               <button
                 type="button"
                 onClick={onAction}
-                className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
+                className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm transition-all active:scale-95"
               >
                 {actionText}
               </button>
@@ -97,9 +95,9 @@ export function MascotBanner({
               <button
                 type="button"
                 onClick={handlePoke}
-                className="text-xs text-[#6B7280] hover:text-[#1F9D55] font-medium transition-colors"
+                className="text-[11px] text-[#65756B] hover:text-[#2D724E] font-medium transition-colors"
               >
-                Tap Miki for game tips 🍌
+                Tap Miki for more tips 🍌
               </button>
             )}
           </div>

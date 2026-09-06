@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/layout/Navbar';
@@ -14,19 +14,28 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#1E4A32',
+};
+
 export const metadata: Metadata = {
-  title: 'MonkeySports | Multi-Sport Discovery, Court Booking & Live Open Play',
+  title: 'Matchi | Multi-Sport Discovery, Court Booking & Live Open Play',
   description:
-    'High-energy multi-sport discovery, live open-play queues, court bookings, and matchmaking guided by an energetic monkey mascot.',
+    'Matchi is the premier high-energy sports platform. Discover badminton doubles & singles, pickleball, and padel courts, join live queue rotations, and pay flexibly via E-Wallets, Banks, or Cash.',
   keywords: [
-    'badminton',
+    'matchi',
+    'badminton doubles',
+    'badminton singles',
     'pickleball',
     'court booking',
-    'open play',
+    'open play queue',
     'manila sports',
-    'live queues',
-    'padel',
-    'matchmaking',
+    'padel club',
+    'gcash booking',
+    'cash at venue',
   ],
 };
 
@@ -41,7 +50,6 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* Leaflet CSS for map rendering */}
         <link
           rel="stylesheet"
           href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -49,7 +57,7 @@ export default function RootLayout({
           crossOrigin=""
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#FAFAF7] text-[#171717] pb-20 md:pb-0">
+      <body className="min-h-full flex flex-col bg-[#FAF8F5] text-[#1A241E] pb-20 md:pb-0 selection:bg-[#2D724E]/20">
         <Navbar />
         <main className="flex-1">{children}</main>
         <BottomDock />

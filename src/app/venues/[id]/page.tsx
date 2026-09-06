@@ -7,7 +7,7 @@ import { INITIAL_COURTS } from '@/lib/mockData';
 import { BookingModal } from '@/components/payments/BookingModal';
 import { MascotBanner } from '@/components/mascot/MascotBanner';
 import { Court, Session } from '@/types';
-import { formatCurrency, getSportEmoji, getSportDisplayName } from '@/lib/utils';
+import { formatCurrency, getSportDisplayName } from '@/lib/utils';
 import {
   ArrowLeft,
   Star,
@@ -18,6 +18,10 @@ import {
   Sparkles,
   Calendar,
   Share2,
+  CreditCard,
+  Building2,
+  Banknote,
+  User,
 } from 'lucide-react';
 
 interface VenuePageProps {
@@ -49,65 +53,68 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-8">
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 sm:space-y-8">
       {/* Back button */}
       <Link
         href="/explore"
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6B7280] hover:text-[#1F9D55] transition-colors"
+        className="inline-flex items-center gap-1.5 text-xs font-bold text-[#65756B] hover:text-[#2D724E] transition-colors py-1"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Explore
       </Link>
 
       {/* Hero Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         {/* Main Image */}
-        <div className="lg:col-span-2 relative h-72 sm:h-96 rounded-3xl overflow-hidden shadow-sm border border-[#EBEBE6]">
+        <div className="lg:col-span-2 relative h-64 sm:h-96 rounded-3xl overflow-hidden shadow-sm border border-[#E8E5DF]">
           <img
             src={venue.images[0] || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80'}
             alt={venue.name}
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
 
           {/* Hero text overlay */}
-          <div className="absolute bottom-6 left-6 right-6 text-white">
-            <div className="flex items-center gap-2 flex-wrap mb-2">
+          <div className="absolute bottom-5 left-5 right-5 text-white">
+            <div className="flex items-center gap-1.5 flex-wrap mb-2">
               {venue.featured_sports.map((sport) => (
                 <span
                   key={sport}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white/20 backdrop-blur-md px-2.5 py-1 text-xs font-bold"
+                  className="inline-flex items-center rounded-lg bg-white/20 backdrop-blur-md px-2.5 py-0.5 text-[11px] font-bold"
                 >
-                  <span>{getSportEmoji(sport)}</span>
-                  <span>{getSportDisplayName(sport)}</span>
+                  {getSportDisplayName(sport)}
                 </span>
               ))}
+              <span className="inline-flex items-center gap-1 rounded-lg bg-[#C87D43]/90 backdrop-blur-md px-2 py-0.5 text-[10px] font-black text-white">
+                <Users className="w-3 h-3" />
+                Doubles &amp; Singles
+              </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-tight">
+            <h1 className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-tight">
               {venue.name}
             </h1>
 
             <p className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-200 mt-1">
-              <MapPin className="w-4 h-4 text-[#FF9F43] shrink-0" />
+              <MapPin className="w-4 h-4 text-[#E9C46A] shrink-0" />
               <span>{venue.address}</span>
             </p>
           </div>
         </div>
 
         {/* Venue Quick Card */}
-        <div className="rounded-3xl border border-[#EBEBE6] bg-white p-6 shadow-sm flex flex-col justify-between space-y-5">
+        <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-4">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <Star className="w-5 h-5 fill-[#FF9F43] text-[#FF9F43]" />
-                <span className="text-lg font-black text-[#171717]">{venue.rating}</span>
-                <span className="text-xs text-[#6B7280]">({venue.review_count} player reviews)</span>
+                <Star className="w-5 h-5 fill-[#E9C46A] text-[#E9C46A]" />
+                <span className="text-lg font-black text-[#1A241E]">{venue.rating}</span>
+                <span className="text-xs text-[#65756B]">({venue.review_count} player reviews)</span>
               </div>
               <button
                 type="button"
                 onClick={() => navigator.clipboard.writeText(window.location.href)}
-                className="rounded-full p-2 text-[#6B7280] hover:bg-[#FAFAF7] transition-colors"
+                className="rounded-full p-2 text-[#65756B] hover:bg-[#FAF8F5] transition-colors"
                 title="Share Venue"
               >
                 <Share2 className="w-4 h-4" />
@@ -115,41 +122,41 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
             </div>
 
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
+              <h3 className="text-[11px] font-black uppercase tracking-wider text-[#65756B]">
                 Operating Hours
               </h3>
-              <p className="mt-1 text-sm font-semibold text-[#171717] flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-[#1F9D55]" />
+              <p className="mt-1 text-xs sm:text-sm font-bold text-[#1A241E] flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-[#2D724E]" />
                 {venue.operating_hours.mon_sun || '06:00 AM - 11:00 PM Daily'}
               </p>
             </div>
 
+            {/* Amenities */}
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#6B7280]">
-                Amenities & Perks
+              <h3 className="text-[11px] font-black uppercase tracking-wider text-[#65756B]">
+                Amenities &amp; Perks
               </h3>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {venue.amenities.map((item) => (
                   <span
                     key={item}
-                    className="inline-flex items-center gap-1 rounded-lg bg-[#FAFAF7] border border-[#EBEBE6] px-2.5 py-1 text-xs font-medium text-[#171717]"
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[11px] font-semibold text-[#1A241E]"
                   >
-                    <CheckCircle2 className="w-3 h-3 text-[#1F9D55]" />
+                    <CheckCircle2 className="w-3 h-3 text-[#2D724E]" />
                     {item}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-2xl bg-[#3B82F6]/5 border border-[#3B82F6]/20 p-3">
-              <div className="text-xs font-bold text-[#171717] flex items-center gap-1.5">
-                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-[#007DFE] text-white text-[10px] font-black">
-                  G
-                </span>
-                Official GCash Verification
+            {/* Payment flexibility card */}
+            <div className="rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] p-3 space-y-1.5">
+              <div className="text-xs font-black text-[#1A241E] flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-[#2D724E]" />
+                Flexible Payment Options
               </div>
-              <p className="text-[11px] text-[#6B7280] mt-1">
-                Instant receipt uploads accepted. Account: {venue.gcash_name}
+              <p className="text-[11px] text-[#65756B] leading-snug">
+                Supports <strong>GCash, Maya, GrabPay</strong>, Bank Transfers (BDO, BPI, UnionBank), or <strong>Cash at Venue</strong>.
               </p>
             </div>
           </div>
@@ -161,7 +168,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
                 handleBookCourt(venueCourts[0]);
               }
             }}
-            className="w-full py-3 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-md transition-all active:scale-[0.99] text-center"
+            className="w-full py-3 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-md transition-all active:scale-[0.99] text-center min-h-[46px]"
           >
             Quick Book Court &rarr;
           </button>
@@ -171,28 +178,26 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
       {/* Mascot banter banner */}
       <MascotBanner
         mood="hype"
-        title="Miki's Court Intel"
-        message={`${venue.name} has crisp floor grip and fast shuttles! Grab a court slot or hop directly into open play below! 🏸🔥`}
+        title="Miki's Court Advice"
+        message={`${venue.name} has non-slip tournament Taraflex flooring. Join a doubles rotation or lock down a private singles court below!`}
         equippedGear={currentUser.equipped_gear}
       />
 
       {/* Open Play Sessions Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#FF9F43]">
-              Rotations & Waitlists
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-[#171717]">
-              Open Play Queuing Sessions
-            </h2>
-          </div>
+        <div>
+          <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
+            Community Rotations
+          </span>
+          <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
+            Open Play Queuing Sessions
+          </h2>
         </div>
 
         {venueSessions.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#D1D5DB] bg-white p-8 text-center">
-            <p className="text-sm font-semibold text-[#6B7280]">
-              Nothing scheduled here right now. Organizers update upcoming sessions daily!
+          <div className="rounded-3xl border border-dashed border-[#E8E5DF] bg-white p-8 text-center">
+            <p className="text-xs sm:text-sm font-semibold text-[#65756B]">
+              No active sessions scheduled right now. Organizers update upcoming sessions daily!
             </p>
           </div>
         ) : (
@@ -200,42 +205,42 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
             {venueSessions.map((sess) => (
               <div
                 key={sess.id}
-                className="rounded-3xl border border-[#EBEBE6] bg-white p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#E9F8EE] px-2.5 py-0.5 text-xs font-bold text-[#147A40]">
-                      <Sparkles className="w-3 h-3 text-[#FF9F43]" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#EBF4EE] px-2.5 py-0.5 text-xs font-bold text-[#1E4A32]">
+                      <Sparkles className="w-3 h-3 text-[#C87D43]" />
                       {sess.rotation_format}
                     </span>
-                    <span className="text-xs font-bold text-[#1F9D55]">
-                      {sess.status === 'active' ? '🟢 Active Now' : '📅 Upcoming'}
+                    <span className="text-xs font-bold text-[#2D724E]">
+                      {sess.status === 'active' ? 'Active Now' : 'Upcoming'}
                     </span>
                   </div>
 
-                  <h3 className="text-lg font-black text-[#171717]">{sess.title}</h3>
-                  <p className="text-xs text-[#6B7280] mt-1 line-clamp-2 leading-relaxed">
+                  <h3 className="text-base sm:text-lg font-black text-[#1A241E] leading-snug">{sess.title}</h3>
+                  <p className="text-xs text-[#65756B] mt-1 line-clamp-2 leading-relaxed">
                     {sess.description}
                   </p>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-[#6B7280]">
-                      <Users className="w-4 h-4 text-[#1F9D55]" />
+                  <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 text-[#65756B]">
+                      <Users className="w-4 h-4 text-[#2D724E]" />
                       <span>
-                        <strong className="text-[#171717]">{sess.current_players_count}</strong> / {sess.max_players} players
+                        <strong className="text-[#1A241E]">{sess.current_players_count}</strong> / {sess.max_players} players
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[#6B7280]">
-                      <Calendar className="w-4 h-4 text-[#1F9D55]" />
+                    <div className="flex items-center gap-1.5 text-[#65756B]">
+                      <Calendar className="w-4 h-4 text-[#2D724E]" />
                       <span>{new Date(sess.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-[#EBEBE6] flex items-center justify-between">
+                <div className="pt-3.5 border-t border-[#E8E5DF] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <span className="text-[11px] text-[#6B7280]">Queue Entry Fee</span>
-                    <div className="text-lg font-black text-[#1F9D55]">
+                    <span className="text-[10px] text-[#65756B]">Entry Fee</span>
+                    <div className="text-base sm:text-lg font-black text-[#2D724E]">
                       {formatCurrency(sess.fee_cents)}
                     </div>
                   </div>
@@ -243,14 +248,14 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/sessions/${sess.id}`}
-                      className="px-3 py-2 rounded-xl bg-[#FAFAF7] hover:bg-[#F1F1EB] border border-[#EBEBE6] text-xs font-bold text-[#171717] transition-all"
+                      className="flex-1 sm:flex-none px-3 py-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#E8E5DF] border border-[#E8E5DF] text-xs font-bold text-[#1A241E] transition-all text-center min-h-[40px] flex items-center justify-center"
                     >
-                      View Live Board
+                      Live Board
                     </Link>
                     <button
                       type="button"
                       onClick={() => handleJoinSession(sess)}
-                      className="px-4 py-2 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all"
+                      className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all text-center min-h-[40px]"
                     >
                       Join Queue &rarr;
                     </button>
@@ -265,10 +270,10 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
       {/* Courts Available Section */}
       <div className="space-y-4">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-[#1F9D55]">
-            Hourly Bookings
+          <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#2D724E]">
+            Private Slots
           </span>
-          <h2 className="text-xl sm:text-2xl font-black text-[#171717]">
+          <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
             Available Courts
           </h2>
         </div>
@@ -277,24 +282,29 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
           {venueCourts.map((court) => (
             <div
               key={court.id}
-              className="rounded-2xl border border-[#EBEBE6] bg-white p-5 shadow-sm hover:border-[#1F9D55] transition-all flex flex-col justify-between space-y-4"
+              className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-5 shadow-sm hover:border-[#2D724E] transition-all flex flex-col justify-between space-y-4"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xl">{getSportEmoji(court.sport)}</span>
-                  <span className="rounded-full bg-[#E9F8EE] px-2 py-0.5 text-[10px] font-bold uppercase text-[#147A40]">
-                    {court.is_indoor ? 'Indoor Court' : 'Covered Outdoor'}
-                  </span>
+                  <span className="font-bold text-xs text-[#2D724E]">{getSportDisplayName(court.sport)}</span>
+                  <div className="flex gap-1">
+                    <span className="rounded-md bg-[#EBF4EE] px-1.5 py-0.5 text-[9px] font-black text-[#1E4A32]">
+                      Doubles (2v2)
+                    </span>
+                    <span className="rounded-md bg-[#FBF0E6] px-1.5 py-0.5 text-[9px] font-black text-[#A35C2B]">
+                      Singles (1v1)
+                    </span>
+                  </div>
                 </div>
 
-                <h3 className="font-extrabold text-base text-[#171717]">{court.name}</h3>
-                <p className="text-xs text-[#6B7280] mt-1">{court.floor_type}</p>
+                <h3 className="font-black text-sm sm:text-base text-[#1A241E]">{court.name}</h3>
+                <p className="text-xs text-[#65756B] mt-1">{court.floor_type}</p>
               </div>
 
-              <div className="pt-3 border-t border-[#EBEBE6] flex items-center justify-between">
+              <div className="pt-3 border-t border-[#E8E5DF] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-[#6B7280]">Hourly Rate</span>
-                  <div className="text-base font-black text-[#171717]">
+                  <span className="text-[10px] text-[#65756B]">Hourly Rate</span>
+                  <div className="text-sm sm:text-base font-black text-[#1A241E]">
                     {formatCurrency(court.hourly_rate_cents)}
                   </div>
                 </div>
@@ -302,7 +312,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
                 <button
                   type="button"
                   onClick={() => handleBookCourt(court)}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all"
+                  className="px-4 py-2 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all min-h-[38px]"
                 >
                   Book Slot
                 </button>
@@ -312,7 +322,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
         </div>
       </div>
 
-      {/* Booking Modal with GCash and Receipt Upload */}
+      {/* Booking Modal with Diversified Payments */}
       <BookingModal
         isOpen={isBookingModalOpen}
         onClose={() => setIsBookingModalOpen(false)}

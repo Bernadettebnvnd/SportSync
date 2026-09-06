@@ -1,6 +1,6 @@
 -- =====================================================================
--- MONKEYSPORTS: Supabase PostgreSQL Database Schema
--- Multi-Sport Discovery, Court Booking, Live Queue & Venue Management
+-- MATCHI: Supabase PostgreSQL Database Schema
+-- Multi-Sport Discovery, Badminton Doubles/Singles, Live Queue & Venue Management
 -- =====================================================================
 
 -- 1. Enable Required Extensions
@@ -24,6 +24,12 @@ DO $$ BEGIN
         'volleyball',
         'table_tennis'
     );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE match_format AS ENUM ('singles', 'doubles', 'mixed_doubles');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -53,13 +59,13 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE payment_status AS ENUM ('pending', 'approved', 'rejected');
+    CREATE TYPE payment_status AS ENUM ('pending', 'approved', 'rejected', 'cash_at_venue');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE payment_method AS ENUM ('gcash', 'maya', 'bank_transfer', 'cash');
+    CREATE TYPE payment_method AS ENUM ('gcash', 'maya', 'grabpay', 'bdo', 'bpi', 'unionbank', 'cash');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -74,6 +80,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     avatar_url TEXT,
     role user_role NOT NULL DEFAULT 'player',
     primary_sport sport_type DEFAULT 'badminton',
+    preferred_format match_format DEFAULT 'doubles',
     skill_level skill_level DEFAULT 'intermediate',
     phone TEXT,
     city TEXT DEFAULT 'Taguig, Metro Manila',
@@ -82,8 +89,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     win_streak INT NOT NULL DEFAULT 0,
     highest_streak INT NOT NULL DEFAULT 0,
     banana_points INT NOT NULL DEFAULT 150,
-    equipped_gear JSONB DEFAULT '{"headband": "classic_green", "racket": "wooden_paddle", "mascot_outfit": "sporty_tee"}'::jsonb,
-    unlocked_gear JSONB DEFAULT '["classic_green", "wooden_paddle", "sporty_tee"]'::jsonb,
+    equipped_gear JSONB DEFAULT '{"headband": "vine_band", "racket": "voltric_pro", "mascot_outfit": "canopy_tee"}'::jsonb,
+    unlocked_gear JSONB DEFAULT '["vine_band", "voltric_pro", "canopy_tee"]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -103,9 +110,9 @@ CREATE TABLE IF NOT EXISTS public.venues (
     amenities TEXT[] DEFAULT ARRAY['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop', 'Water Station', 'Locker Rooms'],
     featured_sports sport_type[] DEFAULT ARRAY['badminton', 'pickleball']::sport_type[],
     images TEXT[] DEFAULT ARRAY['https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80'],
+    payment_info JSONB DEFAULT '{"gcash_number": "0917-888-8773", "maya_number": "0917-888-8773", "accepts_cash": true}'::jsonb,
     gcash_number TEXT,
     gcash_name TEXT,
-    gcash_qr_url TEXT,
     rating NUMERIC(2,1) DEFAULT 4.8,
     review_count INT DEFAULT 42,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -120,6 +127,8 @@ CREATE TABLE IF NOT EXISTS public.courts (
     sport sport_type NOT NULL DEFAULT 'badminton',
     floor_type TEXT DEFAULT 'BWF Taraflex Rubber Mat',
     hourly_rate_cents INT NOT NULL DEFAULT 45000,
+    supports_doubles BOOLEAN DEFAULT TRUE,
+    supports_singles BOOLEAN DEFAULT TRUE,
     is_indoor BOOLEAN DEFAULT TRUE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -135,6 +144,7 @@ CREATE TABLE IF NOT EXISTS public.sessions (
     description TEXT,
     sport sport_type NOT NULL DEFAULT 'badminton',
     session_type session_type NOT NULL DEFAULT 'open_play',
+    allowed_formats match_format[] DEFAULT ARRAY['doubles', 'singles']::match_format[],
     skill_level skill_level NOT NULL DEFAULT 'all_levels',
     court_ids UUID[] DEFAULT ARRAY[]::UUID[],
     start_time TIMESTAMPTZ NOT NULL,
@@ -142,7 +152,7 @@ CREATE TABLE IF NOT EXISTS public.sessions (
     fee_cents INT NOT NULL DEFAULT 25000,
     max_players INT NOT NULL DEFAULT 16,
     current_players_count INT NOT NULL DEFAULT 0,
-    rotation_format TEXT DEFAULT 'King of the Court (15 pts sudden death)',
+    rotation_format TEXT DEFAULT 'King of the Court Doubles (15 pts sudden death)',
     status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -155,8 +165,10 @@ CREATE TABLE IF NOT EXISTS public.queues (
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     court_id UUID REFERENCES public.courts(id) ON DELETE SET NULL,
     queue_number INT NOT NULL,
-    group_size INT NOT NULL DEFAULT 1,
+    group_size INT NOT NULL DEFAULT 2,
+    match_format match_format NOT NULL DEFAULT 'doubles',
     partner_names TEXT[] DEFAULT ARRAY[]::TEXT[],
+    needs_partner BOOLEAN DEFAULT FALSE,
     status queue_status NOT NULL DEFAULT 'waiting',
     estimated_wait_minutes INT DEFAULT 10,
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -172,13 +184,14 @@ CREATE TABLE IF NOT EXISTS public.matches (
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
     court_id UUID REFERENCES public.courts(id) ON DELETE SET NULL,
     sport sport_type NOT NULL DEFAULT 'badminton',
+    match_format match_format NOT NULL DEFAULT 'doubles',
     team_a_player_ids UUID[] NOT NULL,
     team_b_player_ids UUID[] NOT NULL,
     team_a_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     team_b_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     score_a INT NOT NULL DEFAULT 0,
     score_b INT NOT NULL DEFAULT 0,
-    target_points INT NOT NULL DEFAULT 21,
+    target_points INT NOT NULL DEFAULT 15,
     winner_team TEXT,
     status match_status NOT NULL DEFAULT 'in_progress',
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -187,7 +200,7 @@ CREATE TABLE IF NOT EXISTS public.matches (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 9. Payments Table (Manual Verification via GCash/Maya Receipt Uploads)
+-- 9. Payments Table (Diversified E-wallets, Banks, Cash at Venue)
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
@@ -196,7 +209,8 @@ CREATE TABLE IF NOT EXISTS public.payments (
     amount_cents INT NOT NULL,
     payment_method payment_method NOT NULL DEFAULT 'gcash',
     reference_code TEXT NOT NULL,
-    receipt_image_url TEXT NOT NULL,
+    receipt_image_url TEXT,
+    cash_voucher_code TEXT,
     status payment_status NOT NULL DEFAULT 'pending',
     notes TEXT,
     rejection_reason TEXT,
@@ -317,7 +331,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
--- 14. Triggers: Auto-update updated_at timestamp (Safe idempotent triggers)
+-- 14. Triggers: Auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -355,32 +369,32 @@ CREATE TRIGGER update_payments_updated_at BEFORE UPDATE ON public.payments
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- 15. Realistic Seed Data for Philippine Sports Scene
-INSERT INTO public.users (id, email, full_name, nickname, role, primary_sport, skill_level, matches_played, matches_won, win_streak, highest_streak, banana_points)
+INSERT INTO public.users (id, email, full_name, nickname, role, primary_sport, preferred_format, skill_level, matches_played, matches_won, win_streak, highest_streak, banana_points)
 VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'miki.player@monkeysports.ph', 'Miki Del Rosario', 'Miki', 'player', 'badminton', 'intermediate', 28, 21, 4, 7, 340),
-    ('a0000000-0000-0000-0000-000000000002', 'coach.basty@monkeysports.ph', 'Sebastian Santos', 'Coach Basty', 'organizer', 'pickleball', 'advanced', 64, 52, 6, 12, 980),
-    ('a0000000-0000-0000-0000-000000000003', 'owner.upperdeck@monkeysports.ph', 'Carlos Tan', 'Charlie', 'venue_owner', 'basketball', 'intermediate', 12, 8, 2, 4, 450)
+    ('a0000000-0000-0000-0000-000000000001', 'miki@matchi.ph', 'Miki Del Rosario', 'Miki', 'player', 'badminton', 'doubles', 'intermediate', 38, 30, 6, 9, 480),
+    ('a0000000-0000-0000-0000-000000000002', 'coach.basty@matchi.ph', 'Sebastian Santos', 'Coach Basty', 'organizer', 'pickleball', 'doubles', 'advanced', 64, 52, 6, 12, 980),
+    ('a0000000-0000-0000-0000-000000000003', 'owner.upperdeck@matchi.ph', 'Carlos Tan', 'Charlie', 'venue_owner', 'badminton', 'doubles', 'intermediate', 12, 8, 2, 4, 450)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.venues (id, owner_id, name, slug, description, address, city, latitude, longitude, operating_hours, amenities, featured_sports, gcash_number, gcash_name, rating, review_count)
 VALUES
-    ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000003', 'The Upper Deck Sports Center', 'upper-deck-pasig', 'Premier multi-sports facility in Ortigas/Pasig. Features 8 BWF standard badminton courts, indoor pickleball courts, rooftop gym, and Recovery Spa.', '1 Ortigas Ave, Pasig, Metro Manila', 'Pasig City', 14.5828, 121.0664, '{"mon_sun": "06:00 - 24:00"}'::jsonb, ARRAY['Air Conditioning', 'Free Parking', 'Hot Showers', 'Pro Shop', 'Locker Rooms', 'Cafe & Smoothies'], ARRAY['badminton', 'pickleball', 'basketball']::sport_type[], '0917-888-UPPR', 'UPPER DECK SPORTS INC', 4.9, 88),
-    ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003', 'Smash Zone BGC', 'smash-zone-bgc', 'High-energy badminton hub in Bonifacio Global City. Non-slip shock-absorbent courts, high-bay LED lighting, and lively night open plays.', '32nd St cor 9th Ave, Bonifacio Global City, Taguig', 'Taguig City', 14.5515, 121.0494, '{"mon_sun": "07:00 - 23:00"}'::jsonb, ARRAY['BWF Taraflex Floors', 'Air Conditioning', 'Shower Rooms', 'Racket Stringing', 'Parking'], ARRAY['badminton']::sport_type[], '0917-555-SMASH', 'SMASH ZONE BGC', 4.8, 114),
-    ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'Padel Club Manila - Rockwell', 'padel-club-rockwell', 'State of the art panoramic glass padel courts with tournament blue turf, sports lounge, and social mixers.', 'Estrella St, Rockwell Center, Makati', 'Makati City', 14.5654, 121.0367, '{"mon_sun": "06:00 - 23:00"}'::jsonb, ARRAY['Panoramic Glass', 'Lounge Bar', 'Valet Parking', 'Gear Rental', 'Coaching'], ARRAY['padel']::sport_type[], '0917-777-PADEL', 'PADEL CLUB PH', 4.9, 65),
-    ('b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000003', 'Pickleball PlayGround QC', 'pickleball-playground-qc', 'Metro Manila''s favorite community pickleball haven. Cushioned outdoor covered courts, cold drinks, and welcoming open play rotations.', 'Tomas Morato Ave, Quezon City', 'Quezon City', 14.6292, 121.0336, '{"mon_sun": "06:00 - 22:00"}'::jsonb, ARRAY['Cushioned Acrylic Surface', 'LED Night Lights', 'Parking', 'Equipment Rental'], ARRAY['pickleball']::sport_type[], '0918-123-PICKLE', 'PICKLEBALL PLAYGROUND', 4.7, 53)
+    ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000003', 'The Upper Deck Sports Center', 'upper-deck-pasig', 'Premier multi-sports facility in Ortigas/Pasig. Features 8 BWF standard badminton courts for Doubles and Singles, indoor pickleball courts, and recovery facilities.', '1 Ortigas Ave, Pasig, Metro Manila', 'Pasig City', 14.5828, 121.0664, '{"mon_sun": "06:00 - 24:00"}'::jsonb, ARRAY['Air Conditioning', 'Free Parking', 'Hot Showers', 'Pro Shop', 'Locker Rooms', 'Cafe & Smoothies'], ARRAY['badminton', 'pickleball', 'basketball']::sport_type[], '0917-888-UPPR', 'UPPER DECK SPORTS INC', 4.9, 88),
+    ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003', 'Smash Zone BGC', 'smash-zone-bgc', 'High-energy badminton hub in Bonifacio Global City. Non-slip shock-absorbent courts, high-bay LED lighting, dedicated doubles and singles queuing.', '32nd St cor 9th Ave, Bonifacio Global City, Taguig', 'Taguig City', 14.5515, 121.0494, '{"mon_sun": "07:00 - 23:00"}'::jsonb, ARRAY['BWF Taraflex Floors', 'Air Conditioning', 'Shower Rooms', 'Racket Stringing', 'Parking'], ARRAY['badminton']::sport_type[], '0917-555-SMASH', 'SMASH ZONE BGC', 4.8, 114),
+    ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000003', 'Padel Club Manila - Rockwell', 'padel-club-rockwell', 'State of the art panoramic glass padel courts with tournament blue turf, sports lounge, and doubles mixers.', 'Estrella St, Rockwell Center, Makati', 'Makati City', 14.5654, 121.0367, '{"mon_sun": "06:00 - 23:00"}'::jsonb, ARRAY['Panoramic Glass', 'Lounge Bar', 'Valet Parking', 'Gear Rental', 'Coaching'], ARRAY['padel']::sport_type[], '0917-777-PADEL', 'PADEL CLUB PH', 4.9, 65),
+    ('b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000003', 'Pickleball PlayGround QC', 'pickleball-playground-qc', 'Metro Manila''s favorite community pickleball haven. Cushioned outdoor covered courts for doubles and singles.', 'Tomas Morato Ave, Quezon City', 'Quezon City', 14.6292, 121.0336, '{"mon_sun": "06:00 - 22:00"}'::jsonb, ARRAY['Cushioned Acrylic Surface', 'LED Night Lights', 'Parking', 'Equipment Rental'], ARRAY['pickleball']::sport_type[], '0918-123-PICKLE', 'PICKLEBALL PLAYGROUND', 4.7, 53)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.courts (id, venue_id, name, sport, hourly_rate_cents, floor_type, is_indoor)
+INSERT INTO public.courts (id, venue_id, name, sport, hourly_rate_cents, floor_type, supports_doubles, supports_singles, is_indoor)
 VALUES
-    ('c0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'Court 1 (Yonex Pro)', 'badminton', 45000, 'Yonex BWF Taraflex', TRUE),
-    ('c0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001', 'Court 2 (Yonex Pro)', 'badminton', 45000, 'Yonex BWF Taraflex', TRUE),
-    ('c0000000-0000-0000-0000-000000000003', 'b0000000-0000-0000-0000-000000000001', 'Court 3 (Pickle Center)', 'pickleball', 50000, 'Cushioned Acrylic', TRUE),
-    ('c0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000002', 'BGC Center Court', 'badminton', 55000, 'Green Taraflex Mat', TRUE),
-    ('c0000000-0000-0000-0000-000000000005', 'b0000000-0000-0000-0000-000000000003', 'Padel Court Alpha', 'padel', 120000, 'Mondo Supercourt Pro', TRUE)
+    ('c0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'Court 1 (Yonex Pro)', 'badminton', 45000, 'Yonex BWF Taraflex', TRUE, TRUE, TRUE),
+    ('c0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001', 'Court 2 (Yonex Pro)', 'badminton', 45000, 'Yonex BWF Taraflex', TRUE, TRUE, TRUE),
+    ('c0000000-0000-0000-0000-000000000003', 'b0000000-0000-0000-0000-000000000001', 'Court 3 (Pickle Center)', 'pickleball', 50000, 'Cushioned Acrylic', TRUE, TRUE, TRUE),
+    ('c0000000-0000-0000-0000-000000000004', 'b0000000-0000-0000-0000-000000000002', 'BGC Center Court', 'badminton', 55000, 'Green Taraflex Mat', TRUE, TRUE, TRUE),
+    ('c0000000-0000-0000-0000-000000000005', 'b0000000-0000-0000-0000-000000000003', 'Padel Court Alpha', 'padel', 120000, 'Mondo Supercourt Pro', TRUE, FALSE, TRUE)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.sessions (id, venue_id, host_id, title, description, sport, session_type, skill_level, court_ids, start_time, end_time, fee_cents, max_players, current_players_count, rotation_format, status)
+INSERT INTO public.sessions (id, venue_id, host_id, title, description, sport, session_type, allowed_formats, skill_level, court_ids, start_time, end_time, fee_cents, max_players, current_players_count, rotation_format, status)
 VALUES
-    ('d0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 'Friday Night Smash: Open Play Queuing', 'Energetic doubles rotation across 2 courts. King of the Court format, feather shuttles provided, beginner & intermediate friendly!', 'badminton', 'open_play', 'all_levels', ARRAY['c0000000-0000-0000-0000-000000000001'::UUID, 'c0000000-0000-0000-0000-000000000002'::UUID], NOW() - INTERVAL '1 hour', NOW() + INTERVAL '3 hours', 28000, 16, 11, 'King of the Court (15 pts sudden death)', 'active'),
-    ('d0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000002', 'Dinking & Rally: Pickleball Social Rotation', 'Fast paced pickleball social queue. 11-point games, win by 2, rotation after each match. Free paddle demo available.', 'pickleball', 'open_play', 'intermediate', ARRAY['c0000000-0000-0000-0000-000000000003'::UUID], NOW() + INTERVAL '2 hours', NOW() + INTERVAL '5 hours', 25000, 12, 6, 'Rally Rotation (11 pts win by 2)', 'upcoming')
+    ('d0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 'Friday Night Smash: Doubles Open Play', 'Energetic doubles rotation across 2 courts. King of the Court doubles format, feather shuttles provided, beginner & intermediate friendly!', 'badminton', 'open_play', ARRAY['doubles', 'mixed_doubles']::match_format[], 'all_levels', ARRAY['c0000000-0000-0000-0000-000000000001'::UUID, 'c0000000-0000-0000-0000-000000000002'::UUID], NOW() - INTERVAL '1 hour', NOW() + INTERVAL '3 hours', 28000, 16, 12, 'King of the Court Doubles (15 pts sudden death)', 'active'),
+    ('d0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000002', 'Dinking & Rally: Pickleball Doubles Social', 'Fast paced pickleball doubles social queue. 11-point games, win by 2, rotation after each match. Demo paddles available.', 'pickleball', 'open_play', ARRAY['doubles']::match_format[], 'intermediate', ARRAY['c0000000-0000-0000-0000-000000000003'::UUID], NOW() + INTERVAL '2 hours', NOW() + INTERVAL '5 hours', 25000, 12, 7, 'Rally Rotation Doubles (11 pts win by 2)', 'upcoming')
 ON CONFLICT (id) DO NOTHING;

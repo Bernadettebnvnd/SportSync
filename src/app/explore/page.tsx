@@ -7,12 +7,12 @@ import { VenueCard } from '@/components/explore/VenueCard';
 import { VenueMap } from '@/components/explore/VenueMap';
 import { MascotBanner } from '@/components/mascot/MascotBanner';
 import { Venue } from '@/types';
-import { Compass, Sparkles } from 'lucide-react';
 
 export default function ExplorePage() {
   const { venues, currentUser } = useMonkeyStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSport, setSelectedSport] = useState('all');
+  const [selectedFormat, setSelectedFormat] = useState('all');
   const [selectedLevel, setSelectedLevel] = useState('all_levels');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [selectedVenueId, setSelectedVenueId] = useState<string | undefined>();
@@ -44,39 +44,39 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
-      {/* Header & Mascot microcopy */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#171717] tracking-tight">
-              Explore Courts & Venues
-            </h1>
-            <span className="rounded-full bg-[#1F9D55]/10 px-2.5 py-0.5 text-xs font-bold text-[#1F9D55]">
-              {filteredVenues.length} hubs active
-            </span>
-          </div>
-          <p className="text-sm text-[#6B7280] mt-1">
-            Discover top-tier badminton courts, pickleball centers, and padel clubs across Metro Manila.
-          </p>
+    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6">
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl sm:text-3xl font-black text-[#1A241E] tracking-tight">
+            Explore Courts &amp; Venues
+          </h1>
+          <span className="rounded-full bg-[#2D724E]/10 px-2.5 py-0.5 text-xs font-bold text-[#2D724E]">
+            {filteredVenues.length} hubs active
+          </span>
         </div>
+        <p className="text-xs sm:text-sm text-[#65756B] mt-1">
+          Discover badminton doubles &amp; singles centers, pickleball clubs, and padel arenas across Metro Manila.
+        </p>
       </div>
 
       {/* Mascot banter banner */}
       <MascotBanner
         mood="hype"
-        title="Court Scout"
-        message="Looking for non-slip floors or fast queues? I’ve scouted the freshest courts in BGC, Pasig, and QC! 🏸⚡"
+        title="Matchi Scout"
+        message="Looking for doubles rotations or private court slots? We’ve verified courts with Taraflex flooring and full payment flexibility!"
         equippedGear={currentUser.equipped_gear}
       />
 
       {/* Filter and View Controller */}
-      <div className="rounded-2xl border border-[#EBEBE6] bg-white p-4 shadow-sm">
+      <div className="rounded-3xl border border-[#E8E5DF] bg-white p-3.5 sm:p-5 shadow-sm">
         <FilterBar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           selectedSport={selectedSport}
           onSportChange={setSelectedSport}
+          selectedFormat={selectedFormat}
+          onFormatChange={setSelectedFormat}
           selectedLevel={selectedLevel}
           onLevelChange={setSelectedLevel}
           viewMode={viewMode}
@@ -93,7 +93,6 @@ export default function ExplorePage() {
             onSelectVenue={(v) => setSelectedVenueId(v.id)}
           />
 
-          {/* Quick horizontal cards underneath map */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredVenues.map((venue) => (
               <VenueCard
@@ -107,30 +106,31 @@ export default function ExplorePage() {
       ) : (
         <div>
           {filteredVenues.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#D1D5DB] bg-white p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#FFF5EA] text-3xl">
-                🙈
+            <div className="rounded-3xl border border-dashed border-[#D4CEBE] bg-white p-8 sm:p-12 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FBF0E6] text-2xl font-black text-[#C87D43]">
+                M
               </div>
-              <h3 className="mt-4 text-base font-bold text-[#171717]">
-                Nothing here yet. Let’s find you another game!
+              <h3 className="mt-3 text-sm sm:text-base font-black text-[#1A241E]">
+                Nothing here yet. Let&apos;s find you another court!
               </h3>
-              <p className="mt-1 text-xs text-[#6B7280] max-w-sm mx-auto">
-                No venues match your current filters. Try selecting &ldquo;All Sports&rdquo; or searching a different area.
+              <p className="mt-1 text-xs text-[#65756B] max-w-sm mx-auto">
+                No venues match your current filters. Try selecting &ldquo;All Sports&rdquo; or clearing your search.
               </p>
               <button
                 type="button"
                 onClick={() => {
                   setSearchQuery('');
                   setSelectedSport('all');
+                  setSelectedFormat('all');
                   setSelectedLevel('all_levels');
                 }}
-                className="mt-4 px-4 py-2 rounded-xl bg-[#1F9D55] text-white text-xs font-bold shadow-sm"
+                className="mt-4 px-4 py-2.5 rounded-xl bg-[#2D724E] text-white text-xs font-bold shadow-sm min-h-[42px]"
               >
                 Reset All Filters
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {filteredVenues.map((venue) => (
                 <VenueCard
                   key={venue.id}

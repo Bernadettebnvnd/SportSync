@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { MatchFormat, PaymentMethod } from '@/types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -25,27 +26,6 @@ export function formatTimeAgo(dateString: string): string {
   return `${Math.floor(diffInHours / 24)}d ago`;
 }
 
-export function getSportEmoji(sport: string): string {
-  switch (sport.toLowerCase()) {
-    case 'badminton':
-      return '🏸';
-    case 'pickleball':
-      return '🥒';
-    case 'basketball':
-      return '🏀';
-    case 'padel':
-      return '🎾';
-    case 'tennis':
-      return '🎾';
-    case 'volleyball':
-      return '🏐';
-    case 'table_tennis':
-      return '🏓';
-    default:
-      return '⚡';
-  }
-}
-
 export function getSportDisplayName(sport: string): string {
   switch (sport.toLowerCase()) {
     case 'badminton':
@@ -64,5 +44,39 @@ export function getSportDisplayName(sport: string): string {
       return 'Table Tennis';
     default:
       return sport;
+  }
+}
+
+export function getFormatDisplayName(format: MatchFormat): string {
+  switch (format) {
+    case 'doubles':
+      return 'Doubles (2v2)';
+    case 'singles':
+      return 'Singles (1v1)';
+    case 'mixed_doubles':
+      return 'Mixed Doubles (2v2)';
+    default:
+      return format;
+  }
+}
+
+export function getPaymentMethodName(method: PaymentMethod): string {
+  switch (method) {
+    case 'gcash':
+      return 'GCash';
+    case 'maya':
+      return 'Maya';
+    case 'grabpay':
+      return 'GrabPay';
+    case 'bdo':
+      return 'BDO Online';
+    case 'bpi':
+      return 'BPI Bank';
+    case 'unionbank':
+      return 'UnionBank';
+    case 'cash':
+      return 'Cash at Venue';
+    default:
+      return method;
   }
 }

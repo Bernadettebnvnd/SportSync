@@ -9,6 +9,9 @@ import {
   Match,
   Payment,
   UserRole,
+  MatchFormat,
+  PaymentMethod,
+  PaymentCategory,
 } from '@/types';
 import {
   INITIAL_CURRENT_USER,
@@ -28,9 +31,8 @@ interface AppState {
   payments: Payment[];
 }
 
-const STORAGE_KEY = 'monkeysports_app_state_v1';
+const STORAGE_KEY = 'matchi_app_state_v2';
 
-// Global listeners for reactive updates across components
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
@@ -82,7 +84,6 @@ export function useMonkeyStore() {
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    // Sync state on client mount
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -117,7 +118,12 @@ export function useMonkeyStore() {
   }, [setUserRole]);
 
   const joinQueue = useCallback(
-    (sessionId: string, partnerNames: string[] = []) => {
+    (
+      sessionId: string,
+      partnerNames: string[] = [],
+      format: MatchFormat = 'doubles',
+      needsPartner = false
+    ) => {
       const existing = globalState.queues.find(
         (q) => q.session_id === sessionId && q.user_id === globalState.currentUser.id
       );
@@ -127,14 +133,18 @@ export function useMonkeyStore() {
       const nextQueueNumber = sessionQueues.length + 1;
       const waitMinutes = (sessionQueues.filter((q) => q.status === 'waiting').length + 1) * 8;
 
+      const groupSize = format === 'doubles' ? (partnerNames.length > 0 ? 2 : 1) : 1;
+
       const newEntry: QueueEntry = {
         id: `q_entry_${Date.now()}`,
         session_id: sessionId,
         user_id: globalState.currentUser.id,
         user: globalState.currentUser,
         queue_number: nextQueueNumber,
-        group_size: partnerNames.length + 1,
+        group_size: groupSize,
+        match_format: format,
         partner_names: partnerNames,
+        needs_partner: needsPartner,
         status: 'waiting',
         estimated_wait_minutes: waitMinutes,
         joined_at: new Date().toISOString(),
@@ -145,7 +155,7 @@ export function useMonkeyStore() {
         queues: [...globalState.queues, newEntry],
         sessions: globalState.sessions.map((s) =>
           s.id === sessionId
-            ? { ...s, current_players_count: s.current_players_count + 1 + partnerNames.length }
+            ? { ...s, current_players_count: s.current_players_count + groupSize }
             : s
         ),
       };
@@ -214,7 +224,6 @@ export function useMonkeyStore() {
         }),
       };
 
-      // If user won and finished match, update points and streak
       if (isFinished) {
         const match = globalState.matches.find((m) => m.id === matchId);
         if (match && match.team_a_player_ids.includes(globalState.currentUser.id)) {
@@ -246,11 +255,16 @@ export function useMonkeyStore() {
       sessionId: string;
       courtId?: string;
       amountCents: number;
+      paymentMethod: PaymentMethod;
+      paymentCategory: PaymentCategory;
       referenceCode: string;
-      receiptImageUrl: string;
+      receiptImageUrl?: string;
+      cashVoucherCode?: string;
       notes?: string;
     }) => {
       const session = globalState.sessions.find((s) => s.id === data.sessionId);
+      const isCash = data.paymentCategory === 'cash';
+
       const newPayment: Payment = {
         id: `pay_${Date.now()}`,
         session_id: data.sessionId,
@@ -260,11 +274,13 @@ export function useMonkeyStore() {
         user_name: globalState.currentUser.full_name,
         user_avatar: globalState.currentUser.avatar_url,
         amount_cents: data.amountCents,
-        payment_method: 'gcash',
+        payment_method: data.paymentMethod,
+        payment_category: data.paymentCategory,
         reference_code: data.referenceCode,
         receipt_image_url: data.receiptImageUrl,
-        status: 'pending',
-        notes: data.notes || 'Submitted via GCash upload',
+        cash_voucher_code: data.cashVoucherCode,
+        status: isCash ? 'cash_at_venue' : 'pending',
+        notes: data.notes || (isCash ? 'Cash payment upon arrival at venue' : 'Online verification pending'),
         created_at: new Date().toISOString(),
       };
 

@@ -7,6 +7,8 @@ export type SportType =
   | 'volleyball'
   | 'table_tennis';
 
+export type MatchFormat = 'singles' | 'doubles' | 'mixed_doubles';
+
 export type SkillLevel =
   | 'all_levels'
   | 'beginner'
@@ -22,14 +24,23 @@ export type QueueStatus = 'waiting' | 'warming_up' | 'on_court' | 'completed' | 
 
 export type MatchStatus = 'warmup' | 'in_progress' | 'completed' | 'cancelled';
 
-export type PaymentStatus = 'pending' | 'approved' | 'rejected';
+export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'cash_at_venue';
 
-export type PaymentMethod = 'gcash' | 'maya' | 'bank_transfer' | 'cash';
+export type PaymentMethod =
+  | 'gcash'
+  | 'maya'
+  | 'grabpay'
+  | 'bdo'
+  | 'bpi'
+  | 'unionbank'
+  | 'cash';
+
+export type PaymentCategory = 'ewallet' | 'bank_transfer' | 'cash';
 
 export interface EquippedGear {
-  headband: string; // 'none' | 'classic_green' | 'gold_champion' | 'fire_red'
-  racket: string; // 'standard' | 'golden_paddle' | 'voltric_pro' | 'banana_bat'
-  outfit: string; // 'sporty_tee' | 'referee_stripes' | 'banana_suit' | 'neon_jersey'
+  headband: string;
+  racket: string;
+  outfit: string;
 }
 
 export interface User {
@@ -41,6 +52,7 @@ export interface User {
   avatar_url?: string;
   role: UserRole;
   primary_sport: SportType;
+  preferred_format?: MatchFormat;
   skill_level: SkillLevel;
   phone?: string;
   city: string;
@@ -63,6 +75,31 @@ export interface Court {
   hourly_rate_cents: number;
   is_indoor: boolean;
   is_active: boolean;
+  supports_doubles: boolean;
+  supports_singles: boolean;
+}
+
+export interface VenuePaymentInfo {
+  // E-Wallets
+  gcash_number?: string;
+  gcash_name?: string;
+  gcash_qr_url?: string;
+  maya_number?: string;
+  maya_name?: string;
+  maya_qr_url?: string;
+  grabpay_number?: string;
+
+  // Banks
+  bdo_account_number?: string;
+  bdo_account_name?: string;
+  bpi_account_number?: string;
+  bpi_account_name?: string;
+  unionbank_account_number?: string;
+  unionbank_account_name?: string;
+  instapay_qr_url?: string;
+
+  // Cash at Venue
+  accepts_cash: boolean;
 }
 
 export interface Venue {
@@ -83,9 +120,7 @@ export interface Venue {
   amenities: string[];
   featured_sports: SportType[];
   images: string[];
-  gcash_number: string;
-  gcash_name: string;
-  gcash_qr_url?: string;
+  payment_info: VenuePaymentInfo;
   rating: number;
   review_count: number;
   courts?: Court[];
@@ -101,6 +136,7 @@ export interface Session {
   sport: SportType;
   session_type: SessionType;
   skill_level: SkillLevel;
+  allowed_formats: MatchFormat[];
   court_ids: string[];
   court_names?: string[];
   start_time: string;
@@ -121,7 +157,9 @@ export interface QueueEntry {
   court_name?: string;
   queue_number: number;
   group_size: number;
+  match_format: MatchFormat;
   partner_names: string[];
+  needs_partner: boolean;
   status: QueueStatus;
   estimated_wait_minutes: number;
   joined_at: string;
@@ -134,6 +172,7 @@ export interface Match {
   court_id?: string;
   court_name: string;
   sport: SportType;
+  match_format: MatchFormat;
   team_a_player_ids: string[];
   team_b_player_ids: string[];
   team_a_names: string[];
@@ -157,8 +196,10 @@ export interface Payment {
   user_avatar?: string;
   amount_cents: number;
   payment_method: PaymentMethod;
+  payment_category: PaymentCategory;
   reference_code: string;
-  receipt_image_url: string;
+  receipt_image_url?: string;
+  cash_voucher_code?: string;
   status: PaymentStatus;
   notes?: string;
   rejection_reason?: string;

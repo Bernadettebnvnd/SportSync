@@ -1,17 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
-import { QueueEntry, Session } from '@/types';
+import { QueueEntry, Session, MatchFormat } from '@/types';
 import { useMonkeyStore } from '@/lib/store';
-import { formatTimeAgo } from '@/lib/utils';
+import { formatTimeAgo, getFormatDisplayName } from '@/lib/utils';
 import {
   Users,
+  User,
   Clock,
   LogOut,
   UserPlus,
   Flame,
   CheckCircle,
-  AlertTriangle,
 } from 'lucide-react';
 
 interface LiveQueueBoardProps {
@@ -22,6 +22,8 @@ interface LiveQueueBoardProps {
 export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
   const { currentUser, joinQueue, leaveQueue } = useMonkeyStore();
   const [partnerInput, setPartnerInput] = useState('');
+  const [selectedFormat, setSelectedFormat] = useState<MatchFormat>('doubles');
+  const [needsPartner, setNeedsPartner] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
   const sessionQueues = queues.filter((q) => q.session_id === session.id);
@@ -32,24 +34,26 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
     const partners = partnerInput
       ? partnerInput.split(',').map((p) => p.trim()).filter(Boolean)
       : [];
-    joinQueue(session.id, partners);
+    joinQueue(session.id, partners, selectedFormat, needsPartner);
     setPartnerInput('');
     setIsJoining(false);
   };
 
   return (
-    <div className="rounded-3xl border border-[#EBEBE6] bg-white p-6 shadow-sm space-y-6">
+    <div className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-6 shadow-sm space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EBEBE6] pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E8E5DF] pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black text-[#171717]">Live Queue & Rotation</h2>
-            <span className="rounded-full bg-[#1F9D55]/10 px-2.5 py-0.5 text-xs font-bold text-[#1F9D55]">
+            <h2 className="text-lg sm:text-xl font-black text-[#1A241E]">
+              Live Queue &amp; Rotation
+            </h2>
+            <span className="rounded-full bg-[#2D724E]/10 px-2.5 py-0.5 text-xs font-bold text-[#2D724E]">
               {sessionQueues.length} in line
             </span>
           </div>
-          <p className="text-xs text-[#6B7280] mt-0.5">
-            Format: <strong className="text-[#171717]">{session.rotation_format}</strong>
+          <p className="text-xs text-[#65756B] mt-0.5">
+            Format: <strong className="text-[#1A241E]">{session.rotation_format}</strong> &bull; Supports Doubles &amp; Singles
           </p>
         </div>
 
@@ -57,10 +61,10 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
         <div>
           {myQueueEntry ? (
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#1F9D55] bg-[#E9F8EE] px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+              <span className="text-xs font-bold text-[#2D724E] bg-[#EBF4EE] px-3 py-2 rounded-xl flex items-center gap-1.5">
                 <CheckCircle className="w-4 h-4" />
                 <span>
-                  Position #{myQueueEntry.queue_number}{' '}
+                  #{myQueueEntry.queue_number}{' '}
                   {myQueueEntry.status === 'on_court'
                     ? '— Playing on Court'
                     : `(~${myQueueEntry.estimated_wait_minutes}m wait)`}
@@ -69,7 +73,7 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
               <button
                 type="button"
                 onClick={() => leaveQueue(myQueueEntry.id)}
-                className="p-2 rounded-xl text-[#EF4444] hover:bg-[#FEE2E2] transition-colors"
+                className="p-2 rounded-xl text-[#DC2626] hover:bg-[#FEE2E2] transition-colors min-h-[40px]"
                 title="Leave Queue"
               >
                 <LogOut className="w-4 h-4" />
@@ -79,7 +83,7 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
             <button
               type="button"
               onClick={() => setIsJoining(!isJoining)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all active:scale-95"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all active:scale-95 min-h-[44px]"
             >
               <UserPlus className="w-4 h-4" />
               <span>Hop into Queue</span>
@@ -88,120 +92,194 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
         </div>
       </div>
 
-      {/* Join Drawer / Inline form */}
+      {/* Join Inline Form with Doubles & Singles selector */}
       {isJoining && !myQueueEntry && (
         <form
           onSubmit={handleJoin}
-          className="rounded-2xl bg-[#FAFAF7] border border-[#EBEBE6] p-4 space-y-3 animate-in fade-in"
+          className="rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] p-4 space-y-3 animate-in fade-in"
         >
-          <div className="text-xs font-bold text-[#171717]">
-            Join Queue with Partners (Optional)
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-[#1A241E]">Select Queue Format</span>
+            <div className="flex gap-1 bg-white border border-[#E8E5DF] p-0.5 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setSelectedFormat('doubles')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  selectedFormat === 'doubles'
+                    ? 'bg-[#2D724E] text-white'
+                    : 'text-[#65756B]'
+                }`}
+              >
+                Doubles (2v2)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFormat('singles');
+                  setNeedsPartner(false);
+                  setPartnerInput('');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  selectedFormat === 'singles'
+                    ? 'bg-[#2D724E] text-white'
+                    : 'text-[#65756B]'
+                }`}
+              >
+                Singles (1v1)
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={partnerInput}
-              onChange={(e) => setPartnerInput(e.target.value)}
-              placeholder="Partner name(s), comma separated..."
-              className="flex-1 px-3 py-2 rounded-xl border border-[#EBEBE6] bg-white text-xs focus:ring-2 focus:ring-[#1F9D55] focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-[#1F9D55] text-white text-xs font-bold shadow-sm hover:bg-[#147A40]"
-            >
-              Confirm
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsJoining(false)}
-              className="px-3 py-2 rounded-xl text-xs text-[#6B7280] hover:bg-[#EBEBE6]"
-            >
-              Cancel
-            </button>
-          </div>
+
+          {selectedFormat === 'doubles' ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={partnerInput}
+                  onChange={(e) => {
+                    setPartnerInput(e.target.value);
+                    if (e.target.value) setNeedsPartner(false);
+                  }}
+                  placeholder="Partner's name (leave blank if looking for auto-pair)..."
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none min-h-[42px]"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-[#2D724E] text-white text-xs font-black shadow-sm hover:bg-[#1E4A32] min-h-[42px]"
+                >
+                  Join
+                </button>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-[#65756B] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={needsPartner}
+                  onChange={(e) => {
+                    setNeedsPartner(e.target.checked);
+                    if (e.target.checked) setPartnerInput('');
+                  }}
+                  className="rounded border-[#E8E5DF] text-[#2D724E] focus:ring-[#2D724E]"
+                />
+                <span>I don&apos;t have a partner yet &mdash; auto-pair me with the next solo player!</span>
+              </label>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <span className="flex-1 text-xs text-[#65756B] flex items-center bg-white border border-[#E8E5DF] px-3 py-2 rounded-xl">
+                Ready for 1v1 Singles challenge on next rotation
+              </span>
+              <button
+                type="submit"
+                className="px-4 py-2.5 rounded-xl bg-[#2D724E] text-white text-xs font-black shadow-sm hover:bg-[#1E4A32] min-h-[42px]"
+              >
+                Join Singles
+              </button>
+            </div>
+          )}
         </form>
       )}
 
       {/* Queue Entries List */}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {sessionQueues.length === 0 ? (
-          <div className="py-8 text-center text-xs text-[#6B7280]">
-            <p className="font-bold text-sm text-[#171717]">Queue is wide open!</p>
-            <p className="mt-1">Be the first to step up and call the next rally.</p>
+          <div className="py-8 text-center text-xs text-[#65756B]">
+            <p className="font-black text-sm text-[#1A241E]">Queue is wide open!</p>
+            <p className="mt-1">Be the first to step onto the court for the next match.</p>
           </div>
         ) : (
-          sessionQueues.map((entry, index) => {
+          sessionQueues.map((entry) => {
             const isMe = entry.user_id === currentUser.id;
             const isOnCourt = entry.status === 'on_court';
             const isWarmingUp = entry.status === 'warming_up';
+            const isDoubles = entry.match_format === 'doubles' || entry.group_size > 1;
 
             return (
               <div
                 key={entry.id}
-                className={`flex items-center justify-between rounded-2xl border p-4 transition-all ${
+                className={`flex items-center justify-between rounded-2xl border p-3 sm:p-4 transition-all ${
                   isMe
-                    ? 'border-[#1F9D55] bg-[#E9F8EE]/60 shadow-sm'
+                    ? 'border-[#2D724E] bg-[#EBF4EE]/70 shadow-sm'
                     : isOnCourt
-                    ? 'border-[#1F9D55]/30 bg-white'
-                    : 'border-[#EBEBE6] bg-white hover:border-[#D1D5DB]'
+                    ? 'border-[#2D724E]/30 bg-white'
+                    : 'border-[#E8E5DF] bg-white hover:border-[#D4CEBE]'
                 }`}
               >
-                {/* Left: Position & Avatar & Names */}
-                <div className="flex items-center gap-3">
+                {/* Position + Player/Doubles Info */}
+                <div className="flex items-center gap-2.5 sm:gap-3">
                   <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black ${
+                    className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl text-xs font-black shrink-0 ${
                       isOnCourt
-                        ? 'bg-[#1F9D55] text-white'
+                        ? 'bg-[#2D724E] text-white'
                         : isWarmingUp
-                        ? 'bg-[#FF9F43] text-white'
-                        : 'bg-[#FAFAF7] text-[#6B7280] border border-[#EBEBE6]'
+                        ? 'bg-[#C87D43] text-white'
+                        : 'bg-[#FAF8F5] text-[#65756B] border border-[#E8E5DF]'
                     }`}
                   >
                     #{entry.queue_number}
                   </div>
 
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-extrabold text-[#171717]">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs sm:text-sm font-black text-[#1A241E]">
                         {entry.user?.full_name || 'Player'}
                       </span>
+
+                      {/* Doubles / Singles Tag */}
+                      <span className="inline-flex items-center gap-1 rounded-md bg-[#FAF8F5] border border-[#E8E5DF] px-1.5 py-0.5 text-[9px] font-bold text-[#65756B]">
+                        {isDoubles ? (
+                          <>
+                            <Users className="w-2.5 h-2.5 text-[#2D724E]" />
+                            <span>Doubles</span>
+                          </>
+                        ) : (
+                          <>
+                            <User className="w-2.5 h-2.5 text-[#C87D43]" />
+                            <span>Singles</span>
+                          </>
+                        )}
+                      </span>
+
                       {isMe && (
-                        <span className="rounded-full bg-[#1F9D55] px-1.5 py-0.2 text-[10px] font-bold text-white">
+                        <span className="rounded-full bg-[#2D724E] px-1.5 py-0.2 text-[9px] font-black text-white">
                           YOU
                         </span>
                       )}
                     </div>
 
-                    {/* Partner names if any */}
-                    {entry.partner_names && entry.partner_names.length > 0 && (
-                      <p className="text-[11px] text-[#6B7280] flex items-center gap-1">
-                        <Users className="w-3 h-3 text-[#1F9D55]" />
-                        <span>with {entry.partner_names.join(', ')}</span>
+                    {/* Partner display */}
+                    {isDoubles && (
+                      <p className="text-[11px] text-[#65756B] flex items-center gap-1 mt-0.5">
+                        {entry.partner_names && entry.partner_names.length > 0 ? (
+                          <span>with {entry.partner_names.join(', ')}</span>
+                        ) : entry.needs_partner ? (
+                          <span className="text-[#C87D43] font-bold">Looking for partner</span>
+                        ) : null}
                       </p>
                     )}
                   </div>
                 </div>
 
                 {/* Right: Status badge & Wait time */}
-                <div className="text-right flex items-center gap-3">
+                <div className="text-right flex items-center gap-2 sm:gap-3 shrink-0">
                   <div>
                     {isOnCourt ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#E9F8EE] px-2.5 py-0.5 text-xs font-bold text-[#147A40]">
-                        <Flame className="w-3 h-3 text-[#FF9F43]" />
-                        {entry.court_name || 'On Court'}
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#EBF4EE] px-2.5 py-0.5 text-[11px] font-black text-[#1E4A32]">
+                        <Flame className="w-3 h-3 text-[#C87D43]" />
+                        <span>{entry.court_name || 'On Court'}</span>
                       </span>
                     ) : isWarmingUp ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#FFF5EA] px-2.5 py-0.5 text-xs font-bold text-[#E68529]">
-                        🔥 Next Up
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#FBF0E6] px-2.5 py-0.5 text-[11px] font-black text-[#A35C2B]">
+                        Next Up
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#FAFAF7] border border-[#EBEBE6] px-2.5 py-0.5 text-xs font-semibold text-[#6B7280]">
-                        <Clock className="w-3 h-3 text-[#1F9D55]" />
-                        ~{entry.estimated_wait_minutes} mins
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[11px] font-bold text-[#65756B]">
+                        <Clock className="w-3 h-3 text-[#2D724E]" />
+                        ~{entry.estimated_wait_minutes}m
                       </span>
                     )}
-                    <span className="block text-[10px] text-[#9CA3AF] mt-0.5">
-                      Joined {formatTimeAgo(entry.joined_at)}
+                    <span className="block text-[9px] text-[#8C877D] mt-0.5">
+                      {formatTimeAgo(entry.joined_at)}
                     </span>
                   </div>
 
@@ -209,7 +287,7 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
                     <button
                       type="button"
                       onClick={() => leaveQueue(entry.id)}
-                      className="text-xs text-[#EF4444] hover:underline font-semibold"
+                      className="text-xs text-[#DC2626] hover:underline font-bold min-h-[36px] flex items-center"
                     >
                       Leave
                     </button>

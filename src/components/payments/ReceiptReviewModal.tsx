@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import { Payment } from '@/types';
 import { useMonkeyStore } from '@/lib/store';
-import { formatCurrency, formatTimeAgo } from '@/lib/utils';
-import { X, CheckCircle2, XCircle, ShieldCheck, AlertCircle } from 'lucide-react';
+import { formatCurrency, formatTimeAgo, getPaymentMethodName } from '@/lib/utils';
+import { X, CheckCircle2, XCircle, ShieldCheck, Banknote, CreditCard, Building2 } from 'lucide-react';
 
 interface ReceiptReviewModalProps {
   isOpen: boolean;
@@ -19,6 +19,8 @@ export function ReceiptReviewModal({ isOpen, onClose, payment }: ReceiptReviewMo
 
   if (!isOpen) return null;
 
+  const isCash = payment.payment_category === 'cash' || payment.status === 'cash_at_venue';
+
   const handleApprove = () => {
     verifyPayment(payment.id, 'approved');
     onClose();
@@ -29,106 +31,126 @@ export function ReceiptReviewModal({ isOpen, onClose, payment }: ReceiptReviewMo
       setShowRejectInput(true);
       return;
     }
-    verifyPayment(payment.id, 'rejected', rejectReason || 'Invalid GCash reference');
+    verifyPayment(payment.id, 'rejected', rejectReason || 'Payment could not be verified');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="relative w-full max-w-lg rounded-3xl bg-white border border-[#EBEBE6] shadow-2xl overflow-hidden my-8 space-y-5 p-6">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
+      <div className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl overflow-hidden my-0 sm:my-8 space-y-4 p-5 sm:p-6 animate-in slide-in-from-bottom sm:zoom-in-95">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#EBEBE6] pb-4">
+        <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#1F9D55] flex items-center gap-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#2D724E] flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5" />
               Organizer Live Verification
             </span>
-            <h3 className="text-lg font-black text-[#171717]">Review GCash Receipt</h3>
+            <h3 className="text-base sm:text-lg font-black text-[#1A241E]">
+              {isCash ? 'Cash Payment Verification' : 'Review Payment Proof'}
+            </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1.5 text-[#6B7280] hover:bg-[#FAFAF7]"
+            className="rounded-full p-1.5 text-[#65756B] hover:bg-[#FAF8F5]"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Payment Summary */}
-        <div className="rounded-2xl bg-[#FAFAF7] border border-[#EBEBE6] p-4 flex items-center justify-between">
+        <div className="rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] p-3.5 flex items-center justify-between">
           <div>
-            <span className="text-xs text-[#6B7280]">Player Name</span>
-            <div className="text-sm font-black text-[#171717]">{payment.user_name}</div>
-            <span className="text-[11px] text-[#6B7280]">
-              Ref: <strong className="font-mono text-[#171717]">{payment.reference_code}</strong>
-            </span>
+            <span className="text-[11px] text-[#65756B]">Player / Group</span>
+            <div className="text-sm font-black text-[#1A241E]">{payment.user_name}</div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white border border-[#E8E5DF] text-[#1E4A32]">
+                {getPaymentMethodName(payment.payment_method)}
+              </span>
+              <span className="text-[11px] text-[#65756B] font-mono">
+                {payment.reference_code}
+              </span>
+            </div>
           </div>
 
           <div className="text-right">
-            <span className="text-xs text-[#6B7280]">Amount Paid</span>
-            <div className="text-xl font-black text-[#1F9D55]">
+            <span className="text-[11px] text-[#65756B]">Amount Due</span>
+            <div className="text-lg sm:text-xl font-black text-[#2D724E]">
               {formatCurrency(payment.amount_cents)}
             </div>
-            <span className="text-[10px] text-[#6B7280] block">
+            <span className="text-[10px] text-[#65756B] block">
               {formatTimeAgo(payment.created_at)}
             </span>
           </div>
         </div>
 
-        {/* Receipt Image Preview */}
-        <div>
-          <span className="text-xs font-bold text-[#171717] block mb-2">
-            Uploaded Proof of Payment
-          </span>
-          <div className="relative rounded-2xl overflow-hidden border border-[#EBEBE6] bg-black/5 max-h-72 flex items-center justify-center">
-            <img
-              src={payment.receipt_image_url}
-              alt="Uploaded GCash Receipt"
-              className="max-h-72 w-auto object-contain"
-            />
+        {isCash ? (
+          <div className="rounded-2xl border border-[#2D724E]/20 bg-[#EBF4EE] p-4 text-center space-y-1">
+            <Banknote className="mx-auto w-6 h-6 text-[#2D724E]" />
+            <h4 className="text-xs font-black text-[#1E4A32]">Cash at Venue Reception</h4>
+            <p className="text-[11px] text-[#65756B]">
+              Voucher Code: <strong className="font-mono text-[#C87D43]">{payment.reference_code}</strong>
+            </p>
+            <p className="text-[10px] text-[#65756B]">
+              Verify that the player handed <strong>{formatCurrency(payment.amount_cents)}</strong> at the reception counter.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div>
+            <span className="text-xs font-bold text-[#1A241E] block mb-1.5">
+              Proof of Payment Screenshot
+            </span>
+            <div className="relative rounded-2xl overflow-hidden border border-[#E8E5DF] bg-black/5 max-h-64 flex items-center justify-center">
+              {payment.receipt_image_url ? (
+                <img
+                  src={payment.receipt_image_url}
+                  alt="Payment Receipt"
+                  className="max-h-64 w-auto object-contain"
+                />
+              ) : (
+                <div className="py-8 text-xs text-[#65756B]">No image screenshot attached</div>
+              )}
+            </div>
+          </div>
+        )}
 
         {payment.notes && (
-          <p className="text-xs text-[#6B7280] bg-[#FAFAF7] p-3 rounded-xl border border-[#EBEBE6]">
-            <strong>Note from player:</strong> {payment.notes}
+          <p className="text-xs text-[#65756B] bg-[#FAF8F5] p-2.5 rounded-xl border border-[#E8E5DF]">
+            <strong className="text-[#1A241E]">Booking Notes:</strong> {payment.notes}
           </p>
         )}
 
-        {/* Reject reason input */}
         {showRejectInput && (
-          <div className="space-y-1.5 animate-in fade-in">
-            <label className="text-xs font-bold text-[#EF4444]">
-              Reason for Rejection
-            </label>
+          <div className="space-y-1 animate-in fade-in">
+            <label className="text-xs font-bold text-[#DC2626]">Reason for Rejection</label>
             <input
               type="text"
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="e.g. Reference not found or amount incorrect"
-              className="w-full px-3 py-2 rounded-xl border border-[#EF4444] text-xs focus:outline-none"
+              className="w-full px-3 py-2 rounded-xl border border-[#DC2626] text-xs focus:outline-none min-h-[38px]"
             />
           </div>
         )}
 
-        {/* Actions: Approve / Reject */}
-        <div className="flex gap-3 pt-2">
+        {/* Action Buttons */}
+        <div className="flex gap-2 pt-1">
           <button
             type="button"
             onClick={handleReject}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-[#EF4444] text-[#EF4444] hover:bg-[#FEE2E2] text-xs font-bold transition-all"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-[#DC2626] text-[#DC2626] hover:bg-[#FEE2E2] text-xs font-bold transition-all min-h-[44px]"
           >
             <XCircle className="w-4 h-4" />
-            <span>{showRejectInput ? 'Confirm Rejection' : 'Reject Receipt'}</span>
+            <span>{showRejectInput ? 'Confirm Rejection' : isCash ? 'Cancel Booking' : 'Reject Receipt'}</span>
           </button>
 
           <button
             type="button"
             onClick={handleApprove}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-md transition-all active:scale-[0.98]"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-md transition-all active:scale-[0.98] min-h-[44px]"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>Approve & Verify</span>
+            <span>{isCash ? 'Confirm Cash Collected' : 'Approve & Verify'}</span>
           </button>
         </div>
       </div>

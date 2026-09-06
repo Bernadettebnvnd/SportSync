@@ -3,8 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { Venue } from '@/types';
-import { getSportEmoji, getSportDisplayName } from '@/lib/utils';
-import { Star, MapPin, Clock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { getSportDisplayName } from '@/lib/utils';
+import { Star, MapPin, Clock, ArrowRight, CreditCard, Banknote, Users } from 'lucide-react';
 
 interface VenueCardProps {
   venue: Venue;
@@ -13,9 +13,9 @@ interface VenueCardProps {
 
 export function VenueCard({ venue, onLocateOnMap }: VenueCardProps) {
   return (
-    <div className="group flex flex-col rounded-2xl border border-[#EBEBE6] bg-white overflow-hidden shadow-sm hover:shadow-md transition-all">
+    <div className="group flex flex-col rounded-3xl border border-[#E8E5DF] bg-white overflow-hidden shadow-sm hover:shadow-md transition-all">
       {/* Image Banner */}
-      <div className="relative h-48 w-full overflow-hidden bg-[#E5E7EB]">
+      <div className="relative h-44 sm:h-48 w-full overflow-hidden bg-[#E8E5DF]">
         {venue.images && venue.images[0] ? (
           <img
             src={venue.images[0]}
@@ -23,80 +23,76 @@ export function VenueCard({ venue, onLocateOnMap }: VenueCardProps) {
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[#1F9D55]/10 text-3xl">
-            🏸
+          <div className="flex h-full w-full items-center justify-center bg-[#2D724E]/10 font-black text-sm text-[#2D724E]">
+            {venue.name}
           </div>
         )}
 
         {/* Rating Badge */}
-        <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-[#171717] shadow-sm backdrop-blur-sm">
-          <Star className="w-3.5 h-3.5 fill-[#FF9F43] text-[#FF9F43]" />
+        <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-xs font-black text-[#1A241E] shadow-sm backdrop-blur-sm">
+          <Star className="w-3.5 h-3.5 fill-[#E9C46A] text-[#E9C46A]" />
           <span>{venue.rating}</span>
-          <span className="text-[#6B7280] font-normal">({venue.review_count})</span>
+          <span className="text-[#65756B] font-normal">({venue.review_count})</span>
         </div>
 
-        {/* Verified GCash badge */}
-        <div className="absolute top-3 left-3 flex items-center gap-1 rounded-full bg-[#1F9D55] px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
-          <ShieldCheck className="w-3 h-3" />
-          <span>GCash Verified</span>
+        {/* Payment Channels Supported Badge */}
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-[#1E4A32] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
+          <CreditCard className="w-3 h-3 text-[#E9C46A]" />
+          <span>E-Wallets &bull; Banks &bull; Cash</span>
         </div>
 
-        {/* Sport Pills overlay */}
+        {/* Sport Tags overlay (NO EMOJIS) */}
         <div className="absolute bottom-3 left-3 flex items-center gap-1.5 flex-wrap">
           {venue.featured_sports.map((sport) => (
             <span
               key={sport}
-              className="inline-flex items-center gap-1 rounded-lg bg-black/60 backdrop-blur-md px-2 py-0.5 text-[11px] font-semibold text-white"
+              className="inline-flex items-center rounded-lg bg-black/65 backdrop-blur-md px-2.5 py-0.5 text-[11px] font-bold text-white tracking-tight"
             >
-              <span>{getSportEmoji(sport)}</span>
-              <span>{getSportDisplayName(sport)}</span>
+              {getSportDisplayName(sport)}
             </span>
           ))}
+          <span className="inline-flex items-center gap-1 rounded-lg bg-[#C87D43]/90 backdrop-blur-md px-2 py-0.5 text-[10px] font-black text-white">
+            <Users className="w-3 h-3" />
+            Doubles &amp; Singles
+          </span>
         </div>
       </div>
 
       {/* Card Content */}
-      <div className="flex flex-1 flex-col p-5">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-extrabold text-lg text-[#171717] group-hover:text-[#1F9D55] transition-colors leading-snug">
-            {venue.name}
-          </h3>
-        </div>
+      <div className="flex flex-1 flex-col p-4 sm:p-5">
+        <h3 className="font-black text-base sm:text-lg text-[#1A241E] group-hover:text-[#2D724E] transition-colors leading-snug">
+          {venue.name}
+        </h3>
 
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7280]">
-          <MapPin className="w-3.5 h-3.5 text-[#1F9D55] shrink-0" />
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-[#65756B]">
+          <MapPin className="w-3.5 h-3.5 text-[#2D724E] shrink-0" />
           <span className="truncate">{venue.address}</span>
         </p>
 
-        <p className="mt-3 text-xs text-[#6B7280] line-clamp-2 leading-relaxed">
+        <p className="mt-2.5 text-xs text-[#65756B] line-clamp-2 leading-relaxed">
           {venue.description}
         </p>
 
-        {/* Operating hours & Amenities */}
-        <div className="mt-4 pt-3 border-t border-[#EBEBE6] flex items-center justify-between text-xs text-[#6B7280]">
-          <div className="flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-[#1F9D55]" />
+        {/* Payment and Hours */}
+        <div className="mt-3.5 pt-3 border-t border-[#E8E5DF] flex items-center justify-between text-xs text-[#65756B]">
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <Clock className="w-3.5 h-3.5 text-[#2D724E]" />
             <span>{venue.operating_hours.mon_sun || 'Open daily'}</span>
           </div>
 
-          {onLocateOnMap && (
-            <button
-              type="button"
-              onClick={onLocateOnMap}
-              className="text-[#1F9D55] font-semibold hover:underline"
-            >
-              Show on Map
-            </button>
-          )}
+          <div className="flex items-center gap-1 text-[11px] font-bold text-[#2D724E]">
+            <Banknote className="w-3.5 h-3.5 text-[#C87D43]" />
+            <span>Cash Accepted</span>
+          </div>
         </div>
 
-        {/* Bottom CTA */}
-        <div className="mt-4 pt-3 flex items-center gap-2">
+        {/* CTA */}
+        <div className="mt-3.5 pt-1">
           <Link
             href={`/venues/${venue.id}`}
-            className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#1F9D55] hover:bg-[#147A40] text-white text-xs font-bold shadow-sm transition-all active:scale-[0.98]"
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-extrabold shadow-sm transition-all active:scale-[0.98]"
           >
-            <span>Book Court & Join Open Play</span>
+            <span>Book Court &bull; Join Open Play</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
