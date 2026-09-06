@@ -116,10 +116,10 @@ CREATE TABLE IF NOT EXISTS public.venues (
 CREATE TABLE IF NOT EXISTS public.courts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venue_id UUID NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
-    name TEXT NOT NULL, -- e.g. "Court 1 (Yonex BWF Approved)"
+    name TEXT NOT NULL,
     sport sport_type NOT NULL DEFAULT 'badminton',
     floor_type TEXT DEFAULT 'BWF Taraflex Rubber Mat',
-    hourly_rate_cents INT NOT NULL DEFAULT 45000, -- PHP 450.00
+    hourly_rate_cents INT NOT NULL DEFAULT 45000,
     is_indoor BOOLEAN DEFAULT TRUE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -139,11 +139,11 @@ CREATE TABLE IF NOT EXISTS public.sessions (
     court_ids UUID[] DEFAULT ARRAY[]::UUID[],
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
-    fee_cents INT NOT NULL DEFAULT 25000, -- PHP 250.00 per person
+    fee_cents INT NOT NULL DEFAULT 25000,
     max_players INT NOT NULL DEFAULT 16,
     current_players_count INT NOT NULL DEFAULT 0,
     rotation_format TEXT DEFAULT 'King of the Court (15 pts sudden death)',
-    status TEXT NOT NULL DEFAULT 'active', -- 'upcoming', 'active', 'completed', 'cancelled'
+    status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS public.matches (
     score_a INT NOT NULL DEFAULT 0,
     score_b INT NOT NULL DEFAULT 0,
     target_points INT NOT NULL DEFAULT 21,
-    winner_team TEXT, -- 'team_a', 'team_b', 'draw'
+    winner_team TEXT,
     status match_status NOT NULL DEFAULT 'in_progress',
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMPTZ,
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
     session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
     court_id UUID REFERENCES public.courts(id) ON DELETE SET NULL,
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-    amount_cents INT NOT NULL, -- e.g. 25000 for PHP 250.00
+    amount_cents INT NOT NULL,
     payment_method payment_method NOT NULL DEFAULT 'gcash',
     reference_code TEXT NOT NULL,
     receipt_image_url TEXT NOT NULL,
@@ -227,66 +227,97 @@ ALTER TABLE public.queues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 
--- 12. RLS Policies
--- Users: public read, users can update own profile
+-- 12. RLS Policies (Idempotent: Drop if exists then create)
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.users;
 CREATE POLICY "Public profiles are viewable by everyone" ON public.users
     FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
 CREATE POLICY "Users can update own profile" ON public.users
     FOR UPDATE USING (auth.uid() = auth_id);
 
--- Venues: public read, owners/organizers can update
+DROP POLICY IF EXISTS "Venues are viewable by everyone" ON public.venues;
 CREATE POLICY "Venues are viewable by everyone" ON public.venues
     FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Venue owners can manage venues" ON public.venues;
 CREATE POLICY "Venue owners can manage venues" ON public.venues
     FOR ALL USING (auth.uid() IN (SELECT auth_id FROM public.users WHERE id = owner_id));
 
--- Courts: public read
+DROP POLICY IF EXISTS "Courts are viewable by everyone" ON public.courts;
 CREATE POLICY "Courts are viewable by everyone" ON public.courts
     FOR SELECT USING (true);
 
--- Sessions: public read, organizers can manage
+DROP POLICY IF EXISTS "Sessions are viewable by everyone" ON public.sessions;
 CREATE POLICY "Sessions are viewable by everyone" ON public.sessions
     FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Organizers can create and manage sessions" ON public.sessions;
 CREATE POLICY "Organizers can create and manage sessions" ON public.sessions
     FOR ALL USING (auth.uid() IN (SELECT auth_id FROM public.users WHERE role IN ('organizer', 'venue_owner', 'admin')));
 
--- Queues: public read, players can join/leave their queue entry, organizers can manage
+DROP POLICY IF EXISTS "Queues viewable by everyone" ON public.queues;
 CREATE POLICY "Queues viewable by everyone" ON public.queues
     FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Players can insert themselves into queue" ON public.queues;
 CREATE POLICY "Players can insert themselves into queue" ON public.queues
     FOR INSERT WITH CHECK (auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id));
+
+DROP POLICY IF EXISTS "Players or organizers can update queues" ON public.queues;
 CREATE POLICY "Players or organizers can update queues" ON public.queues
     FOR UPDATE USING (
         auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id) OR
         auth.uid() IN (SELECT auth_id FROM public.users WHERE role IN ('organizer', 'venue_owner', 'admin'))
     );
 
--- Matches: public read, players in match or organizers can update score
+DROP POLICY IF EXISTS "Matches viewable by everyone" ON public.matches;
 CREATE POLICY "Matches viewable by everyone" ON public.matches
     FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Players and organizers can score matches" ON public.matches;
 CREATE POLICY "Players and organizers can score matches" ON public.matches
     FOR ALL USING (true);
 
--- Payments: users see own payments, organizers & venue owners see session payments
+DROP POLICY IF EXISTS "Users see own payments" ON public.payments;
 CREATE POLICY "Users see own payments" ON public.payments
     FOR SELECT USING (
         auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id) OR
         auth.uid() IN (SELECT auth_id FROM public.users WHERE role IN ('organizer', 'venue_owner', 'admin'))
     );
+
+DROP POLICY IF EXISTS "Users can submit payments" ON public.payments;
 CREATE POLICY "Users can submit payments" ON public.payments
     FOR INSERT WITH CHECK (auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id));
+
+DROP POLICY IF EXISTS "Organizers can verify payments" ON public.payments;
 CREATE POLICY "Organizers can verify payments" ON public.payments
     FOR UPDATE USING (
         auth.uid() IN (SELECT auth_id FROM public.users WHERE role IN ('organizer', 'venue_owner', 'admin'))
     );
 
--- 13. Enable Supabase Realtime for Live Queues and Matches
-ALTER PUBLICATION supabase_realtime ADD TABLE public.queues;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.matches;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.sessions;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.payments;
+-- 13. Enable Supabase Realtime for Live Queues and Matches (Safe DO block)
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.queues;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
--- 14. Triggers: Auto-update updated_at timestamp
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.matches;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.sessions;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.payments;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+-- 14. Triggers: Auto-update updated_at timestamp (Safe idempotent triggers)
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -295,18 +326,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_users_updated_at ON public.users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON public.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_venues_updated_at ON public.venues;
 CREATE TRIGGER update_venues_updated_at BEFORE UPDATE ON public.venues
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_courts_updated_at ON public.courts;
 CREATE TRIGGER update_courts_updated_at BEFORE UPDATE ON public.courts
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_sessions_updated_at ON public.sessions;
 CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON public.sessions
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_queues_updated_at ON public.queues;
 CREATE TRIGGER update_queues_updated_at BEFORE UPDATE ON public.queues
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_matches_updated_at ON public.matches;
 CREATE TRIGGER update_matches_updated_at BEFORE UPDATE ON public.matches
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+DROP TRIGGER IF EXISTS update_payments_updated_at ON public.payments;
 CREATE TRIGGER update_payments_updated_at BEFORE UPDATE ON public.payments
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
