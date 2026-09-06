@@ -250,7 +250,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
 
                   <div className="flex items-center gap-2">
                     <Link
-                      href={`/sessions/${sess.id}`}
+                      href="/queue"
                       className="flex-1 sm:flex-none px-3 py-2.5 rounded-xl bg-[#FAF8F5] hover:bg-[#E8E5DF] border border-[#E8E5DF] text-xs font-bold text-[#1A241E] transition-all text-center min-h-[40px] flex items-center justify-center"
                     >
                       Live Board

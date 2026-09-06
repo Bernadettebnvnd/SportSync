@@ -15,7 +15,7 @@ export function BottomDock() {
   const items = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/explore', label: 'Explore', icon: Compass },
-    { href: '/sessions/sess_friday_smash', label: 'Live Queue', icon: Zap },
+    { href: '/queue', label: 'Queue', icon: Zap },
     {
       href: '/organizer',
       label: 'Live Ops',

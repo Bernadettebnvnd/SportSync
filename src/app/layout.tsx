@@ -23,9 +23,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Matchi | Court Booking & Open Play',
-  description:
-    'Find and book courts across the Philippines. Join live queue rotations and pay flexibly via E-Wallets, Banks, or Cash.',
+  title: 'Matchi',
+  description: 'Court booking and live open play queues.',
   keywords: [
     'matchi',
     'court booking',

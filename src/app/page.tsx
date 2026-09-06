@@ -54,7 +54,7 @@ export default function HomePage() {
                 <span>Explore Courts</span>
               </Link>
               <Link
-                href={`/sessions/${activeSession.id}`}
+                href="/queue"
                 className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 min-h-[42px]"
               >
                 <Zap className="w-4 h-4 fill-current text-[#E9C46A]" />
@@ -176,7 +176,7 @@ export default function HomePage() {
               </div>
 
               <Link
-                href={`/sessions/${sess.id}`}
+                href="/queue"
                 className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm transition-all text-center min-h-[42px]"
               >
                 <span>Check Live Queue Board</span>

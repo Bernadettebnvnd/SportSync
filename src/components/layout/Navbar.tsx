@@ -54,7 +54,7 @@ export function Navbar() {
   const navLinks = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/explore', label: 'Courts', icon: Compass },
-    { href: '/sessions/sess_friday_smash', label: 'Live Queue', icon: Zap },
+    { href: '/queue', label: 'Queue', icon: Zap },
     { href: '/profile', label: 'Profile', icon: UserIcon },
   ];
 
