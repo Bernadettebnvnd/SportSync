@@ -17,25 +17,23 @@ const geistMono = Geist_Mono({
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 5,
+  maximumScale: 1,
+  viewportFit: 'cover',
   themeColor: '#1E4A32',
 };
 
 export const metadata: Metadata = {
-  title: 'Matchi | Multi-Sport Discovery, Court Booking & Live Open Play',
+  title: 'Matchi | Court Booking & Open Play',
   description:
-    'Matchi is the premier high-energy sports platform. Discover badminton doubles & singles, pickleball, and padel courts, join live queue rotations, and pay flexibly via E-Wallets, Banks, or Cash.',
+    'Find and book courts across the Philippines. Join live queue rotations and pay flexibly via E-Wallets, Banks, or Cash.',
   keywords: [
     'matchi',
-    'badminton doubles',
-    'badminton singles',
-    'pickleball',
     'court booking',
-    'open play queue',
-    'manila sports',
-    'padel club',
-    'gcash booking',
-    'cash at venue',
+    'badminton',
+    'pickleball',
+    'padel',
+    'open play',
+    'philippines sports',
   ],
 };
 

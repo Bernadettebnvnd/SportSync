@@ -39,7 +39,7 @@ export function BottomDock() {
               key={item.href}
               href={item.href}
               className={cn(
-                'relative flex flex-col items-center justify-center min-w-[56px] min-h-[48px] py-1 text-[11px] font-bold transition-all active:scale-95',
+                'relative flex-1 min-w-0 flex flex-col items-center justify-center min-h-[46px] py-1 text-[10px] sm:text-[11px] font-bold transition-all active:scale-95',
                 isActive
                   ? 'text-[#2D724E]'
                   : 'text-[#65756B] hover:text-[#1A241E]'

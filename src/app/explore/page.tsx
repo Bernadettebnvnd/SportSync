@@ -44,29 +44,18 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6">
+    <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4">
       {/* Header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl sm:text-3xl font-black text-[#1A241E] tracking-tight">
-            Explore Courts &amp; Venues
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-[#1A241E] tracking-tight">
+            Courts &amp; Venues
           </h1>
-          <span className="rounded-full bg-[#2D724E]/10 px-2.5 py-0.5 text-xs font-bold text-[#2D724E]">
-            {filteredVenues.length} hubs active
-          </span>
+          <p className="text-xs text-[#65756B]">
+            {filteredVenues.length} sports hubs across the Philippines
+          </p>
         </div>
-        <p className="text-xs sm:text-sm text-[#65756B] mt-1">
-          Discover badminton doubles &amp; singles centers, pickleball clubs, and padel arenas across Metro Manila.
-        </p>
       </div>
-
-      {/* Mascot banter banner */}
-      <MascotBanner
-        mood="hype"
-        title="Matchi Scout"
-        message="Looking for doubles rotations or private court slots? We’ve verified courts with Taraflex flooring and full payment flexibility!"
-        equippedGear={currentUser.equipped_gear}
-      />
 
       {/* Filter and View Controller */}
       <div className="rounded-3xl border border-[#E8E5DF] bg-white p-3.5 sm:p-5 shadow-sm">

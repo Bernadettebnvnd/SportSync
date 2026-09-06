@@ -71,7 +71,7 @@ export function FilterBar({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search courts in BGC, Pasig, Makati, QC..."
+            placeholder="Search by court name, city, or region (Cebu, Manila, Davao...)"
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs sm:text-sm text-[#1A241E] placeholder:text-[#65756B] focus:outline-none focus:ring-2 focus:ring-[#2D724E] transition-all shadow-sm"
           />
         </div>

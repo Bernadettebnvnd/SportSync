@@ -27,81 +27,53 @@ export default function HomePage() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6 sm:space-y-8">
+    <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6">
       {/* Top Hero Banner: Matchi Tarzan Aesthetic */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E4A32] via-[#2D724E] to-[#153423] p-5 sm:p-8 text-white shadow-lg">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E4A32] via-[#2D724E] to-[#153423] p-4 sm:p-7 text-white shadow-lg">
         {/* Ambient jungle canopy gradients */}
         <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
         <div className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-[#C87D43]/25 blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-3 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-md px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white">
-              <Sparkles className="w-3.5 h-3.5 text-[#E9C46A]" />
-              Matchi Jungle Energy: 100%
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="space-y-2.5 max-w-xl">
+            <h1 className="text-xl sm:text-3xl font-black tracking-tight leading-tight">
               Ready for the court, <span className="text-[#E9C46A]">{currentUser.nickname}</span>?
             </h1>
 
-            <p className="text-xs sm:text-base text-emerald-100 leading-relaxed">
-              Find badminton doubles &amp; singles courts in seconds. Hop into live open-play queues,
-              pay your way via E-Wallets, Banks, or Cash, and climb the ladder!
+            <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed">
+              Book courts and join open play queues across the Philippines.
             </p>
 
             {/* CTAs with phone touch sizing */}
-            <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
               <Link
                 href="/explore"
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white text-[#1E4A32] font-black text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition-all active:scale-95 min-h-[46px]"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#1E4A32] font-black text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition-all active:scale-95 min-h-[42px]"
               >
                 <Compass className="w-4 h-4" />
-                <span>Explore Nearby Courts</span>
+                <span>Explore Courts</span>
               </Link>
               <Link
                 href={`/sessions/${activeSession.id}`}
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 min-h-[46px]"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 min-h-[42px]"
               >
                 <Zap className="w-4 h-4 fill-current text-[#E9C46A]" />
-                <span>Join Doubles Open Play</span>
+                <span>Join Open Play</span>
               </Link>
             </div>
           </div>
 
           {/* Big Mascot Graphic in Hero */}
-          <div className="flex flex-col items-center justify-center shrink-0">
-            <div className="relative p-1">
-              <MonkeyMascot
-                mood="hype"
-                size="xl"
-                equippedGear={currentUser.equipped_gear}
-              />
-            </div>
-            <div className="mt-1 text-center text-xs font-bold text-white/90">
-              Miki &bull; Matchi Court Mascot
+          <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
+            <MonkeyMascot
+              mood="hype"
+              size="lg"
+              equippedGear={currentUser.equipped_gear}
+            />
+            <div className="md:hidden text-xs font-bold text-white/90">
+              Miki &bull; Matchi Mascot
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Payment & Format Perks Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
-          <Users className="w-4 h-4 text-[#2D724E] shrink-0" />
-          <span className="font-bold text-[#1A241E]">Doubles (2v2) &amp; Singles</span>
-        </div>
-        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
-          <CreditCard className="w-4 h-4 text-[#C87D43] shrink-0" />
-          <span className="font-bold text-[#1A241E]">GCash, Maya, GrabPay</span>
-        </div>
-        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
-          <Banknote className="w-4 h-4 text-[#2D724E] shrink-0" />
-          <span className="font-bold text-[#1A241E]">BDO, BPI &amp; UnionBank</span>
-        </div>
-        <div className="flex items-center gap-2 p-3 rounded-2xl bg-white border border-[#E8E5DF] text-xs">
-          <Sparkles className="w-4 h-4 text-[#E9C46A] shrink-0" />
-          <span className="font-bold text-[#1A241E]">Pay Cash at Venue</span>
         </div>
       </div>
 
@@ -220,22 +192,22 @@ export default function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
-              Metro Manila
+              Philippines
             </span>
             <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
-              Nearby Sports Centers
+              Featured Sports Centers
             </h2>
           </div>
           <Link
             href="/explore"
             className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
           >
-            Explore on Map <ArrowRight className="w-3.5 h-3.5" />
+            View all ({venues.length}) <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-          {venues.slice(0, 3).map((venue) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+          {venues.slice(0, 6).map((venue) => (
             <VenueCard key={venue.id} venue={venue} />
           ))}
         </div>

@@ -31,7 +31,7 @@ interface AppState {
   payments: Payment[];
 }
 
-const STORAGE_KEY = 'matchi_app_state_v2';
+const STORAGE_KEY = 'matchi_app_state_v3';
 
 type Listener = () => void;
 const listeners = new Set<Listener>();

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { Venue } from '@/types';
-import { getSportDisplayName } from '@/lib/utils';
+import { getSportDisplayName, formatCurrency } from '@/lib/utils';
 import {
   MapPin,
   ExternalLink,
@@ -12,6 +13,10 @@ import {
   Compass,
   X,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Star,
+  ArrowRight,
 } from 'lucide-react';
 import type * as LeafletType from 'leaflet';
 
@@ -31,14 +36,25 @@ interface NominatimResult {
   lat: string;
   lon: string;
   display_name: string;
-  type: string;
 }
 
-// OpenStreetMap Philippines reference view from user request
 const OSM_PH_CENTER: [number, number] = [13.02, 121.77];
 const OSM_PH_ZOOM = 6;
-const METRO_MANILA_CENTER: [number, number] = [14.5828, 121.0664];
-const METRO_MANILA_ZOOM = 12;
+
+// Helper to calculate approximate distance in km
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export function VenueMap({
   venues,
@@ -47,7 +63,7 @@ export function VenueMap({
   singleVenueMode = false,
   initialCenter,
   initialZoom,
-  heightClass = 'h-[400px] sm:h-[480px]',
+  heightClass = 'h-[440px] sm:h-[520px]',
   showSearch = true,
 }: VenueMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -55,15 +71,22 @@ export function VenueMap({
   const markersRef = useRef<{ [key: string]: LeafletType.Marker }>({});
   const searchMarkerRef = useRef<LeafletType.Marker | null>(null);
 
+  // Active highlighted venue for map results card
+  const [activeVenueIndex, setActiveVenueIndex] = useState(0);
+
   // Search state using OpenStreetMap Nominatim API
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'hubs' | 'philippines'>('hubs');
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Function to search OpenStreetMap Nominatim
+  // Active venue resolved
+  const currentVenue =
+    venues.find((v) => v.id === selectedVenueId) || venues[activeVenueIndex] || venues[0];
+
+  // Search OpenStreetMap Nominatim
   const searchNominatim = useCallback(async (query: string) => {
     if (!query || query.trim().length < 2) {
       setSearchResults([]);
@@ -101,6 +124,7 @@ export function VenueMap({
     if (!val.trim()) {
       setSearchResults([]);
       setIsSearchOpen(false);
+      setSearchNotice(null);
       return;
     }
     searchDebounceRef.current = setTimeout(() => {
@@ -117,18 +141,14 @@ export function VenueMap({
         if (!mapInstanceRef.current) return;
         const map = mapInstanceRef.current;
 
-        // Remove previous search marker
-        if (searchMarkerRef.current) {
-          searchMarkerRef.current.remove();
-        }
+        if (searchMarkerRef.current) searchMarkerRef.current.remove();
 
-        // Add pin for search result
         const searchIcon = L.divIcon({
           html: `
             <div style="
               background: #C87D43;
               color: white;
-              padding: 5px 10px;
+              padding: 4px 8px;
               border-radius: 9999px;
               font-size: 11px;
               font-weight: 800;
@@ -137,60 +157,71 @@ export function VenueMap({
               gap: 4px;
               box-shadow: 0 4px 14px rgba(200, 125, 67, 0.5);
               border: 2px solid #FAF8F5;
-              cursor: pointer;
             ">
               <span>📍</span>
-              <span style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${result.display_name.split(',')[0]}</span>
+              <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${result.display_name.split(',')[0]}</span>
             </div>
           `,
           className: 'custom-search-pin',
-          iconSize: [120, 30],
-          iconAnchor: [60, 15],
+          iconSize: [120, 28],
+          iconAnchor: [60, 14],
         });
 
         const newMarker = L.marker([lat, lon], { icon: searchIcon }).addTo(map);
-        newMarker
-          .bindPopup(
-            `
-            <div style="font-family: inherit; padding: 4px;">
-              <strong style="font-size: 12px; color: #1A241E;">${result.display_name.split(',')[0]}</strong>
-              <p style="font-size: 10px; color: #65756B; margin: 4px 0 6px;">${result.display_name}</p>
-              <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=15/${lat}/${lon}" target="_blank" rel="noopener noreferrer" style="
-                color: #2D724E;
-                font-size: 10px;
-                font-weight: 700;
-                text-decoration: underline;
-              ">View on OpenStreetMap &nearr;</a>
-            </div>
-          `
-          )
-          .openPopup();
-
         searchMarkerRef.current = newMarker;
-        map.flyTo([lat, lon], 14, { duration: 1.2 });
+
+        // Find nearest court in venues
+        if (venues.length > 0) {
+          let nearest = venues[0];
+          let minDistance = Infinity;
+
+          venues.forEach((v) => {
+            const d = calculateDistance(lat, lon, v.latitude, v.longitude);
+            if (d < minDistance) {
+              minDistance = d;
+              nearest = v;
+            }
+          });
+
+          const idx = venues.findIndex((v) => v.id === nearest.id);
+          if (idx !== -1) {
+            setActiveVenueIndex(idx);
+            if (onSelectVenue) onSelectVenue(nearest);
+          }
+
+          setSearchNotice(`Nearest court: ${nearest.name} (~${Math.round(minDistance)} km)`);
+        }
+
+        map.flyTo([lat, lon], 12, { duration: 1.2 });
       });
     }
 
     setIsSearchOpen(false);
   };
 
-  // Fly to Philippines Overview (OSM link: 6/13.02/121.77)
+  // Fly to Philippines Overview (6/13.02/121.77)
   const flyToPhilippines = () => {
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(OSM_PH_CENTER, OSM_PH_ZOOM, { duration: 1.5 });
-      setActiveView('philippines');
+      mapInstanceRef.current.flyTo(OSM_PH_CENTER, OSM_PH_ZOOM, { duration: 1.2 });
     }
   };
 
-  // Reset to Metro Manila Sports Hubs
-  const flyToHubs = () => {
-    if (mapInstanceRef.current) {
-      const center = initialCenter || (venues.length > 0 ? [venues[0].latitude, venues[0].longitude] : METRO_MANILA_CENTER);
-      const zoom = initialZoom || (singleVenueMode ? 15 : METRO_MANILA_ZOOM);
-      mapInstanceRef.current.flyTo(center as [number, number], zoom, { duration: 1.2 });
-      setActiveView('hubs');
+  // Fit all active venues on map
+  const fitAllCourts = useCallback(() => {
+    if (mapInstanceRef.current && venues.length > 0) {
+      import('leaflet').then((L) => {
+        if (!mapInstanceRef.current) return;
+        if (venues.length === 1) {
+          mapInstanceRef.current.flyTo([venues[0].latitude, venues[0].longitude], 15, {
+            duration: 1.0,
+          });
+        } else {
+          const bounds = L.latLngBounds(venues.map((v) => [v.latitude, v.longitude]));
+          mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        }
+      });
     }
-  };
+  }, [venues]);
 
   // Initialize Map
   useEffect(() => {
@@ -200,8 +231,8 @@ export function VenueMap({
     import('leaflet').then((L) => {
       if (!isMounted || !mapContainerRef.current) return;
 
-      // Fix default Leaflet icon paths
-      // @ts-expect-error leaflet icon prototype fix
+      // Fix Leaflet marker icons
+      // @ts-expect-error leaflet icon prototype
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -214,20 +245,25 @@ export function VenueMap({
           ? initialCenter
           : venues.length > 0
           ? [venues[0].latitude, venues[0].longitude]
-          : METRO_MANILA_CENTER;
+          : OSM_PH_CENTER;
 
         const defaultZoom = initialZoom
           ? initialZoom
           : singleVenueMode
           ? 15
-          : METRO_MANILA_ZOOM;
+          : venues.length > 1
+          ? 7
+          : 12;
 
         const map = L.map(mapContainerRef.current, {
           center: defaultCenter,
           zoom: defaultZoom,
           scrollWheelZoom: true,
-          zoomControl: true,
+          zoomControl: false, // We place custom controls cleanly
         });
+
+        // Add custom zoom control at top-right
+        L.control.zoom({ position: 'topright' }).addTo(map);
 
         // OpenStreetMap standard tile layer
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -238,155 +274,120 @@ export function VenueMap({
 
         mapInstanceRef.current = map;
 
-        // Invalidate size on container resize
+        // Auto invalidate size on resize
         setTimeout(() => {
           map.invalidateSize();
-        }, 200);
+        }, 150);
       }
 
       const map = mapInstanceRef.current;
 
-      // Clear previous venue markers
+      // Clear existing markers
       Object.values(markersRef.current).forEach((marker) => marker.remove());
       markersRef.current = {};
 
-      // Add venue markers with clean Tarzan-inspired styling (no emojis)
-      venues.forEach((venue) => {
+      // Add pins for each venue
+      venues.forEach((venue, index) => {
         const primarySport = venue.featured_sports[0] || 'badminton';
         const sportLabel = getSportDisplayName(primarySport);
+        const isSelected = venue.id === (selectedVenueId || currentVenue?.id);
 
         const customHtml = `
           <div style="
-            background: #2D724E;
+            background: ${isSelected ? '#1E4A32' : '#2D724E'};
             color: white;
-            padding: 5px 12px;
+            padding: 4px 10px;
             border-radius: 9999px;
             font-size: 11px;
             font-weight: 800;
             display: flex;
             align-items: center;
-            gap: 6px;
-            box-shadow: 0 4px 14px rgba(30, 74, 50, 0.45);
-            border: 2px solid #FAF8F5;
+            gap: 5px;
+            box-shadow: 0 4px 14px rgba(30, 74, 50, ${isSelected ? '0.65' : '0.4'});
+            border: 2px solid ${isSelected ? '#E9C46A' : '#FAF8F5'};
             cursor: pointer;
             white-space: nowrap;
-            transition: transform 0.2s ease;
+            transform: scale(${isSelected ? '1.08' : '1'});
+            transition: all 0.2s ease;
           ">
-            <span style="color: #E9C46A; font-size: 14px; line-height: 1;">&bull;</span>
+            <span style="color: #E9C46A; font-size: 13px; line-height: 1;">&bull;</span>
             <span>${venue.name.split(' ')[0]}</span>
-            <span style="opacity: 0.85; font-size: 9px; font-weight: 700; background: rgba(0,0,0,0.25); padding: 1px 5px; border-radius: 4px;">${sportLabel}</span>
+            <span style="opacity: 0.85; font-size: 9px; font-weight: 700; background: rgba(0,0,0,0.25); padding: 1px 4px; border-radius: 4px;">${sportLabel}</span>
           </div>
         `;
 
         const icon = L.divIcon({
           html: customHtml,
           className: 'custom-venue-pin',
-          iconSize: [110, 32],
-          iconAnchor: [55, 16],
+          iconSize: [110, 28],
+          iconAnchor: [55, 14],
         });
 
         const marker = L.marker([venue.latitude, venue.longitude], { icon }).addTo(map);
 
-        // OpenStreetMap direct link & directions
-        const osmUrl = `https://www.openstreetmap.org/?mlat=${venue.latitude}&mlon=${venue.longitude}#map=16/${venue.latitude}/${venue.longitude}`;
-        const osmDirectionsUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=%3B${venue.latitude}%2C${venue.longitude}`;
-
-        const popupContent = document.createElement('div');
-        popupContent.className = 'p-2 max-w-[260px] font-sans';
-        popupContent.innerHTML = `
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
-            <span style="font-size: 10px; font-weight: 800; color: #2D724E; background: #EBF4EE; padding: 2px 6px; border-radius: 6px;">
-              ${sportLabel} &bull; Doubles &amp; Singles
-            </span>
-            <span style="color: #C87D43; font-weight: 800; font-size: 11px;">★ ${venue.rating}</span>
-          </div>
-          <h4 style="font-weight: 800; font-size: 13px; line-height: 1.3; margin-bottom: 3px; color: #1A241E;">${venue.name}</h4>
-          <p style="font-size: 10.5px; color: #65756B; margin-bottom: 8px; line-height: 1.3;">${venue.address}</p>
-          
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <a href="/venues/${venue.id}" style="
-              display: block;
-              background: #2D724E;
-              color: white;
-              padding: 7px 10px;
-              border-radius: 8px;
-              font-size: 11px;
-              font-weight: 800;
-              text-align: center;
-              text-decoration: none;
-            ">Book Court &amp; Join Queue &rarr;</a>
-
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-top: 4px; border-top: 1px solid #E8E5DF;">
-              <a href="${osmUrl}" target="_blank" rel="noopener noreferrer" style="
-                font-size: 10px;
-                color: #2D724E;
-                font-weight: 700;
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-                gap: 2px;
-              ">OpenStreetMap &nearr;</a>
-              <a href="${osmDirectionsUrl}" target="_blank" rel="noopener noreferrer" style="
-                font-size: 10px;
-                color: #C87D43;
-                font-weight: 700;
-                text-decoration: none;
-              ">Directions &rarr;</a>
-            </div>
-          </div>
-        `;
-
-        marker.bindPopup(popupContent);
-
         marker.on('click', () => {
+          setActiveVenueIndex(index);
           if (onSelectVenue) onSelectVenue(venue);
+          map.flyTo([venue.latitude, venue.longitude], 14, { duration: 0.8 });
         });
 
         markersRef.current[venue.id] = marker;
-
-        // If single venue mode, automatically open popup
-        if (singleVenueMode && venues.length === 1) {
-          setTimeout(() => {
-            marker.openPopup();
-          }, 300);
-        }
       });
+
+      // Fit bounds if multiple venues and no specific center provided
+      if (!initialCenter && venues.length > 1) {
+        const bounds = L.latLngBounds(venues.map((v) => [v.latitude, v.longitude]));
+        map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13 });
+      }
     });
 
     return () => {
       isMounted = false;
     };
-  }, [venues, onSelectVenue, initialCenter, initialZoom, singleVenueMode]);
+  }, [venues, initialCenter, initialZoom, singleVenueMode, selectedVenueId, onSelectVenue, currentVenue?.id]);
 
-  // Handle selectedVenueId changes from parent
-  useEffect(() => {
-    if (selectedVenueId && mapInstanceRef.current && markersRef.current[selectedVenueId]) {
-      const venue = venues.find((v) => v.id === selectedVenueId);
-      if (venue) {
-        mapInstanceRef.current.flyTo([venue.latitude, venue.longitude], 15, { duration: 1.2 });
-        markersRef.current[selectedVenueId].openPopup();
-      }
+  // Navigate next/prev court result
+  const handleNextVenue = () => {
+    if (venues.length === 0) return;
+    const nextIdx = (activeVenueIndex + 1) % venues.length;
+    setActiveVenueIndex(nextIdx);
+    const target = venues[nextIdx];
+    if (target && mapInstanceRef.current) {
+      if (onSelectVenue) onSelectVenue(target);
+      mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
     }
-  }, [selectedVenueId, venues]);
+  };
+
+  const handlePrevVenue = () => {
+    if (venues.length === 0) return;
+    const prevIdx = (activeVenueIndex - 1 + venues.length) % venues.length;
+    setActiveVenueIndex(prevIdx);
+    const target = venues[prevIdx];
+    if (target && mapInstanceRef.current) {
+      if (onSelectVenue) onSelectVenue(target);
+      mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
+    }
+  };
 
   return (
     <div
       className={`relative w-full ${heightClass} rounded-3xl overflow-hidden border border-[#E8E5DF] shadow-sm bg-white`}
     >
-      {/* Map Canvas */}
+      {/* Map Element */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* Top Left: OpenStreetMap Nominatim Place Search (if enabled) */}
-      {showSearch && !singleVenueMode && (
-        <div className="absolute top-3 left-3 z-20 max-w-[260px] sm:max-w-[320px] w-full">
-          <div className="relative">
+      {/* Top Map Bar: OpenStreetMap Search + Quick View Switchers */}
+      <div className="absolute top-2.5 left-2.5 right-14 z-20 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pointer-events-none">
+        {/* OpenStreetMap Nominatim Search Box */}
+        {showSearch && !singleVenueMode && (
+          <div className="pointer-events-auto relative flex-1 max-w-xs sm:max-w-sm">
             <div className="flex items-center bg-white/95 backdrop-blur-md rounded-2xl border border-[#E8E5DF] shadow-md px-3 py-1.5 focus-within:border-[#2D724E] transition-all">
-              <Search className="w-3.5 h-3.5 text-[#65756B] shrink-0 mr-2" />
+              <Search className="w-3.5 h-3.5 text-[#65756B] shrink-0 mr-1.5" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => handleQueryChange(e.target.value)}
-                placeholder="Search places in PH (via OSM)..."
+                placeholder="Search city/place in PH (via OSM)..."
                 className="w-full bg-transparent text-xs text-[#1A241E] placeholder:text-[#65756B] focus:outline-none"
               />
               {isSearching && <Loader2 className="w-3.5 h-3.5 text-[#2D724E] animate-spin shrink-0 ml-1" />}
@@ -397,6 +398,7 @@ export function VenueMap({
                     setSearchQuery('');
                     setSearchResults([]);
                     setIsSearchOpen(false);
+                    setSearchNotice(null);
                     if (searchMarkerRef.current) searchMarkerRef.current.remove();
                   }}
                   className="text-[#65756B] hover:text-[#1A241E] ml-1"
@@ -406,92 +408,164 @@ export function VenueMap({
               )}
             </div>
 
-            {/* Nominatim Search Dropdown Results */}
+            {/* Search Dropdown */}
             {isSearchOpen && searchResults.length > 0 && (
-              <div className="absolute left-0 right-0 mt-1 bg-white rounded-2xl border border-[#E8E5DF] shadow-lg overflow-hidden z-30 max-h-56 overflow-y-auto">
-                <div className="px-3 py-1.5 bg-[#FAF8F5] border-b border-[#E8E5DF] text-[10px] font-bold text-[#65756B] uppercase tracking-wider flex items-center justify-between">
+              <div className="absolute left-0 right-0 mt-1 bg-white rounded-2xl border border-[#E8E5DF] shadow-lg overflow-hidden z-30 max-h-48 overflow-y-auto">
+                <div className="px-3 py-1 bg-[#FAF8F5] border-b border-[#E8E5DF] text-[9px] font-bold text-[#65756B] uppercase tracking-wider flex justify-between">
                   <span>OpenStreetMap Locations</span>
-                  <span className="text-[9px] text-[#2D724E]">PH Nominatim</span>
+                  <span className="text-[#2D724E]">PH</span>
                 </div>
                 {searchResults.map((res) => (
                   <button
                     key={res.place_id}
                     type="button"
                     onClick={() => handleSelectSearchResult(res)}
-                    className="w-full text-left px-3 py-2 text-xs hover:bg-[#EBF4EE] border-b border-[#E8E5DF]/50 last:border-none transition-colors flex items-start gap-2"
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-[#EBF4EE] border-b border-[#E8E5DF]/40 last:border-none transition-colors flex items-start gap-1.5"
                   >
-                    <MapPin className="w-3.5 h-3.5 text-[#2D724E] shrink-0 mt-0.5" />
+                    <MapPin className="w-3 h-3 text-[#2D724E] shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-[#1A241E] truncate">
+                      <div className="font-bold text-[#1A241E] text-[11px] truncate">
                         {res.display_name.split(',')[0]}
                       </div>
-                      <div className="text-[10px] text-[#65756B] truncate">
-                        {res.display_name}
-                      </div>
+                      <div className="text-[9px] text-[#65756B] truncate">{res.display_name}</div>
                     </div>
                   </button>
                 ))}
               </div>
             )}
           </div>
+        )}
+
+        {/* Quick View Controls */}
+        {!singleVenueMode && (
+          <div className="pointer-events-auto flex items-center gap-1.5 self-start">
+            <button
+              type="button"
+              onClick={fitAllCourts}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm"
+              title="Show all courts on map"
+            >
+              <Compass className="w-3 h-3 text-[#2D724E]" />
+              <span>All Courts</span>
+            </button>
+            <button
+              type="button"
+              onClick={flyToPhilippines}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm"
+              title="Zoom to Philippines (OSM)"
+            >
+              <Globe className="w-3 h-3 text-[#C87D43]" />
+              <span>PH View</span>
+            </button>
+            <a
+              href="https://www.openstreetmap.org/#map=6/13.02/121.77"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#2D724E] hover:bg-[#FAF8F5] shadow-sm"
+              title="Open in OpenStreetMap"
+            >
+              <Navigation className="w-2.5 h-2.5 text-[#2D724E]" />
+              <span>OSM</span>
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Search Result Distance Notice */}
+      {searchNotice && (
+        <div className="absolute top-14 left-2.5 z-20 bg-[#1E4A32] text-white px-3 py-1 rounded-xl shadow-md text-[11px] font-bold flex items-center gap-1.5 animate-fadeIn">
+          <MapPin className="w-3 h-3 text-[#E9C46A]" />
+          <span>{searchNotice}</span>
         </div>
       )}
 
-      {/* Top Right: OpenStreetMap Quick Presets & OSM External Link */}
-      <div className="absolute top-3 right-3 z-20 flex flex-wrap items-center justify-end gap-1.5">
-        {/* OpenStreetMap Philippines 6/13.02/121.77 Preset */}
-        <button
-          type="button"
-          onClick={flyToPhilippines}
-          title="Zoom to OpenStreetMap Philippines View (6/13.02/121.77)"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold shadow-sm backdrop-blur-md transition-all ${
-            activeView === 'philippines'
-              ? 'bg-[#1E4A32] text-white border-[#1E4A32]'
-              : 'bg-white/95 text-[#1A241E] border-[#E8E5DF] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5 text-[#E9C46A]" />
-          <span className="hidden sm:inline">Philippines</span> (OSM)
-        </button>
+      {/* Interactive Court Result Card Overlay (Google Maps / Airbnb style) */}
+      {!singleVenueMode && currentVenue && (
+        <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20">
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-[#E8E5DF] shadow-lg p-3 sm:p-4 max-w-xl mx-auto transition-all">
+            <div className="flex items-center justify-between gap-3">
+              {/* Venue thumbnail */}
+              {currentVenue.images && currentVenue.images[0] && (
+                <img
+                  src={currentVenue.images[0]}
+                  alt={currentVenue.name}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 border border-[#E8E5DF]"
+                />
+              )}
 
-        {/* Hubs / Manila Reset */}
-        <button
-          type="button"
-          onClick={flyToHubs}
-          title="Reset to Sports Hubs"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold shadow-sm backdrop-blur-md transition-all ${
-            activeView === 'hubs'
-              ? 'bg-[#2D724E] text-white border-[#2D724E]'
-              : 'bg-white/95 text-[#1A241E] border-[#E8E5DF] hover:bg-[#FAF8F5]'
-          }`}
-        >
-          <Compass className="w-3.5 h-3.5 text-[#E9C46A]" />
-          <span>Hubs</span>
-        </button>
+              {/* Court Details */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-extrabold text-[#2D724E] bg-[#EBF4EE] px-2 py-0.5 rounded-md">
+                    {getSportDisplayName(currentVenue.featured_sports[0] || 'badminton')}
+                  </span>
+                  <span className="text-[10px] font-bold text-[#A35C2B] bg-[#FBF0E6] px-1.5 py-0.5 rounded-md">
+                    Doubles &amp; Singles
+                  </span>
+                  <div className="flex items-center gap-0.5 text-[10px] font-bold text-[#C87D43] ml-auto">
+                    <Star className="w-3 h-3 fill-[#E9C46A] text-[#E9C46A]" />
+                    <span>{currentVenue.rating}</span>
+                  </div>
+                </div>
 
-        {/* Direct OpenStreetMap Link */}
-        <a
-          href="https://www.openstreetmap.org/#map=6/13.02/121.77"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open in OpenStreetMap.org"
-          className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] shadow-sm text-[11px] font-extrabold text-[#2D724E] hover:text-[#1E4A32] hover:bg-[#FAF8F5] transition-colors"
-        >
-          <Navigation className="w-3 h-3 text-[#2D724E]" />
-          <span className="hidden md:inline">OpenStreetMap</span>
-          <ExternalLink className="w-3 h-3" />
-        </a>
-      </div>
+                <h4 className="text-xs sm:text-sm font-black text-[#1A241E] truncate mt-1">
+                  {currentVenue.name}
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-[#65756B] truncate flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-[#2D724E] shrink-0" />
+                  <span>{currentVenue.address}</span>
+                </p>
 
-      {/* Bottom Left Badge: Venue Count & OpenStreetMap Engine Notice */}
-      <div className="absolute bottom-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3 py-1 rounded-xl border border-[#E8E5DF] shadow-sm text-[10px] font-bold text-[#1A241E] flex items-center gap-1.5 pointer-events-none">
-        <span className="w-2 h-2 rounded-full bg-[#2D724E] animate-pulse" />
-        <span>
-          {singleVenueMode
-            ? 'Court Location on OpenStreetMap'
-            : `${venues.length} Active Sports Hubs on OpenStreetMap`}
-        </span>
-      </div>
+                {/* Actions */}
+                <div className="flex items-center gap-2 mt-2">
+                  <Link
+                    href={`/venues/${currentVenue.id}`}
+                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+                  >
+                    <span>Book Court</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${currentVenue.latitude}&mlon=${currentVenue.longitude}#map=16/${currentVenue.latitude}/${currentVenue.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#2D724E] hover:bg-[#FAF8F5]"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    <span className="hidden sm:inline">OSM</span>
+                  </a>
+
+                  {/* Carousel Stepper */}
+                  {venues.length > 1 && (
+                    <div className="flex items-center gap-1 ml-auto">
+                      <button
+                        type="button"
+                        onClick={handlePrevVenue}
+                        className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
+                        title="Previous court"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[10px] font-mono text-[#65756B]">
+                        {activeVenueIndex + 1}/{venues.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleNextVenue}
+                        className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
+                        title="Next court"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
