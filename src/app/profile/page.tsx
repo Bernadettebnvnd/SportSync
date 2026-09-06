@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useMonkeyStore } from '@/lib/store';
 import { MascotLocker } from '@/components/mascot/MascotLocker';
 import { MascotBanner } from '@/components/mascot/MascotBanner';
+import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 import { formatTimeAgo, getSportDisplayName } from '@/lib/utils';
 import {
   Trophy,
@@ -11,10 +12,13 @@ import {
   MapPin,
   Users,
   User,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 
 export default function ProfilePage() {
   const { currentUser, matches } = useMonkeyStore();
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
 
   const winRate =
     currentUser.matches_played > 0
@@ -75,10 +79,11 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Sport & Format tags (NO EMOJIS) */}
-            <div className="flex items-center justify-center sm:justify-start gap-1.5 pt-1.5 flex-wrap text-xs">
-              <span className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1 font-bold text-[#1A241E] capitalize">
-                {getSportDisplayName(currentUser.primary_sport)} Main
+            {/* Sport & Format tags (LOCKED SPORT PASSPORT) */}
+            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1.5 flex-wrap text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E4A32] text-white px-3 py-1 font-black shadow-sm" title="Your primary sport is permanently locked to your player passport">
+                <Lock className="w-3.5 h-3.5 text-[#E9C46A]" />
+                <span>{getSportDisplayName(currentUser.primary_sport)} Main (Locked)</span>
               </span>
               <span className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1 font-bold text-[#2D724E] flex items-center gap-1">
                 <Users className="w-3 h-3" />
@@ -87,6 +92,16 @@ export default function ProfilePage() {
               <span className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1 font-medium text-[#65756B] capitalize">
                 Level: {currentUser.skill_level}
               </span>
+
+              <button
+                type="button"
+                onClick={() => setIsOnboardingOpen(true)}
+                className="text-[11px] font-bold text-[#C87D43] hover:underline flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-[#FBF0E6] transition-colors"
+                title="Try the Clucky-style onboarding experience"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Retake Onboarding (Demo)</span>
+              </button>
             </div>
           </div>
         </div>
@@ -219,6 +234,12 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+
+      {/* Clucky-style Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+      />
     </div>
   );
 }

@@ -12,6 +12,8 @@ import {
   MatchFormat,
   PaymentMethod,
   PaymentCategory,
+  SportType,
+  SkillLevel,
 } from '@/types';
 import {
   INITIAL_CURRENT_USER,
@@ -31,7 +33,7 @@ interface AppState {
   payments: Payment[];
 }
 
-const STORAGE_KEY = 'matchi_app_state_v3';
+const STORAGE_KEY = 'matchi_app_state_v4';
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -357,6 +359,25 @@ export function useMonkeyStore() {
     notify();
   }, []);
 
+  const completeOnboarding = useCallback(
+    (sport: SportType, format: MatchFormat, level: SkillLevel) => {
+      globalState = {
+        ...globalState,
+        currentUser: {
+          ...globalState.currentUser,
+          primary_sport: sport,
+          preferred_format: format,
+          skill_level: level,
+          sport_locked: true,
+          has_completed_onboarding: true,
+          banana_points: globalState.currentUser.banana_points + 100,
+        },
+      };
+      notify();
+    },
+    []
+  );
+
   return {
     currentUser: globalState.currentUser,
     venues: globalState.venues,
@@ -374,6 +395,7 @@ export function useMonkeyStore() {
     verifyPayment,
     equipGear,
     unlockGear,
+    completeOnboarding,
     resetData,
   };
 }

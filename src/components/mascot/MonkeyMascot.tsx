@@ -279,33 +279,14 @@ export function MonkeyMascot({
             />
             <circle cx="34" cy="100" r="4.5" fill="#F8C8B4" />
 
-            {hasRacket ? (
-              <g>
-                <path
-                  d="M 84 80 C 92 85, 96 90, 94 98"
-                  stroke="#7A4B3A"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-                <circle cx="94" cy="98" r="4.5" fill="#F8C8B4" />
-                <line x1="94" y1="98" x2="108" y2="76" stroke="#5E3821" strokeWidth="2.5" strokeLinecap="round" />
-                <ellipse cx="112" cy="70" rx="9" ry="12" fill="none" stroke={racketColor} strokeWidth="2.5" transform="rotate(25 112 70)" />
-                <line x1="108" y1="64" x2="116" y2="76" stroke="#B5AD9B" strokeWidth="0.8" />
-                <line x1="116" y1="64" x2="108" y2="76" stroke="#B5AD9B" strokeWidth="0.8" />
-              </g>
-            ) : (
-              <g>
-                <path
-                  d="M 84 80 C 94 86, 94 94, 86 100"
-                  stroke="#7A4B3A"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-                <circle cx="86" cy="100" r="4.5" fill="#F8C8B4" />
-              </g>
-            )}
+            <path
+              d="M 84 80 C 94 86, 94 94, 86 100"
+              stroke="#7A4B3A"
+              strokeWidth="6"
+              strokeLinecap="round"
+              fill="none"
+            />
+            <circle cx="86" cy="100" r="4.5" fill="#F8C8B4" />
           </g>
         )}
       </svg>

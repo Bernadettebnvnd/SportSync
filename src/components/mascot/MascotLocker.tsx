@@ -9,7 +9,7 @@ import confetti from 'canvas-confetti';
 
 export function MascotLocker() {
   const { currentUser, equipGear, unlockGear } = useMonkeyStore();
-  const [selectedCategory, setSelectedCategory] = useState<'headband' | 'racket' | 'outfit'>('headband');
+  const [selectedCategory, setSelectedCategory] = useState<'headband' | 'outfit'>('headband');
   const [notice, setNotice] = useState('');
 
   const filteredItems = GEAR_STORE_ITEMS.filter((item) => item.type === selectedCategory);
@@ -51,7 +51,7 @@ export function MascotLocker() {
             </span>
           </div>
           <p className="text-xs text-[#65756B] mt-0.5">
-            Equip custom jungle headbands, rackets, and outfits unlocked with your Banana Points.
+            Customize Miki with jungle headbands and Tarzan-themed athletic outfits unlocked with your Banana Points.
           </p>
         </div>
 
@@ -93,14 +93,14 @@ export function MascotLocker() {
 
           <div className="text-center">
             <h4 className="font-black text-xs sm:text-sm text-[#1A241E]">
-              Miki &bull; Jungle Outfit
+              Miki &bull; Matchi Companion
             </h4>
             <div className="mt-1.5 flex flex-wrap justify-center gap-1 text-[10px] font-bold">
               <span className="bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-md text-[#2D724E]">
-                Band: {currentUser.equipped_gear.headband}
+                Headband: {currentUser.equipped_gear.headband?.replace(/_/g, ' ') || 'None'}
               </span>
               <span className="bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-md text-[#C87D43]">
-                Gear: {currentUser.equipped_gear.racket}
+                Outfit: {currentUser.equipped_gear.outfit?.replace(/_/g, ' ') || 'None'}
               </span>
             </div>
           </div>
@@ -108,9 +108,9 @@ export function MascotLocker() {
 
         {/* Right 2 cols: Category tabs & item cards */}
         <div className="md:col-span-2 space-y-3.5">
-          {/* Category Tabs */}
+          {/* Category Tabs: Headband & Outfit only */}
           <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl">
-            {(['headband', 'racket', 'outfit'] as const).map((cat) => (
+            {(['headband', 'outfit'] as const).map((cat) => (
               <button
                 key={cat}
                 type="button"
@@ -121,7 +121,7 @@ export function MascotLocker() {
                     : 'text-[#65756B] hover:text-[#1A241E]'
                 }`}
               >
-                {cat}s
+                {cat === 'headband' ? 'Jungle Headbands' : 'Tarzan Outfits'}
               </button>
             ))}
           </div>

@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Star,
   ArrowRight,
+  Crosshair,
 } from 'lucide-react';
 import type * as LeafletType from 'leaflet';
 
@@ -203,6 +204,88 @@ export function VenueMap({
   const flyToPhilippines = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.flyTo(OSM_PH_CENTER, OSM_PH_ZOOM, { duration: 1.2 });
+    }
+  };
+
+  // Locate user via GPS
+  const locateUser = () => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation && mapInstanceRef.current) {
+      setIsSearching(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setIsSearching(false);
+          const { latitude, longitude } = pos.coords;
+          if (mapInstanceRef.current) {
+            import('leaflet').then((L) => {
+              if (!mapInstanceRef.current) return;
+              if (searchMarkerRef.current) searchMarkerRef.current.remove();
+
+              const myIcon = L.divIcon({
+                html: `
+                  <div style="
+                    background: #1E4A32;
+                    color: #E9C46A;
+                    padding: 4px 10px;
+                    border-radius: 9999px;
+                    font-size: 11px;
+                    font-weight: 800;
+                    box-shadow: 0 4px 14px rgba(30, 74, 50, 0.6);
+                    border: 2px solid #E9C46A;
+                    white-space: nowrap;
+                  ">
+                    📍 You are here
+                  </div>
+                `,
+                className: 'my-loc-pin',
+                iconSize: [100, 26],
+                iconAnchor: [50, 13],
+              });
+
+              searchMarkerRef.current = L.marker([latitude, longitude], { icon: myIcon }).addTo(
+                mapInstanceRef.current
+              );
+            });
+
+            if (venues.length > 0) {
+              let nearest = venues[0];
+              let minDist = Infinity;
+              venues.forEach((v) => {
+                const d = calculateDistance(latitude, longitude, v.latitude, v.longitude);
+                if (d < minDist) {
+                  minDist = d;
+                  nearest = v;
+                }
+              });
+              setSearchNotice(`Found you! Nearest court: ${nearest.name} (~${Math.round(minDist)} km)`);
+              const idx = venues.findIndex((v) => v.id === nearest.id);
+              if (idx !== -1) {
+                setActiveVenueIndex(idx);
+                if (onSelectVenue) onSelectVenue(nearest);
+              }
+            }
+
+            mapInstanceRef.current.flyTo([latitude, longitude], 13, { duration: 1.2 });
+          }
+        },
+        () => {
+          setIsSearching(false);
+          setSearchNotice('Location permission not granted. Use search bar above.');
+          setTimeout(() => setSearchNotice(null), 4000);
+        }
+      );
+    }
+  };
+
+  const jumpToRegion = (region: 'manila' | 'visayas' | 'mindanao' | 'luzon') => {
+    if (!mapInstanceRef.current) return;
+    if (region === 'manila') {
+      mapInstanceRef.current.flyTo([14.5828, 121.0664], 12, { duration: 1.0 });
+    } else if (region === 'visayas') {
+      mapInstanceRef.current.flyTo([10.5, 123.3], 9, { duration: 1.0 });
+    } else if (region === 'mindanao') {
+      mapInstanceRef.current.flyTo([7.8, 125.1], 9, { duration: 1.0 });
+    } else if (region === 'luzon') {
+      mapInstanceRef.current.flyTo([15.4, 120.8], 9, { duration: 1.0 });
     }
   };
 
@@ -438,36 +521,62 @@ export function VenueMap({
 
         {/* Quick View Controls */}
         {!singleVenueMode && (
-          <div className="pointer-events-auto flex items-center gap-1.5 self-start">
+          <div className="pointer-events-auto flex items-center gap-1 overflow-x-auto max-w-full pb-0.5 no-scrollbar self-start">
+            <button
+              type="button"
+              onClick={locateUser}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#1E4A32] text-white border border-[#1E4A32] text-[10px] font-extrabold shadow-sm shrink-0 active:scale-95"
+              title="Locate nearest court near you"
+            >
+              <Crosshair className="w-3 h-3 text-[#E9C46A]" />
+              <span>Near Me</span>
+            </button>
             <button
               type="button"
               onClick={fitAllCourts}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm"
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
               title="Show all courts on map"
             >
               <Compass className="w-3 h-3 text-[#2D724E]" />
-              <span>All Courts</span>
+              <span>All ({venues.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => jumpToRegion('manila')}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
+            >
+              <span>Manila</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => jumpToRegion('visayas')}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
+            >
+              <span>Visayas</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => jumpToRegion('mindanao')}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
+            >
+              <span>Mindanao</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => jumpToRegion('luzon')}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
+            >
+              <span>Luzon</span>
             </button>
             <button
               type="button"
               onClick={flyToPhilippines}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm"
-              title="Zoom to Philippines (OSM)"
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
+              title="Zoom to OpenStreetMap Philippines view"
             >
               <Globe className="w-3 h-3 text-[#C87D43]" />
-              <span>PH View</span>
+              <span>PH</span>
             </button>
-            <a
-              href="https://www.openstreetmap.org/#map=6/13.02/121.77"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#2D724E] hover:bg-[#FAF8F5] shadow-sm"
-              title="Open in OpenStreetMap"
-            >
-              <Navigation className="w-2.5 h-2.5 text-[#2D724E]" />
-              <span>OSM</span>
-              <ExternalLink className="w-2.5 h-2.5" />
-            </a>
           </div>
         )}
       </div>

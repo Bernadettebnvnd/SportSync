@@ -63,6 +63,8 @@ export interface User {
   banana_points: number;
   equipped_gear: EquippedGear;
   unlocked_gear: string[];
+  has_completed_onboarding?: boolean;
+  sport_locked?: boolean;
   created_at: string;
 }
 
