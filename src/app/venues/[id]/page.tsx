@@ -6,6 +6,7 @@ import { useMonkeyStore } from '@/lib/store';
 import { INITIAL_COURTS } from '@/lib/mockData';
 import { BookingModal } from '@/components/payments/BookingModal';
 import { MascotBanner } from '@/components/mascot/MascotBanner';
+import { VenueMap } from '@/components/explore/VenueMap';
 import { Court, Session } from '@/types';
 import { formatCurrency, getSportDisplayName } from '@/lib/utils';
 import {
@@ -22,6 +23,8 @@ import {
   Building2,
   Banknote,
   User,
+  Navigation,
+  ExternalLink,
 } from 'lucide-react';
 
 interface VenuePageProps {
@@ -319,6 +322,62 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Location & OpenStreetMap Directions Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#2D724E]">
+              Court Location
+            </span>
+            <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
+              Map &amp; Directions
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${venue.latitude}&mlon=${venue.longitude}#map=17/${venue.latitude}/${venue.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-[#E8E5DF] text-xs font-bold text-[#2D724E] hover:bg-[#FAF8F5] transition-colors shadow-sm"
+            >
+              <Navigation className="w-3.5 h-3.5 text-[#2D724E]" />
+              <span>Open in OpenStreetMap</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+            <a
+              href={`https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=%3B${venue.latitude}%2C${venue.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#2D724E] text-white text-xs font-bold hover:bg-[#1E4A32] transition-colors shadow-sm"
+            >
+              <span>Get Directions</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Embedded OpenStreetMap */}
+        <div className="rounded-3xl overflow-hidden border border-[#E8E5DF] bg-white shadow-sm">
+          <VenueMap
+            venues={[venue]}
+            singleVenueMode={true}
+            initialCenter={[venue.latitude, venue.longitude]}
+            initialZoom={16}
+            heightClass="h-[300px] sm:h-[360px]"
+            showSearch={false}
+          />
+          <div className="p-4 bg-white border-t border-[#E8E5DF] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-[#65756B]">
+              <MapPin className="w-4 h-4 text-[#2D724E] shrink-0" />
+              <span>{venue.address}</span>
+            </div>
+            <div className="text-[11px] font-mono text-[#65756B] bg-[#FAF8F5] px-2.5 py-1 rounded-lg border border-[#E8E5DF] self-start sm:self-auto">
+              {venue.latitude.toFixed(4)}° N, {venue.longitude.toFixed(4)}° E
+            </div>
+          </div>
         </div>
       </div>
 
