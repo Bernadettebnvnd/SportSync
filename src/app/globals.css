@@ -1,26 +1,94 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --color-warm-bg: #FAFAF7;
+  --color-surface: #FFFFFF;
+  --color-brand: #1F9D55;
+  --color-brand-dark: #147A40;
+  --color-brand-light: #E9F8EE;
+  --color-accent: #FF9F43;
+  --color-accent-dark: #E68529;
+  --color-accent-light: #FFF5EA;
+  --color-text-main: #171717;
+  --color-text-muted: #6B7280;
+  --color-border-subtle: #EBEBE6;
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --animate-monkey-bounce: monkey-bounce 1.6s infinite ease-in-out;
+  --animate-monkey-wiggle: monkey-wiggle 1.2s infinite ease-in-out;
+  --animate-pulse-glow: pulse-glow 2s infinite ease-in-out;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  @keyframes monkey-bounce {
+    0%, 100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    30% {
+      transform: translateY(-8px) rotate(-3deg);
+    }
+    60% {
+      transform: translateY(-4px) rotate(3deg);
+    }
+  }
+
+  @keyframes monkey-wiggle {
+    0%, 100% {
+      transform: rotate(0deg);
+    }
+    25% {
+      transform: rotate(-6deg) scale(1.03);
+    }
+    75% {
+      transform: rotate(6deg) scale(1.03);
+    }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(31, 157, 85, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 10px rgba(31, 157, 85, 0);
+    }
   }
 }
 
+:root {
+  --background: #FAFAF7;
+  --foreground: #171717;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #FAFAF7;
+  color: #171717;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F1EB;
+}
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* Leaflet map styling overrides */
+.leaflet-container {
+  font-family: inherit;
+  width: 100%;
+  height: 100%;
+  border-radius: 1rem;
 }
