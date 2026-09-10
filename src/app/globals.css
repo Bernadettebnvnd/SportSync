@@ -16,33 +16,7 @@
   --color-border-subtle: #E8E5DF;    /* Earth Pebble Border */
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  --animate-monkey-bounce: monkey-bounce 1.6s infinite ease-in-out;
-  --animate-monkey-wiggle: monkey-wiggle 1.2s infinite ease-in-out;
   --animate-pulse-glow: pulse-glow 2s infinite ease-in-out;
-
-  @keyframes monkey-bounce {
-    0%, 100% {
-      transform: translateY(0) rotate(0deg);
-    }
-    30% {
-      transform: translateY(-8px) rotate(-3deg);
-    }
-    60% {
-      transform: translateY(-4px) rotate(3deg);
-    }
-  }
-
-  @keyframes monkey-wiggle {
-    0%, 100% {
-      transform: rotate(0deg);
-    }
-    25% {
-      transform: rotate(-6deg) scale(1.03);
-    }
-    75% {
-      transform: rotate(6deg) scale(1.03);
-    }
-  }
 
   @keyframes pulse-glow {
     0%, 100% {

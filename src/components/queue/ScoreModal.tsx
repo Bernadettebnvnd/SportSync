@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Match } from '@/types';
-import { useMonkeyStore } from '@/lib/store';
+import { useMatchiStore } from '@/lib/store';
 import { X, Trophy, Plus, Minus } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -13,7 +13,7 @@ interface ScoreModalProps {
 }
 
 export function ScoreModal({ isOpen, onClose, match }: ScoreModalProps) {
-  const { updateMatchScore } = useMonkeyStore();
+  const { updateMatchScore } = useMatchiStore();
 
   const [scoreA, setScoreA] = useState(match.score_a);
   const [scoreB, setScoreB] = useState(match.score_b);
@@ -117,7 +117,7 @@ export function ScoreModal({ isOpen, onClose, match }: ScoreModalProps) {
             onClick={() => handleSaveScore(false)}
             className="flex-1 py-3 rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] text-xs font-bold text-[#1A241E] hover:bg-[#E8E5DF] transition-all min-h-[44px]"
           >
-            Save Live Score
+            Save Score
           </button>
           <button
             type="button"
@@ -125,7 +125,7 @@ export function ScoreModal({ isOpen, onClose, match }: ScoreModalProps) {
             className="flex-1 inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-md transition-all active:scale-[0.98] min-h-[44px]"
           >
             <Trophy className="w-4 h-4 text-[#E9C46A]" />
-            <span>Finalize Match</span>
+            <span>Finish Match</span>
           </button>
         </div>
       </div>

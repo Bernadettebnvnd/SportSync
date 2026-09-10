@@ -80,3 +80,103 @@ export function getPaymentMethodName(method: PaymentMethod): string {
       return method;
   }
 }
+
+/**
+ * Configurable Platform Fee Calculation
+ * Example:
+ * Total customer payment: ₱500 (50000 cents)
+ * Platform fee: 5% (min ₱25, max ₱50)
+ * Facility amount: ₱475
+ */
+export interface FeeCalculationConfig {
+  feePercent?: number; // e.g., 0.05 (5%)
+  minFeeCents?: number; // e.g., 2500 (₱25)
+  maxFeeCents?: number; // e.g., 5000 (₱50)
+}
+
+export function calculateBookingFees(
+  courtHourlyRateCents: number,
+  durationMinutes: number = 60,
+  config: FeeCalculationConfig = { feePercent: 0.06, minFeeCents: 2500, maxFeeCents: 6000 }
+) {
+  const courtSubtotalCents = Math.round(courtHourlyRateCents * (durationMinutes / 60));
+  
+  const rawFee = Math.round(courtSubtotalCents * (config.feePercent ?? 0.06));
+  const platformFeeCents = Math.min(
+    Math.max(rawFee, config.minFeeCents ?? 2500),
+    config.maxFeeCents ?? 6000
+  );
+
+  const totalAmountCents = courtSubtotalCents;
+  const facilityAmountCents = Math.max(0, totalAmountCents - platformFeeCents);
+
+  return {
+    courtSubtotalCents,
+    platformFeeCents,
+    facilityAmountCents,
+    totalAmountCents,
+  };
+}
+
+export function generateBookingReference(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `MAT-${code}`;
+}
+
+export const SPORTS_CATALOG = [
+  {
+    id: 'pickleball',
+    name: 'Pickleball',
+    tagline: 'Dinking, fast kitchen rallies, and social play',
+    defaultDurationMinutes: 60,
+    surfaceTypes: ['Cushioned Acrylic', 'Polyurethane Indoor', 'Asphalt Hardcourt'],
+    supportsDoubles: true,
+    supportsSingles: true,
+    accentColor: '#C87D43',
+  },
+  {
+    id: 'badminton',
+    name: 'Badminton',
+    tagline: 'High-speed smashes, agile drops, and tournament Taraflex',
+    defaultDurationMinutes: 60,
+    surfaceTypes: ['BWF Taraflex Rubber', 'Hardwood Parquet', 'Vinyl Composite'],
+    supportsDoubles: true,
+    supportsSingles: true,
+    accentColor: '#2D724E',
+  },
+  {
+    id: 'basketball',
+    name: 'Basketball',
+    tagline: 'Full-court runs, 3v3 pickups, and covered hardwood',
+    defaultDurationMinutes: 60,
+    surfaceTypes: ['Sprung Maple Hardwood', 'Outdoor Acrylic', 'Rubberized Court'],
+    supportsDoubles: false,
+    supportsSingles: false,
+    accentColor: '#C87D43',
+  },
+  {
+    id: 'tennis',
+    name: 'Tennis',
+    tagline: 'Classic baseline rallies, clay, and tournament hardcourts',
+    defaultDurationMinutes: 60,
+    surfaceTypes: ['Plexipave Hardcourt', 'Red Clay', 'Synthetic Turf'],
+    supportsDoubles: true,
+    supportsSingles: true,
+    accentColor: '#E9C46A',
+  },
+  {
+    id: 'padel',
+    name: 'Padel',
+    tagline: 'Panoramic glass enclosures, tactical wall rebounds & doubles',
+    defaultDurationMinutes: 90,
+    surfaceTypes: ['Mondo Supercourt Pro Turf', 'Textured Synthetic Grass'],
+    supportsDoubles: true,
+    supportsSingles: false,
+    accentColor: '#1E4A32',
+  },
+] as const;
+

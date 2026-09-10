@@ -7,6 +7,17 @@ export type SportType =
   | 'volleyball'
   | 'table_tennis';
 
+export interface Sport {
+  id: SportType;
+  name: string;
+  iconName: string;
+  description: string;
+  defaultDurationMinutes: number;
+  supportsDoubles: boolean;
+  supportsSingles: boolean;
+  surfaceTypes: string[];
+}
+
 export type MatchFormat = 'singles' | 'doubles' | 'mixed_doubles';
 
 export type SkillLevel =
@@ -18,13 +29,29 @@ export type SkillLevel =
 
 export type UserRole = 'player' | 'organizer' | 'venue_owner' | 'admin';
 
+export type UserMode = 'play' | 'manage';
+
 export type SessionType = 'open_play' | 'private_booking' | 'clinic' | 'tournament';
 
 export type QueueStatus = 'waiting' | 'warming_up' | 'on_court' | 'completed' | 'cancelled';
 
 export type MatchStatus = 'warmup' | 'in_progress' | 'completed' | 'cancelled';
 
-export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'cash_at_venue';
+export type PaymentStatus =
+  | 'pending'
+  | 'processing'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'refunded'
+  | 'cash_at_venue';
+
+export type BookingStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
 
 export type PaymentMethod =
   | 'gcash'
@@ -36,6 +63,13 @@ export type PaymentMethod =
   | 'cash';
 
 export type PaymentCategory = 'ewallet' | 'bank_transfer' | 'cash';
+
+export type FacilityInventorySource =
+  | 'manual'
+  | 'imported'
+  | 'external_link'
+  | 'api'
+  | 'partner';
 
 export interface EquippedGear {
   headband: string;
@@ -51,7 +85,12 @@ export interface User {
   nickname: string;
   avatar_url?: string;
   role: UserRole;
+  active_mode?: UserMode;
+  email_verified?: boolean;
+  onboarding_completed?: boolean;
+  has_completed_onboarding?: boolean;
   primary_sport: SportType;
+  preferred_sports?: SportType[];
   preferred_format?: MatchFormat;
   skill_level: SkillLevel;
   phone?: string;
@@ -60,10 +99,9 @@ export interface User {
   matches_won: number;
   win_streak: number;
   highest_streak: number;
-  banana_points: number;
-  equipped_gear: EquippedGear;
-  unlocked_gear: string[];
-  has_completed_onboarding?: boolean;
+  banana_points?: number;
+  equipped_gear?: EquippedGear;
+  unlocked_gear?: string[];
   sport_locked?: boolean;
   created_at: string;
 }
@@ -74,11 +112,15 @@ export interface Court {
   name: string;
   sport: SportType;
   floor_type: string;
+  surface?: string;
+  court_type?: 'full' | 'half' | 'standard';
+  capacity?: number;
   hourly_rate_cents: number;
   is_indoor: boolean;
   is_active: boolean;
   supports_doubles: boolean;
   supports_singles: boolean;
+  operating_schedule?: Record<string, string>;
 }
 
 export interface VenuePaymentInfo {
@@ -123,9 +165,85 @@ export interface Venue {
   featured_sports: SportType[];
   images: string[];
   payment_info: VenuePaymentInfo;
-  rating: number;
+  rating?: number;
   review_count: number;
+  is_verified?: boolean;
+  inventory_source?: FacilityInventorySource;
+  external_booking_url?: string;
+  place_id?: string;
   courts?: Court[];
+}
+
+export interface DiscoveredFacility {
+  id: string;
+  name: string;
+  sport: SportType;
+  address: string;
+  city?: string;
+  latitude: number;
+  longitude: number;
+  is_platform: false;
+  source: 'openstreetmap';
+  category?: string;
+}
+
+export interface Booking {
+  id: string;
+  booking_reference: string;
+  user_id: string;
+  user?: User;
+  venue_id: string;
+  venue?: Venue;
+  court_id: string;
+  court?: Court;
+  sport: SportType;
+  booking_date: string; // YYYY-MM-DD
+  start_time: string; // ISO or HH:MM
+  end_time: string;
+  duration_minutes: number;
+  court_rate_cents: number;
+  booking_amount_cents: number;
+  platform_fee_cents: number;
+  total_amount_cents: number;
+  status: BookingStatus;
+  payment_status: PaymentStatus;
+  payment_id?: string;
+  payment_method?: PaymentMethod;
+  notes?: string;
+  created_at: string;
+}
+
+export interface CourtAvailabilitySlot {
+  time: string; // e.g. "07:00"
+  endTime: string; // e.g. "08:00"
+  isAvailable: boolean;
+  courtId: string;
+  courtName: string;
+  hourlyRateCents: number;
+  sport: SportType;
+}
+
+export interface EmptyCourtOpportunity {
+  date: string;
+  courtId: string;
+  courtName: string;
+  sport: SportType;
+  hoursUnbooked: number;
+  timeRange: string;
+  potentialRevenueCents: number;
+}
+
+export interface Review {
+  id: string;
+  venue_id: string;
+  user_id: string;
+  user_name: string;
+  user_avatar?: string;
+  booking_id?: string;
+  rating: number; // 1.0 - 5.0
+  comment: string;
+  verified_booking: boolean;
+  created_at: string;
 }
 
 export interface Session {
@@ -190,13 +308,17 @@ export interface Match {
 
 export interface Payment {
   id: string;
-  session_id: string;
+  session_id?: string;
   session_title?: string;
+  booking_id?: string;
   court_id?: string;
   user_id: string;
   user_name?: string;
   user_avatar?: string;
   amount_cents: number;
+  platform_fee_cents?: number;
+  facility_amount_cents?: number;
+  payout_status?: 'unpaid' | 'pending_payout' | 'paid_out';
   payment_method: PaymentMethod;
   payment_category: PaymentCategory;
   reference_code: string;
@@ -209,3 +331,4 @@ export interface Payment {
   verified_at?: string;
   verified_by?: string;
 }
+

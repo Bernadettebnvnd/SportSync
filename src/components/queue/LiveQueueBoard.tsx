@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { QueueEntry, Session, MatchFormat } from '@/types';
-import { useMonkeyStore } from '@/lib/store';
-import { formatTimeAgo, getFormatDisplayName } from '@/lib/utils';
+import { useMatchiStore } from '@/lib/store';
+import { formatTimeAgo } from '@/lib/utils';
 import {
   Users,
   User,
@@ -20,7 +20,7 @@ interface LiveQueueBoardProps {
 }
 
 export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
-  const { currentUser, joinQueue, leaveQueue } = useMonkeyStore();
+  const { currentUser, joinQueue, leaveQueue } = useMatchiStore();
   const [partnerInput, setPartnerInput] = useState('');
   const [selectedFormat, setSelectedFormat] = useState<MatchFormat>('doubles');
   const [needsPartner, setNeedsPartner] = useState(false);
@@ -86,7 +86,7 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all active:scale-95 min-h-[44px]"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Hop into Queue</span>
+              <span>Join Queue</span>
             </button>
           )}
         </div>
@@ -173,7 +173,7 @@ export function LiveQueueBoard({ session, queues }: LiveQueueBoardProps) {
                 type="submit"
                 className="px-4 py-2.5 rounded-xl bg-[#2D724E] text-white text-xs font-black shadow-sm hover:bg-[#1E4A32] min-h-[42px]"
               >
-                Join Singles
+                Join Queue
               </button>
             </div>
           )}

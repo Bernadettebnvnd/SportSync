@@ -2,11 +2,11 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Venue } from '@/types';
-import { getSportDisplayName, formatCurrency } from '@/lib/utils';
+import { Venue, DiscoveredFacility } from '@/types';
+import { getSportDisplayName } from '@/lib/utils';
+import { defaultGeocodingProvider } from '@/lib/maps/provider';
 import {
   MapPin,
-  ExternalLink,
   Search,
   Navigation,
   Globe,
@@ -19,12 +19,16 @@ import {
   ArrowRight,
   Crosshair,
 } from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
 import type * as LeafletType from 'leaflet';
 
 interface VenueMapProps {
   venues: Venue[];
+  discoveredFacilities?: DiscoveredFacility[];
   selectedVenueId?: string;
+  selectedDiscoveredId?: string;
   onSelectVenue?: (venue: Venue) => void;
+  onSelectDiscovered?: (facility: DiscoveredFacility) => void;
   singleVenueMode?: boolean;
   initialCenter?: [number, number];
   initialZoom?: number;
@@ -59,8 +63,11 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 export function VenueMap({
   venues,
+  discoveredFacilities = [],
   selectedVenueId,
+  selectedDiscoveredId,
   onSelectVenue,
+  onSelectDiscovered,
   singleVenueMode = false,
   initialCenter,
   initialZoom,
@@ -72,7 +79,10 @@ export function VenueMap({
   const markersRef = useRef<{ [key: string]: LeafletType.Marker }>({});
   const searchMarkerRef = useRef<LeafletType.Marker | null>(null);
 
-  // Active highlighted venue for map results card
+  // Clicked item override state (when user clicks a marker)
+  const [clickedItem, setClickedItem] = useState<
+    { type: 'platform'; venue: Venue } | { type: 'discovered'; facility: DiscoveredFacility } | null
+  >(null);
   const [activeVenueIndex, setActiveVenueIndex] = useState(0);
 
   // Search state using OpenStreetMap Nominatim API
@@ -83,11 +93,30 @@ export function VenueMap({
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Active venue resolved
-  const currentVenue =
-    venues.find((v) => v.id === selectedVenueId) || venues[activeVenueIndex] || venues[0];
+  // Derive activeItem cleanly without setState in effect
+  const activeItem = useMemo(() => {
+    if (selectedVenueId) {
+      const match = venues.find((v) => v.id === selectedVenueId);
+      if (match) return { type: 'platform' as const, venue: match };
+    }
+    if (selectedDiscoveredId && discoveredFacilities.length > 0) {
+      const match = discoveredFacilities.find((f) => f.id === selectedDiscoveredId);
+      if (match) return { type: 'discovered' as const, facility: match };
+    }
+    if (clickedItem) return clickedItem;
+    if (venues.length > 0) {
+      return { type: 'platform' as const, venue: venues[activeVenueIndex] || venues[0] };
+    }
+    if (discoveredFacilities.length > 0) {
+      return { type: 'discovered' as const, facility: discoveredFacilities[0] };
+    }
+    return null;
+  }, [selectedVenueId, selectedDiscoveredId, clickedItem, venues, discoveredFacilities, activeVenueIndex]);
 
-  // Search OpenStreetMap Nominatim
+  const activeItemId = activeItem?.type === 'platform' ? activeItem.venue.id : activeItem?.facility.id;
+  const activeItemType = activeItem?.type;
+
+  // Search OpenStreetMap Nominatim via provider
   const searchNominatim = useCallback(async (query: string) => {
     if (!query || query.trim().length < 2) {
       setSearchResults([]);
@@ -97,27 +126,24 @@ export function VenueMap({
 
     setIsSearching(true);
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          query.trim()
-        )}&countrycodes=ph&limit=5`,
-        {
-          headers: {
-            'Accept-Language': 'en',
-          },
-        }
+      const results = await defaultGeocodingProvider.search(query);
+      setSearchResults(
+        results.map((r) => ({
+          place_id: Number(r.placeId) || 0,
+          lat: String(r.latitude),
+          lon: String(r.longitude),
+          display_name: r.displayName,
+        }))
       );
-      if (!response.ok) throw new Error('OSM Nominatim error');
-      const data: NominatimResult[] = await response.json();
-      setSearchResults(data);
       setIsSearchOpen(true);
     } catch (err) {
-      console.warn('OpenStreetMap Nominatim search error:', err);
+      console.warn('Geocoding search error:', err);
       setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
   }, []);
+
 
   const handleQueryChange = (val: string) => {
     setSearchQuery(val);
@@ -159,7 +185,7 @@ export function VenueMap({
               box-shadow: 0 4px 14px rgba(200, 125, 67, 0.5);
               border: 2px solid #FAF8F5;
             ">
-              <span>📍</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
               <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${result.display_name.split(',')[0]}</span>
             </div>
           `,
@@ -230,10 +256,13 @@ export function VenueMap({
                     font-size: 11px;
                     font-weight: 800;
                     box-shadow: 0 4px 14px rgba(30, 74, 50, 0.6);
-                    border: 2px solid #E9C46A;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
                     white-space: nowrap;
                   ">
-                    📍 You are here
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    <span>You are here</span>
                   </div>
                 `,
                 className: 'my-loc-pin',
@@ -289,91 +318,100 @@ export function VenueMap({
     }
   };
 
-  // Fit all active venues on map
-  const fitAllCourts = useCallback(() => {
-    if (mapInstanceRef.current && venues.length > 0) {
-      import('leaflet').then((L) => {
-        if (!mapInstanceRef.current) return;
-        if (venues.length === 1) {
-          mapInstanceRef.current.flyTo([venues[0].latitude, venues[0].longitude], 15, {
-            duration: 1.0,
-          });
-        } else {
-          const bounds = L.latLngBounds(venues.map((v) => [v.latitude, v.longitude]));
-          mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-        }
-      });
-    }
-  }, [venues]);
-
   // Initialize Map
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current) return;
 
     let isMounted = true;
+    let resizeObserver: ResizeObserver | null = null;
+
     import('leaflet').then((L) => {
       if (!isMounted || !mapContainerRef.current) return;
 
+      const container = mapContainerRef.current;
+
+      // Clean up previous instance if already initialized on this container (prevents Error: Map container is already initialized)
+      // @ts-expect-error Leaflet attaches _leaflet_id
+      if (container._leaflet_id && mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+      // @ts-expect-error Reset container internal ID
+      if (container._leaflet_id) {
+        // @ts-expect-error Reset container internal ID
+        container._leaflet_id = null;
+      }
+
       // Fix Leaflet marker icons
-      // @ts-expect-error leaflet icon prototype
-      delete L.Icon.Default.prototype._getIconUrl;
+      delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      if (!mapInstanceRef.current) {
-        const defaultCenter: [number, number] = initialCenter
-          ? initialCenter
-          : venues.length > 0
-          ? [venues[0].latitude, venues[0].longitude]
-          : OSM_PH_CENTER;
+      const defaultCenter: [number, number] = initialCenter
+        ? initialCenter
+        : venues.length > 0
+        ? [venues[0].latitude, venues[0].longitude]
+        : OSM_PH_CENTER;
 
-        const defaultZoom = initialZoom
-          ? initialZoom
-          : singleVenueMode
-          ? 15
-          : venues.length > 1
-          ? 7
-          : 12;
+      const defaultZoom = initialZoom
+        ? initialZoom
+        : singleVenueMode
+        ? 15
+        : venues.length > 1
+        ? 7
+        : venues.length === 1
+        ? 13
+        : OSM_PH_ZOOM;
 
-        const map = L.map(mapContainerRef.current, {
-          center: defaultCenter,
-          zoom: defaultZoom,
-          scrollWheelZoom: true,
-          zoomControl: false, // We place custom controls cleanly
-        });
+      const map = L.map(container, {
+        center: defaultCenter,
+        zoom: defaultZoom,
+        scrollWheelZoom: true,
+        zoomControl: false, // We place custom controls cleanly
+      });
 
-        // Add custom zoom control at top-right
-        L.control.zoom({ position: 'topright' }).addTo(map);
+      // Add custom zoom control at top-right
+      L.control.zoom({ position: 'topright' }).addTo(map);
 
-        // OpenStreetMap standard tile layer
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
-          maxZoom: 19,
-        }).addTo(map);
+      // OpenStreetMap standard tile layer with subdomains
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        subdomains: ['a', 'b', 'c'],
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
 
-        mapInstanceRef.current = map;
+      mapInstanceRef.current = map;
 
-        // Auto invalidate size on resize
-        setTimeout(() => {
+      // Auto invalidate size on mount
+      setTimeout(() => {
+        if (isMounted && map) {
           map.invalidateSize();
-        }, 150);
-      }
+        }
+      }, 150);
 
-      const map = mapInstanceRef.current;
+      // Sizing observer to automatically recalculate dimensions whenever container is shown or resized
+      if (typeof ResizeObserver !== 'undefined' && container) {
+        resizeObserver = new ResizeObserver(() => {
+          if (isMounted && map) {
+            map.invalidateSize();
+          }
+        });
+        resizeObserver.observe(container);
+      }
 
       // Clear existing markers
       Object.values(markersRef.current).forEach((marker) => marker.remove());
       markersRef.current = {};
 
-      // Add pins for each venue
+      // Add pins for platform venues (Green)
       venues.forEach((venue, index) => {
         const primarySport = venue.featured_sports[0] || 'badminton';
         const sportLabel = getSportDisplayName(primarySport);
-        const isSelected = venue.id === (selectedVenueId || currentVenue?.id);
+        const isSelected = activeItem?.type === 'platform' && activeItem.venue.id === venue.id;
 
         const customHtml = `
           <div style="
@@ -410,6 +448,7 @@ export function VenueMap({
 
         marker.on('click', () => {
           setActiveVenueIndex(index);
+          setClickedItem({ type: 'platform', venue });
           if (onSelectVenue) onSelectVenue(venue);
           map.flyTo([venue.latitude, venue.longitude], 14, { duration: 0.8 });
         });
@@ -417,17 +456,104 @@ export function VenueMap({
         markersRef.current[venue.id] = marker;
       });
 
-      // Fit bounds if multiple venues and no specific center provided
-      if (!initialCenter && venues.length > 1) {
-        const bounds = L.latLngBounds(venues.map((v) => [v.latitude, v.longitude]));
+      // Add pins for map-discovered facilities (Slate)
+      discoveredFacilities.forEach((facility) => {
+        const isSelected = activeItem?.type === 'discovered' && activeItem.facility.id === facility.id;
+        const customHtml = `
+          <div style="
+            background: ${isSelected ? '#0F172A' : '#334155'};
+            color: white;
+            padding: 3px 8px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, ${isSelected ? '0.6' : '0.35'});
+            border: 2px solid ${isSelected ? '#38BDF8' : '#FAF8F5'};
+            cursor: pointer;
+            white-space: nowrap;
+            transform: scale(${isSelected ? '1.08' : '1'});
+            transition: all 0.2s ease;
+          ">
+            <span style="color: #38BDF8; font-size: 11px; line-height: 1;">&bull;</span>
+            <span>${facility.name.split(' ')[0]}</span>
+            <span style="opacity: 0.85; font-size: 8px; font-weight: 700; background: rgba(0,0,0,0.3); padding: 1px 3px; border-radius: 3px;">MAP</span>
+          </div>
+        `;
+
+        const icon = L.divIcon({
+          html: customHtml,
+          className: 'custom-discovered-pin',
+          iconSize: [100, 26],
+          iconAnchor: [50, 13],
+        });
+
+        const marker = L.marker([facility.latitude, facility.longitude], { icon }).addTo(map);
+
+        marker.on('click', () => {
+          setClickedItem({ type: 'discovered', facility });
+          if (onSelectDiscovered) onSelectDiscovered(facility);
+          map.flyTo([facility.latitude, facility.longitude], 14, { duration: 0.8 });
+        });
+
+        markersRef.current[facility.id] = marker;
+      });
+
+      // Fit bounds across all points if multiple locations and no specific center provided
+      const allPoints: [number, number][] = [
+        ...venues.map((v) => [v.latitude, v.longitude] as [number, number]),
+        ...discoveredFacilities.map((d) => [d.latitude, d.longitude] as [number, number]),
+      ];
+      if (!initialCenter && allPoints.length > 1) {
+        const bounds = L.latLngBounds(allPoints);
         map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13 });
       }
     });
 
     return () => {
       isMounted = false;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
     };
-  }, [venues, initialCenter, initialZoom, singleVenueMode, selectedVenueId, onSelectVenue, currentVenue?.id]);
+  }, [
+    venues,
+    discoveredFacilities,
+    initialCenter,
+    initialZoom,
+    singleVenueMode,
+    selectedVenueId,
+    selectedDiscoveredId,
+    onSelectVenue,
+    onSelectDiscovered,
+    activeItemId,
+    activeItemType,
+  ]);
+
+  // Fit all active venues & discovered courts on map
+  const fitAllCourts = useCallback(() => {
+    if (mapInstanceRef.current && (venues.length > 0 || discoveredFacilities.length > 0)) {
+      import('leaflet').then((L) => {
+        if (!mapInstanceRef.current) return;
+        const all = [
+          ...venues.map((v) => [v.latitude, v.longitude] as [number, number]),
+          ...discoveredFacilities.map((d) => [d.latitude, d.longitude] as [number, number]),
+        ];
+        if (all.length === 1) {
+          mapInstanceRef.current.flyTo(all[0], 15, { duration: 1.0 });
+        } else if (all.length > 1) {
+          const bounds = L.latLngBounds(all);
+          mapInstanceRef.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        }
+      });
+    }
+  }, [venues, discoveredFacilities]);
 
   // Navigate next/prev court result
   const handleNextVenue = () => {
@@ -436,6 +562,7 @@ export function VenueMap({
     setActiveVenueIndex(nextIdx);
     const target = venues[nextIdx];
     if (target && mapInstanceRef.current) {
+      setClickedItem({ type: 'platform', venue: target });
       if (onSelectVenue) onSelectVenue(target);
       mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
     }
@@ -447,6 +574,7 @@ export function VenueMap({
     setActiveVenueIndex(prevIdx);
     const target = venues[prevIdx];
     if (target && mapInstanceRef.current) {
+      setClickedItem({ type: 'platform', venue: target });
       if (onSelectVenue) onSelectVenue(target);
       mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
     }
@@ -589,89 +717,145 @@ export function VenueMap({
         </div>
       )}
 
-      {/* Interactive Court Result Card Overlay (Google Maps / Airbnb style) */}
-      {!singleVenueMode && currentVenue && (
+      {/* Interactive Court Result Card Overlay (Platform Venue or Discovered Facility) */}
+      {!singleVenueMode && activeItem && (
         <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20">
           <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-[#E8E5DF] shadow-lg p-3 sm:p-4 max-w-xl mx-auto transition-all">
-            <div className="flex items-center justify-between gap-3">
-              {/* Venue thumbnail */}
-              {currentVenue.images && currentVenue.images[0] && (
-                <img
-                  src={currentVenue.images[0]}
-                  alt={currentVenue.name}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 border border-[#E8E5DF]"
-                />
-              )}
+            {activeItem.type === 'platform' ? (
+              <div className="flex items-center justify-between gap-3">
+                {/* Venue thumbnail */}
+                {activeItem.venue.images && activeItem.venue.images[0] && (
+                  <img
+                    src={activeItem.venue.images[0]}
+                    alt={activeItem.venue.name}
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 border border-[#E8E5DF]"
+                  />
+                )}
 
-              {/* Court Details */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-extrabold text-[#2D724E] bg-[#EBF4EE] px-2 py-0.5 rounded-md">
-                    {getSportDisplayName(currentVenue.featured_sports[0] || 'badminton')}
-                  </span>
-                  <span className="text-[10px] font-bold text-[#A35C2B] bg-[#FBF0E6] px-1.5 py-0.5 rounded-md">
-                    Doubles &amp; Singles
-                  </span>
-                  <div className="flex items-center gap-0.5 text-[10px] font-bold text-[#C87D43] ml-auto">
-                    <Star className="w-3 h-3 fill-[#E9C46A] text-[#E9C46A]" />
-                    <span>{currentVenue.rating}</span>
+                {/* Court Details */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-extrabold text-[#2D724E] bg-[#EBF4EE] px-2 py-0.5 rounded-md">
+                      {getSportDisplayName(activeItem.venue.featured_sports[0] || 'badminton')}
+                    </span>
+                    <span className="text-[10px] font-bold text-[#1E4A32] bg-[#E9C46A]/20 px-1.5 py-0.5 rounded-md">
+                      Available on Matchi
+                    </span>
+                    {typeof activeItem.venue.rating === 'number' && activeItem.venue.review_count > 0 ? (
+                      <div className="flex items-center gap-0.5 text-[10px] font-bold text-[#C87D43] ml-auto">
+                        <Star className="w-3 h-3 fill-[#E9C46A] text-[#E9C46A]" />
+                        <span>{activeItem.venue.rating.toFixed(1)}</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-bold text-[#2D724E] ml-auto">Verified</span>
+                    )}
+                  </div>
+
+                  <h4 className="text-xs sm:text-sm font-black text-[#1A241E] truncate mt-1">
+                    {activeItem.venue.name}
+                  </h4>
+                  <p className="text-[10px] sm:text-[11px] text-[#65756B] truncate flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-[#2D724E] shrink-0" />
+                    <span>{activeItem.venue.address}</span>
+                  </p>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Link
+                      href={`/venues/${activeItem.venue.id}`}
+                      className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+                    >
+                      <span>Book</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${activeItem.venue.latitude}&mlon=${activeItem.venue.longitude}#map=16/${activeItem.venue.latitude}/${activeItem.venue.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#2D724E] hover:bg-[#FAF8F5]"
+                    >
+                      <Navigation className="w-3 h-3" />
+                      <span className="hidden sm:inline">OSM</span>
+                    </a>
+
+                    {/* Carousel Stepper */}
+                    {venues.length > 1 && (
+                      <div className="flex items-center gap-1 ml-auto">
+                        <button
+                          type="button"
+                          onClick={handlePrevVenue}
+                          className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
+                          title="Previous court"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-[10px] font-mono text-[#65756B]">
+                          {activeVenueIndex + 1}/{venues.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleNextVenue}
+                          className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
+                          title="Next court"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-extrabold text-[#334155] bg-[#F1F5F9] px-2 py-0.5 rounded-md">
+                      {getSportDisplayName(activeItem.facility.sport)}
+                    </span>
+                    <span className="text-[10px] font-bold text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] px-1.5 py-0.5 rounded-md">
+                      External Location (Discovered on Map)
+                    </span>
+                  </div>
 
-                <h4 className="text-xs sm:text-sm font-black text-[#1A241E] truncate mt-1">
-                  {currentVenue.name}
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-[#65756B] truncate flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-[#2D724E] shrink-0" />
-                  <span>{currentVenue.address}</span>
-                </p>
+                  <h4 className="text-xs sm:text-sm font-black text-[#1A241E] truncate mt-1">
+                    {activeItem.facility.name}
+                  </h4>
+                  <p className="text-[10px] sm:text-[11px] text-[#65756B] truncate flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-[#64748B] shrink-0" />
+                    <span>{activeItem.facility.address}</span>
+                  </p>
 
-                {/* Actions */}
-                <div className="flex items-center gap-2 mt-2">
-                  <Link
-                    href={`/venues/${currentVenue.id}`}
-                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
-                  >
-                    <span>Book Court</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </Link>
-                  <a
-                    href={`https://www.openstreetmap.org/?mlat=${currentVenue.latitude}&mlon=${currentVenue.longitude}#map=16/${currentVenue.latitude}/${currentVenue.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#2D724E] hover:bg-[#FAF8F5]"
-                  >
-                    <Navigation className="w-3 h-3" />
-                    <span className="hidden sm:inline">OSM</span>
-                  </a>
-
-                  {/* Carousel Stepper */}
-                  {venues.length > 1 && (
-                    <div className="flex items-center gap-1 ml-auto">
-                      <button
-                        type="button"
-                        onClick={handlePrevVenue}
-                        className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
-                        title="Previous court"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[10px] font-mono text-[#65756B]">
-                        {activeVenueIndex + 1}/{venues.length}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleNextVenue}
-                        className="p-1 rounded-lg bg-[#FAF8F5] border border-[#E8E5DF] text-[#1A241E] hover:bg-[#E8E5DF]"
-                        title="Next court"
-                      >
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${activeItem.facility.latitude},${activeItem.facility.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-[#1E293B] hover:bg-[#0F172A] text-white text-xs font-black shadow-sm transition-all"
+                    >
+                      <Navigation className="w-3 h-3 text-[#38BDF8]" />
+                      <span>Directions</span>
+                    </a>
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${activeItem.facility.latitude}&mlon=${activeItem.facility.longitude}#map=16/${activeItem.facility.latitude}/${activeItem.facility.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#64748B] hover:bg-[#FAF8F5]"
+                    >
+                      <Globe className="w-3 h-3" />
+                      <span className="hidden sm:inline">OSM</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setClickedItem(null)}
+                      className="ml-auto text-[11px] text-[#64748B] hover:text-[#1A241E] font-bold"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

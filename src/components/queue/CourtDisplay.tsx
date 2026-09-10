@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { Match, Court } from '@/types';
 import { ScoreModal } from './ScoreModal';
-import { getSportDisplayName, getFormatDisplayName } from '@/lib/utils';
 import { Clock, Edit3, Flame, Users, User } from 'lucide-react';
 
 interface CourtDisplayProps {

@@ -3,27 +3,42 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Compass, Zap, Shield, User } from 'lucide-react';
-import { useMonkeyStore } from '@/lib/store';
+import { Home, Compass, Calendar, Shield, User } from 'lucide-react';
+import { useMatchiStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: number | null;
+}
 
 export function BottomDock() {
   const pathname = usePathname();
-  const { currentUser, payments } = useMonkeyStore();
+  const { payments, activeMode } = useMatchiStore();
   const pendingCount = payments.filter((p) => p.status === 'pending').length;
+  const isManage = activeMode === 'manage';
 
-  const items = [
+  const playerItems: NavItem[] = [
     { href: '/', label: 'Home', icon: Home },
     { href: '/explore', label: 'Explore', icon: Compass },
-    { href: '/queue', label: 'Queue', icon: Zap },
+    { href: '/bookings', label: 'Bookings', icon: Calendar },
+    { href: '/profile', label: 'Profile', icon: User },
+  ];
+
+  const manageItems: NavItem[] = [
     {
       href: '/organizer',
-      label: 'Live Ops',
+      label: 'Ops Desk',
       icon: Shield,
-      badge: currentUser.role === 'organizer' && pendingCount > 0 ? pendingCount : null,
+      badge: pendingCount > 0 ? pendingCount : null,
     },
-    { href: '/profile', label: 'Mascot', icon: User },
+    { href: '/explore', label: 'Marketplace', icon: Compass },
+    { href: '/profile', label: 'Account', icon: User },
   ];
+
+  const items = isManage ? manageItems : playerItems;
 
   return (
     <nav
@@ -64,3 +79,4 @@ export function BottomDock() {
     </nav>
   );
 }
+

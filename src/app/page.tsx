@@ -1,217 +1,337 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { useMonkeyStore } from '@/lib/store';
-import { MonkeyMascot } from '@/components/mascot/MonkeyMascot';
-import { MascotBanner } from '@/components/mascot/MascotBanner';
+import { useMatchiStore } from '@/lib/store';
 import { VenueCard } from '@/components/explore/VenueCard';
 import { formatCurrency, getSportDisplayName } from '@/lib/utils';
+import { SportType } from '@/types';
 import {
-  Zap,
+  Calendar,
   Clock,
-  Compass,
-  ArrowRight,
+  MapPin,
   Users,
-  Sparkles,
-  CreditCard,
-  Banknote,
+  ArrowRight,
 } from 'lucide-react';
 
-export default function HomePage() {
-  const { currentUser, venues, sessions, queues } = useMonkeyStore();
+const SPORTS: { id: SportType | 'all'; label: string }[] = [
+  { id: 'all', label: 'All Sports' },
+  { id: 'pickleball', label: 'Pickleball' },
+  { id: 'badminton', label: 'Badminton' },
+  { id: 'basketball', label: 'Basketball' },
+  { id: 'tennis', label: 'Tennis' },
+  { id: 'padel', label: 'Padel' },
+];
 
-  const activeSession = sessions[0];
-  const myQueueEntry = queues.find(
-    (q) => q.session_id === activeSession.id && q.user_id === currentUser.id
+const DATE_PILLS = [
+  { id: 'today', label: 'Today' },
+  { id: 'tomorrow', label: 'Tomorrow' },
+  { id: 'weekend', label: 'This Weekend' },
+];
+
+const LOCATION_CHIPS = [
+  { id: 'all', label: 'All Metro' },
+  { id: 'taguig', label: 'BGC & Taguig' },
+  { id: 'makati', label: 'Makati' },
+  { id: 'pasig', label: 'Pasig' },
+  { id: 'qc', label: 'Quezon City' },
+];
+
+export default function HomePage() {
+  const { currentUser, venues, sessions, bookings } = useMatchiStore();
+
+  const [selectedSport, setSelectedSport] = useState<SportType | 'all'>('all');
+  const [selectedDate, setSelectedDate] = useState('today');
+  const [selectedLocation, setSelectedLocation] = useState('all');
+
+  // Filtered Venues
+  const filteredVenues = useMemo(() => {
+    return venues.filter((venue) => {
+      if (selectedSport !== 'all' && !venue.featured_sports.includes(selectedSport)) {
+        return false;
+      }
+      if (selectedLocation !== 'all') {
+        const loc = selectedLocation.toLowerCase();
+        const address = `${venue.city} ${venue.address}`.toLowerCase();
+        if (!address.includes(loc)) return false;
+      }
+      return true;
+    });
+  }, [venues, selectedSport, selectedLocation]);
+
+  // Filtered Sessions
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((sess) => {
+      if (selectedSport !== 'all' && sess.sport !== selectedSport) {
+        return false;
+      }
+      return true;
+    });
+  }, [sessions, selectedSport]);
+
+  // Active upcoming booking for current user
+  const upcomingBooking = bookings.find(
+    (b) => b.user_id === currentUser.id && (b.status === 'confirmed' || b.status === 'pending')
   );
 
+  const todayFormatted = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+
   return (
-    <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6">
-      {/* Top Hero Banner: Matchi Tarzan Aesthetic */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1E4A32] via-[#2D724E] to-[#153423] p-4 sm:p-7 text-white shadow-lg">
-        {/* Ambient jungle canopy gradients */}
-        <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-[#C87D43]/25 blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-2.5 max-w-xl">
-            <h1 className="text-xl sm:text-3xl font-black tracking-tight leading-tight">
-              Ready for the court, <span className="text-[#E9C46A]">{currentUser.nickname}</span>?
-            </h1>
-
-            <p className="text-xs sm:text-sm text-emerald-100 leading-relaxed">
-              Book courts and join open play queues across the Philippines.
-            </p>
-
-            {/* CTAs with phone touch sizing */}
-            <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              <Link
-                href="/explore"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#1E4A32] font-black text-xs sm:text-sm shadow-md hover:bg-emerald-50 transition-all active:scale-95 min-h-[42px]"
-              >
-                <Compass className="w-4 h-4" />
-                <span>Explore Courts</span>
-              </Link>
-              <Link
-                href="/queue"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 min-h-[42px]"
-              >
-                <Zap className="w-4 h-4 fill-current text-[#E9C46A]" />
-                <span>Join Open Play</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* Big Mascot Graphic in Hero */}
-          <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
-            <MonkeyMascot
-              mood="hype"
-              size="lg"
-              equippedGear={currentUser.equipped_gear}
-            />
-            <div className="md:hidden text-xs font-bold text-white/90">
-              Miki &bull; Matchi Mascot
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Next Activity / Active Status Card */}
-      <div className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-[#EBF4EE] text-[#2D724E] shrink-0 font-black">
-              <Zap className="w-6 h-6 fill-current text-[#C87D43]" />
-            </div>
-            <div>
-              <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
-                Your Active Rotation
-              </span>
-              <h2 className="text-base sm:text-lg font-black text-[#1A241E] leading-snug">
-                {myQueueEntry
-                  ? `You’re #${myQueueEntry.queue_number} in queue for ${activeSession.title}`
-                  : `Next game is up: ${activeSession.title}`}
-              </h2>
-              <p className="text-xs text-[#65756B] mt-0.5">
-                The Upper Deck Sports Center &bull; Badminton Court 1 &amp; 2
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {myQueueEntry ? (
-              <span className="w-full sm:w-auto rounded-xl bg-[#EBF4EE] px-3.5 py-2.5 text-xs font-bold text-[#1E4A32] flex items-center justify-center gap-1.5 min-h-[44px]">
-                <Clock className="w-4 h-4 text-[#2D724E]" />
-                <span>Estimated Wait: ~{myQueueEntry.estimated_wait_minutes}m</span>
-              </span>
-            ) : (
-              <Link
-                href={`/sessions/${activeSession.id}`}
-                className="w-full sm:w-auto text-center px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all min-h-[44px] flex items-center justify-center"
-              >
-                Hop into Queue &rarr;
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mascot Conversational Intel */}
-      <MascotBanner
-        mood="thinking"
-        title="Miki's Daily Court Intel"
-        equippedGear={currentUser.equipped_gear}
-      />
-
-      {/* Recommended Open Play Sessions */}
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-8 sm:space-y-12">
+      {/* Top Header: Date & Clean Sport Switcher (Apple Sports visual discipline) */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 border-b border-[#E8E5DF] pb-4">
           <div>
-            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#2D724E]">
-              Real-time Rotations
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#65756B]">
+              {todayFormatted}
             </span>
-            <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
-              Recommended Open Play
-            </h2>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E] mt-0.5">
+              Philippines Sports
+            </h1>
           </div>
+          <p className="text-xs text-[#65756B]">
+            Real court availability and verified open play sessions.
+          </p>
+        </div>
+
+        {/* Sport Switcher Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {SPORTS.map((sport) => {
+            const isSelected = selectedSport === sport.id;
+            return (
+              <button
+                key={sport.id}
+                type="button"
+                onClick={() => setSelectedSport(sport.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                  isSelected
+                    ? 'bg-[#1A241E] text-white shadow-xs'
+                    : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E] hover:border-[#1A241E]'
+                }`}
+              >
+                {sport.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Upcoming Reservation (Shown strictly when real booking exists) */}
+      {upcomingBooking && (
+        <section className="rounded-2xl border border-[#2D724E]/30 bg-[#EBF4EE]/60 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#2D724E] block">
+              Upcoming Booking &bull; {upcomingBooking.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+            </span>
+            <h3 className="text-base font-black text-[#1A241E]">
+              {upcomingBooking.court?.name || 'Reserved Court'}
+            </h3>
+            <div className="flex items-center gap-3 text-xs text-[#65756B] flex-wrap">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-[#2D724E]" />
+                {upcomingBooking.booking_date}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-[#2D724E]" />
+                {upcomingBooking.start_time} - {upcomingBooking.end_time}
+              </span>
+              {upcomingBooking.venue && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#2D724E]" />
+                  {upcomingBooking.venue.name}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <Link
+            href="/bookings"
+            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-[#2D724E] text-white text-xs font-bold hover:bg-[#1E4A32] transition-colors"
+          >
+            View Booking
+          </Link>
+        </section>
+      )}
+
+      {/* PRIMARY ACTION 1: FIND A COURT */}
+      <section className="space-y-4">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <h2 className="text-lg sm:text-xl font-black text-[#1A241E] tracking-tight">
+              Find a Court
+            </h2>
+            <p className="text-xs text-[#65756B]">
+              Verified facilities with dedicated playing areas and instant hourly slots.
+            </p>
+          </div>
+
           <Link
             href="/explore"
-            className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
+            className="text-xs font-bold text-[#2D724E] hover:underline inline-flex items-center gap-1"
           >
-            View all <ArrowRight className="w-3.5 h-3.5" />
+            <span>Explore</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
-          {sessions.map((sess) => (
-            <div
-              key={sess.id}
-              className="rounded-3xl border border-[#E8E5DF] bg-white p-4 sm:p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+        {/* Mobile Filter Controls (Replacing Desktop Dropdowns) */}
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+          {/* Date Selector Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {DATE_PILLS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => setSelectedDate(d.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                  selectedDate === d.id
+                    ? 'bg-[#2D724E] text-white shadow-xs'
+                    : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E]'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="hidden sm:block h-4 w-px bg-[#E8E5DF]" />
+
+          {/* Location Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {LOCATION_CHIPS.map((loc) => (
+              <button
+                key={loc.id}
+                type="button"
+                onClick={() => setSelectedLocation(loc.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+                  selectedLocation === loc.id
+                    ? 'bg-[#1A241E] text-white shadow-xs'
+                    : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E]'
+                }`}
+              >
+                {loc.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Venues Grid */}
+        {filteredVenues.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#E8E5DF] bg-white p-8 text-center space-y-2">
+            <span className="text-xs font-bold text-[#1A241E] block">
+              No facilities available.
+            </span>
+            <p className="text-[11px] text-[#65756B]">
+              Try choosing another sport or area to discover available courts.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSport('all');
+                setSelectedLocation('all');
+              }}
+              className="mt-2 px-3 py-1.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-bold text-[#1A241E] hover:bg-[#E8E5DF] transition-colors"
             >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="rounded-lg bg-[#EBF4EE] px-2.5 py-0.5 text-xs font-black text-[#1E4A32]">
-                    {getSportDisplayName(sess.sport)}
-                  </span>
-                  <span className="rounded-full bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[10px] font-bold text-[#65756B]">
-                    {sess.status === 'active' ? 'Active Now' : 'Upcoming'}
-                  </span>
+              Reset
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {filteredVenues.slice(0, 6).map((venue) => (
+              <VenueCard key={venue.id} venue={venue} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Subtle Separator */}
+      <div className="border-t border-[#E8E5DF]" />
+
+      {/* PRIMARY ACTION 2: FIND A GAME */}
+      <section className="space-y-4">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <h2 className="text-lg sm:text-xl font-black text-[#1A241E] tracking-tight">
+              Find a Game
+            </h2>
+            <p className="text-xs text-[#65756B]">
+              Drop-in open play sessions and live rotation boards.
+            </p>
+          </div>
+
+          <Link
+            href="/queue"
+            className="text-xs font-bold text-[#2D724E] hover:underline inline-flex items-center gap-1"
+          >
+            <span>Open Play</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* Sessions Grid */}
+        {filteredSessions.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#E8E5DF] bg-white p-8 text-center space-y-1">
+            <span className="text-xs font-bold text-[#1A241E] block">
+              No games available.
+            </span>
+            <p className="text-[11px] text-[#65756B]">
+              Check back for upcoming open play rotations or book a private court.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filteredSessions.map((sess) => (
+              <div
+                key={sess.id}
+                className="rounded-2xl border border-[#E8E5DF] bg-white p-4 sm:p-5 flex flex-col justify-between space-y-3 transition-all hover:border-[#2D724E]/40"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#2D724E] bg-[#2D724E]/10 px-2 py-0.5 rounded-md">
+                      {getSportDisplayName(sess.sport)} &bull; {sess.rotation_format}
+                    </span>
+                    <span className="text-xs font-bold text-[#2D724E]">
+                      {sess.status === 'active' ? 'Active' : 'Upcoming'}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-black text-[#1A241E] leading-snug">
+                    {sess.title}
+                  </h3>
+                  <p className="text-xs text-[#65756B] line-clamp-2 leading-relaxed">
+                    {sess.description}
+                  </p>
                 </div>
 
-                <h3 className="font-black text-sm sm:text-base text-[#1A241E] leading-snug">{sess.title}</h3>
-                <p className="text-xs text-[#65756B] mt-1 line-clamp-2">
-                  {sess.description}
-                </p>
-
-                <div className="mt-3 flex items-center justify-between text-xs text-[#65756B]">
-                  <span className="flex items-center gap-1">
+                <div className="flex items-center justify-between border-t border-[#E8E5DF] pt-3 text-xs">
+                  <div className="flex items-center gap-1.5 text-[#65756B]">
                     <Users className="w-3.5 h-3.5 text-[#2D724E]" />
-                    {sess.current_players_count} / {sess.max_players} players
-                  </span>
-                  <span className="font-black text-[#2D724E]">
-                    {formatCurrency(sess.fee_cents)}
-                  </span>
+                    <span>
+                      <strong className="text-[#1A241E]">{sess.current_players_count}</strong> / {sess.max_players} players
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="font-black text-[#1A241E]">
+                      {formatCurrency(sess.fee_cents)}
+                    </span>
+                    <Link
+                      href={`/sessions/${sess.id}`}
+                      className="px-3 py-1.5 rounded-xl bg-[#2D724E] text-white text-xs font-bold hover:bg-[#1E4A32] transition-colors"
+                    >
+                      Join
+                    </Link>
+                  </div>
                 </div>
               </div>
-
-              <Link
-                href="/queue"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm transition-all text-center min-h-[42px]"
-              >
-                <span>Check Live Queue Board</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Featured Venues Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-[#C87D43]">
-              Philippines
-            </span>
-            <h2 className="text-lg sm:text-2xl font-black text-[#1A241E]">
-              Featured Sports Centers
-            </h2>
+            ))}
           </div>
-          <Link
-            href="/explore"
-            className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
-          >
-            View all ({venues.length}) <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {venues.slice(0, 6).map((venue) => (
-            <VenueCard key={venue.id} venue={venue} />
-          ))}
-        </div>
-      </div>
+        )}
+      </section>
     </div>
   );
 }

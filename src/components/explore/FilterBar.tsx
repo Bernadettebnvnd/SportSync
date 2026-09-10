@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { SportType, SkillLevel, MatchFormat } from '@/types';
-import { getSportDisplayName, getFormatDisplayName } from '@/lib/utils';
+import { getSportDisplayName } from '@/lib/utils';
 import {
   Search,
   Map as MapIcon,
