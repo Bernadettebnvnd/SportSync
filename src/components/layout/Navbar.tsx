@@ -9,7 +9,6 @@ import {
   Calendar,
   Home,
   User as UserIcon,
-  Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
@@ -48,28 +47,16 @@ export function MatchiLogo({ size = 32 }: { size?: number }) {
 
 export function Navbar() {
   const pathname = usePathname();
-  const { currentUser, activeMode, setActiveMode, payments } = useMatchiStore();
+  const { currentUser } = useMatchiStore();
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const pendingPaymentsCount = payments.filter((p) => p.status === 'pending').length;
-  const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
-  const isManageMode = activeMode === 'manage';
-
-  const playerNavLinks = [
+  const navLinks = [
     { href: '/', label: 'Home', icon: Home },
-    { href: '/explore', label: 'Explore', icon: Compass },
+    { href: '/explore', label: 'Courts', icon: Compass },
     { href: '/bookings', label: 'Bookings', icon: Calendar },
     { href: '/profile', label: 'Profile', icon: UserIcon },
   ];
-
-  const manageNavLinks = [
-    { href: '/organizer', label: 'Facility Dashboard', icon: Building2 },
-    { href: '/explore', label: 'Explore Marketplace', icon: Compass },
-    { href: '/profile', label: 'Account', icon: UserIcon },
-  ];
-
-  const currentNavLinks = isManageMode ? manageNavLinks : playerNavLinks;
 
   return (
     <>
@@ -90,7 +77,7 @@ export function Navbar() {
 
           {/* Desktop Nav Links */}
           <nav className="hidden md:flex items-center gap-1">
-            {currentNavLinks.map((link) => {
+            {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive = pathname === link.href;
               return (
@@ -111,53 +98,12 @@ export function Navbar() {
             })}
           </nav>
 
-          {/* Right Side: Mode Switcher & User Profile */}
+          {/* Right Side: Account Trigger */}
           <div className="flex items-center gap-2">
-            {/* Mode Switcher Pill (PLAY / MANAGE) */}
-            <div className="flex items-center bg-[#E8E5DF]/70 p-0.5 rounded-xl border border-[#E8E5DF]">
-              <button
-                type="button"
-                onClick={() => setActiveMode('play')}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1',
-                  !isManageMode
-                    ? 'bg-white text-[#1A241E] shadow-xs'
-                    : 'text-[#65756B] hover:text-[#1A241E]'
-                )}
-              >
-                <span>Play</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (isOwner) {
-                    setActiveMode('manage');
-                  } else {
-                    setIsOwnerModalOpen(true);
-                  }
-                }}
-                className={cn(
-                  'px-2.5 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1',
-                  isManageMode
-                    ? 'bg-[#1E4A32] text-white shadow-xs'
-                    : 'text-[#65756B] hover:text-[#1A241E]'
-                )}
-                title={isOwner ? 'Switch to Facility Management' : 'List a Sports Facility'}
-              >
-                <span>Manage</span>
-                {pendingPaymentsCount > 0 && isManageMode && (
-                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#C87D43] text-[9px] font-black text-white">
-                    {pendingPaymentsCount}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* User Quick Info & Auth Status */}
             <button
               type="button"
               onClick={() => setIsAuthModalOpen(true)}
-              className="flex items-center gap-1.5 p-1 pl-1.5 pr-2 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] transition-all cursor-pointer"
+              className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] transition-all cursor-pointer shadow-2xs"
               title="Account & Authentication Session"
             >
               <img
@@ -165,7 +111,7 @@ export function Navbar() {
                 alt={currentUser.full_name}
                 className="w-6 h-6 rounded-full object-cover border border-[#2D724E]"
               />
-              <span className="hidden sm:inline text-xs font-bold text-[#1A241E] max-w-[80px] truncate">
+              <span className="hidden sm:inline text-xs font-bold text-[#1A241E] max-w-[90px] truncate">
                 {currentUser.nickname || currentUser.full_name}
               </span>
             </button>

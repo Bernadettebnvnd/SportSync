@@ -3,8 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Compass, Calendar, Shield, User } from 'lucide-react';
-import { useMatchiStore } from '@/lib/store';
+import { Home, Compass, Calendar, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -16,29 +15,13 @@ interface NavItem {
 
 export function BottomDock() {
   const pathname = usePathname();
-  const { payments, activeMode } = useMatchiStore();
-  const pendingCount = payments.filter((p) => p.status === 'pending').length;
-  const isManage = activeMode === 'manage';
 
-  const playerItems: NavItem[] = [
+  const items: NavItem[] = [
     { href: '/', label: 'Home', icon: Home },
-    { href: '/explore', label: 'Explore', icon: Compass },
+    { href: '/explore', label: 'Courts', icon: Compass },
     { href: '/bookings', label: 'Bookings', icon: Calendar },
     { href: '/profile', label: 'Profile', icon: User },
   ];
-
-  const manageItems: NavItem[] = [
-    {
-      href: '/organizer',
-      label: 'Ops Desk',
-      icon: Shield,
-      badge: pendingCount > 0 ? pendingCount : null,
-    },
-    { href: '/explore', label: 'Marketplace', icon: Compass },
-    { href: '/profile', label: 'Account', icon: User },
-  ];
-
-  const items = isManage ? manageItems : playerItems;
 
   return (
     <nav

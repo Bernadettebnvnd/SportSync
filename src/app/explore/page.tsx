@@ -18,11 +18,9 @@ function ExploreContent() {
   const initialCity = searchParams.get('city') || '';
 
   const { venues, isLoading } = useMatchiStore();
-  const initialView = searchParams.get('view') === 'map' ? 'map' : 'list';
+  const initialView = searchParams.get('view') === 'list' ? 'list' : 'map';
   const [searchQuery, setSearchQuery] = useState(initialCity);
   const [selectedSport, setSelectedSport] = useState(initialSport);
-  const [selectedFormat, setSelectedFormat] = useState('all');
-  const [selectedLevel, setSelectedLevel] = useState('all_levels');
   const [viewMode, setViewMode] = useState<'list' | 'map'>(initialView);
   const [selectedVenueId, setSelectedVenueId] = useState<string | undefined>();
   const [selectedDiscoveredId, setSelectedDiscoveredId] = useState<string | undefined>();
@@ -87,8 +85,6 @@ function ExploreContent() {
   const handleResetFilters = () => {
     setSearchQuery('');
     setSelectedSport('all');
-    setSelectedFormat('all');
-    setSelectedLevel('all_levels');
   };
 
   return (
@@ -114,10 +110,6 @@ function ExploreContent() {
           onSearchChange={setSearchQuery}
           selectedSport={selectedSport}
           onSportChange={setSelectedSport}
-          selectedFormat={selectedFormat}
-          onFormatChange={setSelectedFormat}
-          selectedLevel={selectedLevel}
-          onLevelChange={setSelectedLevel}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
         />

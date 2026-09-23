@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App Name — Interactive LoFi & HiFi Wireframe Prototype</title>
+  <style>
+    /* ========================================================
+       DESIGN TOKENS: HIFI & LOFI SYSTEMS
+       ======================================================== */
+    :root {
+      /* Shared Layout Tokens */
+      --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --radius-xs: 4px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+      --radius-full: 9999px;
+      
+      /* HiFi Tokens (Apple HIG Neutral Foundation) */
+      --hifi-bg: #F7F7F5;
+      --hifi-surface: #FFFFFF;
+      --hifi-surface-subtle: #F2F2F0;
+      --hifi-surface-hover: #ECECE9;
+      --hifi-text-primary: #111111;
+      --hifi-text-secondary: #6B6B6B;
+      --hifi-text-tertiary: #9E9E9E;
+      --hifi-border: #E5E5E5;
+      --hifi-border-subtle: #EEEEEE;
+      --hifi-brand-primary: #18181B;
+      --hifi-brand-accent: #0F766E;
+      --hifi-brand-accent-subtle: #F0FDF4;
+      --hifi-brand-accent-text: #166534;
+      --hifi-success: #15803D;
+      --hifi-success-bg: #DCFCE7;
+      --hifi-warning: #B45309;
+      --hifi-warning-bg: #FEF3C7;
+      --hifi-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --hifi-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.08);
+      --hifi-shadow-sheet: 0 -4px 24px rgba(0, 0, 0, 0.12);
+
+      /* LoFi Tokens (Grayscale Wireframe Mode) */
+      --lofi-bg: #F2F2F2;
+      --lofi-surface: #FFFFFF;
+      --lofi-surface-subtle: #EAEAEA;
+      --lofi-surface-hover: #E0E0E0;
+      --lofi-text-primary: #222222;
+      --lofi-text-secondary: #666666;
+      --lofi-text-tertiary: #888888;
+      --lofi-border: #CCCCCC;
+      --lofi-border-subtle: #DDDDDD;
+      --lofi-brand-primary: #333333;
+      --lofi-brand-accent: #555555;
+      --lofi-brand-accent-subtle: #ECECEC;
+      --lofi-brand-accent-text: #222222;
+      --lofi-success: #444444;
+      --lofi-success-bg: #E0E0E0;
+      --lofi-warning: #555555;
+      --lofi-warning-bg: #EAEAEA;
+      --lofi-shadow-sm: none;
+      --lofi-shadow-md: none;
+      --lofi-shadow-sheet: 0 -2px 10px rgba(0, 0, 0, 0.08);
+
+      /* Active Dynamic System (swapped via JS) */
+      --app-bg: var(--hifi-bg);
+      --app-surface: var(--hifi-surface);
+      --app-surface-subtle: var(--hifi-surface-subtle);
+      --app-surface-hover: var(--hifi-surface-hover);
+      --app-text-primary: var(--hifi-text-primary);
+      --app-text-secondary: var(--hifi-text-secondary);
+      --app-text-tertiary: var(--hifi-text-tertiary);
+      --app-border: var(--hifi-border);
+      --app-border-subtle: var(--hifi-border-subtle);
+      --app-brand-primary: var(--hifi-brand-primary);
+      --app-brand-accent: var(--hifi-brand-accent);
+      --app-brand-accent-subtle: var(--hifi-brand-accent-subtle);
+      --app-brand-accent-text: var(--hifi-brand-accent-text);
+      --app-success: var(--hifi-success);
+      --app-success-bg: var(--hifi-success-bg);
+      --app-warning: var(--hifi-warning);
+      --app-warning-bg: var(--hifi-warning-bg);
+      --app-shadow-sm: var(--hifi-shadow-sm);
+      --app-shadow-md: var(--hifi-shadow-md);
+      --app-shadow-sheet: var(--hifi-shadow-sheet);
+    }
+
+    body.mode-lofi {
+      --app-bg: var(--lofi-bg);
+      --app-surface: var(--lofi-surface);
+      --app-surface-subtle: var(--lofi-surface-subtle);
+      --app-surface-hover: var(--lofi-surface-hover);
+      --app-text-primary: var(--lofi-text-primary);
+      --app-text-secondary: var(--lofi-text-secondary);
+      --app-text-tertiary: var(--lofi-text-tertiary);
+      --app-border: var(--lofi-border);
+      --app-border-subtle: var(--lofi-border-subtle);
+      --app-brand-primary: var(--lofi-brand-primary);
+      --app-brand-accent: var(--lofi-brand-accent);
+      --app-brand-accent-subtle: var(--lofi-brand-accent-subtle);
+      --app-brand-accent-text: var(--lofi-brand-accent-text);
+      --app-success: var(--lofi-success);
+      --app-success-bg: var(--lofi-success-bg);
+      --app-warning: var(--lofi-warning);
+      --app-warning-bg: var(--lofi-warning-bg);
+      --app-shadow-sm: var(--lofi-shadow-sm);
+      --app-shadow-md: var(--lofi-shadow-md);
+      --app-shadow-sheet: var(--lofi-shadow-sheet);
+    }
+
+    /* LoFi Wireframe Visual Indicators */
+    body.mode-lofi .photo-box {
+      background: #EAEAEA !important;
+      border: 1px dashed #BBBBBB !important;
+      position: relative;
+    }
+    body.mode-lofi .photo-box::before {
+      content: "[ IMAGE PLACEHOLDER ]";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 11px;
+      font-weight: 600;
+      color: #777777;
+      letter-spacing: 0.5px;
+    }
+    body.mode-lofi .badge-pill {
+      border: 1px solid #777777 !important;
+      background: transparent !important;
+      color: #333333 !important;
+    }
+
+    /* Global Workspace Styles */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: #121316;
+      color: #F1F1F1;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Prototype Control Bar */
+    header.prototype-header {
+      background: #1C1E22;
+      border-bottom: 1px solid #2B2E36;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .proto-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .proto-logo-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #FFFFFF;
+      letter-spacing: -0.2px;
+    }
+
+    .proto-logo-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: #0F766E;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .proto-tag {
+      font-size: 11px;
+      background: #2C3038;
+      color: #9CA3AF;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .proto-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .control-group {
+      display: flex;
+      background: #131417;
+      border: 1px solid #2D313A;
+      border-radius: 8px;
+      padding: 2px;
+    }
+
+    .control-btn {
+      background: transparent;
+      border: none;
+      color: #9CA3AF;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .control-btn:hover {
+      color: #FFFFFF;
+    }
+
+    .control-btn.active {
+      background: #2D313A;
+      color: #FFFFFF;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    .flow-select {
+      background: #131417;
+      border: 1px solid #2D313A;
+      color: #E5E7EB;
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Main Workspace Canvas */
+    main.prototype-canvas {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #16171B;
+      background-image: radial-gradient(#272A32 1px, transparent 1px);
+      background-size: 20px 20px;
+      overflow: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    /* Device Frames */
+    .device-viewport {
+      background: var(--app-bg);
+      color: var(--app-text-primary);
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--app-border);
+    }
+
+    /* Mobile Viewport: 390 x 844 */
+    .device-viewport.mobile {
+      width: 390px;
+      height: 844px;
+      border-radius: 44px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 0 12px #262930;
+    }
+
+    /* Tablet Viewport: 768 x 1024 */
+    .device-viewport.tablet {
+      width: 768px;
+      height: 840px;
+      border-radius: 28px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 0 12px #262930;
+    }
+
+    /* Desktop Viewport: 1280 x 800 */
+    .device-viewport.desktop {
+      width: 1280px;
+      height: 800px;
+      border-radius: 12px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 0 8px #262930;
+    }
+
+    /* Mobile Status Bar */
+    .status-bar {
+      height: 44px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--app-text-primary);
+      flex-shrink: 0;
+    }
+
+    .device-viewport.tablet .status-bar,
+    .device-viewport.desktop .status-bar {
+      display: none;
+    }
+
+    /* App Screens Container */
+    .screen-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      padding: 16px;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Typography Utilities */
+    .h1-title { font-size: 24px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.25; color: var(--app-text-primary); }
+    .h2-title { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; line-height: 1.3; color: var(--app-text-primary); }
+    .h3-title { font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--app-text-primary); }
+    .body-text { font-size: 15px; font-weight: 400; line-height: 1.45; color: var(--app-text-primary); }
+    .body-muted { font-size: 13px; font-weight: 400; line-height: 1.4; color: var(--app-text-secondary); }
+    .caption-text { font-size: 11px; font-weight: 500; color: var(--app-text-tertiary); text-transform: uppercase; letter-spacing: 0.4px; }
+
+    /* Surface Cards */
+    .app-card {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--app-shadow-sm);
+      transition: all 0.15s ease;
+    }
+    .app-card:active {
+      transform: scale(0.99);
+    }
+
+    /* Buttons */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      padding: 0 16px;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .btn-primary {
+      background: var(--app-brand-primary);
+      color: #FFFFFF;
+    }
+    .btn-secondary {
+      background: var(--app-surface);
+      color: var(--app-text-primary);
+      border: 1px solid var(--app-border);
+    }
+    .btn-accent {
+      background: var(--app-brand-accent);
+      color: #FFFFFF;
+    }
+    .btn-sm {
+      height: 36px;
+      padding: 0 12px;
+      font-size: 13px;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Bottom Navigation Bar (Mobile) */
+    .bottom-tab-bar {
+      height: 82px;
+      background: var(--app-surface);
+      border-top: 1px solid var(--app-border);
+      display: flex;
+      align-items: flex-start;
+      padding-top: 8px;
+      justify-content: space-around;
+      flex-shrink: 0;
+      z-index: 50;
+    }
+    .tab-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: none;
+      border: none;
+      color: var(--app-text-secondary);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 60px;
+    }
+    .tab-item.active {
+      color: var(--app-brand-primary);
+      font-weight: 600;
+    }
+    .tab-item svg {
+      stroke: currentColor;
+    }
+
+    /* Desktop/Tablet Sidebar */
+    .desktop-layout-wrapper {
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+    .desktop-sidebar {
+      display: none;
+      width: 250px;
+      background: var(--app-surface);
+      border-right: 1px solid var(--app-border);
+      padding: 20px 16px;
+      flex-direction: column;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .device-viewport.desktop .desktop-sidebar,
+    .device-viewport.tablet .desktop-sidebar {
+      display: flex;
+    }
+    .device-viewport.desktop .bottom-tab-bar,
+    .device-viewport.tablet .bottom-tab-bar {
+      display: none;
+    }
+
+    .desktop-nav-links {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 24px;
+    }
+    .desktop-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      color: var(--app-text-secondary);
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .desktop-nav-item:hover {
+      background: var(--app-surface-hover);
+      color: var(--app-text-primary);
+    }
+    .desktop-nav-item.active {
+      background: var(--app-surface-subtle);
+      color: var(--app-brand-primary);
+      font-weight: 600;
+    }
+
+    /* Chips & Badges */
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      margin-bottom: 16px;
+    }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .filter-chip {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      white-space: nowrap;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .filter-chip.active {
+      background: var(--app-brand-primary);
+      color: #FFFFFF;
+      border-color: var(--app-brand-primary);
+    }
+
+    /* Overlays & Bottom Sheet */
+    .bottom-sheet-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.4);
+      display: none;
+      align-items: flex-end;
+      z-index: 90;
+      animation: sheetFade 0.2s ease-out;
+    }
+    .bottom-sheet-overlay.active {
+      display: flex;
+    }
+    .bottom-sheet {
+      background: var(--app-surface);
+      border-top-left-radius: var(--radius-xl);
+      border-top-right-radius: var(--radius-xl);
+      width: 100%;
+      padding: 20px;
+      box-shadow: var(--app-shadow-sheet);
+      animation: sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      max-height: 85%;
+      overflow-y: auto;
+    }
+    @keyframes sheetSlideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    @keyframes sheetFade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      background: var(--app-border);
+      border-radius: 2px;
+      margin: 0 auto 16px auto;
+    }
+
+    /* QR Pass Modal */
+    .qr-box {
+      width: 160px;
+      height: 160px;
+      background: #FFFFFF;
+      border: 1px solid #E5E5E5;
+      border-radius: 12px;
+      margin: 16px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Vector Icon Utility */
+    .icon {
+      width: 20px;
+      height: 20px;
+      stroke-width: 1.75;
+      stroke: currentColor;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+    .icon-sm { width: 16px; height: 16px; }
+    .icon-lg { width: 24px; height: 24px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Prototype Control Bar -->
+  <header class="prototype-header">
+    <div class="proto-left">
+      <div class="proto-logo-badge">
+        <div class="proto-logo-icon">
+          <svg class="icon icon-sm" style="stroke: #FFFFFF;" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M8 12h8M12 8v8"></path>
+          </svg>
+        </div>
+        <span>App Name</span>
+      </div>
+      <span class="proto-tag">UX/UI Prototype Engine</span>
+    </div>
+
+    <div class="proto-controls">
+      <!-- Mode Switcher: HiFi vs LoFi -->
+      <div class="control-group">
+        <button id="btn-mode-hifi" class="control-btn active" onclick="setFidelity('hifi')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          HiFi Preview
+        </button>
+        <button id="btn-mode-lofi" class="control-btn" onclick="setFidelity('lofi')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+          LoFi Wireframe
+        </button>
+      </div>
+
+      <!-- Viewport Switcher -->
+      <div class="control-group">
+        <button id="btn-vp-mobile" class="control-btn active" onclick="setViewport('mobile')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          Mobile (390)
+        </button>
+        <button id="btn-vp-tablet" class="control-btn" onclick="setViewport('tablet')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+          Tablet (768)
+        </button>
+        <button id="btn-vp-desktop" class="control-btn" onclick="setViewport('desktop')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+          Desktop (1280)
+        </button>
+      </div>
+
+      <!-- Screen / Flow Jumper -->
+      <select id="flowSelector" class="flow-select" onchange="navigateToScreen(this.value)">
+        <optgroup label="Core User Flows">
+          <option value="screen-welcome">Flow 1: Welcome & Auth</option>
+          <option value="screen-onboarding">Flow 1: Player Onboarding</option>
+          <option value="screen-home" selected>Flow 2: Player Home</option>
+          <option value="screen-discover">Flow 2: Discover & Open Play</option>
+          <option value="screen-opendetails">Flow 2: Open Play Session Details</option>
+          <option value="screen-venuedetails">Flow 3: Venue Details & Court Booking</option>
+          <option value="screen-creategame">Flow 4: Host a Game Wizard</option>
+          <option value="screen-activity">Flow 5: Activity & Check-in Pass</option>
+          <option value="screen-messages">Flow 5: Game Messages</option>
+          <option value="screen-venue-dash">Flow 6: Venue Operator Console</option>
+          <option value="screen-venue-calendar">Flow 6: Venue Court Schedule</option>
+        </optgroup>
+        <optgroup label="Edge & Feedback States">
+          <option value="screen-empty">Empty State: No Games Found</option>
+          <option value="screen-error">Error State: Connection Lost</option>
+        </optgroup>
+      </select>
+
+      <!-- Role Switcher -->
+      <div class="control-group">
+        <button id="btn-role-player" class="control-btn active" onclick="switchRole('player')">Player</button>
+        <button id="btn-role-venue" class="control-btn" onclick="switchRole('venue')">Venue</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Prototype Interactive Canvas -->
+  <main class="prototype-canvas">
+    
+    <!-- Device Frame Wrapper -->
+    <div id="deviceViewport" class="device-viewport mobile">
+      
+      <!-- Mobile Native Status Bar -->
+      <div class="status-bar">
+        <span>9:41</span>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line></svg>
+        </div>
+      </div>
+
+      <!-- Main Layout Structure with Desktop Sidebar Support -->
+      <div class="desktop-layout-wrapper">
+        
+        <!-- Persistent Desktop/Tablet Sidebar -->
+        <aside class="desktop-sidebar">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; padding:0 8px 16px 8px; border-bottom:1px solid var(--app-border);">
+              <div class="proto-logo-icon">
+                <svg class="icon icon-sm" style="stroke: #FFFFFF;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M8 12h8M12 8v8"></path></svg>
+              </div>
+              <div>
+                <div style="font-weight:700; font-size:15px; color:var(--app-text-primary);">App Name</div>
+                <div style="font-size:11px; color:var(--app-text-secondary);" id="sidebar-role-indicator">Player Hub</div>
+              </div>
+            </div>
+
+            <!-- Player Sidebar Routes -->
+            <nav id="sidebar-player-nav" class="desktop-nav-links">
+              <a class="desktop-nav-item active" onclick="navigateToScreen('screen-home')">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                <span>Home</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-discover')">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                <span>Discover</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-activity')">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>My Activity</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-messages')">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <span>Messages</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-creategame')">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                <span>Host Game</span>
+              </a>
+            </nav>
+
+            <!-- Venue Sidebar Routes -->
+            <nav id="sidebar-venue-nav" class="desktop-nav-links" style="display:none;">
+              <a class="desktop-nav-item active" onclick="navigateToScreen('screen-venue-dash')">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                <span>Operations Dashboard</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-venue-calendar')">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span>Court Schedule</span>
+              </a>
+              <a class="desktop-nav-item" onclick="navigateToScreen('screen-opendetails')">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>Open Play Sessions</span>
+              </a>
+            </nav>
+          </div>
+
+          <!-- Sidebar Footer User Profile -->
+          <div style="padding-top:16px; border-top:1px solid var(--app-border); display:flex; align-items:center; gap:10px;">
+            <div style="width:36px; height:36px; border-radius:50%; background:var(--app-surface-subtle); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13px;">AT</div>
+            <div>
+              <div style="font-size:13px; font-weight:600; color:var(--app-text-primary);">Alex Turner</div>
+              <div style="font-size:11px; color:var(--app-text-secondary);">Taguig City</div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Screens Scroll Container -->
+        <div class="screen-container">
+
+          <!-- ==========================================
+               SCREEN: WELCOME & AUTH (0.2)
+               ========================================== -->
+          <section id="screen-welcome" class="screen">
+            <div class="photo-box" style="height:260px; border-radius:var(--radius-lg); margin-bottom:24px; display:flex; align-items:center; justify-content:center; background:#E5E7EB;">
+              <svg class="icon" style="width:48px; height:48px; color:var(--app-text-tertiary);" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            </div>
+            
+            <div class="caption-text" style="color:var(--app-brand-accent);">Sports Discovery Platform</div>
+            <h1 class="h1-title" style="margin-top:6px; margin-bottom:8px;">Find places to play.<br>Meet people to play with.</h1>
+            <p class="body-muted" style="margin-bottom:32px;">App Name connects people and places through sport. Join open sessions, reserve courts, and connect with players.</p>
+
+            <button class="btn btn-primary" style="margin-bottom:12px;" onclick="navigateToScreen('screen-onboarding')">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 1 10 10"></path></svg>
+              Continue with Google
+            </button>
+            <button class="btn btn-secondary" onclick="navigateToScreen('screen-home')">
+              Continue as Guest
+            </button>
+            <div class="body-muted" style="text-align:center; font-size:11px; margin-top:20px;">
+              By continuing you agree to Terms & Privacy Policy
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: PLAYER ONBOARDING (1.3 / 1.4)
+               ========================================== -->
+          <section id="screen-onboarding" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-welcome')">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Back
+              </button>
+              <span class="caption-text">Step 3 of 8</span>
+            </div>
+
+            <h1 class="h1-title" style="margin-bottom:6px;">What do you play?</h1>
+            <p class="body-muted" style="margin-bottom:20px;">Select your sports so we can curate open games and courts near Taguig.</p>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:24px;">
+              <div class="app-card" style="padding:16px; border:2px solid var(--app-brand-accent); background:var(--app-brand-accent-subtle);">
+                <svg class="icon" style="stroke:var(--app-brand-accent);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8M8 12h8"></path></svg>
+                <div style="font-weight:600; margin-top:10px; color:var(--app-brand-accent-text);">Pickleball</div>
+                <div class="body-muted" style="font-size:11px;">Selected</div>
+              </div>
+              <div class="app-card" style="padding:16px; border:2px solid var(--app-brand-accent); background:var(--app-brand-accent-subtle);">
+                <svg class="icon" style="stroke:var(--app-brand-accent);" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                <div style="font-weight:600; margin-top:10px; color:var(--app-brand-accent-text);">Badminton</div>
+                <div class="body-muted" style="font-size:11px;">Selected</div>
+              </div>
+              <div class="app-card" style="padding:16px;">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M2.5 12a9.5 9.5 0 0 0 19 0"></path></svg>
+                <div style="font-weight:600; margin-top:10px;">Tennis</div>
+                <div class="body-muted" style="font-size:11px;">Tap to select</div>
+              </div>
+              <div class="app-card" style="padding:16px;">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+                <div style="font-weight:600; margin-top:10px;">Basketball</div>
+                <div class="body-muted" style="font-size:11px;">Tap to select</div>
+              </div>
+            </div>
+
+            <h3 class="h3-title" style="margin-bottom:12px;">Skill Level (Pickleball)</h3>
+            <div style="display:flex; gap:8px; margin-bottom:24px;">
+              <button class="filter-chip">Beginner (2.0-2.5)</button>
+              <button class="filter-chip active">Intermediate (3.0-3.5)</button>
+              <button class="filter-chip">Advanced (4.0+)</button>
+            </div>
+
+            <button class="btn btn-primary" onclick="navigateToScreen('screen-home')">
+              Complete Setup & Explore Games
+            </button>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: PLAYER HOME (2.0)
+               ========================================== -->
+          <section id="screen-home" class="screen active">
+            <!-- Header bar -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <div style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <svg class="icon icon-sm" style="color:var(--app-brand-accent);" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                <span style="font-size:14px; font-weight:600;">BGC, Taguig City</span>
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </div>
+              <div style="display:flex; gap:12px; align-items:center;">
+                <div style="position:relative; cursor:pointer;" onclick="openReminderSheet()">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                  <span style="position:absolute; top:-2px; right:-2px; width:7px; height:7px; background:var(--app-brand-accent); border-radius:50%;"></span>
+                </div>
+                <div style="width:32px; height:32px; border-radius:50%; background:var(--app-surface-subtle); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:12px;">AT</div>
+              </div>
+            </div>
+
+            <div style="margin-bottom:18px;">
+              <h1 class="h1-title">Good morning, Alex</h1>
+              <p class="body-muted">3 open play sessions matching your sports today</p>
+            </div>
+
+            <!-- Active Upcoming Session Card -->
+            <div class="app-card" style="border-left:4px solid var(--app-brand-accent); background:var(--app-surface);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span class="caption-text" style="color:var(--app-brand-accent); font-weight:700;">CONFIRMED * TONIGHT 7:00 PM</span>
+                <button class="btn btn-sm btn-secondary" onclick="openQrPass()">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                  QR Pass
+                </button>
+              </div>
+              <h3 class="h3-title" style="margin-bottom:4px;">Pickleball Open Play (Intermediate)</h3>
+              <p class="body-muted" style="margin-bottom:12px;">Downtown Pickleball Club * Court 1 & 2</p>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--app-text-secondary);">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                  <span>6 / 8 Players Confirmed</span>
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-messages')">Chat</button>
+              </div>
+            </div>
+
+            <!-- Sports Shortcuts -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <span class="h3-title" style="font-size:15px;">What to play</span>
+              <span class="caption-text" style="cursor:pointer;" onclick="navigateToScreen('screen-discover')">View all</span>
+            </div>
+            <div class="chip-row">
+              <button class="filter-chip active">All Sports</button>
+              <button class="filter-chip" onclick="navigateToScreen('screen-discover')">Pickleball</button>
+              <button class="filter-chip" onclick="navigateToScreen('screen-discover')">Badminton</button>
+              <button class="filter-chip" onclick="navigateToScreen('screen-discover')">Tennis</button>
+              <button class="filter-chip">Basketball</button>
+            </div>
+
+            <!-- Happening Tonight Section -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <span class="h3-title">Happening Tonight</span>
+              <span class="body-muted" style="font-size:12px; cursor:pointer;" onclick="navigateToScreen('screen-discover')">See 8 games</span>
+            </div>
+
+            <!-- Game Card 1 -->
+            <div class="app-card" onclick="navigateToScreen('screen-opendetails')" style="cursor:pointer;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+                <div>
+                  <span class="caption-text" style="color:var(--app-brand-accent);">PICKLEBALL * INTERMEDIATE 3.5</span>
+                  <h3 class="h3-title" style="margin-top:2px;">Tonight, 7:00 PM – 9:00 PM</h3>
+                </div>
+                <span style="font-weight:700; font-size:15px; color:var(--app-text-primary);">PHP 150</span>
+              </div>
+              <p class="body-muted" style="margin-bottom:12px;">Downtown Pickleball Club * 1.2 km away</p>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="body-muted" style="font-size:12px;">6 / 8 Slots Filled (2 Open)</span>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openJoinSheet('Pickleball Open Play', 'PHP 150')">Join Session</button>
+              </div>
+            </div>
+
+            <!-- Game Card 2 -->
+            <div class="app-card" onclick="navigateToScreen('screen-opendetails')" style="cursor:pointer;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">
+                <div>
+                  <span class="caption-text" style="color:var(--app-brand-accent);">BADMINTON * CASUAL DOUBLES</span>
+                  <h3 class="h3-title" style="margin-top:2px;">Tonight, 8:00 PM – 10:00 PM</h3>
+                </div>
+                <span style="font-weight:700; font-size:15px; color:var(--app-text-primary);">PHP 120</span>
+              </div>
+              <p class="body-muted" style="margin-bottom:12px;">Riverside Sports Arena * Pasig (3.8 km)</p>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="body-muted" style="font-size:12px;">3 / 4 Slots Filled (1 Open)</span>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openJoinSheet('Badminton Doubles', 'PHP 120')">Join Session</button>
+              </div>
+            </div>
+
+            <!-- Nearby Venue Highlight -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 10px 0;">
+              <span class="h3-title">Venues Near You</span>
+              <span class="body-muted" style="font-size:12px; cursor:pointer;" onclick="navigateToScreen('screen-venuedetails')">Explore</span>
+            </div>
+            <div class="app-card" onclick="navigateToScreen('screen-venuedetails')" style="cursor:pointer;">
+              <div class="photo-box" style="height:110px; border-radius:var(--radius-md); margin-bottom:10px; background:#E5E7EB;"></div>
+              <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                  <h3 class="h3-title">Downtown Pickleball Club</h3>
+                  <p class="body-muted" style="font-size:12px;">BGC, Taguig * 4 Indoor Courts * 1.2 km away</p>
+                </div>
+                <div style="text-align:right;">
+                  <span style="font-size:12px; font-weight:600; color:var(--app-text-primary); display:inline-flex; align-items:center; gap:2px;">
+                    <svg class="icon" style="width:12px; height:12px; stroke:var(--app-brand-accent);" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    4.9
+                  </span>
+                  <div class="body-muted" style="font-size:11px;">From PHP 350/hr</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: DISCOVER HUB (3.0)
+               ========================================== -->
+          <section id="screen-discover" class="screen">
+            <h1 class="h1-title" style="margin-bottom:12px;">Discover</h1>
+            
+            <!-- Search Input -->
+            <div style="display:flex; align-items:center; gap:8px; background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--radius-md); padding:0 12px; height:44px; margin-bottom:14px;">
+              <svg class="icon icon-sm" style="color:var(--app-text-tertiary);" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" placeholder="Search sports, venues, or games..." style="border:none; outline:none; background:transparent; font-size:14px; width:100%; color:var(--app-text-primary);">
+            </div>
+
+            <!-- Categories Tabs -->
+            <div style="display:flex; border-bottom:1px solid var(--app-border); margin-bottom:14px;">
+              <button class="btn btn-sm" style="flex:1; border-bottom:2px solid var(--app-brand-primary); border-radius:0; color:var(--app-brand-primary); font-weight:600;">Open Play</button>
+              <button class="btn btn-sm" style="flex:1; border-radius:0; color:var(--app-text-secondary);" onclick="navigateToScreen('screen-venuedetails')">Venues</button>
+              <button class="btn btn-sm" style="flex:1; border-radius:0; color:var(--app-text-secondary);">Sports Guide</button>
+            </div>
+
+            <!-- Filter Badges -->
+            <div class="chip-row">
+              <button class="filter-chip active">Sport: Pickleball (x)</button>
+              <button class="filter-chip active">Tonight (x)</button>
+              <button class="filter-chip">Intermediate</button>
+              <button class="filter-chip">Within 10 km</button>
+            </div>
+
+            <!-- Results List -->
+            <div class="app-card" onclick="navigateToScreen('screen-opendetails')" style="cursor:pointer;">
+              <span class="caption-text" style="color:var(--app-brand-accent);">PICKLEBALL * 4 COURTS</span>
+              <h3 class="h3-title" style="margin-top:2px;">Tonight, 7:00 PM – 9:00 PM</h3>
+              <p class="body-muted" style="margin-bottom:10px;">Downtown Pickleball Club * Court 1-2</p>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="body-muted" style="font-size:12px;">6 / 8 Slots Filled</span>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openJoinSheet('Pickleball Open Play', 'PHP 150')">PHP 150 • Join</button>
+              </div>
+            </div>
+
+            <div class="app-card" onclick="navigateToScreen('screen-opendetails')" style="cursor:pointer;">
+              <span class="caption-text" style="color:var(--app-brand-accent);">PICKLEBALL * MORNING SESSION</span>
+              <h3 class="h3-title" style="margin-top:2px;">Tomorrow, 8:00 AM – 10:00 AM</h3>
+              <p class="body-muted" style="margin-bottom:10px;">Active Arena Taguig * Court 4</p>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="body-muted" style="font-size:12px;">2 / 8 Slots Filled</span>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); openJoinSheet('Morning Pickleball', 'PHP 120')">PHP 120 • Join</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: OPEN PLAY DETAILS (3.11)
+               ========================================== -->
+          <section id="screen-opendetails" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-discover')">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Back
+              </button>
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary"><svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg></button>
+              </div>
+            </div>
+
+            <div class="caption-text" style="color:var(--app-brand-accent);">OPEN PLAY SESSION</div>
+            <h1 class="h1-title" style="margin-bottom:6px;">Pickleball Open Play — Intermediate</h1>
+            <p class="body-muted" style="margin-bottom:16px;">Hosted by Downtown Sports Club (Verified Partner)</p>
+
+            <div class="app-card">
+              <div style="display:flex; gap:12px; margin-bottom:12px;">
+                <svg class="icon" style="color:var(--app-brand-accent);" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Wednesday, Tonight</div>
+                  <div class="body-muted">7:00 PM – 9:00 PM (2 Hours Duration)</div>
+                </div>
+              </div>
+              <div style="display:flex; gap:12px;">
+                <svg class="icon" style="color:var(--app-brand-accent);" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Downtown Pickleball Club</div>
+                  <div class="body-muted">32nd St, BGC, Taguig (Court 1 & 2)</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Participant Roster -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <span class="h3-title">Players Joined (6 / 8)</span>
+              <span class="caption-text" style="color:var(--app-success);">2 SLOTS OPEN</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px; background:var(--app-surface); border:1px solid var(--app-border); padding:4px 10px; border-radius:20px; font-size:12px;">
+                <div style="width:20px; height:20px; border-radius:50%; background:#111; color:#fff; display:flex; align-items:center; justify-content:center; font-size:9px;">MC</div>
+                <span>Marcus C. (3.5)</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; background:var(--app-surface); border:1px solid var(--app-border); padding:4px 10px; border-radius:20px; font-size:12px;">
+                <div style="width:20px; height:20px; border-radius:50%; background:#444; color:#fff; display:flex; align-items:center; justify-content:center; font-size:9px;">SJ</div>
+                <span>Sarah J. (3.0)</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; background:var(--app-surface); border:1px solid var(--app-border); padding:4px 10px; border-radius:20px; font-size:12px;">
+                <div style="width:20px; height:20px; border-radius:50%; background:#666; color:#fff; display:flex; align-items:center; justify-content:center; font-size:9px;">DK</div>
+                <span>David K. (3.5)</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; background:var(--app-surface-subtle); border:1px dashed var(--app-border); padding:4px 10px; border-radius:20px; font-size:12px; color:var(--app-text-secondary);">
+                <span>+ 3 more players</span>
+              </div>
+            </div>
+
+            <!-- Rules & Format -->
+            <div class="app-card">
+              <h3 class="h3-title" style="margin-bottom:8px;">Rules & Rotation Format</h3>
+              <p class="body-muted" style="font-size:13px; margin-bottom:6px;">• Rotational doubles: games to 11 (win by 2 points).</p>
+              <p class="body-muted" style="font-size:13px; margin-bottom:6px;">• Winners stay on for a max of 2 consecutive matches.</p>
+              <p class="body-muted" style="font-size:13px;">• Tournament balls provided. Paddle rentals available.</p>
+            </div>
+
+            <div style="margin-top:auto; padding-top:16px; border-top:1px solid var(--app-border); display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span class="caption-text">SLOT FEE</span>
+                <div style="font-size:20px; font-weight:700;">PHP 150</div>
+              </div>
+              <button class="btn btn-primary" style="padding:0 24px;" onclick="openJoinSheet('Pickleball Open Play', 'PHP 150')">
+                Join Game
+              </button>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: VENUE DETAILS (3.8)
+               ========================================== -->
+          <section id="screen-venuedetails" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-discover')">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Back
+              </button>
+              <span class="caption-text">VENUE SPECIFICATION</span>
+            </div>
+
+            <div class="photo-box" style="height:160px; border-radius:var(--radius-lg); margin-bottom:16px; background:#E5E7EB;"></div>
+
+            <h1 class="h1-title" style="margin-bottom:4px;">Downtown Pickleball Club</h1>
+            <p class="body-muted" style="margin-bottom:12px;">32nd Street, Bonifacio Global City, Taguig • 1.2 km away</p>
+
+            <div style="display:flex; gap:8px; margin-bottom:16px;">
+              <span class="filter-chip">4 Indoor Courts</span>
+              <span class="filter-chip">Air-conditioned</span>
+              <span class="filter-chip">Showers</span>
+              <span class="filter-chip">Parking</span>
+            </div>
+
+            <div class="app-card">
+              <h3 class="h3-title" style="margin-bottom:8px;">Court Availability Today</h3>
+              <p class="body-muted" style="font-size:12px; margin-bottom:12px;">Select an open slot to reserve an entire court.</p>
+              
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--app-surface-subtle); border-radius:var(--radius-sm);">
+                  <div>
+                    <div style="font-weight:600; font-size:13px;">Court 1 (Pickleball)</div>
+                    <div class="body-muted" style="font-size:11px;">6:00 PM – 7:00 PM</div>
+                  </div>
+                  <button class="btn btn-sm btn-primary" onclick="openJoinSheet('Court 1 Reservation', 'PHP 400')">Book • PHP 400</button>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--app-surface-subtle); border-radius:var(--radius-sm);">
+                  <div>
+                    <div style="font-weight:600; font-size:13px;">Court 2 (Pickleball)</div>
+                    <div class="body-muted" style="font-size:11px;">8:00 PM – 9:00 PM</div>
+                  </div>
+                  <button class="btn btn-sm btn-primary" onclick="openJoinSheet('Court 2 Reservation', 'PHP 400')">Book • PHP 400</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: CREATE GAME (7.0 - 7.6)
+               ========================================== -->
+          <section id="screen-creategame" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-home')">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                Cancel
+              </button>
+              <span class="caption-text">HOST A GAME</span>
+            </div>
+
+            <h1 class="h1-title" style="margin-bottom:6px;">Create a Match</h1>
+            <p class="body-muted" style="margin-bottom:20px;">Host a game and let nearby players join your roster.</p>
+
+            <label class="caption-text" style="display:block; margin-bottom:6px;">Select Sport</label>
+            <div class="chip-row" style="margin-bottom:16px;">
+              <button class="filter-chip active">Pickleball</button>
+              <button class="filter-chip">Badminton</button>
+              <button class="filter-chip">Tennis</button>
+              <button class="filter-chip">Basketball</button>
+            </div>
+
+            <label class="caption-text" style="display:block; margin-bottom:6px;">Venue / Court</label>
+            <div class="app-card" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-weight:600; font-size:14px;">Downtown Pickleball Club</div>
+                <div class="body-muted" style="font-size:12px;">Court 2 • BGC Taguig</div>
+              </div>
+              <button class="btn btn-sm btn-secondary">Change</button>
+            </div>
+
+            <label class="caption-text" style="display:block; margin-bottom:6px;">Date & Time</label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+              <div class="app-card" style="margin:0;">
+                <div class="caption-text">DATE</div>
+                <div style="font-weight:600; font-size:13px; margin-top:2px;">Tomorrow, Sep 24</div>
+              </div>
+              <div class="app-card" style="margin:0;">
+                <div class="caption-text">TIME</div>
+                <div style="font-weight:600; font-size:13px; margin-top:2px;">7:00 PM (2 hrs)</div>
+              </div>
+            </div>
+
+            <label class="caption-text" style="display:block; margin-bottom:6px;">Player Capacity</label>
+            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--app-surface); border:1px solid var(--app-border); border-radius:var(--radius-md); padding:10px 16px; margin-bottom:24px;">
+              <span style="font-size:14px; font-weight:600;">Total Players</span>
+              <div style="display:flex; align-items:center; gap:12px;">
+                <button class="btn btn-sm btn-secondary" style="width:32px; height:32px; padding:0;">-</button>
+                <span style="font-weight:700;">4</span>
+                <button class="btn btn-sm btn-secondary" style="width:32px; height:32px; padding:0;">+</button>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="alert('Game successfully published! Nearby players have been notified.'); navigateToScreen('screen-home');">
+              Publish Game to Discover
+            </button>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: ACTIVITY (4.0 / 4.1)
+               ========================================== -->
+          <section id="screen-activity" class="screen">
+            <h1 class="h1-title" style="margin-bottom:12px;">My Activity</h1>
+
+            <!-- Segmented Switcher -->
+            <div style="display:flex; background:var(--app-surface-subtle); border-radius:var(--radius-md); padding:3px; margin-bottom:16px;">
+              <button class="btn btn-sm" style="flex:1; background:var(--app-surface); color:var(--app-text-primary); box-shadow:var(--app-shadow-sm);">Upcoming (1)</button>
+              <button class="btn btn-sm" style="flex:1; background:transparent; color:var(--app-text-secondary);">Past (8)</button>
+            </div>
+
+            <!-- Upcoming Confirmed Activity Card -->
+            <div class="app-card" style="border-left:4px solid var(--app-brand-accent);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span class="caption-text" style="color:var(--app-brand-accent); font-weight:700;">CONFIRMED RESERVATION</span>
+                <span class="caption-text">TONIGHT</span>
+              </div>
+              <h3 class="h3-title" style="margin-bottom:2px;">Pickleball Open Play (Intermediate)</h3>
+              <p class="body-muted" style="margin-bottom:12px;">Downtown Pickleball Club * Court 1 & 2</p>
+
+              <div style="background:var(--app-surface-subtle); border-radius:var(--radius-md); padding:12px; display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <div>
+                  <div style="font-size:11px; color:var(--app-text-secondary); text-transform:uppercase;">CHECK-IN CODE</div>
+                  <div style="font-family:monospace; font-weight:700; font-size:15px; color:var(--app-text-primary);">DPC-7749-ALEX</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="openQrPass()">Show QR</button>
+              </div>
+
+              <div style="display:flex; gap:8px;">
+                <button class="btn btn-sm btn-secondary" style="flex:1;" onclick="navigateToScreen('screen-messages')">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  Game Chat
+                </button>
+                <button class="btn btn-sm btn-secondary" style="flex:1;">Directions</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: MESSAGES (5.0 / 5.1)
+               ========================================== -->
+          <section id="screen-messages" class="screen">
+            <h1 class="h1-title" style="margin-bottom:12px;">Messages</h1>
+
+            <div class="app-card" style="display:flex; gap:12px; align-items:center; cursor:pointer;" onclick="alert('Opening game chat thread...');">
+              <div style="width:44px; height:44px; border-radius:50%; background:var(--app-brand-accent-subtle); display:flex; align-items:center; justify-content:center; color:var(--app-brand-accent);">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              </div>
+              <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <h3 class="h3-title" style="font-size:15px;">Pickleball Open Play Tonight</h3>
+                  <span class="caption-text">6:44 PM</span>
+                </div>
+                <p class="body-muted" style="font-size:13px; margin-top:2px;">Marcus: "Running 5 mins late, hold Court 1!"</p>
+              </div>
+            </div>
+
+            <div class="app-card" style="display:flex; gap:12px; align-items:center; cursor:pointer;">
+              <div style="width:44px; height:44px; border-radius:50%; background:var(--app-surface-subtle); display:flex; align-items:center; justify-content:center;">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+              </div>
+              <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <h3 class="h3-title" style="font-size:15px;">Downtown Pickleball Club</h3>
+                  <span class="caption-text">Yesterday</span>
+                </div>
+                <p class="body-muted" style="font-size:13px; margin-top:2px;">Venue: "Yes, paddle rentals are open at the front desk."</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: VENUE OPERATIONS DASHBOARD (8.0)
+               ========================================== -->
+          <section id="screen-venue-dash" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div>
+                <span class="caption-text" style="color:var(--app-brand-accent);">FACILITY CONSOLE</span>
+                <h1 class="h1-title">Downtown Pickleball Club</h1>
+              </div>
+              <button class="btn btn-sm btn-secondary" onclick="switchRole('player')">Player View</button>
+            </div>
+
+            <!-- Operational Metrics -->
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+              <div class="app-card" style="padding:12px; text-align:center; margin:0;">
+                <div style="font-size:20px; font-weight:700;">12</div>
+                <div class="caption-text" style="font-size:9px;">Bookings Today</div>
+              </div>
+              <div class="app-card" style="padding:12px; text-align:center; margin:0;">
+                <div style="font-size:20px; font-weight:700; color:var(--app-brand-accent);">2</div>
+                <div class="caption-text" style="font-size:9px;">Open Plays</div>
+              </div>
+              <div class="app-card" style="padding:12px; text-align:center; margin:0;">
+                <div style="font-size:20px; font-weight:700;">4/4</div>
+                <div class="caption-text" style="font-size:9px;">Courts Busy</div>
+              </div>
+            </div>
+
+            <!-- Court Status Live Timeline -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <span class="h3-title">Current Court Status (7:00 PM)</span>
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-venue-calendar')">Full Schedule</button>
+            </div>
+
+            <div class="app-card" style="margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Court 1 & 2: Open Play Session</div>
+                  <div class="body-muted" style="font-size:12px;">6 of 8 Players Checked In • Intermediate</div>
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="alert('Viewing live attendance roster...');">Roster</button>
+              </div>
+            </div>
+
+            <div class="app-card" style="margin-bottom:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Court 3: Reserved (Sarah Jenkins)</div>
+                  <div class="body-muted" style="font-size:12px;">7:00 PM – 8:00 PM • Paid PHP 400</div>
+                </div>
+                <button class="btn btn-sm btn-secondary">Check In</button>
+              </div>
+            </div>
+
+            <div class="app-card" style="margin-bottom:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-weight:600; font-size:14px;">Court 4: Maintenance / Inspection</div>
+                  <div class="body-muted" style="font-size:12px;">Net tension adjustment • Blocked until 8:00 PM</div>
+                </div>
+                <span class="caption-text">Blocked</span>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="navigateToScreen('screen-creategame')">
+              + Launch New Open Play Session
+            </button>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: VENUE COURT SCHEDULE (9.0)
+               ========================================== -->
+          <section id="screen-venue-calendar" class="screen">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-venue-dash')">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Dashboard
+              </button>
+              <h2 class="h2-title" style="font-size:16px;">Court Schedule</h2>
+              <button class="btn btn-sm btn-secondary">+ Add</button>
+            </div>
+
+            <div class="chip-row">
+              <button class="filter-chip active">Today (Wed Sep 23)</button>
+              <button class="filter-chip">Thu Sep 24</button>
+              <button class="filter-chip">Fri Sep 25</button>
+              <button class="filter-chip">Sat Sep 26</button>
+            </div>
+
+            <!-- Schedule Grid -->
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div class="app-card">
+                <div class="caption-text" style="color:var(--app-brand-accent);">5:00 PM – 6:00 PM</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                  <span>Court 1: Sarah T. (Reserved)</span>
+                  <span class="caption-text">PHP 400</span>
+                </div>
+              </div>
+              <div class="app-card" style="border-left:4px solid var(--app-brand-accent);">
+                <div class="caption-text" style="color:var(--app-brand-accent);">7:00 PM – 9:00 PM (2 HOURS)</div>
+                <div style="font-weight:600; font-size:14px; margin-top:4px;">Courts 1 & 2: Open Play Session</div>
+                <div class="body-muted" style="font-size:12px;">6 / 8 Registered • Revenue PHP 900.00</div>
+              </div>
+              <div class="app-card">
+                <div class="caption-text">9:00 PM – 10:00 PM</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                  <span>Court 1: Available</span>
+                  <button class="btn btn-sm btn-secondary">Block / Reserve</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: EMPTY STATE (9.2)
+               ========================================== -->
+          <section id="screen-empty" class="screen" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
+            <div style="width:64px; height:64px; border-radius:50%; background:var(--app-surface-subtle); display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+              <svg class="icon icon-lg" style="color:var(--app-text-tertiary);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+            </div>
+            <h2 class="h2-title" style="margin-bottom:6px;">No Games Near You Right Now</h2>
+            <p class="body-muted" style="margin-bottom:24px; max-width:280px;">There are no open sessions scheduled within 10 km today. Try expanding your search radius or host your own match.</p>
+            <div style="display:flex; flex-direction:column; gap:8px; width:100%; max-width:240px;">
+              <button class="btn btn-primary" onclick="navigateToScreen('screen-creategame')">Host a Game</button>
+              <button class="btn btn-secondary" onclick="navigateToScreen('screen-home')">Return Home</button>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               SCREEN: ERROR STATE (9.3)
+               ========================================== -->
+          <section id="screen-error" class="screen" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
+            <div style="width:64px; height:64px; border-radius:50%; background:var(--app-warning-bg); display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+              <svg class="icon icon-lg" style="color:var(--app-warning);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <h2 class="h2-title" style="margin-bottom:6px;">Connection Lost</h2>
+            <p class="body-muted" style="margin-bottom:24px; max-width:280px;">We were unable to reach the server. Please check your internet connection and retry.</p>
+            <button class="btn btn-primary" style="width:100%; max-width:240px;" onclick="navigateToScreen('screen-home')">Retry Connection</button>
+          </section>
+
+        </div> <!-- End Screen Container -->
+
+      </div> <!-- End Desktop Layout Wrapper -->
+
+      <!-- Mobile Bottom Navigation Bar -->
+      <nav id="mobileBottomNav" class="bottom-tab-bar">
+        <button class="tab-item active" onclick="navigateToScreen('screen-home')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+          <span>Home</span>
+        </button>
+        <button class="tab-item" onclick="navigateToScreen('screen-discover')">
+          <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+          <span>Discover</span>
+        </button>
+        <button class="tab-item" onclick="navigateToScreen('screen-activity')">
+          <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          <span>Activity</span>
+        </button>
+        <button class="tab-item" onclick="navigateToScreen('screen-messages')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          <span>Messages</span>
+        </button>
+        <button class="tab-item" onclick="navigateToScreen('screen-onboarding')">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span>Profile</span>
+        </button>
+      </nav>
+
+      <!-- Bottom Sheet Overlay: Join Confirmation -->
+      <div id="joinBottomSheet" class="bottom-sheet-overlay" onclick="closeJoinSheet()">
+        <div class="bottom-sheet" onclick="event.stopPropagation();">
+          <div class="sheet-handle"></div>
+          <div class="caption-text" style="color:var(--app-brand-accent);">CONFIRM RESERVATION</div>
+          <h2 id="sheetGameTitle" class="h2-title" style="margin-top:2px; margin-bottom:6px;">Pickleball Open Play</h2>
+          <p class="body-muted" style="margin-bottom:16px;">Tonight, 7:00 PM – 9:00 PM @ Downtown Club</p>
+
+          <div class="app-card" style="background:var(--app-surface-subtle); border:none; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:14px;">
+              <span>Session Slot (1 Player)</span>
+              <span id="sheetGamePrice" style="font-weight:600;">PHP 150.00</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px;">
+              <span>Facility Service Fee</span>
+              <span style="font-weight:600;">PHP 0.00</span>
+            </div>
+            <div style="border-top:1px solid var(--app-border); padding-top:6px; margin-top:6px; display:flex; justify-content:space-between; font-weight:700;">
+              <span>Total Due</span>
+              <span id="sheetGameTotal">PHP 150.00</span>
+            </div>
+          </div>
+
+          <p class="body-muted" style="font-size:11px; margin-bottom:16px;">
+            Cancellation policy: Full refund if cancelled up to 2 hours before start time.
+          </p>
+
+          <button class="btn btn-primary" style="width:100%; margin-bottom:8px;" onclick="confirmBooking()">
+            Confirm & Join Session
+          </button>
+          <button class="btn btn-secondary" style="width:100%;" onclick="closeJoinSheet()">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Sheet Overlay: QR Pass Modal -->
+      <div id="qrPassSheet" class="bottom-sheet-overlay" onclick="closeQrPass()">
+        <div class="bottom-sheet" style="text-align:center;" onclick="event.stopPropagation();">
+          <div class="sheet-handle"></div>
+          <div class="caption-text" style="color:var(--app-brand-accent);">FACILITY CHECK-IN PASS</div>
+          <h2 class="h2-title" style="margin-top:2px;">Downtown Pickleball Club</h2>
+          <p class="body-muted">Present to front desk upon arrival</p>
+
+          <div class="qr-box">
+            <!-- Vector QR Graphic -->
+            <svg style="width:120px; height:120px;" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+            </svg>
+          </div>
+
+          <div style="font-family:monospace; font-size:16px; font-weight:700; margin-bottom:6px;">DPC-7749-ALEX</div>
+          <p class="body-muted" style="font-size:12px; margin-bottom:20px;">Alex Turner • Court 1 & 2 • Tonight 7:00 PM</p>
+
+          <button class="btn btn-secondary" style="width:100%;" onclick="closeQrPass()">Done</button>
+        </div>
+      </div>
+
+      <!-- Bottom Sheet Overlay: 24h / 2h Smart Reminder -->
+      <div id="reminderSheet" class="bottom-sheet-overlay" onclick="closeReminderSheet()">
+        <div class="bottom-sheet" onclick="event.stopPropagation();">
+          <div class="sheet-handle"></div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <svg class="icon" style="color:var(--app-brand-accent);" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span class="caption-text" style="color:var(--app-brand-accent); font-weight:700;">ACTIVITY REMINDER</span>
+          </div>
+          <h2 class="h2-title" style="margin-bottom:4px;">Session Starts in 2 Hours</h2>
+          <p class="body-muted" style="margin-bottom:16px;">Pickleball Open Play at Downtown Pickleball Club begins at 7:00 PM.</p>
+          
+          <div class="app-card" style="background:var(--app-surface-subtle); border:none; margin-bottom:16px;">
+            <div style="font-size:13px; font-weight:600;">Court 1 & 2 • 6 / 8 Players Confirmed</div>
+            <div class="body-muted" style="font-size:12px; margin-top:2px;">Weather: Indoor Air-conditioned Court</div>
+          </div>
+
+          <button class="btn btn-primary" style="width:100%; margin-bottom:8px;" onclick="closeReminderSheet(); openQrPass();">
+            View Check-in Pass
+          </button>
+          <button class="btn btn-secondary" style="width:100%;" onclick="closeReminderSheet()">
+            Dismiss
+          </button>
+        </div>
+      </div>
+
+    </div> <!-- End Device Viewport -->
+
+  </main>
+
+  <!-- Interactive Logic -->
+  <script>
+    function setFidelity(mode) {
+      if (mode === 'lofi') {
+        document.body.classList.add('mode-lofi');
+        document.getElementById('btn-mode-lofi').classList.add('active');
+        document.getElementById('btn-mode-hifi').classList.remove('active');
+      } else {
+        document.body.classList.remove('mode-lofi');
+        document.getElementById('btn-mode-hifi').classList.add('active');
+        document.getElementById('btn-mode-lofi').classList.remove('active');
+      }
+    }
+
+    function setViewport(size) {
+      const vp = document.getElementById('deviceViewport');
+      vp.classList.remove('mobile', 'tablet', 'desktop');
+      vp.classList.add(size);
+
+      document.getElementById('btn-vp-mobile').classList.remove('active');
+      document.getElementById('btn-vp-tablet').classList.remove('active');
+      document.getElementById('btn-vp-desktop').classList.remove('active');
+      document.getElementById('btn-vp-' + size).classList.add('active');
+    }
+
+    function navigateToScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      const target = document.getElementById(screenId);
+      if (target) {
+        target.classList.add('active');
+        document.getElementById('flowSelector').value = screenId;
+        
+        // Update Bottom Nav active state
+        document.querySelectorAll('.tab-item').forEach(tab => tab.classList.remove('active'));
+        if (screenId === 'screen-home') document.querySelectorAll('.tab-item')[0]?.classList.add('active');
+        if (screenId === 'screen-discover') document.querySelectorAll('.tab-item')[1]?.classList.add('active');
+        if (screenId === 'screen-activity') document.querySelectorAll('.tab-item')[2]?.classList.add('active');
+        if (screenId === 'screen-messages') document.querySelectorAll('.tab-item')[3]?.classList.add('active');
+        if (screenId === 'screen-onboarding') document.querySelectorAll('.tab-item')[4]?.classList.add('active');
+
+        // Scroll to top of screen
+        document.querySelector('.screen-container').scrollTop = 0;
+      }
+    }
+
+    function switchRole(role) {
+      document.getElementById('btn-role-player').classList.remove('active');
+      document.getElementById('btn-role-venue').classList.remove('active');
+      document.getElementById('btn-role-' + role).classList.add('active');
+
+      const playerNav = document.getElementById('sidebar-player-nav');
+      const venueNav = document.getElementById('sidebar-venue-nav');
+      const roleInd = document.getElementById('sidebar-role-indicator');
+
+      if (role === 'venue') {
+        playerNav.style.display = 'none';
+        venueNav.style.display = 'flex';
+        roleInd.textContent = 'Venue Console';
+        navigateToScreen('screen-venue-dash');
+      } else {
+        playerNav.style.display = 'flex';
+        venueNav.style.display = 'none';
+        roleInd.textContent = 'Player Hub';
+        navigateToScreen('screen-home');
+      }
+    }
+
+    function openJoinSheet(title, price) {
+      document.getElementById('sheetGameTitle').textContent = title;
+      document.getElementById('sheetGamePrice').textContent = price;
+      document.getElementById('sheetGameTotal').textContent = price;
+      document.getElementById('joinBottomSheet').classList.add('active');
+    }
+
+    function closeJoinSheet() {
+      document.getElementById('joinBottomSheet').classList.remove('active');
+    }
+
+    function confirmBooking() {
+      closeJoinSheet();
+      alert('Reservation Confirmed! You have joined the game. Added to My Activity.');
+      navigateToScreen('screen-activity');
+    }
+
+    function openQrPass() {
+      document.getElementById('qrPassSheet').classList.add('active');
+    }
+
+    function closeQrPass() {
+      document.getElementById('qrPassSheet').classList.remove('active');
+    }
+
+    function openReminderSheet() {
+      document.getElementById('reminderSheet').classList.add('active');
+    }
+
+    function closeReminderSheet() {
+      document.getElementById('reminderSheet').classList.remove('active');
+    }
+  </script>
+</body>
+</html>

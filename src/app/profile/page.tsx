@@ -5,428 +5,272 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
-import { formatTimeAgo, getSportDisplayName, formatCurrency } from '@/lib/utils';
+import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
+import { AuthModal } from '@/components/auth/AuthModal';
+import { getSportDisplayName } from '@/lib/utils';
 import {
-  Trophy,
-  Flame,
   MapPin,
-  Users,
-  User,
-  Lock,
-  Sparkles,
   Calendar,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Activity,
-  ArrowRight,
-  Compass,
+  Building2,
+  User,
+  Sparkles,
+  ChevronRight,
   RotateCcw,
   RefreshCw,
 } from 'lucide-react';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { currentUser, matches, bookings, resetOnboardingState, activeMode, toggleMode } = useMatchiStore();
+  const { currentUser, bookings, resetOnboardingState, activeMode, toggleMode } = useMatchiStore();
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'bookings' | 'matches'>('bookings');
-
-  const winRate =
-    currentUser.matches_played > 0
-      ? Math.round((currentUser.matches_won / currentUser.matches_played) * 100)
-      : 0;
-
-  const playerMatches = matches.filter(
-    (m) =>
-      m.team_a_player_ids.includes(currentUser.id) ||
-      m.team_b_player_ids.includes(currentUser.id)
-  );
+  const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const myBookings = bookings.filter((b) => b.user_id === currentUser.id);
+  const isHost = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
 
   return (
-    <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 sm:space-y-8 pb-24 md:pb-12">
-      {/* Player Passport Card */}
-      <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-8 shadow-xs">
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-6 text-center sm:text-left">
-          {/* Avatar with Win Streak Ring */}
-          <div className="relative shrink-0">
-            <img
-              src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
-              alt={currentUser.full_name}
-              className="h-20 w-20 sm:h-24 sm:w-24 rounded-full object-cover border-4 border-[#2D724E] shadow-sm"
-            />
-            <div
-              title="Win Streak"
-              className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-[#C87D43] text-white shadow-sm"
-            >
-              <Flame className="w-4 h-4 fill-current text-[#E9C46A]" />
-            </div>
-          </div>
-
-          {/* Details */}
-          <div className="flex-1 space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <h1 className="text-xl sm:text-3xl font-black text-[#1A241E]">
-                    {currentUser.full_name}
-                  </h1>
-                  <span className="rounded-full bg-[#2D724E]/10 px-2.5 py-0.5 text-xs font-bold text-[#2D724E]">
-                    &ldquo;{currentUser.nickname}&rdquo;
-                  </span>
-                </div>
-                <p className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-[#65756B] mt-0.5">
-                  <MapPin className="w-3.5 h-3.5 text-[#2D724E]" />
-                  <span>{currentUser.city}</span>
-                  <span>&bull;</span>
-                  <span>Verified Matchi Player</span>
-                </p>
-              </div>
-
-              <div className="flex items-center justify-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#FBF0E6] px-3 py-1.5 text-xs font-bold text-[#A35C2B] border border-[#C87D43]/20">
-                  <Trophy className="w-3.5 h-3.5 text-[#E9C46A]" />
-                  <span>Active Competitor</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Sport & Format tags */}
-            <div className="flex items-center justify-center sm:justify-start gap-2 pt-1.5 flex-wrap text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#1E4A32] text-white px-3 py-1 font-black shadow-xs" title="Primary Sport">
-                <Lock className="w-3.5 h-3.5 text-[#E9C46A]" />
-                <span>{getSportDisplayName(currentUser.primary_sport)}</span>
-              </span>
-              <span className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1 font-bold text-[#2D724E] flex items-center gap-1">
-                <Users className="w-3 h-3" />
-                {currentUser.preferred_format === 'doubles' ? 'Doubles Specialist' : 'Singles Specialist'}
-              </span>
-              <span className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1 font-medium text-[#65756B] capitalize">
-                Skill: {currentUser.skill_level.replace('_', ' ')}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setIsOnboardingOpen(true)}
-                className="text-[11px] font-bold text-[#C87D43] hover:underline flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-[#FBF0E6] transition-colors"
-                title="Update your preferences"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Edit Preferences</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-[#E8E5DF] pt-5">
-          <div className="rounded-2xl bg-[#FAF8F5] p-3 text-center">
-            <span className="text-[11px] font-bold text-[#65756B]">Matches Played</span>
-            <div className="text-xl sm:text-2xl font-black text-[#1A241E] mt-0.5">
-              {currentUser.matches_played}
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-[#FAF8F5] p-3 text-center">
-            <span className="text-[11px] font-bold text-[#65756B]">Win Rate</span>
-            <div className="text-xl sm:text-2xl font-black text-[#2D724E] mt-0.5">
-              {winRate}%
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-[#FAF8F5] p-3 text-center">
-            <span className="text-[11px] font-bold text-[#65756B]">Current Streak</span>
-            <div className="text-xl sm:text-2xl font-black text-[#C87D43] mt-0.5 flex items-center justify-center gap-1">
-              <Flame className="w-4 h-4 fill-current text-[#E9C46A]" />
-              <span>{currentUser.win_streak}</span>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-[#FAF8F5] p-3 text-center">
-            <span className="text-[11px] font-bold text-[#65756B]">Reservations</span>
-            <div className="text-xl sm:text-2xl font-black text-[#1E4A32] mt-0.5">
-              {myBookings.length}
-            </div>
-          </div>
-        </div>
+    <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6 sm:py-10 space-y-6 pb-28 md:pb-12">
+      {/* Page Title */}
+      <div className="space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+          Profile
+        </h1>
+        <p className="text-xs text-[#65756B]">
+          Personal preferences and account management
+        </p>
       </div>
 
-      {/* Tabs: Bookings vs Match Timeline */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 border-b border-[#E8E5DF] pb-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('bookings')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'bookings'
-                ? 'bg-[#2D724E] text-white shadow-xs'
-                : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E]'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Your Reservations ({myBookings.length})</span>
-          </button>
+      {/* Player Passport Card - Quiet Apple Design */}
+      <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-2xs">
+        <div className="flex items-center gap-4">
+          <img
+            src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
+            alt={currentUser.full_name}
+            className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover border-2 border-[#2D724E]/20 shrink-0"
+          />
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('matches')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'matches'
-                ? 'bg-[#2D724E] text-white shadow-xs'
-                : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E]'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Match Results ({playerMatches.length})</span>
-          </button>
-        </div>
-
-        {/* TAB 1: RESERVATIONS */}
-        {activeTab === 'bookings' && (
-          <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
-              <div>
-                <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
-                  Court Reservations
-                </h2>
-                <p className="text-xs text-[#65756B]">
-                  Verified bookings, confirmed private court hours &amp; access passes
-                </p>
-              </div>
-              <Link
-                href="/explore"
-                className="text-xs font-bold text-[#2D724E] hover:underline flex items-center gap-1"
-              >
-                <span>Book Court</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-
-            {myBookings.length === 0 ? (
-              <div className="py-12 text-center space-y-3">
-                <div className="h-12 w-12 rounded-2xl bg-[#EBF4EE] flex items-center justify-center text-[#2D724E] mx-auto">
-                  <Compass className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-bold text-[#1A241E]">No court reservations yet</h3>
-                <p className="text-xs text-[#65756B] max-w-sm mx-auto">
-                  Search through verified venues, check hourly availability, and reserve your private court time.
-                </p>
-                <Link
-                  href="/explore"
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-xs transition-all"
-                >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>Find Courts</span>
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myBookings.map((b) => {
-                  const isConfirmed = b.status === 'confirmed' || b.status === 'completed';
-                  return (
-                    <div
-                      key={b.id}
-                      className="rounded-2xl border border-[#E8E5DF] p-4 bg-[#FAF8F5] hover:border-[#2D724E] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs font-black text-[#1E4A32] bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-md">
-                            {b.booking_reference}
-                          </span>
-                          <span className="rounded-md bg-[#EBF4EE] px-2 py-0.5 text-[10px] font-bold text-[#1E4A32] uppercase">
-                            {getSportDisplayName(b.sport)}
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              isConfirmed
-                                ? 'bg-[#EBF4EE] text-[#1E4A32]'
-                                : 'bg-[#FBF0E6] text-[#A35C2B]'
-                            }`}
-                          >
-                            {isConfirmed ? (
-                              <CheckCircle2 className="w-3 h-3 text-[#2D724E]" />
-                            ) : (
-                              <AlertCircle className="w-3 h-3 text-[#C87D43]" />
-                            )}
-                            <span className="capitalize">{b.status}</span>
-                          </span>
-                        </div>
-
-                        <h3 className="text-sm font-black text-[#1A241E]">
-                          {b.court?.name || 'Private Court'} &bull; {b.venue?.name || 'Sports Center'}
-                        </h3>
-
-                        <div className="flex items-center gap-3 text-xs text-[#65756B] flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-[#2D724E]" />
-                            {b.booking_date}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-[#2D724E]" />
-                            {b.start_time} - {b.end_time} ({b.duration_minutes} mins)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0 border-t sm:border-t-0 border-[#E8E5DF] pt-2 sm:pt-0">
-                        <span className="text-[10px] text-[#65756B] block">Total Amount</span>
-                        <div className="text-base font-black text-[#1A241E]">
-                          {formatCurrency(b.total_amount_cents)}
-                        </div>
-                        <span className="text-[10px] font-bold text-[#2D724E] capitalize">
-                          {b.payment_method?.toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 2: MATCHES */}
-        {activeTab === 'matches' && (
-          <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
-              <div>
-                <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
-                  Recent Match Results
-                </h2>
-                <p className="text-xs text-[#65756B]">
-                  Doubles &amp; Singles match timeline from open play rotations
-                </p>
-              </div>
-              <span className="text-xs font-bold text-[#2D724E]">
-                {playerMatches.length} Matches Recorded
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {playerMatches.length === 0 ? (
-                <div className="py-8 text-center text-xs text-[#65756B]">
-                  No matches recorded yet. Drop into an Open Play session to compete!
-                </div>
-              ) : (
-                playerMatches.map((match) => {
-                  const userInTeamA = match.team_a_player_ids.includes(currentUser.id);
-                  const isWin =
-                    (match.winner_team === 'team_a' && userInTeamA) ||
-                    (match.winner_team === 'team_b' && !userInTeamA);
-                  const isDoubles = match.match_format === 'doubles' || match.team_a_names.length === 2;
-
-                  return (
-                    <div
-                      key={match.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-[#E8E5DF] p-3.5 sm:p-4 bg-[#FAF8F5] hover:border-[#2D724E] transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black shrink-0 ${
-                            isWin
-                              ? 'bg-[#2D724E] text-white shadow-xs'
-                              : 'bg-[#65756B] text-white'
-                          }`}
-                        >
-                          {isWin ? 'WIN' : 'PLAY'}
-                        </div>
-
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-black text-xs sm:text-sm text-[#1A241E]">
-                              {match.team_a_names.join(' & ')} vs {match.team_b_names.join(' & ')}
-                            </span>
-                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-white border border-[#E8E5DF] text-[#65756B]">
-                              {isDoubles ? <Users className="w-2.5 h-2.5 text-[#2D724E]" /> : <User className="w-2.5 h-2.5 text-[#C87D43]" />}
-                              {isDoubles ? 'Doubles (2v2)' : 'Singles (1v1)'}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-[#65756B] block mt-0.5">
-                            {match.court_name} &bull; {formatTimeAgo(match.started_at)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 border-[#E8E5DF] pt-2 sm:pt-0">
-                        <div className="text-right">
-                          <span className="font-mono text-sm sm:text-base font-black text-[#1A241E]">
-                            {match.score_a} - {match.score_b}
-                          </span>
-                          <span className="block text-[9px] text-[#65756B]">
-                            {match.status === 'completed' ? 'Final Score' : 'In Progress'}
-                          </span>
-                        </div>
-
-                        {isWin && (
-                          <span className="rounded-full bg-[#EBF4EE] px-2.5 py-1 text-xs font-bold text-[#1E4A32] flex items-center gap-1 shrink-0">
-                            <Trophy className="w-3 h-3 text-[#2D724E]" />
-                            <span>Winner</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-bold text-[#1A241E] truncate">
+                {currentUser.full_name}
+              </h2>
+              {currentUser.nickname && (
+                <span className="shrink-0 text-xs font-medium text-[#65756B]">
+                  &ldquo;{currentUser.nickname}&rdquo;
+                </span>
               )}
             </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-[#65756B] mt-0.5">
+              <MapPin className="w-3.5 h-3.5 text-[#2D724E] shrink-0" />
+              <span className="truncate">{currentUser.city || 'Philippines'}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap text-xs">
+              <span className="inline-flex items-center rounded-md bg-[#2D724E]/10 px-2 py-0.5 text-[11px] font-semibold text-[#2D724E]">
+                {getSportDisplayName(currentUser.primary_sport)}
+              </span>
+              <span className="inline-flex items-center rounded-md bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[11px] font-medium text-[#65756B] capitalize">
+                {currentUser.skill_level.replace('_', ' ')}
+              </span>
+              <span className="inline-flex items-center rounded-md bg-[#FAF8F5] border border-[#E8E5DF] px-2 py-0.5 text-[11px] font-medium text-[#65756B] capitalize">
+                {currentUser.preferred_format}
+              </span>
+            </div>
           </div>
-        )}
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-[#E8E5DF]/60 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setIsOnboardingOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#2D724E] hover:text-[#1E4A32] transition-colors"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Edit Preferences</span>
+          </button>
+        </div>
       </div>
 
-      {/* Developer Testing Controls (localhost only) */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div className="rounded-3xl border-2 border-dashed border-[#C87D43]/40 bg-[#FAF8F5] p-5 sm:p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="rounded-md bg-[#C87D43] px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
-                Developer Mode
-              </span>
-              <h3 className="text-sm font-black text-[#1A241E]">Testing &amp; Diagnostics</h3>
-            </div>
-            <span className="text-[11px] font-mono text-[#65756B]">localhost only</span>
-          </div>
-
-          <p className="text-xs text-[#65756B]">
-            Tools to test the Clucky onboarding flow, toggle manager/player roles, and simulate a fresh first-time user journey.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={async () => {
-                await resetOnboardingState();
-                router.push('/onboarding');
-              }}
-              className="px-4 py-2 rounded-xl bg-[#1A241E] text-white text-xs font-bold hover:bg-black transition-colors flex items-center gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#E9C46A]" />
-              <span>Reset Onboarding</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="px-4 py-2 rounded-xl bg-white border border-[#E8E5DF] text-[#1A241E] text-xs font-bold hover:bg-[#FAF8F5] transition-colors flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-[#2D724E]" />
-              <span>{activeMode === 'manage' ? 'Switch to Player' : 'Switch to Manager'}</span>
-            </button>
-
+      {/* Apple-style Grouped Settings List */}
+      <div className="space-y-4">
+        {/* Group 1: Activity */}
+        <div>
+          <h3 className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#65756B] mb-2">
+            Activity
+          </h3>
+          <div className="rounded-2xl border border-[#E8E5DF] bg-white divide-y divide-[#E8E5DF] overflow-hidden shadow-2xs">
             <Link
-              href="/onboarding"
-              className="px-4 py-2 rounded-xl bg-white border border-[#E8E5DF] text-[#1A241E] text-xs font-bold hover:bg-[#FAF8F5] transition-colors flex items-center gap-1.5"
+              href="/bookings"
+              className="flex items-center justify-between p-4 hover:bg-[#FAF8F5] transition-colors group"
             >
-              <span>Open Onboarding</span>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-[#2D724E]/10 flex items-center justify-center text-[#2D724E] shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-[#1A241E] block">
+                    My Bookings
+                  </span>
+                  <span className="text-xs text-[#65756B]">
+                    Court passes &amp; upcoming reservations
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {myBookings.length > 0 && (
+                  <span className="inline-flex items-center justify-center rounded-full bg-[#2D724E] text-white text-[10px] font-bold h-5 min-w-5 px-1.5">
+                    {myBookings.length}
+                  </span>
+                )}
+                <ChevronRight className="w-4 h-4 text-[#65756B] group-hover:text-[#1A241E] transition-colors" />
+              </div>
             </Link>
           </div>
         </div>
-      )}
 
-      {/* Onboarding Modal */}
+        {/* Group 2: Host Operations */}
+        <div>
+          <h3 className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#65756B] mb-2">
+            Facility Management
+          </h3>
+          <div className="rounded-2xl border border-[#E8E5DF] bg-white divide-y divide-[#E8E5DF] overflow-hidden shadow-2xs">
+            {isHost ? (
+              <Link
+                href="/organizer"
+                className="flex items-center justify-between p-4 hover:bg-[#FAF8F5] transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-[#C87D43]/10 flex items-center justify-center text-[#C87D43] shrink-0">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-[#1A241E] block">
+                      Facility Host Desk
+                    </span>
+                    <span className="text-xs text-[#65756B]">
+                      Manage courts, schedules, and revenue
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#C87D43]/10 text-[#C87D43] uppercase">
+                    Host Active
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-[#65756B] group-hover:text-[#1A241E] transition-colors" />
+                </div>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsOwnerModalOpen(true)}
+                className="w-full flex items-center justify-between p-4 hover:bg-[#FAF8F5] transition-colors text-left group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-[#C87D43]/10 flex items-center justify-center text-[#C87D43] shrink-0">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-[#1A241E] block">
+                      Register as Facility Host
+                    </span>
+                    <span className="text-xs text-[#65756B]">
+                      List your courts and monetize empty hours
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-[#65756B] group-hover:text-[#1A241E] transition-colors" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Group 3: Account */}
+        <div>
+          <h3 className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#65756B] mb-2">
+            Account
+          </h3>
+          <div className="rounded-2xl border border-[#E8E5DF] bg-white divide-y divide-[#E8E5DF] overflow-hidden shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="w-full flex items-center justify-between p-4 hover:bg-[#FAF8F5] transition-colors text-left group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center text-[#1A241E] shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-[#1A241E] block">
+                    Account &amp; Security
+                  </span>
+                  <span className="text-xs text-[#65756B]">
+                    Sign in, switch account, or update credentials
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#65756B] group-hover:text-[#1A241E] transition-colors" />
+            </button>
+          </div>
+        </div>
+
+        {/* Group 4: Developer Diagnostics (localhost only) */}
+        {process.env.NODE_ENV !== 'production' && (
+          <div>
+            <h3 className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#65756B] mb-2">
+              Developer Mode (Localhost)
+            </h3>
+            <div className="rounded-2xl border border-dashed border-[#E8E5DF] bg-[#FAF8F5] divide-y divide-[#E8E5DF] overflow-hidden">
+              <button
+                type="button"
+                onClick={async () => {
+                  await resetOnboardingState();
+                  router.push('/onboarding');
+                }}
+                className="w-full flex items-center justify-between p-3.5 hover:bg-white/80 transition-colors text-left"
+              >
+                <div className="flex items-center gap-2.5 text-xs font-bold text-[#1A241E]">
+                  <RotateCcw className="w-3.5 h-3.5 text-[#C87D43]" />
+                  <span>Reset Onboarding State</span>
+                </div>
+                <span className="text-[10px] text-[#65756B]">Restart flow</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="w-full flex items-center justify-between p-3.5 hover:bg-white/80 transition-colors text-left"
+              >
+                <div className="flex items-center gap-2.5 text-xs font-bold text-[#1A241E]">
+                  <RefreshCw className="w-3.5 h-3.5 text-[#2D724E]" />
+                  <span>Toggle Role Mode ({activeMode})</span>
+                </div>
+                <span className="text-[10px] text-[#65756B]">
+                  {activeMode === 'manage' ? 'Active: Host' : 'Active: Player'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Onboarding Preferences Modal */}
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
+      />
+
+      {/* Facility Host Registration Modal */}
+      <OwnerOnboardingModal
+        isOpen={isOwnerModalOpen}
+        onClose={() => setIsOwnerModalOpen(false)}
+      />
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </div>
   );
