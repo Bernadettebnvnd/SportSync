@@ -31,14 +31,26 @@ export function OnboardingGuard() {
 
     const isOnboardingPath = pathname === '/onboarding';
     const isApiPath = pathname.startsWith('/api');
+    const isPrototypePath = pathname.startsWith('/prototype');
+    const isPublicPreviewPath = pathname === '/' || pathname === '/explore';
 
-    // 1. Any user who has NOT completed onboarding must be routed to /onboarding
-    if (!isOnboarded && !isOnboardingPath && !isApiPath) {
+    // If user has an authenticated account but has not completed onboarding, strictly enforce /onboarding
+    const isAuthenticated = Boolean(currentUser.id && currentUser.email);
+    if (isAuthenticated && !isOnboarded && !isOnboardingPath && !isApiPath) {
+      router.replace('/onboarding');
+      return;
+    }
+
+    // For unauthenticated users, protect private player routes (/bookings, /profile)
+    const isPrivatePlayerRoute = pathname.startsWith('/bookings') || pathname.startsWith('/profile');
+    if (!isOnboarded && isPrivatePlayerRoute) {
       router.replace('/onboarding');
       return;
     }
   }, [
     pathname,
+    currentUser.id,
+    currentUser.email,
     currentUser.onboarding_completed,
     currentUser.has_completed_onboarding,
     currentUser.role,

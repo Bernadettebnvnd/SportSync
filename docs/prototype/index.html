@@ -108,27 +108,273 @@
       --app-shadow-sheet: var(--lofi-shadow-sheet);
     }
 
-    /* LoFi Wireframe Visual Indicators */
+    /* ========================================================
+       TRUE ARCHITECTURAL LOFI WIREFRAME ENGINE
+       ======================================================== */
+    body.mode-lofi {
+      --app-bg: #F8FAFC;
+      --app-surface: #FFFFFF;
+      --app-surface-subtle: #F1F5F9;
+      --app-surface-hover: #E2E8F0;
+      --app-text-primary: #0F172A;
+      --app-text-secondary: #475569;
+      --app-text-tertiary: #64748B;
+      --app-border: #334155;
+      --app-border-subtle: #64748B;
+      --app-brand-primary: #0F172A;
+      --app-brand-accent: #334155;
+      --app-brand-accent-subtle: #F1F5F9;
+      --app-brand-accent-text: #0F172A;
+      --app-success: #334155;
+      --app-success-bg: #F1F5F9;
+      --app-warning: #475569;
+      --app-warning-bg: #F1F5F9;
+      --app-shadow-sm: none;
+      --app-shadow-md: none;
+      --app-shadow-sheet: 0 -4px 0 #0F172A;
+    }
+
+    /* Blueprint Grid Canvas in LoFi Mode */
+    body.mode-lofi .device-viewport {
+      background-color: #F8FAFC !important;
+      background-image: 
+        linear-gradient(#E2E8F0 1px, transparent 1px),
+        linear-gradient(90deg, #E2E8F0 1px, transparent 1px) !important;
+      background-size: 16px 16px !important;
+      border: 3px solid #0F172A !important;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+    }
+
+    /* True Wireframe Cross-Box Image Placeholders */
     body.mode-lofi .photo-box {
-      background: #EAEAEA !important;
-      border: 1px dashed #BBBBBB !important;
-      position: relative;
+      background-color: #FFFFFF !important;
+      background-image: 
+        linear-gradient(to top right, transparent calc(50% - 1px), #94A3B8 calc(50% - 1px), #94A3B8 calc(50% + 1px), transparent calc(50% + 1px)),
+        linear-gradient(to bottom right, transparent calc(50% - 1px), #94A3B8 calc(50% - 1px), #94A3B8 calc(50% + 1px), transparent calc(50% + 1px)) !important;
+      border: 2px solid #334155 !important;
+      border-radius: 4px !important;
+      position: relative !important;
+      box-shadow: none !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
     body.mode-lofi .photo-box::before {
-      content: "[ IMAGE PLACEHOLDER ]";
+      content: "[ WIREFRAME IMAGE (X) ]" !important;
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      font-size: 11px;
-      font-weight: 600;
-      color: #777777;
+      background: #FFFFFF;
+      padding: 4px 10px;
+      border: 1.5px solid #334155;
+      border-radius: 2px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: #0F172A;
       letter-spacing: 0.5px;
+      z-index: 2;
     }
-    body.mode-lofi .badge-pill {
-      border: 1px solid #777777 !important;
-      background: transparent !important;
-      color: #333333 !important;
+    body.mode-lofi .photo-box svg {
+      display: none !important;
+    }
+
+    /* Wireframe Containers & Structural Component Blocks */
+    body.mode-lofi .app-card {
+      background: #FFFFFF !important;
+      border: 2px solid #334155 !important;
+      border-radius: 4px !important;
+      box-shadow: none !important;
+      position: relative !important;
+      padding-top: 18px !important;
+    }
+    body.mode-lofi .app-card::before {
+      content: "[ COMPONENT CONTAINER ]";
+      position: absolute;
+      top: -9px;
+      left: 12px;
+      background: #F8FAFC;
+      border: 1px solid #64748B;
+      padding: 0 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 2px;
+      z-index: 2;
+    }
+
+    /* Wireframe Outlined Action Buttons */
+    body.mode-lofi .btn-primary {
+      background: #0F172A !important;
+      color: #FFFFFF !important;
+      border: 2px solid #000000 !important;
+      border-radius: 4px !important;
+      font-family: ui-monospace, monospace !important;
+      font-weight: 700 !important;
+      font-size: 13px !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.5px !important;
+      box-shadow: none !important;
+    }
+    body.mode-lofi .btn-secondary {
+      background: #FFFFFF !important;
+      color: #0F172A !important;
+      border: 2px solid #334155 !important;
+      border-radius: 4px !important;
+      font-family: ui-monospace, monospace !important;
+      font-weight: 600 !important;
+      font-size: 12px !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.5px !important;
+      box-shadow: none !important;
+    }
+    body.mode-lofi .btn-sm {
+      border-radius: 3px !important;
+      font-size: 11px !important;
+      height: 32px !important;
+    }
+
+    /* Wireframe Monospace Typographic Blueprint */
+    body.mode-lofi .h1-title {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+      font-size: 19px !important;
+      font-weight: 800 !important;
+      color: #0F172A !important;
+      letter-spacing: -0.5px !important;
+    }
+    body.mode-lofi .h2-title {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+      font-size: 16px !important;
+      font-weight: 700 !important;
+      color: #0F172A !important;
+    }
+    body.mode-lofi .h3-title {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      color: #0F172A !important;
+    }
+    body.mode-lofi .body-text,
+    body.mode-lofi .body-muted,
+    body.mode-lofi .caption-text,
+    body.mode-lofi span,
+    body.mode-lofi p {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+    }
+    body.mode-lofi .body-muted {
+      color: #475569 !important;
+      font-size: 12px !important;
+    }
+    body.mode-lofi .caption-text {
+      font-weight: 700 !important;
+      letter-spacing: 0.5px !important;
+      color: #1E293B !important;
+    }
+
+    /* Wireframe Chip Selectors */
+    body.mode-lofi .filter-chip {
+      border: 1.5px solid #475569 !important;
+      border-radius: 3px !important;
+      background: #FFFFFF !important;
+      color: #0F172A !important;
+      font-family: ui-monospace, monospace !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      box-shadow: none !important;
+    }
+    body.mode-lofi .filter-chip.active {
+      background: #0F172A !important;
+      color: #FFFFFF !important;
+      border-color: #000000 !important;
+    }
+
+    /* Wireframe Structural Avatars */
+    body.mode-lofi [style*="border-radius:50%"] {
+      border-radius: 4px !important;
+      border: 1.5px dashed #475569 !important;
+      background: #F1F5F9 !important;
+      color: #0F172A !important;
+      font-family: ui-monospace, monospace !important;
+      font-weight: 700 !important;
+    }
+
+    /* Wireframe Bottom Navigation */
+    body.mode-lofi .bottom-tab-bar {
+      background: #FFFFFF !important;
+      border-top: 2px solid #0F172A !important;
+      box-shadow: none !important;
+    }
+    body.mode-lofi .tab-item {
+      font-family: ui-monospace, monospace !important;
+      color: #64748B !important;
+      font-size: 10px !important;
+      font-weight: 600 !important;
+      text-transform: uppercase !important;
+    }
+    body.mode-lofi .tab-item.active {
+      color: #0F172A !important;
+      font-weight: 800 !important;
+    }
+    body.mode-lofi .tab-item.active svg {
+      stroke-width: 2.5 !important;
+    }
+
+    /* Wireframe Desktop Sidebar */
+    body.mode-lofi .desktop-sidebar {
+      background: #FFFFFF !important;
+      border-right: 2px solid #0F172A !important;
+    }
+    body.mode-lofi .desktop-nav-item {
+      border-radius: 3px !important;
+      font-family: ui-monospace, monospace !important;
+      border: 1.5px solid transparent !important;
+    }
+    body.mode-lofi .desktop-nav-item.active {
+      border: 1.5px solid #0F172A !important;
+      background: #F1F5F9 !important;
+      color: #0F172A !important;
+    }
+
+    /* Wireframe Bottom Sheet */
+    body.mode-lofi .bottom-sheet {
+      background: #FFFFFF !important;
+      border: 3px solid #0F172A !important;
+      border-bottom: none !important;
+      border-radius: 6px 6px 0 0 !important;
+      box-shadow: none !important;
+    }
+    body.mode-lofi .sheet-handle {
+      background: #0F172A !important;
+      border-radius: 1px !important;
+      width: 48px !important;
+      height: 5px !important;
+    }
+
+    /* ========================================================
+       WIREFRAME SPECIFICATIONS & LAYOUT ANNOTATIONS
+       ======================================================== */
+    body.show-annotations .app-card,
+    body.show-annotations .photo-box,
+    body.show-annotations .btn {
+      outline: 1px dashed rgba(59, 130, 246, 0.8) !important;
+      outline-offset: 2px;
+    }
+    body.show-annotations .screen::before {
+      content: "SCREEN VIEWPORT: 390 x 844 | SAFE AREA 44/84px | 8PT GRID SYSTEM";
+      display: block;
+      background: #1E3A8A;
+      color: #FFFFFF;
+      font-family: ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 3px;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
     }
 
     /* Global Workspace Styles */
@@ -296,6 +542,88 @@
       height: 800px;
       border-radius: 12px;
       box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5), 0 0 0 8px #262930;
+    }
+
+    /* 100% Fullscreen Window Mode */
+    .device-viewport.fullscreen {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    body.is-fullscreen main.prototype-canvas {
+      padding: 0 !important;
+      align-items: stretch !important;
+      justify-content: stretch !important;
+    }
+    .device-viewport.fullscreen .desktop-sidebar {
+      display: flex !important;
+    }
+    .device-viewport.fullscreen .bottom-tab-bar {
+      display: none !important;
+    }
+    .device-viewport.fullscreen .status-bar {
+      display: none !important;
+    }
+
+    /* Artboard / All Screens Overview (Figma Canvas Mode) */
+    .device-viewport.artboard {
+      width: 100% !important;
+      height: 100% !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      background: #0E1015 !important;
+    }
+    .device-viewport.artboard .desktop-sidebar,
+    .device-viewport.artboard .bottom-tab-bar,
+    .device-viewport.artboard .status-bar {
+      display: none !important;
+    }
+    .device-viewport.artboard .desktop-layout-wrapper {
+      height: 100% !important;
+      width: 100% !important;
+    }
+    .device-viewport.artboard .screen-container {
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: wrap !important;
+      gap: 32px !important;
+      padding: 36px !important;
+      overflow: auto !important;
+      align-items: flex-start !important;
+      justify-content: flex-start !important;
+      width: 100% !important;
+    }
+    .device-viewport.artboard .screen {
+      display: flex !important;
+      width: 380px !important;
+      min-width: 380px !important;
+      height: 780px !important;
+      overflow-y: auto !important;
+      background: var(--app-bg) !important;
+      border: 2px solid var(--app-border) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.6) !important;
+      position: relative !important;
+      padding: 16px !important;
+    }
+    .device-viewport.artboard .screen::before {
+      content: attr(data-screen-name) !important;
+      display: block !important;
+      background: #1E293B !important;
+      color: #38BDF8 !important;
+      font-family: ui-monospace, monospace !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      padding: 6px 10px !important;
+      border-radius: 4px !important;
+      margin-bottom: 12px !important;
+      letter-spacing: 0.5px !important;
+      border-left: 3px solid #38BDF8 !important;
     }
 
     /* Mobile Status Bar */
@@ -619,17 +947,22 @@
 
       <!-- Viewport Switcher -->
       <div class="control-group">
-        <button id="btn-vp-mobile" class="control-btn active" onclick="setViewport('mobile')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-          Mobile (390)
+        <button id="btn-vp-fullscreen" class="control-btn" onclick="setViewport('fullscreen')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+          100% Window
         </button>
-        <button id="btn-vp-tablet" class="control-btn" onclick="setViewport('tablet')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-          Tablet (768)
+        <button id="btn-vp-artboard" class="control-btn" onclick="setViewport('artboard')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          All Screens (Board)
         </button>
         <button id="btn-vp-desktop" class="control-btn" onclick="setViewport('desktop')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-          Desktop (1280)
+          Desktop
+        </button>
+        <button id="btn-vp-tablet" class="control-btn" onclick="setViewport('tablet')">
+          Tablet
+        </button>
+        <button id="btn-vp-mobile" class="control-btn active" onclick="setViewport('mobile')">
+          Mobile
         </button>
       </div>
 
@@ -658,6 +991,14 @@
       <div class="control-group">
         <button id="btn-role-player" class="control-btn active" onclick="switchRole('player')">Player</button>
         <button id="btn-role-venue" class="control-btn" onclick="switchRole('venue')">Venue</button>
+      </div>
+
+      <!-- Specs & Annotations Toggle -->
+      <div class="control-group">
+        <button id="btn-annotations" class="control-btn" onclick="toggleAnnotations()">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+          Specs & Bounds
+        </button>
       </div>
     </div>
   </header>
@@ -750,7 +1091,7 @@
           <!-- ==========================================
                SCREEN: WELCOME & AUTH (0.2)
                ========================================== -->
-          <section id="screen-welcome" class="screen">
+          <section id="screen-welcome" class="screen" data-screen-name="SCREEN 0.2: WELCOME & AUTHENTICATION">
             <div class="photo-box" style="height:260px; border-radius:var(--radius-lg); margin-bottom:24px; display:flex; align-items:center; justify-content:center; background:#E5E7EB;">
               <svg class="icon" style="width:48px; height:48px; color:var(--app-text-tertiary);" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
             </div>
@@ -774,7 +1115,7 @@
           <!-- ==========================================
                SCREEN: PLAYER ONBOARDING (1.3 / 1.4)
                ========================================== -->
-          <section id="screen-onboarding" class="screen">
+          <section id="screen-onboarding" class="screen" data-screen-name="SCREEN 1.3: SPORTS & SKILL SETUP">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
               <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-welcome')">
                 <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
@@ -824,7 +1165,7 @@
           <!-- ==========================================
                SCREEN: PLAYER HOME (2.0)
                ========================================== -->
-          <section id="screen-home" class="screen active">
+          <section id="screen-home" class="screen active" data-screen-name="SCREEN 2.0: PLAYER HOME (DISCOVERY)">
             <!-- Header bar -->
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
               <div style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -943,7 +1284,7 @@
           <!-- ==========================================
                SCREEN: DISCOVER HUB (3.0)
                ========================================== -->
-          <section id="screen-discover" class="screen">
+          <section id="screen-discover" class="screen" data-screen-name="SCREEN 3.0: DISCOVER HUB & SEARCH">
             <h1 class="h1-title" style="margin-bottom:12px;">Discover</h1>
             
             <!-- Search Input -->
@@ -992,7 +1333,7 @@
           <!-- ==========================================
                SCREEN: OPEN PLAY DETAILS (3.11)
                ========================================== -->
-          <section id="screen-opendetails" class="screen">
+          <section id="screen-opendetails" class="screen" data-screen-name="SCREEN 3.11: OPEN PLAY SESSION DETAILS">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
               <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-discover')">
                 <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
@@ -1069,7 +1410,7 @@
           <!-- ==========================================
                SCREEN: VENUE DETAILS (3.8)
                ========================================== -->
-          <section id="screen-venuedetails" class="screen">
+          <section id="screen-venuedetails" class="screen" data-screen-name="SCREEN 3.8: VENUE DETAILS & COURT BOOKING">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
               <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-discover')">
                 <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
@@ -1116,7 +1457,7 @@
           <!-- ==========================================
                SCREEN: CREATE GAME (7.0 - 7.6)
                ========================================== -->
-          <section id="screen-creategame" class="screen">
+          <section id="screen-creategame" class="screen" data-screen-name="SCREEN 7.0: HOST A GAME WIZARD">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
               <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-home')">
                 <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -1175,7 +1516,7 @@
           <!-- ==========================================
                SCREEN: ACTIVITY (4.0 / 4.1)
                ========================================== -->
-          <section id="screen-activity" class="screen">
+          <section id="screen-activity" class="screen" data-screen-name="SCREEN 4.0: ACTIVITY & CHECK-IN PASS">
             <h1 class="h1-title" style="margin-bottom:12px;">My Activity</h1>
 
             <!-- Segmented Switcher -->
@@ -1214,7 +1555,7 @@
           <!-- ==========================================
                SCREEN: MESSAGES (5.0 / 5.1)
                ========================================== -->
-          <section id="screen-messages" class="screen">
+          <section id="screen-messages" class="screen" data-screen-name="SCREEN 5.0: GAME CHATS & MESSAGES">
             <h1 class="h1-title" style="margin-bottom:12px;">Messages</h1>
 
             <div class="app-card" style="display:flex; gap:12px; align-items:center; cursor:pointer;" onclick="alert('Opening game chat thread...');">
@@ -1247,7 +1588,7 @@
           <!-- ==========================================
                SCREEN: VENUE OPERATIONS DASHBOARD (8.0)
                ========================================== -->
-          <section id="screen-venue-dash" class="screen">
+          <section id="screen-venue-dash" class="screen" data-screen-name="SCREEN 8.0: VENUE OPERATIONS CONSOLE">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
               <div>
                 <span class="caption-text" style="color:var(--app-brand-accent);">FACILITY CONSOLE</span>
@@ -1316,7 +1657,7 @@
           <!-- ==========================================
                SCREEN: VENUE COURT SCHEDULE (9.0)
                ========================================== -->
-          <section id="screen-venue-calendar" class="screen">
+          <section id="screen-venue-calendar" class="screen" data-screen-name="SCREEN 9.0: COURT SCHEDULE MATRIX">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
               <button class="btn btn-sm btn-secondary" onclick="navigateToScreen('screen-venue-dash')">
                 <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
@@ -1360,7 +1701,7 @@
           <!-- ==========================================
                SCREEN: EMPTY STATE (9.2)
                ========================================== -->
-          <section id="screen-empty" class="screen" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
+          <section id="screen-empty" class="screen" data-screen-name="STATE 9.2: EMPTY STATE (NO GAMES)" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
             <div style="width:64px; height:64px; border-radius:50%; background:var(--app-surface-subtle); display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
               <svg class="icon icon-lg" style="color:var(--app-text-tertiary);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
             </div>
@@ -1375,7 +1716,7 @@
           <!-- ==========================================
                SCREEN: ERROR STATE (9.3)
                ========================================== -->
-          <section id="screen-error" class="screen" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
+          <section id="screen-error" class="screen" data-screen-name="STATE 9.3: ERROR STATE (OFFLINE)" style="text-align:center; justify-content:center; align-items:center; padding:32px 16px;">
             <div style="width:64px; height:64px; border-radius:50%; background:var(--app-warning-bg); display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
               <svg class="icon icon-lg" style="color:var(--app-warning);" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
             </div>
@@ -1519,13 +1860,18 @@
 
     function setViewport(size) {
       const vp = document.getElementById('deviceViewport');
-      vp.classList.remove('mobile', 'tablet', 'desktop');
+      vp.classList.remove('mobile', 'tablet', 'desktop', 'fullscreen', 'artboard');
       vp.classList.add(size);
 
-      document.getElementById('btn-vp-mobile').classList.remove('active');
-      document.getElementById('btn-vp-tablet').classList.remove('active');
-      document.getElementById('btn-vp-desktop').classList.remove('active');
-      document.getElementById('btn-vp-' + size).classList.add('active');
+      if (size === 'fullscreen' || size === 'artboard') {
+        document.body.classList.add('is-fullscreen');
+      } else {
+        document.body.classList.remove('is-fullscreen');
+      }
+
+      document.querySelectorAll('[id^="btn-vp-"]').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-vp-' + size);
+      if (activeBtn) activeBtn.classList.add('active');
     }
 
     function navigateToScreen(screenId) {
@@ -1602,6 +1948,27 @@
     function closeReminderSheet() {
       document.getElementById('reminderSheet').classList.remove('active');
     }
+
+    function toggleAnnotations() {
+      document.body.classList.toggle('show-annotations');
+      const btn = document.getElementById('btn-annotations');
+      if (btn) btn.classList.toggle('active');
+    }
+
+    // Support deep-linking via query parameters (e.g. ?mode=lofi, ?mode=hifi, ?screen=screen-opendetails)
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('mode');
+      const screen = params.get('screen');
+      const viewport = params.get('viewport');
+      const role = params.get('role');
+
+      if (mode === 'lofi') setFidelity('lofi');
+      else if (mode === 'hifi') setFidelity('hifi');
+      if (viewport) setViewport(viewport);
+      if (role) switchRole(role);
+      if (screen) navigateToScreen(screen);
+    });
   </script>
 </body>
 </html>

@@ -318,7 +318,9 @@ export function VenueMap({
     }
   };
 
-  // Initialize Map
+  const [mapReady, setMapReady] = useState(false);
+
+  // Initialize Map ONCE on mount
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current) return;
 
@@ -330,19 +332,21 @@ export function VenueMap({
 
       const container = mapContainerRef.current;
 
-      // Clean up previous instance if already initialized on this container (prevents Error: Map container is already initialized)
-      // @ts-expect-error Leaflet attaches _leaflet_id
-      if (container._leaflet_id && mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+      // Clean up previous instance if any
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.stop();
+          mapInstanceRef.current.remove();
+        } catch {}
         mapInstanceRef.current = null;
       }
-      // @ts-expect-error Reset container internal ID
+      // @ts-expect-error Reset internal ID
       if (container._leaflet_id) {
-        // @ts-expect-error Reset container internal ID
+        // @ts-expect-error Reset internal ID
         container._leaflet_id = null;
       }
 
-      // Fix Leaflet marker icons
+      // Configure default Leaflet marker icons
       delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -350,33 +354,20 @@ export function VenueMap({
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      const defaultCenter: [number, number] = initialCenter
-        ? initialCenter
-        : venues.length > 0
-        ? [venues[0].latitude, venues[0].longitude]
-        : OSM_PH_CENTER;
-
-      const defaultZoom = initialZoom
-        ? initialZoom
-        : singleVenueMode
-        ? 15
-        : venues.length > 1
-        ? 7
-        : venues.length === 1
-        ? 13
-        : OSM_PH_ZOOM;
+      const defaultCenter: [number, number] = initialCenter || OSM_PH_CENTER;
+      const defaultZoom = initialZoom || 11;
 
       const map = L.map(container, {
         center: defaultCenter,
         zoom: defaultZoom,
         scrollWheelZoom: true,
-        zoomControl: false, // We place custom controls cleanly
+        zoomControl: false,
       });
 
-      // Add custom zoom control at top-right
+      // Add zoom control at top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // OpenStreetMap standard tile layer with subdomains
+      // OpenStreetMap standard tile layer
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         subdomains: ['a', 'b', 'c'],
         attribution:
@@ -385,26 +376,59 @@ export function VenueMap({
       }).addTo(map);
 
       mapInstanceRef.current = map;
+      if (isMounted) setMapReady(true);
 
       // Auto invalidate size on mount
       setTimeout(() => {
         if (isMounted && map) {
-          map.invalidateSize();
+          try {
+            map.invalidateSize();
+          } catch {}
         }
-      }, 150);
+      }, 200);
 
-      // Sizing observer to automatically recalculate dimensions whenever container is shown or resized
+      // Sizing observer for layout changes
       if (typeof ResizeObserver !== 'undefined' && container) {
         resizeObserver = new ResizeObserver(() => {
           if (isMounted && map) {
-            map.invalidateSize();
+            try {
+              map.invalidateSize();
+            } catch {}
           }
         });
         resizeObserver.observe(container);
       }
+    });
 
-      // Clear existing markers
-      Object.values(markersRef.current).forEach((marker) => marker.remove());
+    return () => {
+      isMounted = false;
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.stop();
+          mapInstanceRef.current.remove();
+        } catch {}
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update Markers when venues, discovered facilities, or selection changes
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    import('leaflet').then((L) => {
+      if (!mapInstanceRef.current) return;
+
+      // Clear existing markers safely
+      Object.values(markersRef.current).forEach((marker) => {
+        try {
+          marker.remove();
+        } catch {}
+      });
       markersRef.current = {};
 
       // Add pins for platform venues (Green)
@@ -450,7 +474,9 @@ export function VenueMap({
           setActiveVenueIndex(index);
           setClickedItem({ type: 'platform', venue });
           if (onSelectVenue) onSelectVenue(venue);
-          map.flyTo([venue.latitude, venue.longitude], 14, { duration: 0.8 });
+          try {
+            map.flyTo([venue.latitude, venue.longitude], 14, { duration: 0.8 });
+          } catch {}
         });
 
         markersRef.current[venue.id] = marker;
@@ -495,7 +521,9 @@ export function VenueMap({
         marker.on('click', () => {
           setClickedItem({ type: 'discovered', facility });
           if (onSelectDiscovered) onSelectDiscovered(facility);
-          map.flyTo([facility.latitude, facility.longitude], 14, { duration: 0.8 });
+          try {
+            map.flyTo([facility.latitude, facility.longitude], 14, { duration: 0.8 });
+          } catch {}
         });
 
         markersRef.current[facility.id] = marker;
@@ -506,34 +534,21 @@ export function VenueMap({
         ...venues.map((v) => [v.latitude, v.longitude] as [number, number]),
         ...discoveredFacilities.map((d) => [d.latitude, d.longitude] as [number, number]),
       ];
-      if (!initialCenter && allPoints.length > 1) {
-        const bounds = L.latLngBounds(allPoints);
-        map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13 });
+      if (!initialCenter && allPoints.length > 1 && !clickedItem) {
+        try {
+          const bounds = L.latLngBounds(allPoints);
+          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13 });
+        } catch {}
       }
     });
-
-    return () => {
-      isMounted = false;
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
   }, [
+    mapReady,
     venues,
     discoveredFacilities,
+    activeItemId,
     initialCenter,
-    initialZoom,
-    singleVenueMode,
-    selectedVenueId,
-    selectedDiscoveredId,
     onSelectVenue,
     onSelectDiscovered,
-    activeItemId,
-    activeItemType,
   ]);
 
   // Fit all active venues & discovered courts on map

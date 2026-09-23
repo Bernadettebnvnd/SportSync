@@ -48,12 +48,17 @@ export function MatchiLogo({ size = 32 }: { size?: number }) {
 export function Navbar() {
   const pathname = usePathname();
   const { currentUser } = useMatchiStore();
-  const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
 
-  const navLinks = [
+  const isFacilityView = pathname.startsWith('/organizer');
+  const isAuthenticated = Boolean(currentUser.id && currentUser.email);
+  const isOnboarded = Boolean(currentUser.onboarding_completed || currentUser.has_completed_onboarding);
+  const isOwnerOrAdmin = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
+
+  const playerNavLinks = [
     { href: '/', label: 'Home', icon: Home },
-    { href: '/explore', label: 'Courts', icon: Compass },
+    { href: '/explore', label: 'Find a Court', icon: Compass },
     { href: '/bookings', label: 'Bookings', icon: Calendar },
     { href: '/profile', label: 'Profile', icon: UserIcon },
   ];
@@ -62,59 +67,122 @@ export function Navbar() {
     <>
       <header className="sticky top-0 z-40 w-full border-b border-[#E8E5DF] bg-[#FAF8F5]/95 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-3 sm:px-6">
-          {/* Brand Logo & Tagline */}
-          <Link href="/" className="flex items-center gap-2 select-none shrink-0">
-            <MatchiLogo size={32} />
-            <div>
+          {/* Brand Logo & Context */}
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2 select-none shrink-0">
+              <MatchiLogo size={30} />
               <span className="text-lg font-black tracking-tight text-[#1A241E]">
                 Match<span className="text-[#2D724E]">i</span>
               </span>
-              <span className="hidden sm:inline-block ml-2 text-[10px] font-bold text-[#65756B] uppercase tracking-wider">
-                Sports Marketplace
+            </Link>
+            {isFacilityView && (
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-[#1E4A32] text-white px-2 py-0.5 rounded-md">
+                Facility Console
               </span>
-            </div>
-          </Link>
+            )}
+          </div>
 
-          {/* Desktop Nav Links */}
+          {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive = pathname === link.href;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors',
-                    isActive
-                      ? 'bg-[#2D724E]/10 text-[#2D724E]'
-                      : 'text-[#65756B] hover:text-[#1A241E] hover:bg-white/80'
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {link.label}
-                </Link>
-              );
-            })}
+            {!isFacilityView && (
+              <>
+                {(!isAuthenticated || !isOnboarded) ? (
+                  // Quick Preview Desktop Navigation
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href="/explore"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#65756B] hover:text-[#1A241E] hover:bg-white/80 transition-colors"
+                    >
+                      Find a Court
+                    </Link>
+                    <Link
+                      href="/queue"
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#65756B] hover:text-[#1A241E] hover:bg-white/80 transition-colors"
+                    >
+                      Find a Game
+                    </Link>
+                  </div>
+                ) : (
+                  // Authenticated Player Navigation
+                  playerNavLinks.map((link) => {
+                    const Icon = link.icon;
+                    const isActive = pathname === link.href;
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors',
+                          isActive
+                            ? 'bg-[#2D724E]/10 text-[#2D724E]'
+                            : 'text-[#65756B] hover:text-[#1A241E] hover:bg-white/80'
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {link.label}
+                      </Link>
+                    );
+                  })
+                )}
+              </>
+            )}
           </nav>
 
-          {/* Right Side: Account Trigger */}
+          {/* Right Side Controls */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] transition-all cursor-pointer shadow-2xs"
-              title="Account & Authentication Session"
-            >
-              <img
-                src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'}
-                alt={currentUser.full_name}
-                className="w-6 h-6 rounded-full object-cover border border-[#2D724E]"
-              />
-              <span className="hidden sm:inline text-xs font-bold text-[#1A241E] max-w-[90px] truncate">
-                {currentUser.nickname || currentUser.full_name}
-              </span>
-            </button>
+            {isFacilityView ? (
+              <Link
+                href="/"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#1A241E] bg-white border border-[#E8E5DF] hover:border-[#2D724E] transition-all"
+              >
+                Player View
+              </Link>
+            ) : (
+              <>
+                {isOwnerOrAdmin && (
+                  <Link
+                    href="/organizer"
+                    className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-[#2D724E] bg-[#EBF4EE] hover:bg-[#2D724E] hover:text-white transition-all"
+                  >
+                    Facility Mode
+                  </Link>
+                )}
+
+                {(!isAuthenticated || !isOnboarded) ? (
+                  // Quick Preview Auth CTAs
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsAuthModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#1A241E] hover:bg-white/80 transition-colors"
+                    >
+                      Sign In
+                    </button>
+                    <Link
+                      href="/onboarding"
+                      className="px-3.5 py-1.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold transition-all shadow-xs"
+                    >
+                      Get Started
+                    </Link>
+                  </div>
+                ) : (
+                  // Authenticated Player Pill
+                  <button
+                    type="button"
+                    onClick={() => setIsAuthModalOpen(true)}
+                    className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] transition-all cursor-pointer shadow-2xs"
+                    title="Account & Authentication Session"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-[#EBF4EE] text-[#2D724E] flex items-center justify-center font-black text-[10px] border border-[#2D724E]">
+                      {currentUser.nickname?.[0] || currentUser.full_name?.[0] || 'P'}
+                    </div>
+                    <span className="hidden sm:inline text-xs font-bold text-[#1A241E] max-w-[90px] truncate">
+                      {currentUser.nickname || currentUser.full_name}
+                    </span>
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </header>

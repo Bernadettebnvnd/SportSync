@@ -344,8 +344,125 @@ export default function OrganizerDashboard() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Today's Court Timeline & Schedule Grid */}
+          <div className="lg:col-span-3 rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8E5DF] pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#2D724E]" />
+                  <h3 className="text-base font-black text-[#1A241E]">
+                    Today&apos;s Court Timeline
+                  </h3>
+                </div>
+                <p className="text-xs text-[#65756B] mt-0.5">
+                  Real-time court status, active bookings, and idle inventory.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs flex-wrap">
+                <span className="flex items-center gap-1.5 text-[#1A241E] font-bold">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#1E4A32]" />
+                  <span>Confirmed Booking</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[#A35C2B] font-bold">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#E9C46A]" />
+                  <span>Open Play</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[#65756B]">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#FAF8F5] border border-[#E8E5DF]" />
+                  <span>Available Slot</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Court Rows */}
+            <div className="space-y-3">
+              {(facilityCourts.length > 0
+                ? facilityCourts
+                : primaryVenue?.courts && primaryVenue.courts.length > 0
+                ? primaryVenue.courts
+                : [
+                    { id: 'c1', name: 'Court 1', sport: 'pickleball', hourly_rate_cents: 50000 },
+                    { id: 'c2', name: 'Court 2', sport: 'pickleball', hourly_rate_cents: 50000 },
+                    { id: 'c3', name: 'Court 3', sport: 'badminton', hourly_rate_cents: 45000 },
+                  ]
+              ).map((court, idx) => {
+                const courtBookings = bookings.filter(
+                  (b) => b.court_id === court.id || b.court?.name === court.name
+                );
+                const hasSession = primarySession?.court_ids?.includes(court.id);
+
+                return (
+                  <div
+                    key={court.id || idx}
+                    className="p-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-3"
+                  >
+                    <div className="min-w-[140px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-[#1A241E]">{court.name}</span>
+                        <span className="text-[10px] font-bold text-[#2D724E] bg-[#EBF4EE] px-1.5 py-0.5 rounded-md capitalize">
+                          {court.sport}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#65756B] block mt-0.5">
+                        {formatCurrency(court.hourly_rate_cents || 50000)}/hr standard rate
+                      </span>
+                    </div>
+
+                    {/* Timeline Slots */}
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1.5">
+                      {[
+                        { time: '08:00 - 10:00', type: courtBookings[0] ? 'booked' : 'free', label: courtBookings[0]?.user?.full_name || 'Available' },
+                        { time: '10:00 - 12:00', type: hasSession ? 'session' : 'free', label: hasSession ? 'Open Play' : 'Available' },
+                        { time: '13:00 - 15:00', type: 'free', label: 'Idle Slot' },
+                        { time: '15:00 - 17:00', type: idx % 2 === 0 ? 'booked' : 'free', label: idx % 2 === 0 ? 'Reserved' : 'Available' },
+                        { time: '17:00 - 19:00', type: 'booked', label: 'League Match' },
+                        { time: '19:00 - 21:00', type: 'booked', label: 'Prime Slot' },
+                      ].map((slot, sIdx) => {
+                        if (slot.type === 'booked') {
+                          return (
+                            <div
+                              key={sIdx}
+                              className="p-2 rounded-xl bg-[#1E4A32] text-white text-[10px] space-y-0.5"
+                            >
+                              <span className="font-extrabold block truncate">{slot.label}</span>
+                              <span className="text-[#E9C46A] text-[9px] block">{slot.time}</span>
+                            </div>
+                          );
+                        }
+                        if (slot.type === 'session') {
+                          return (
+                            <div
+                              key={sIdx}
+                              className="p-2 rounded-xl bg-[#E9C46A] text-[#1A241E] text-[10px] font-black space-y-0.5"
+                            >
+                              <span className="block truncate">{slot.label}</span>
+                              <span className="text-[#A35C2B] text-[9px] block">{slot.time}</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <button
+                            key={sIdx}
+                            type="button"
+                            onClick={() => setActiveTab('monetize')}
+                            className="p-2 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] text-left text-[10px] space-y-0.5 transition-colors group"
+                          >
+                            <span className="text-[#65756B] group-hover:text-[#2D724E] font-bold block truncate">
+                              + Monetize
+                            </span>
+                            <span className="text-[#65756B]/70 text-[9px] block">{slot.time}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Monetization Opportunity Alert */}
-          <div className="lg:col-span-3 rounded-3xl border border-[#C87D43]/30 bg-gradient-to-r from-[#FBF0E6] to-[#FAF8F5] p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="lg:col-span-3 rounded-3xl border border-[#C87D43]/30 bg-[#FBF0E6]/50 p-5 sm:p-6 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-md bg-[#C87D43] text-white text-[10px] font-black uppercase tracking-wider">
@@ -355,7 +472,7 @@ export default function OrganizerDashboard() {
                   {emptyOpportunities.length} idle court hours detected today
                 </span>
               </div>
-              <h3 className="text-lg font-black text-[#1A241E]">
+              <h3 className="text-base sm:text-lg font-black text-[#1A241E]">
                 Convert unbooked court time into high-yield Open Play sessions
               </h3>
               <p className="text-xs text-[#65756B] max-w-2xl">
@@ -367,9 +484,9 @@ export default function OrganizerDashboard() {
             <button
               type="button"
               onClick={() => setActiveTab('monetize')}
-              className="px-5 py-3 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white text-xs font-bold shadow-sm transition-all whitespace-nowrap min-h-[44px]"
+              className="px-5 py-3 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white text-xs font-bold shadow-xs transition-all whitespace-nowrap min-h-[44px]"
             >
-              Inspect Opportunities ({emptyOpportunities.length}) &rarr;
+              Inspect Opportunities ({emptyOpportunities.length})
             </button>
           </div>
 

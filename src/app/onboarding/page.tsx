@@ -14,6 +14,8 @@ import {
   Search,
   MapPin,
   Loader2,
+  User as UserIcon,
+  ChevronRight,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -47,12 +49,13 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { currentUser, completePlayerOnboarding, completeOwnerOnboarding } = useMatchiStore();
 
-  const [onboardingType, setOnboardingType] = useState<'player' | 'owner'>('player');
-
-  // Player Onboarding State (Clucky 5-Screen Progression)
+  // Role: player or facility owner
+  const [role, setRole] = useState<'player' | 'owner'>('player');
+  // Step 1: Role, Step 2: Name, Step 3: Sports, Step 4: Location, Step 5: Preferences, Step 6: Confirmation
   const [step, setStep] = useState<number>(1);
-  const totalPlayerSteps = 5;
+  const totalSteps = role === 'player' ? 6 : 5;
 
+  // Player fields
   const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [nickname, setNickname] = useState(currentUser.nickname || '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(
@@ -68,9 +71,7 @@ export default function OnboardingPage() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Facility Owner State
-  const [facilityStep, setFacilityStep] = useState<number>(1);
-  const totalFacilitySteps = 4;
+  // Facility fields
   const [facilityName, setFacilityName] = useState('');
   const [facilityAddress, setFacilityAddress] = useState('');
   const [facilityCity, setFacilityCity] = useState(QUICK_LOCATIONS[0]);
@@ -108,7 +109,7 @@ export default function OnboardingPage() {
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setSelectedArea('Current Area');
+      setSelectedArea('Current Location');
       return;
     }
     setIsLocating(true);
@@ -168,8 +169,8 @@ export default function OnboardingPage() {
     setIsSubmitting(true);
     try {
       await completePlayerOnboarding({
-        fullName: fullName.trim() || currentUser.full_name,
-        nickname: nickname.trim() || fullName.split(' ')[0] || currentUser.nickname,
+        fullName: fullName.trim() || currentUser.full_name || 'Player',
+        nickname: nickname.trim() || fullName.split(' ')[0] || currentUser.nickname || 'Player',
         preferredSports: selectedSports,
         preferredFormat: selectedStyles.includes('private') ? 'singles' : 'doubles',
         city: selectedArea || 'Metro Manila',
@@ -222,17 +223,19 @@ export default function OnboardingPage() {
 
       router.replace('/organizer');
     } catch (err) {
-      console.error('Failed to complete owner onboarding:', err);
+      console.warn('Facility setup warning:', err);
+      router.replace('/organizer');
+    } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1A241E] flex flex-col justify-between p-4 sm:p-8 max-w-xl mx-auto">
-      {/* Top Bar: Progress & Mode Switcher */}
+      {/* Top Bar: Back & Progress Indicator */}
       <div className="pt-2 sm:pt-4 space-y-3">
         <div className="flex items-center justify-between">
-          {onboardingType === 'player' && step > 1 ? (
+          {step > 1 ? (
             <button
               type="button"
               onClick={() => setStep((s) => s - 1)}
@@ -241,39 +244,22 @@ export default function OnboardingPage() {
               <ArrowLeft className="w-4 h-4" />
               <span>Back</span>
             </button>
-          ) : onboardingType === 'owner' && facilityStep > 1 ? (
-            <button
-              type="button"
-              onClick={() => setFacilityStep((s) => s - 1)}
-              className="inline-flex items-center gap-1 text-xs font-bold text-[#65756B] hover:text-[#1A241E] transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back</span>
-            </button>
           ) : (
-            <div className="h-4" />
+            <span className="text-xs font-bold tracking-tight text-[#65756B]">
+              Step 1 of {totalSteps}
+            </span>
           )}
 
-          {/* Quick toggle between Player and Facility Setup */}
-          <button
-            type="button"
-            onClick={() => {
-              setOnboardingType(onboardingType === 'player' ? 'owner' : 'player');
-            }}
-            className="text-[11px] font-bold text-[#2D724E] hover:underline"
-          >
-            {onboardingType === 'player' ? 'Setting up a facility?' : 'Player setup?'}
-          </button>
+          <span className="text-xs font-semibold text-[#65756B]">
+            {role === 'player' ? 'Player Profile' : 'Facility Setup'}
+          </span>
         </div>
 
         {/* Step Indicator Bar */}
         <div className="flex items-center gap-1.5">
-          {Array.from({
-            length: onboardingType === 'player' ? totalPlayerSteps : totalFacilitySteps,
-          }).map((_, i) => {
-            const currentStep = onboardingType === 'player' ? step : facilityStep;
-            const isCompleted = i + 1 < currentStep;
-            const isCurrent = i + 1 === currentStep;
+          {Array.from({ length: totalSteps }).map((_, i) => {
+            const isCompleted = i + 1 < step;
+            const isCurrent = i + 1 === step;
 
             return (
               <div
@@ -293,21 +279,98 @@ export default function OnboardingPage() {
 
       {/* Main Conversational Screen Body */}
       <div className="my-auto py-8">
-        {onboardingType === 'player' ? (
+        {/* =========================================================================
+         * STEP 1: ROLE SELECTION (Clucky Principle: One decision at a time)
+         * ========================================================================= */}
+        {step === 1 && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+                How will you use Matchi?
+              </h1>
+              <p className="text-xs sm:text-sm text-[#65756B]">
+                Choose how you want to experience the platform.
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRole('player');
+                  setStep(2);
+                }}
+                className={`w-full p-5 rounded-3xl border text-left flex items-center justify-between transition-all group ${
+                  role === 'player'
+                    ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
+                    : 'border-[#E8E5DF] bg-white/80 hover:border-[#2D724E]/40'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-[#EBF4EE] flex items-center justify-center text-[#2D724E] shrink-0">
+                    <UserIcon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-[#1A241E] group-hover:text-[#2D724E] transition-colors">
+                      I&apos;m a Player
+                    </h3>
+                    <p className="text-xs text-[#65756B] mt-0.5">
+                      Book courts, find open play games, and play more.
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-[#65756B] group-hover:text-[#2D724E] group-hover:translate-x-0.5 transition-all" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setRole('owner');
+                  setStep(2);
+                }}
+                className={`w-full p-5 rounded-3xl border text-left flex items-center justify-between transition-all group ${
+                  role === 'owner'
+                    ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
+                    : 'border-[#E8E5DF] bg-white/80 hover:border-[#2D724E]/40'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-[#FBF0E6] flex items-center justify-center text-[#C87D43] shrink-0">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-[#1A241E] group-hover:text-[#C87D43] transition-colors">
+                      I run a Facility
+                    </h3>
+                    <p className="text-xs text-[#65756B] mt-0.5">
+                      Manage court schedules, accept bookings, and host rotations.
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-[#65756B] group-hover:text-[#C87D43] group-hover:translate-x-0.5 transition-all" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================================================
+         * PLAYER FLOW
+         * ========================================================================= */}
+        {role === 'player' && (
           <>
-            {/* SCREEN 1: Name */}
-            {step === 1 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 2: Player Name */}
+            {step === 2 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    What should we call you?
+                    What is your name?
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
                     Your name appears on court bookings and game rotation boards.
                   </p>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 pt-2">
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
                       Full Name
@@ -315,7 +378,12 @@ export default function OnboardingPage() {
                     <input
                       type="text"
                       value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
+                      onChange={(e) => {
+                        setFullName(e.target.value);
+                        if (!nickname) {
+                          setNickname(e.target.value.split(' ')[0] || '');
+                        }
+                      }}
                       placeholder="e.g. Alex Santos"
                       autoFocus
                       className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] placeholder:text-[#65756B]/50 focus:border-[#2D724E] focus:outline-none shadow-xs"
@@ -338,19 +406,19 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* SCREEN 2: Choose Sports */}
-            {step === 2 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 3: Choose Sports (Large Visual Touch Targets) */}
+            {step === 3 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
                     Choose your sports
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
-                    Select the sports you play. Your dashboard prioritizes these courts.
+                    Select the sports you play. Your home screen prioritizes these courts.
                   </p>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 pt-2">
                   {AVAILABLE_SPORTS.map((sport) => {
                     const isSelected = selectedSports.includes(sport.id);
                     return (
@@ -374,7 +442,9 @@ export default function OnboardingPage() {
                         </div>
                         <div
                           className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected ? 'bg-[#2D724E] border-[#2D724E] text-white' : 'border-[#E8E5DF]'
+                            isSelected
+                              ? 'bg-[#2D724E] border-[#2D724E] text-white'
+                              : 'border-[#E8E5DF]'
                           }`}
                         >
                           {isSelected && <Check className="w-3.5 h-3.5" />}
@@ -386,19 +456,19 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* SCREEN 3: Where do you play? (Flexible & Non-restrictive) */}
-            {step === 3 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 4: Where do you play? (Flexible & Non-restrictive, with Skip) */}
+            {step === 4 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
                     Where do you play?
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
-                    Discover nearby courts or skip and search later.
+                    Discover nearby courts or skip and search anytime later.
                   </p>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 pt-2">
                   {/* Action 1: Use Current Location */}
                   <button
                     type="button"
@@ -427,7 +497,9 @@ export default function OnboardingPage() {
                         </span>
                       </div>
                     </div>
-                    {selectedArea && !isLocating && <Check className="w-4 h-4 text-[#2D724E]" />}
+                    {selectedArea && !isLocating && (
+                      <Check className="w-4 h-4 text-[#2D724E]" />
+                    )}
                   </button>
 
                   {/* Action 2: Search for Location */}
@@ -439,7 +511,7 @@ export default function OnboardingPage() {
                         value={locationSearch}
                         onChange={(e) => handleSearchLocation(e.target.value)}
                         placeholder="Search for a city, area, or district..."
-                        className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-xs sm:text-sm text-[#1A241E] placeholder:text-[#65756B] focus:ring-2 focus:ring-[#2D724E] focus:outline-none min-h-[48px]"
+                        className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-xs sm:text-sm text-[#1A241E] placeholder:text-[#65756B] focus:border-[#2D724E] focus:outline-none min-h-[48px]"
                       />
                       {isSearchingLocation && (
                         <Loader2 className="w-4 h-4 text-[#2D724E] animate-spin absolute right-3.5" />
@@ -499,19 +571,19 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* SCREEN 4: How do you like to play? (Flexible & Multi-select) */}
-            {step === 4 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 5: Preferences (Multi-select with Skip) */}
+            {step === 5 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
                     How do you like to play?
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
-                    Select any that apply, or skip to explore directly.
+                    Select any that apply, or skip to start playing immediately.
                   </p>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 pt-2">
                   {PLAYING_STYLES.map((style) => {
                     const isSelected = selectedStyles.includes(style.id);
                     return (
@@ -535,7 +607,9 @@ export default function OnboardingPage() {
                         </div>
                         <div
                           className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ml-3 ${
-                            isSelected ? 'bg-[#2D724E] border-[#2D724E] text-white' : 'border-[#E8E5DF]'
+                            isSelected
+                              ? 'bg-[#2D724E] border-[#2D724E] text-white'
+                              : 'border-[#E8E5DF]'
                           }`}
                         >
                           {isSelected && <Check className="w-3.5 h-3.5" />}
@@ -547,9 +621,9 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {/* SCREEN 5: Confirmation */}
-            {step === 5 && (
-              <div className="space-y-6 animate-fadeIn text-center">
+            {/* STEP 6: Confirmation */}
+            {step === 6 && (
+              <div className="space-y-6 text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
                   <Check className="w-8 h-8" />
                 </div>
@@ -559,7 +633,8 @@ export default function OnboardingPage() {
                     You&apos;re all set.
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
-                    Your profile is ready. Find nearby courts or join open play rotations anytime.
+                    Your profile is ready. Find nearby courts or join live community
+                    rotations anytime.
                   </p>
                 </div>
 
@@ -576,33 +651,30 @@ export default function OnboardingPage() {
                       {getSportDisplayName(s)}
                     </span>
                   ))}
-                  {selectedStyles.slice(0, 2).map((st) => (
-                    <span
-                      key={st}
-                      className="rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] px-3 py-1.5 text-xs font-medium text-[#65756B]"
-                    >
-                      {PLAYING_STYLES.find((p) => p.id === st)?.label}
-                    </span>
-                  ))}
                 </div>
               </div>
             )}
           </>
-        ) : (
-          /* FACILITY OWNER PROGRESSIVE FLOW */
+        )}
+
+        {/* =========================================================================
+         * FACILITY OWNER FLOW
+         * ========================================================================= */}
+        {role === 'owner' && (
           <>
-            {facilityStep === 1 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 2: Facility Name & Address */}
+            {step === 2 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    What is your facility named?
+                    Facility details
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
                     Players look for your sports center on the marketplace.
                   </p>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 pt-2">
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
                       Facility Name
@@ -655,8 +727,9 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {facilityStep === 2 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 3: Sports Hosted */}
+            {step === 3 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
                     What sports do you host?
@@ -666,7 +739,7 @@ export default function OnboardingPage() {
                   </p>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 pt-2">
                   {AVAILABLE_SPORTS.map((sport) => {
                     const isSelected = facilitySports.includes(sport.id);
                     return (
@@ -695,18 +768,19 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {facilityStep === 3 && (
-              <div className="space-y-6 animate-fadeIn">
+            {/* STEP 4: Courts & Rates */}
+            {step === 4 && (
+              <div className="space-y-6">
                 <div className="space-y-2">
                   <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Add your courts
+                    Court setup &amp; rates
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B]">
                     Configure court count and standard hourly rates.
                   </p>
                 </div>
 
-                <div className="space-y-5">
+                <div className="space-y-5 pt-2">
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
                       Number of Courts
@@ -754,8 +828,9 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            {facilityStep === 4 && (
-              <div className="space-y-6 animate-fadeIn text-center">
+            {/* STEP 5: Facility Ready */}
+            {step === 5 && (
+              <div className="space-y-6 text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
                   <Building2 className="w-8 h-8" />
                 </div>
@@ -765,7 +840,7 @@ export default function OnboardingPage() {
                     Your facility is ready.
                   </h1>
                   <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
-                    Manage court schedules, view today&apos;s bookings, and host open play sessions from your dashboard.
+                    Manage court schedules, view today&apos;s bookings, and host open play sessions from your console.
                   </p>
                 </div>
 
@@ -783,32 +858,32 @@ export default function OnboardingPage() {
         )}
       </div>
 
-      {/* Bottom Action Buttons (Continue, Skip, Start Playing) */}
+      {/* Bottom Action Area: Action-only labels */}
       <div className="pb-4 sm:pb-6">
-        {onboardingType === 'player' ? (
-          step === 3 || step === 4 ? (
-            /* Optional Steps 3 & 4 provide prominent Skip */
+        {step === 1 ? null : role === 'player' ? (
+          step === 4 || step === 5 ? (
+            /* Optional Steps provide prominent Skip button */
             <div className="flex gap-2.5">
               <button
                 type="button"
                 onClick={() => setStep((s) => s + 1)}
-                className="flex-1 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white hover:bg-[#FAF8F5] text-[#65756B] text-sm font-bold transition-all active:scale-98 text-center min-h-[50px]"
+                className="flex-1 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white hover:bg-[#FAF8F5] text-[#65756B] text-sm font-bold transition-all active:scale-[0.99] text-center min-h-[50px]"
               >
                 Skip
               </button>
               <button
                 type="button"
                 onClick={() => setStep((s) => s + 1)}
-                className="flex-2 py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-md transition-all active:scale-98 text-center min-h-[50px]"
+                className="flex-2 py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
               >
                 Continue
               </button>
             </div>
-          ) : step < totalPlayerSteps ? (
+          ) : step < totalSteps ? (
             <button
               type="button"
               onClick={() => setStep((s) => s + 1)}
-              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-md transition-all active:scale-98 text-center min-h-[50px]"
+              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
             >
               Continue
             </button>
@@ -817,16 +892,16 @@ export default function OnboardingPage() {
               type="button"
               disabled={isSubmitting}
               onClick={handleFinishPlayer}
-              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-md transition-all active:scale-98 text-center min-h-[50px] disabled:opacity-50"
+              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50"
             >
               {isSubmitting ? 'Starting...' : 'Start Playing'}
             </button>
           )
-        ) : facilityStep < totalFacilitySteps ? (
+        ) : step < totalSteps ? (
           <button
             type="button"
-            onClick={() => setFacilityStep((s) => s + 1)}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-md transition-all active:scale-98 text-center min-h-[50px]"
+            onClick={() => setStep((s) => s + 1)}
+            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
           >
             Continue
           </button>
@@ -835,9 +910,9 @@ export default function OnboardingPage() {
             type="button"
             disabled={isSubmitting}
             onClick={handleFinishOwner}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-md transition-all active:scale-98 text-center min-h-[50px] disabled:opacity-50"
+            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50"
           >
-            {isSubmitting ? 'Creating...' : 'Open Facility Dashboard'}
+            {isSubmitting ? 'Creating...' : 'Open Facility Console'}
           </button>
         )}
       </div>
