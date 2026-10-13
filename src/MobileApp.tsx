@@ -36,7 +36,7 @@ import { SystemStatesScreen } from './screens/profile/SystemStatesScreen';
 import { LevelUpCelebrationModal } from './design-system/components/LevelUpCelebrationModal';
 import { BadgeClaimModal } from './design-system/components/BadgeClaimModal';
 import { WagerWinCelebrationModal } from './design-system/components/WagerWinCelebrationModal';
-import { useSidelineBridge } from './lib/useSidelineBridge';
+import { useSportSyncBridge } from './lib/useSportSyncBridge';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -80,7 +80,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   initialScreen = 'home',
   inPhoneFrame = true,
 }) => {
-  const bridge = useSidelineBridge();
+  const bridge = useSportSyncBridge();
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(initialScreen);
   const [screenHistory, setScreenHistory] = useState<ScreenId[]>([initialScreen]);
   const [activeTab, setActiveTab] = useState<NavTabId>('home');

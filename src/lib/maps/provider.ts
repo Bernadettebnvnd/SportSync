@@ -1,5 +1,5 @@
 /**
- * Map, Geocoding, and Place Provider Abstractions for Matchi
+ * Map, Geocoding, and Place Provider Abstractions for SportSync
  * Decouples frontend components from specific vendor implementations (OpenStreetMap, Leaflet, Google Places).
  */
 
@@ -130,7 +130,7 @@ export async function searchDiscoveredCourts(
     const res = await fetch(url, {
       headers: {
         'Accept-Language': 'en',
-        'User-Agent': 'MatchiSports/1.0 (sports-facility-discovery)',
+        'User-Agent': 'SportSync/1.0 (sports-facility-discovery)',
       },
     });
 

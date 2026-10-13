@@ -1,5 +1,5 @@
 /**
- * SIDELINE Design System Tokens
+ * SportSync Design System Tokens
  * Strict color, typographic, elevation, and spacing tokens
  */
 

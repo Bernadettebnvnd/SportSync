@@ -150,7 +150,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-black text-[#1A241E]">
-                {isAlreadyLoggedIn ? 'Account Session' : mode === 'signup' ? 'Create Matchi Account' : 'Sign in to Matchi'}
+                {isAlreadyLoggedIn ? 'Account Session' : mode === 'signup' ? 'Create SportSync Account' : 'Sign in to SportSync'}
               </h2>
               <span className="text-[10px] text-[#65756B] block">
                 {isAlreadyLoggedIn ? currentUser.email : 'Unified Player & Facility Account'}

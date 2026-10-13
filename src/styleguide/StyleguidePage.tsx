@@ -53,7 +53,7 @@ export const StyleguidePage: React.FC = () => {
             <span>Open Dribbble Showcase</span>
           </a>
           <a
-            href="/sideline"
+            href="/"
             className="h-11 px-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-bold text-xs flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(200,255,46,0.3)]"
           >
             <Smartphone className="w-4 h-4 stroke-[2.5]" />

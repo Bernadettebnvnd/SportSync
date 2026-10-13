@@ -15,7 +15,7 @@ export default function RootHomePage() {
   return (
     <div className="min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-between select-none">
       {/* Adaptive Desktop Header (Hidden on small mobile screens to keep edge-to-edge native feel) */}
-      <header className="w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-4 sm:px-6 py-2.5">
+      <header className="hidden md:block w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-4 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-base shadow-[0_0_16px_rgba(200,255,46,0.3)]">

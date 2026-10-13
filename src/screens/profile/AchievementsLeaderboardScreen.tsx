@@ -3,7 +3,7 @@ import { ArrowLeft, Trophy, Flame, Target, Award, Crown, Sparkles, CheckCircle2,
 import { FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { BadgeItem } from '../../mock/types';
 import { UserAvatar } from '../../illustrations/Avatars';
-import { DEFAULT_BADGES, SQUAD_FRIENDS_BASE } from '../../lib/useSidelineBridge';
+import { DEFAULT_BADGES, SQUAD_FRIENDS_BASE } from '../../lib/useSportSyncBridge';
 
 interface AchievementsLeaderboardScreenProps {
   onBack: () => void;

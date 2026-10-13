@@ -65,7 +65,7 @@ export default function RootLayout({
           crossOrigin=""
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#FAF8F5] text-[#1A241E] pb-20 md:pb-0 selection:bg-[#2D724E]/20">
+      <body className="min-h-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] selection:bg-[#C8FF2E]/30">
         <AppShell>{children}</AppShell>
       </body>
     </html>

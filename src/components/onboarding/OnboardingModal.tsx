@@ -161,7 +161,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
             <div className="space-y-4 animate-in fade-in slide-in-from-right-2">
               <div>
                 <span className="text-xs font-black uppercase tracking-wider text-[#C87D43]">
-                  Welcome to Matchi
+                  Welcome to SportSync
                 </span>
                 <h3 className="text-xl font-black text-[#1A241E] mt-0.5">
                   What should players call you on court?
@@ -260,7 +260,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                   What do you love to play?
                 </h3>
                 <p className="text-xs text-[#65756B] mt-1">
-                  Select all that apply. Matchi connects you to courts across all your favorite racket and court sports.
+                  Select all that apply. SportSync connects you to courts across all your favorite racket and court sports.
                 </p>
               </div>
 

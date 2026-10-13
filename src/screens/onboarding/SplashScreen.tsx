@@ -32,7 +32,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogI
         <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F0C]/80 via-transparent to-transparent pointer-events-none" />
         <div className="absolute bottom-4 inset-x-4 text-center">
           <p className="font-editorial text-2xl text-[#C8FF2E]">
-            "Gather your friends. Play more."
+            "Find Players. Play Together."
           </p>
         </div>
       </div>

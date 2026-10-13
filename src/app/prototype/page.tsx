@@ -39,9 +39,9 @@ export default function PrototypeViewerPage() {
           </div>
           <div>
             <div className="font-bold text-sm tracking-tight text-white flex items-center gap-2">
-              SIDELINE
+              SportSync
               <span className="text-[10px] uppercase font-semibold bg-[#262A35] text-[#C8FF2E] px-1.5 py-0.5 rounded border border-[#C8FF2E]/30">
-                UX Architecture
+                Production Architecture
               </span>
             </div>
           </div>
@@ -57,7 +57,7 @@ export default function PrototypeViewerPage() {
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            ⚡ SIDELINE HiFi Master (New)
+            ⚡ SportSync App
           </button>
           <button
             onClick={() => setMode('lofi')}
@@ -152,7 +152,7 @@ export default function PrototypeViewerPage() {
             rel="noopener noreferrer"
             className="text-xs bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
           >
-            <span>⚡ SIDELINE App</span>
+            <span>⚡ SportSync App</span>
           </a>
 
           <a

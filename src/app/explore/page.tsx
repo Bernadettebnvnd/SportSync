@@ -92,10 +92,10 @@ function ExploreContent() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-xl sm:text-3xl font-black text-[#1A241E] tracking-tight">
+          <h1 className="text-xl sm:text-3xl font-black text-[#F4F7F0] tracking-tight">
             Courts &amp; Sports Venues
           </h1>
-          <p className="text-xs sm:text-sm text-[#65756B]">
+          <p className="text-xs sm:text-sm text-[#A5B0A6]">
             {isLoading
               ? 'Checking real-time court availability...'
               : `${filteredVenues.length} sports centers ready for booking across the Philippines`}

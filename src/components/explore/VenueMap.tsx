@@ -754,7 +754,7 @@ export function VenueMap({
                       {getSportDisplayName(activeItem.venue.featured_sports[0] || 'badminton')}
                     </span>
                     <span className="text-[10px] font-bold text-[#1E4A32] bg-[#E9C46A]/20 px-1.5 py-0.5 rounded-md">
-                      Available on Matchi
+                      Available on SportSync
                     </span>
                     {typeof activeItem.venue.rating === 'number' && activeItem.venue.review_count > 0 ? (
                       <div className="flex items-center gap-0.5 text-[10px] font-bold text-[#C87D43] ml-auto">

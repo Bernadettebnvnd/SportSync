@@ -7,7 +7,7 @@ import { User, Venue, Court, Session, Booking } from '@/types';
 
 export const TEST_USER: User = {
   id: 'usr_test_player_01',
-  email: 'test.player@matchi.ph',
+  email: 'test.player@sportsync.ph',
   full_name: 'Test Player',
   nickname: 'Tester',
   role: 'player',

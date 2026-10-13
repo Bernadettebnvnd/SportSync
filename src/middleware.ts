@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Route protection middleware for Matchi.
+ * Route protection middleware for SportSync.
  * Prevents unauthorized users from accessing facility management and ops routes.
  */
 export function middleware(request: NextRequest) {
