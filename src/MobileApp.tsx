@@ -33,6 +33,7 @@ import { NotificationsScreen } from './screens/profile/NotificationsScreen';
 import { SearchScreen } from './screens/profile/SearchScreen';
 import { SettingsScreen } from './screens/profile/SettingsScreen';
 import { SystemStatesScreen } from './screens/profile/SystemStatesScreen';
+import { useSidelineBridge } from './lib/useSidelineBridge';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -76,6 +77,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   initialScreen = 'home',
   inPhoneFrame = true,
 }) => {
+  const bridge = useSidelineBridge();
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(initialScreen);
   const [screenHistory, setScreenHistory] = useState<ScreenId[]>([initialScreen]);
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
@@ -87,6 +89,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [selectedVenue, setSelectedVenue] = useState<Venue>(VENUES[0]);
   const [selectedGame, setSelectedGame] = useState<CommunityGame>(COMMUNITY_GAMES[0]);
   const [selectedTeam, setSelectedTeam] = useState<Team>(TEAMS.northgate);
+  const [activeBookingDetails, setActiveBookingDetails] = useState<{
+    venue: Venue;
+    court: string;
+    slot: string;
+    totalPrice: number;
+    duration?: number;
+  } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Navigate function with history stack
@@ -168,7 +177,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'personalization':
         return (
           <PersonalizationScreen
-            onComplete={() => navigateTo('home')}
+            onComplete={async (prefs) => {
+              if (prefs) {
+                await bridge.completeOnboarding({
+                  fullName: bridge.userProfile.name,
+                  preferredSports: prefs.selectedSports,
+                  skillLevel: prefs.skillLevel,
+                });
+                setToastMessage('Preferences saved! +150 Playmaker XP');
+              }
+              navigateTo('home');
+            }}
           />
         );
 
@@ -243,6 +262,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'social-home':
         return (
           <SocialHomeScreen
+            games={bridge.games}
+            user={bridge.userProfile}
             onCreateMatch={() => navigateTo('create-match')}
             onJoinMatch={() => navigateTo('find-games')}
             onSelectGame={(g) => {
@@ -256,12 +277,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <CreateMatchWizardScreen
             onClose={goBack}
-            onMatchCreated={(gId) => navigateTo('match-detail')}
+            onMatchCreated={async (gameData) => {
+              const newGame = await bridge.createCommunityGame(gameData);
+              setSelectedGame(newGame);
+              setToastMessage('Match published to feed! +100 Playmaker XP');
+              navigateTo('match-detail');
+            }}
           />
         );
       case 'find-games':
         return (
           <FindGamesScreen
+            games={bridge.games}
             onBack={goBack}
             onSelectGame={(g) => {
               setSelectedGame(g);
@@ -275,8 +302,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             game={selectedGame}
             onBack={goBack}
             onJoin={() => {
-              setToastMessage('Spot confirmed in match roster!');
-              setTimeout(() => setToastMessage(null), 3000);
+              const result = bridge.joinCommunityGame(selectedGame.id);
+              if (result.game) setSelectedGame(result.game);
+              setToastMessage(result.xpResult.message);
             }}
             onOpenChat={() => navigateTo('match-chat')}
           />
@@ -295,6 +323,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'venues-list':
         return (
           <VenuesListScreen
+            venues={bridge.venues}
             onSelectVenue={(v) => {
               setSelectedVenue(v);
               navigateTo('venue-detail');
@@ -314,21 +343,53 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <BookingFlowScreen
             venue={selectedVenue}
             onBack={goBack}
-            onProceedToPayment={() => navigateTo('payment')}
+            onProceedToPayment={(details) => {
+              setActiveBookingDetails({
+                venue: selectedVenue,
+                court: details.court,
+                slot: details.slot,
+                totalPrice: details.totalPrice,
+                duration: details.duration,
+              });
+              navigateTo('payment');
+            }}
           />
         );
       case 'payment':
         return (
           <PaymentScreen
-            totalAmount={54}
+            totalAmount={activeBookingDetails?.totalPrice || 54}
+            bookingDetails={activeBookingDetails || undefined}
             onBack={goBack}
-            onPaymentSuccess={() => navigateTo('booking-confirmation')}
+            onPaymentSuccess={() => {
+              if (activeBookingDetails) {
+                bridge.createReservation({
+                  venue: activeBookingDetails.venue,
+                  court: activeBookingDetails.court,
+                  date: 'Sat, 17 Oct',
+                  slot: activeBookingDetails.slot,
+                  price: activeBookingDetails.totalPrice,
+                });
+              }
+              setToastMessage('Court booking confirmed! +60 Playmaker XP');
+              navigateTo('booking-confirmation');
+            }}
           />
         );
       case 'booking-confirmation':
         return (
           <BookingConfirmationScreen
-            venue={selectedVenue}
+            venue={activeBookingDetails?.venue || selectedVenue}
+            booking={
+              activeBookingDetails
+                ? {
+                    courtName: activeBookingDetails.court,
+                    dateStr: 'Saturday, 17 Oct',
+                    timeSlot: activeBookingDetails.slot,
+                    totalPaid: activeBookingDetails.totalPrice,
+                  }
+                : undefined
+            }
             onGoHome={() => navigateTo('home')}
             onViewMyBookings={() => navigateTo('my-bookings')}
           />
@@ -336,8 +397,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'my-bookings':
         return (
           <MyBookingsScreen
+            bookings={bridge.bookings}
             onBack={goBack}
-            onViewPass={() => navigateTo('booking-confirmation')}
+            onViewPass={(bookingId) => {
+              const found = bridge.bookings.find((b) => b.id === bookingId);
+              if (found) {
+                setActiveBookingDetails({
+                  venue: found.venue,
+                  court: found.court,
+                  slot: found.time,
+                  totalPrice: found.price,
+                });
+              }
+              navigateTo('booking-confirmation');
+            }}
+            onCancelBooking={(bookingId) => {
+              bridge.cancelReservation(bookingId);
+              setToastMessage('Reservation cancelled. Full refund issued.');
+            }}
           />
         );
 
@@ -345,6 +422,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'profile':
         return (
           <ProfileScreen
+            user={bridge.userProfile}
             onOpenSettings={() => navigateTo('settings')}
             onOpenLeaderboard={() => navigateTo('leaderboard')}
           />

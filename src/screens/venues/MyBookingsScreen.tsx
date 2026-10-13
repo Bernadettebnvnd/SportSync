@@ -6,18 +6,30 @@ import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 
 interface MyBookingsScreenProps {
+  bookings?: Array<{
+    id: string;
+    venue: any;
+    court: string;
+    date: string;
+    time: string;
+    price: number;
+    status?: string;
+  }>;
   onBack: () => void;
   onViewPass: (bookingId: string) => void;
+  onCancelBooking?: (bookingId: string) => void;
 }
 
 export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
+  bookings,
   onBack,
   onViewPass,
+  onCancelBooking,
 }) => {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [sheetBooking, setSheetBooking] = useState<{ id: string; venueName: string } | null>(null);
 
-  const upcomingBookings = [
+  const defaultUpcoming = [
     {
       id: 'BK-89421',
       venue: VENUES[0],
@@ -25,6 +37,7 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
       date: 'Sat, 17 Oct',
       time: '10:00 – 11:30 AM',
       price: 54,
+      status: 'confirmed',
     },
     {
       id: 'BK-88930',
@@ -33,6 +46,7 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
       date: 'Wed, 21 Oct',
       time: '19:00 – 20:00',
       price: 55,
+      status: 'confirmed',
     },
   ];
 
@@ -44,10 +58,12 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
       date: 'Sat, 10 Oct',
       time: '14:00 – 15:30',
       price: 48,
+      status: 'confirmed',
     },
   ];
 
-  const list = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
+  const upcomingList = (bookings || defaultUpcoming).filter((b) => b.status !== 'cancelled');
+  const list = activeTab === 'upcoming' ? upcomingList : pastBookings;
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar">
@@ -77,7 +93,7 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
               : 'text-[#A5B0A6]'
           }`}
         >
-          Upcoming ({upcomingBookings.length})
+          Upcoming ({upcomingList.length})
         </button>
         <button
           onClick={() => setActiveTab('past')}
@@ -173,7 +189,9 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
             variant="ghost"
             className="w-full text-xs text-[#FF5C5C] hover:bg-[#FF5C5C]/10"
             onClick={() => {
-              alert('Booking cancelled. Refund issued to wallet.');
+              if (sheetBooking) {
+                onCancelBooking?.(sheetBooking.id);
+              }
               setSheetBooking(null);
             }}
           >

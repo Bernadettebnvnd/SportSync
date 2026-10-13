@@ -5,12 +5,19 @@ import { APP_CONFIG } from '../../config/appConfig';
 
 interface PaymentScreenProps {
   totalAmount?: number;
+  bookingDetails?: {
+    slot: string;
+    court: string;
+    venueName?: string;
+    duration?: number;
+  };
   onBack: () => void;
   onPaymentSuccess: () => void;
 }
 
 export const PaymentScreen: React.FC<PaymentScreenProps> = ({
   totalAmount = 54,
+  bookingDetails,
   onBack,
   onPaymentSuccess,
 }) => {
@@ -56,7 +63,7 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
         <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 flex items-center justify-between">
           <div>
             <span className="text-[10px] uppercase font-bold text-[#A5B0A6] block">
-              Total Court Fee
+              {bookingDetails ? `${bookingDetails.court} • ${bookingDetails.slot}` : 'Total Court Fee'}
             </span>
             <span className="font-display font-black text-2xl text-[#C8FF2E] tabular-nums">
               {APP_CONFIG.currency}{finalTotal}

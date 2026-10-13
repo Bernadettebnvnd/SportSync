@@ -7,7 +7,16 @@ import { APP_CONFIG } from '../../config/appConfig';
 
 interface CreateMatchWizardScreenProps {
   onClose: () => void;
-  onMatchCreated: (gameId: string) => void;
+  onMatchCreated: (gameData: {
+    sport: 'Football' | 'Basketball' | 'Tennis';
+    title: string;
+    date: string;
+    locationName: string;
+    playersCount: number;
+    skillLevel: 'Casual' | 'Competitive';
+    pricePerPlayer: number;
+    notes?: string;
+  }) => void;
 }
 
 export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = ({
@@ -333,7 +342,18 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             <Button
               variant="primary"
               size="lg"
-              onClick={() => onMatchCreated('cg1')}
+              onClick={() =>
+                onMatchCreated({
+                  sport,
+                  title,
+                  date,
+                  locationName,
+                  playersCount,
+                  skillLevel,
+                  pricePerPlayer: splitCost ? pricePerPlayer : 0,
+                  notes: bringBootsNote ? 'Bring boots & shinpads' : undefined,
+                })
+              }
               className="w-full font-bold"
             >
               Open Match Room & Roster

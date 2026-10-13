@@ -8,12 +8,19 @@ import { Button } from '../../design-system/components/Button';
 
 interface BookingConfirmationScreenProps {
   venue?: Venue;
+  booking?: {
+    courtName?: string;
+    dateStr?: string;
+    timeSlot?: string;
+    totalPaid?: number;
+  };
   onGoHome: () => void;
   onViewMyBookings: () => void;
 }
 
 export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps> = ({
   venue = VENUES[0],
+  booking,
   onGoHome,
   onViewMyBookings,
 }) => {
@@ -49,10 +56,10 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
       <div className="py-2">
         <BookingPass
           venue={venue}
-          courtName="Court 2 (Clay)"
-          dateStr="Saturday, 17 Oct"
-          timeSlot="10:00 – 11:30 AM"
-          totalPaid={54}
+          courtName={booking?.courtName || 'Court 2 (Clay)'}
+          dateStr={booking?.dateStr || 'Saturday, 17 Oct'}
+          timeSlot={booking?.timeSlot || '10:00 – 11:30 AM'}
+          totalPaid={booking?.totalPaid || 54}
           onAddToCalendar={() => alert('Court slot added to calendar!')}
           onShare={() => alert('Invite link copied!')}
           onGetDirections={() => alert('Navigating to venue...')}

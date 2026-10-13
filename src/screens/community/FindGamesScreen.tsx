@@ -6,11 +6,13 @@ import { COMMUNITY_GAMES } from '../../mock/mockData';
 import { CommunityGame } from '../../mock/types';
 
 interface FindGamesScreenProps {
+  games?: CommunityGame[];
   onBack: () => void;
   onSelectGame: (game: CommunityGame) => void;
 }
 
 export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
+  games = COMMUNITY_GAMES,
   onBack,
   onSelectGame,
 }) => {
@@ -18,7 +20,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
 
-  const filteredGames = COMMUNITY_GAMES.filter((g) => {
+  const filteredGames = games.filter((g) => {
     if (activeFilter === 'urgent') {
       const left = g.spotsTotal - g.spotsJoined;
       return left <= 2 && left > 0;

@@ -8,6 +8,8 @@ import { COMMUNITY_GAMES, FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { CommunityGame } from '../../mock/types';
 
 interface SocialHomeScreenProps {
+  games?: CommunityGame[];
+  user?: typeof CURRENT_USER;
   onCreateMatch: () => void;
   onJoinMatch: () => void;
   onSelectGame: (game: CommunityGame) => void;
@@ -15,6 +17,8 @@ interface SocialHomeScreenProps {
 }
 
 export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
+  games = COMMUNITY_GAMES,
+  user = CURRENT_USER,
   onCreateMatch,
   onJoinMatch,
   onSelectGame,
@@ -33,13 +37,13 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
         {/* Top greeting row */}
         <div className="relative z-10 flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
-            <UserAvatar id={CURRENT_USER.avatarId} size={38} showBadge badgeLevel={CURRENT_USER.level} />
+            <UserAvatar id={user.avatarId} size={38} showBadge badgeLevel={user.level} />
             <div>
               <span className="text-[11px] text-[#A5B0A6] uppercase tracking-wider font-semibold block">
                 Community Hub
               </span>
               <h2 className="font-display font-black text-base text-[#F4F7F0]">
-                Hey, {CURRENT_USER.name.split(' ')[0]} 👋
+                Hey, {user.name.split(' ')[0]} 👋
               </h2>
             </div>
           </div>
@@ -58,7 +62,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
             Ready to play today?
           </h1>
           <p className="text-xs text-[#C8FF2E] font-medium mt-0.5">
-            3 pickup matches kicking off near you this evening.
+            {games.length} pickup matches kicking off near you this evening.
           </p>
         </div>
       </div>
@@ -74,12 +78,12 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
               Upcoming Community Runs
             </h3>
             <button onClick={onJoinMatch} className="text-xs text-[#C8FF2E] font-semibold">
-              View all 15
+              View all ({games.length})
             </button>
           </div>
 
           <div className="space-y-2.5">
-            {COMMUNITY_GAMES.slice(0, 3).map((game) => (
+            {games.slice(0, 3).map((game) => (
               <MatchCard
                 key={game.id}
                 game={game}

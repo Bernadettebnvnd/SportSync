@@ -6,7 +6,11 @@ import { TeamCrest } from '../../illustrations/TeamCrests';
 import { Toggle } from '../../design-system/components/SegmentedControl';
 
 interface PersonalizationScreenProps {
-  onComplete: () => void;
+  onComplete: (preferences?: {
+    selectedSports: string[];
+    skillLevel: string;
+    favoriteTeams: string[];
+  }) => void;
 }
 
 export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({ onComplete }) => {
@@ -176,7 +180,13 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({ on
         <Button
           variant="primary"
           size="lg"
-          onClick={onComplete}
+          onClick={() =>
+            onComplete({
+              selectedSports,
+              skillLevel: skillLabels[skillLevel],
+              favoriteTeams,
+            })
+          }
           rightIcon={<ArrowRight className="w-5 h-5" />}
           className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)]"
         >

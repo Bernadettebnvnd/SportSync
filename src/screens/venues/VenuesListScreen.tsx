@@ -6,16 +6,20 @@ import { Venue } from '../../mock/types';
 import { MapPin, SlidersHorizontal, List, Map as MapIcon } from 'lucide-react';
 
 interface VenuesListScreenProps {
+  venues?: Venue[];
   onSelectVenue: (venue: Venue) => void;
 }
 
-export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({ onSelectVenue }) => {
+export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
+  venues = VENUES,
+  onSelectVenue,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSurface, setActiveSurface] = useState<string>('All');
   const [activeEnvironment, setActiveEnvironment] = useState<'All' | 'Indoor' | 'Outdoor'>('All');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
-  const filteredVenues = VENUES.filter((v) => {
+  const filteredVenues = venues.filter((v) => {
     if (activeSurface !== 'All' && v.surface !== activeSurface) return false;
     if (activeEnvironment === 'Indoor' && !v.isIndoor) return false;
     if (activeEnvironment === 'Outdoor' && v.isIndoor) return false;

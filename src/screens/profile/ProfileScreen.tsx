@@ -7,14 +7,18 @@ import { TeamCrest } from '../../illustrations/TeamCrests';
 import { Button } from '../../design-system/components/Button';
 
 interface ProfileScreenProps {
+  user?: typeof CURRENT_USER;
   onOpenSettings: () => void;
   onOpenLeaderboard: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
+  user,
   onOpenSettings,
   onOpenLeaderboard,
 }) => {
+  const currentUser = user || CURRENT_USER;
+
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
       {/* 1. Header with Settings gear */}
@@ -36,26 +40,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         {/* 2. Hero Avatar & Playmaker Level & XP Ring (Ref B) */}
         <div className="p-5 rounded-3xl bg-[#0F2A22] border border-white/10 relative overflow-hidden flex items-center justify-between shadow-xl">
           <div className="flex items-center gap-4">
-            <UserAvatar id={CURRENT_USER.avatarId} size={64} />
+            <UserAvatar id={currentUser.avatarId} size={64} />
             <div>
               <h2 className="font-display font-black text-xl text-[#F4F7F0]">
-                {CURRENT_USER.name}
+                {currentUser.name}
               </h2>
               <span className="text-xs text-[#A5B0A6] block mb-1">
-                {CURRENT_USER.username}
+                {currentUser.username}
               </span>
               <LevelBadge
-                level={CURRENT_USER.level}
-                title={CURRENT_USER.levelTitle}
+                level={currentUser.level}
+                title={currentUser.levelTitle}
               />
             </div>
           </div>
 
           {/* XP Progress Ring */}
           <XpRing
-            currentXp={CURRENT_USER.xp}
-            nextLevelXp={CURRENT_USER.xpNextLevel}
-            level={CURRENT_USER.level}
+            currentXp={currentUser.xp}
+            nextLevelXp={currentUser.xpNextLevel}
+            level={currentUser.level}
             size={76}
           />
         </div>
