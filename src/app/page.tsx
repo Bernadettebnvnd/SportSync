@@ -80,6 +80,45 @@ export default function HomePage() {
           defaultMode="signin"
         />
 
+        {/* SIDELINE Multi-Sport Prototype Banner */}
+        <div className="w-full bg-[#0B0F0C] border border-[#C8FF2E]/30 rounded-3xl p-5 sm:p-6 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[#C8FF2E]/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#1C241E] border border-[#C8FF2E]/30 text-[#C8FF2E] text-[11px] font-bold">
+                <span className="w-2 h-2 rounded-full bg-[#C8FF2E] animate-pulse" />
+                <span>NEW &bull; SIDELINE MOBILE SYSTEM</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-[#F4F7F0] tracking-tight">
+                28 High-Fidelity Mobile Screens &amp; Design Board
+              </h2>
+              <p className="text-xs sm:text-sm text-[#A5B0A6] max-w-xl">
+                One app for live sports scores, community pickup organizing, and instant court bookings.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <Link
+                href="/sideline"
+                className="px-5 py-2.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-bold text-xs flex items-center gap-1.5 hover:bg-[#b8f020] transition-all shadow-[0_0_20px_rgba(200,255,46,0.35)]"
+              >
+                <span>⚡ Launch Mobile App</span>
+              </Link>
+              <Link
+                href="/showcase"
+                className="px-4 py-2.5 rounded-full bg-[#1C241E] border border-white/10 text-white font-semibold text-xs hover:bg-[#263028] transition-all"
+              >
+                <span>Dribbble Canvas</span>
+              </Link>
+              <Link
+                href="/styleguide"
+                className="px-4 py-2.5 rounded-full bg-[#141A15] border border-white/10 text-[#A5B0A6] hover:text-white text-xs transition-all"
+              >
+                <span>Styleguide</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+
         {/* Quiet Minimal Hero */}
         <section className="space-y-4 text-center max-w-2xl mx-auto pt-2 sm:pt-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF4EE] border border-[#2D724E]/20 text-[#2D724E] text-[11px] font-bold tracking-wide">

@@ -18,7 +18,6 @@ import { UserAvatar } from '../illustrations/Avatars';
 import { StadiumScene, ClayPitchScene, TennisAerialScene, BasketballDuskScene } from '../illustrations/Scenes';
 import { MATCHES, VENUES, COMMUNITY_GAMES, PLAYERS } from '../mock/mockData';
 import { APP_CONFIG } from '../config/appConfig';
-import { Link } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Sparkles, Smartphone } from 'lucide-react';
 
 export const StyleguidePage: React.FC = () => {
@@ -46,20 +45,20 @@ export const StyleguidePage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link
-            to="/showcase"
+          <a
+            href="/showcase"
             className="h-11 px-5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-white/10 text-xs font-bold text-[#F4F7F0] flex items-center gap-2 transition-all"
           >
             <Sparkles className="w-4 h-4 text-[#FF8FC7]" />
             <span>Open Dribbble Showcase</span>
-          </Link>
-          <Link
-            to="/"
+          </a>
+          <a
+            href="/sideline"
             className="h-11 px-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-bold text-xs flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(200,255,46,0.3)]"
           >
             <Smartphone className="w-4 h-4 stroke-[2.5]" />
             <span>Interactive Mobile App</span>
-          </Link>
+          </a>
         </div>
       </div>
 

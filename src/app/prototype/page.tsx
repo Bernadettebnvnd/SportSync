@@ -34,13 +34,13 @@ export default function PrototypeViewerPage() {
       {/* Top Control Bar */}
       <header className="h-14 bg-[#16181F] border-b border-[#282C37] px-4 flex flex-wrap items-center justify-between gap-3 shrink-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-lg bg-[#0F766E] flex items-center justify-center font-bold text-white text-xs shadow-md">
-            AN
+          <div className="w-7 h-7 rounded-lg bg-[#C8FF2E] flex items-center justify-center font-black text-[#0B0F0C] text-xs shadow-md">
+            ⚡
           </div>
           <div>
             <div className="font-bold text-sm tracking-tight text-white flex items-center gap-2">
-              App Name
-              <span className="text-[10px] uppercase font-semibold bg-[#262A35] text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-800/40">
+              SIDELINE
+              <span className="text-[10px] uppercase font-semibold bg-[#262A35] text-[#C8FF2E] px-1.5 py-0.5 rounded border border-[#C8FF2E]/30">
                 UX Architecture
               </span>
             </div>
@@ -147,7 +147,7 @@ export default function PrototypeViewerPage() {
           )}
 
           <a
-            href="/sideline.html"
+            href="/sideline"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
@@ -156,7 +156,7 @@ export default function PrototypeViewerPage() {
           </a>
 
           <a
-            href="http://localhost:5173/showcase"
+            href="/showcase"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs bg-[#1F2520] hover:bg-[#283229] text-[#C8FF2E] border border-[#C8FF2E]/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
@@ -165,7 +165,7 @@ export default function PrototypeViewerPage() {
           </a>
 
           <a
-            href="http://localhost:5173/styleguide"
+            href="/styleguide"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs bg-[#20232B] hover:bg-[#282C37] text-gray-200 px-3 py-1.5 rounded-lg border border-[#303542] flex items-center gap-1.5 transition-colors"
@@ -215,7 +215,7 @@ export default function PrototypeViewerPage() {
               style={{ width: getViewportWidth() }}
             >
               <iframe
-                src={(mode as any) === 'sideline' ? '/sideline.html' : `/prototype/index.html?mode=${mode}&viewport=${viewport}`}
+                src={(mode as any) === 'sideline' ? '/sideline' : `/prototype/index.html?mode=${mode}&viewport=${viewport}`}
                 className="w-full h-full border-none"
                 title="App Prototype"
               />
