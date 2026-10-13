@@ -8,13 +8,14 @@ import { useMatchiStore } from '../../lib/store';
 export type AuthRole = 'player' | 'facility_owner';
 
 interface AuthScreenProps {
+  initialMode?: 'signup' | 'login';
   onSuccess: (role: AuthRole) => void;
   onBack: () => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess, onBack }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', onSuccess, onBack }) => {
   const { currentUser } = useMatchiStore();
-  const [isSignUp, setIsSignUp] = useState(true);
+  const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
   const [selectedRole, setSelectedRole] = useState<AuthRole>('player');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');

@@ -17,7 +17,9 @@ import {
   AvatarId,
   SportType,
 } from '../mock/types';
-import { SportType as DbSportType } from '../types';
+import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
+import { getSupabaseClient, isSupabaseConfigured } from './supabase';
+import { updatePlayerProfile } from './services/auth';
 
 export interface SportSyncBookingItem {
   id: string;
@@ -132,14 +134,15 @@ export const DEFAULT_BADGES: BadgeItem[] = [
   },
 ];
 
-export const SQUAD_FRIENDS_BASE = [
-  { rank: 1, name: 'Leo Varga', username: '@leovarga', avatar: 'leo' as const, xp: 11200, level: 22, color: '#C8FF2E' },
-  { rank: 2, name: 'Elena Rostova', username: '@elena_r', avatar: 'elena' as const, xp: 9400, level: 21, color: '#FF8FC7' },
-  { rank: 3, name: 'Martin Green', username: '@m_green', avatar: 'martin' as const, xp: 7800, level: 19, color: '#F4F7F0' },
-  { rank: 4, name: 'Marcus Bell', username: '@marcus_b', avatar: 'marcus' as const, xp: 7200, level: 18, color: '#A5B0A6' },
-  { rank: 5, name: 'Kai Takahashi', username: '@kai_t', avatar: 'kai' as const, xp: 6200, level: 16, color: '#A5B0A6' },
-  { rank: 6, name: 'Jordan Davies', username: '@jordan_d', avatar: 'jordan' as const, xp: 5800, level: 15, color: '#A5B0A6' },
-];
+export const SQUAD_FRIENDS_BASE: Array<{
+  rank: number;
+  name: string;
+  username: string;
+  avatar: 'leo' | 'elena' | 'martin' | 'marcus' | 'kai' | 'jordan' | 'alex';
+  xp: number;
+  level: number;
+  color: string;
+}> = [];
 
 export function getLevelTitle(level: number): string {
   if (level < 5) return 'Rookie Starter';
@@ -165,14 +168,18 @@ export function useSportSyncBridge() {
         }
       }
     }
+    const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
     return {
       ...DEFAULT_USER,
-      name: store.currentUser.full_name || DEFAULT_USER.name,
-      username: store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : DEFAULT_USER.username,
-      streakWeeks: 4,
-      streakMultiplier: 1.5,
-      predictionsCount: 6,
-      predictionsWon: 5,
+      name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
+      username: isAuthenticated ? (store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : '@player') : '@guest',
+      streakWeeks: store.currentUser.win_streak || 0,
+      streakMultiplier: 1.0,
+      predictionsCount: 0,
+      predictionsWon: 0,
+      matchesTotal: store.currentUser.matches_played || 0,
+      wins: store.currentUser.matches_won || 0,
+      isGuest: !isAuthenticated,
     };
   });
 
@@ -206,7 +213,7 @@ export function useSportSyncBridge() {
         }
       }
     }
-    return DEFAULT_GAMES;
+    return [];
   });
 
   useEffect(() => {
@@ -227,28 +234,7 @@ export function useSportSyncBridge() {
         }
       }
     }
-    return [
-      {
-        id: 'BK-89421',
-        venue: DEFAULT_VENUES[0],
-        court: 'Court 2 (Clay)',
-        date: 'Sat, 17 Oct',
-        time: '10:00 – 11:30 AM',
-        price: 54,
-        status: 'confirmed',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'BK-88930',
-        venue: DEFAULT_VENUES[1],
-        court: 'Pitch 4 (3G Turf)',
-        date: 'Wed, 21 Oct',
-        time: '19:00 – 20:00',
-        price: 55,
-        status: 'confirmed',
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    return [];
   });
 
   useEffect(() => {
@@ -290,13 +276,7 @@ export function useSportSyncBridge() {
         }
       }
     }
-    const initialPolls: Record<string, Match['prediction']> = {};
-    MATCHES.forEach((m) => {
-      if (m.prediction) {
-        initialPolls[m.id] = m.prediction;
-      }
-    });
-    return initialPolls;
+    return {};
   });
 
   useEffect(() => {
@@ -317,21 +297,7 @@ export function useSportSyncBridge() {
         }
       }
     }
-    return [
-      {
-        id: 'wag_init_1',
-        matchId: 'm1',
-        matchTitle: 'Northgate FC vs Riverside Utd',
-        pollQuestion: 'Next team to score before 75’?',
-        optionId: 'opt1',
-        optionLabel: 'Northgate FC',
-        stakeXp: 50,
-        odds: 1.72,
-        potentialWinXp: 129,
-        status: 'active',
-        placedAt: '52\'',
-      },
-    ];
+    return [];
   });
 
   useEffect(() => {
@@ -413,14 +379,7 @@ export function useSportSyncBridge() {
       };
     });
 
-    if (adaptedDbVenues.length > 0) {
-      return adaptedDbVenues;
-    }
-
-    return DEFAULT_VENUES.map((v) => ({
-      ...v,
-      isFavorite: favoriteVenueIds.includes(v.id) || v.isFavorite,
-    }));
+    return adaptedDbVenues;
   }, [store.venues, favoriteVenueIds]);
 
   const toggleFavoriteVenue = useCallback((venueId: string) => {
@@ -1004,11 +963,14 @@ export function useSportSyncBridge() {
       preferredSports: string[];
       skillLevel: string;
       preferredArea?: string;
+      avatarUrl?: string;
     }) => {
       setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
         ...prev,
         name: prefs.fullName || prev.name,
         city: prefs.preferredArea || prev.city || 'Metro Area',
+        onboardingCompleted: true,
+        isGuest: false,
       }));
 
       const mappedSports: DbSportType[] = prefs.preferredSports.map((s) => {
@@ -1021,17 +983,33 @@ export function useSportSyncBridge() {
         return 'pickleball';
       });
 
-      await store.completePlayerOnboarding({
-        fullName: prefs.fullName,
-        nickname: prefs.fullName.split(' ')[0],
-        preferredSports: mappedSports,
-        skillLevel: 'intermediate',
-        city: prefs.preferredArea || 'Metro Area',
-      });
+      const primarySport: DbSportType = mappedSports[0] || 'pickleball';
+      const skillLevelMap: Record<string, SkillLevel> = {
+        beginner: 'beginner',
+        casual: 'intermediate',
+        intermediate: 'intermediate',
+        competitive: 'advanced',
+      };
+      const mappedSkill: SkillLevel = skillLevelMap[prefs.skillLevel.toLowerCase()] || 'intermediate';
+
+      try {
+        await updatePlayerProfile({
+          fullName: prefs.fullName,
+          nickname: prefs.fullName.split(' ')[0],
+          avatarUrl: prefs.avatarUrl,
+          primarySport,
+          preferredSports: mappedSports,
+          preferredFormat: 'doubles',
+          skillLevel: mappedSkill,
+          city: prefs.preferredArea || 'Metro Area',
+        });
+      } catch (err) {
+        console.warn('Profile update warning:', err);
+      }
 
       awardXp(150, 'completing profile onboarding', { applyStreakMultiplier: true });
     },
-    [store, awardXp]
+    [awardXp]
   );
 
   return {
@@ -1053,10 +1031,45 @@ export function useSportSyncBridge() {
     createReservation,
     cancelReservation,
     completeOnboarding,
+    setAsGuest: () => {
+      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
+        ...prev,
+        name: 'Guest Player',
+        username: '@guest',
+        isGuest: true,
+      }));
+    },
     awardXp,
     placePredictionWager,
     resolveMatchPoll,
     claimBadge,
+    logout: async () => {
+      const supabase = getSupabaseClient();
+      if (supabase && isSupabaseConfigured) {
+        try {
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.warn('Sign out error:', err);
+        }
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_user_profile');
+        localStorage.removeItem('sportsync_user_role');
+        localStorage.removeItem('sportsync_user_email');
+        localStorage.removeItem('sportsync_onboarding_completed');
+        localStorage.removeItem('matchi_onboarding_completed');
+      }
+      setUserProfile({
+        ...DEFAULT_USER,
+        name: 'Guest Player',
+        username: '@guest',
+        isGuest: true,
+        level: 1,
+        xp: 0,
+        matchesTotal: 0,
+        wins: 0,
+      });
+    },
   };
 }
 

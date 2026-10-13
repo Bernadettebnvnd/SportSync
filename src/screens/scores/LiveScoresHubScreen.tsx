@@ -6,7 +6,6 @@ import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { Button } from '../../design-system/components/Button';
 import {
   ShieldCheck,
-  ShieldAlert,
   Clock,
   Calendar,
   Plus,
@@ -19,11 +18,12 @@ import {
   Activity,
   RotateCcw,
 } from 'lucide-react';
+import { STANDARDIZED_SPORTS, PrimarySport } from '../../config/sports';
 
 export interface LocalMatchScore {
   id: string;
   gameTitle: string;
-  sport: SportId;
+  sport: PrimarySport | string;
   venueName: string;
   date: string;
   status: 'live' | 'completed' | 'upcoming';
@@ -32,72 +32,33 @@ export interface LocalMatchScore {
   teamA: {
     name: string;
     score: number;
-    subscores?: number[]; // sets or quarters
+    subscores?: number[];
   };
   teamB: {
     name: string;
     score: number;
     subscores?: number[];
   };
-  currentPeriod: string; // "1st Half", "Q3", "Set 2", "Rack 4", etc.
+  currentPeriod: string;
   checkedIn: boolean;
 }
-
-const INITIAL_LOCAL_MATCHES: LocalMatchScore[] = [
-  {
-    id: 'local-1',
-    gameTitle: 'Metro Sunset 5v5 Friendly',
-    sport: 'Football',
-    venueName: 'The Arena BGC • Pitch 1',
-    date: 'Today, 6:00 PM',
-    status: 'live',
-    isHost: true,
-    isAttendee: true,
-    teamA: { name: 'Green Pinnies', score: 3 },
-    teamB: { name: 'Black Pinnies', score: 2 },
-    currentPeriod: '2nd Half (38\')',
-    checkedIn: true,
-  },
-  {
-    id: 'local-2',
-    gameTitle: 'Thursday Doubles Matchup',
-    sport: 'Pickleball',
-    venueName: 'Prime Pickleball Club • Court 3',
-    date: 'Yesterday, 7:00 PM',
-    status: 'completed',
-    isHost: false,
-    isAttendee: true,
-    teamA: { name: 'Alex & Marcus', score: 11, subscores: [11, 8, 11] },
-    teamB: { name: 'Dave & Jordan', score: 9, subscores: [7, 11, 9] },
-    currentPeriod: 'Final (2-1)',
-    checkedIn: true,
-  },
-  {
-    id: 'local-3',
-    gameTitle: 'Weekly Hoops Run',
-    sport: 'Basketball',
-    venueName: 'Titan Court Metro',
-    date: 'Oct 11',
-    status: 'completed',
-    isHost: false,
-    isAttendee: true,
-    teamA: { name: 'Home Squad', score: 54 },
-    teamB: { name: 'Visitors', score: 48 },
-    currentPeriod: 'Final',
-    checkedIn: true,
-  },
-];
 
 interface LiveScoresHubScreenProps {
   onSelectMatch?: (matchId: string) => void;
   onNavigateToPlay?: () => void;
+  onRequireAuth?: (actionName?: string) => void;
+  isGuest?: boolean;
 }
 
 export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
   onSelectMatch,
   onNavigateToPlay,
+  onRequireAuth,
+  isGuest = false,
 }) => {
   const { currentUser } = useMatchiStore();
+  const effectiveIsGuest = isGuest || !currentUser.id || !currentUser.email;
+
   const [activeTab, setActiveTab] = useState<'live' | 'results' | 'score'>('live');
   const [matches, setMatches] = useState<LocalMatchScore[]>(() => {
     if (typeof window !== 'undefined') {
@@ -108,7 +69,8 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
         } catch {}
       }
     }
-    return INITIAL_LOCAL_MATCHES;
+    // Per Phase 1: ZERO fake matches in production. Clean empty array by default.
+    return [];
   });
 
   // State for manual score keeper modal
@@ -117,6 +79,13 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
   const [teamBScore, setTeamBScore] = useState(0);
   const [periodText, setPeriodText] = useState('1st Half');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // New Match Score entry form state
+  const [newTitle, setNewTitle] = useState('');
+  const [newSport, setNewSport] = useState<PrimarySport>('Basketball');
+  const [newVenue, setNewVenue] = useState('');
+  const [newTeamA, setNewTeamA] = useState('Team A');
+  const [newTeamB, setNewTeamB] = useState('Team B');
 
   const saveMatches = (updated: LocalMatchScore[]) => {
     setMatches(updated);
@@ -130,7 +99,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
     setTimeout(() => setToastMessage(null), 2500);
   };
 
-  // Filter lists based on user attendance authorization
+  // Filter lists based on attendance authorization
   const liveMatches = matches.filter(
     (m) => m.status === 'live' && (m.isAttendee || m.isHost || m.checkedIn)
   );
@@ -139,132 +108,138 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
     (m) => m.status === 'completed' && (m.isAttendee || m.isHost)
   );
 
-  const scorables = matches.filter((m) => m.isHost || currentUser.role === 'venue_owner');
-
-  const openScoringModal = (m: LocalMatchScore) => {
-    setScoringMatch(m);
-    setTeamAScore(m.teamA.score);
-    setTeamBScore(m.teamB.score);
-    setPeriodText(m.currentPeriod);
-  };
-
-  const handleUpdateScore = () => {
-    if (!scoringMatch) return;
-    const updated = matches.map((m) => {
-      if (m.id === scoringMatch.id) {
-        return {
-          ...m,
-          teamA: { ...m.teamA, score: teamAScore },
-          teamB: { ...m.teamB, score: teamBScore },
-          currentPeriod: periodText,
-        };
-      }
-      return m;
-    });
-    saveMatches(updated);
-    setScoringMatch(null);
-    showToast('Score updated successfully!');
-  };
-
-  const handleFinalizeMatch = () => {
-    if (!scoringMatch) return;
-    const updated = matches.map((m) => {
-      if (m.id === scoringMatch.id) {
-        return {
-          ...m,
-          teamA: { ...m.teamA, score: teamAScore },
-          teamB: { ...m.teamB, score: teamBScore },
-          status: 'completed' as const,
-          currentPeriod: 'Final',
-        };
-      }
-      return m;
-    });
-    saveMatches(updated);
-    setScoringMatch(null);
-    showToast('Match marked Final and archived to Results!');
-  };
-
-  const getSportPeriodOptions = (sport: SportId): string[] => {
-    switch (sport) {
-      case 'Football':
-        return ['1st Half', 'Halftime', '2nd Half', 'Extra Time', 'Full Time'];
-      case 'Basketball':
-        return ['Q1', 'Q2', 'Halftime', 'Q3', 'Q4', 'Overtime', 'Final'];
-      case 'Tennis':
-        return ['Set 1', 'Set 2', 'Set 3', 'Match Tiebreak', 'Final'];
-      case 'Pickleball':
-      case 'Badminton':
-      case 'Volleyball':
-        return ['Game 1', 'Game 2', 'Game 3 (Decider)', 'Final'];
-      case 'Billiards':
-        return ['Rack 1', 'Rack 2', 'Rack 3', 'Hill-Hill', 'Final'];
-      case 'Darts':
-        return ['Leg 1', 'Leg 2', 'Leg 3', 'Final'];
-      default:
-        return ['In Progress', 'Final'];
+  const handleCreateScoredMatch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (effectiveIsGuest) {
+      if (onRequireAuth) onRequireAuth('score a match');
+      return;
     }
+
+    if (!newTitle.trim()) return;
+
+    const newMatch: LocalMatchScore = {
+      id: `score_${Date.now()}`,
+      gameTitle: newTitle.trim(),
+      sport: newSport,
+      venueName: newVenue.trim() || 'Local Court',
+      date: 'Today',
+      status: 'live',
+      isHost: true,
+      isAttendee: true,
+      checkedIn: true,
+      teamA: { name: newTeamA.trim() || 'Team A', score: 0 },
+      teamB: { name: newTeamB.trim() || 'Team B', score: 0 },
+      currentPeriod: '1st Half',
+    };
+
+    const updated = [newMatch, ...matches];
+    saveMatches(updated);
+    setNewTitle('');
+    setNewVenue('');
+    setActiveTab('live');
+    showToast('Live match score initialized!');
+  };
+
+  const handleUpdateLiveScore = (deltaA: number, deltaB: number) => {
+    if (!scoringMatch) return;
+    const nextA = Math.max(0, scoringMatch.teamA.score + deltaA);
+    const nextB = Math.max(0, scoringMatch.teamB.score + deltaB);
+
+    const updated = matches.map((m) => {
+      if (m.id === scoringMatch.id) {
+        return {
+          ...m,
+          teamA: { ...m.teamA, score: nextA },
+          teamB: { ...m.teamB, score: nextB },
+        };
+      }
+      return m;
+    });
+
+    saveMatches(updated);
+    setScoringMatch((prev) =>
+      prev ? { ...prev, teamA: { ...prev.teamA, score: nextA }, teamB: { ...prev.teamB, score: nextB } } : null
+    );
+  };
+
+  const handleFinishMatch = (matchId: string) => {
+    const updated = matches.map((m) => {
+      if (m.id === matchId) {
+        return { ...m, status: 'completed' as const, currentPeriod: 'Final' };
+      }
+      return m;
+    });
+    saveMatches(updated);
+    setScoringMatch(null);
+    showToast('Match marked final and recorded in My Results!');
   };
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
-      {/* Header */}
-      <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-        <div>
-          <h1 className="font-display font-black text-2xl tracking-tight text-[#F4F7F0]">
-            Scores Hub
-          </h1>
-          <p className="text-xs text-[#A5B0A6]">
-            Authorized local match tracking & participation results
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#141A15] border border-white/5 text-[11px] text-[#A5B0A6]">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#C8FF2E]" />
-          <span>Access Controlled</span>
-        </div>
-      </div>
-
-      {/* Toast Feedback */}
+      {/* Toast */}
       {toastMessage && (
-        <div className="mx-5 my-2 p-3 rounded-2xl bg-[#C8FF2E]/15 border border-[#C8FF2E]/30 text-[#C8FF2E] text-xs font-semibold flex items-center gap-2 animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{toastMessage}</span>
+        <div className="fixed top-4 inset-x-4 z-50 p-3 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] font-bold text-xs text-center shadow-2xl animate-fadeIn">
+          {toastMessage}
         </div>
       )}
 
-      {/* 3 Categories / Tabs: My Live Matches | My Results | Score a Match */}
-      <div className="px-5 py-2">
+      {/* 1. Header */}
+      <div className="px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display font-black text-2xl tracking-tight text-[#F4F7F0]">
+              Scores &amp; Results
+            </h1>
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1C241E] border border-white/10 text-[10px] font-bold text-[#3DDC84]">
+              <ShieldCheck className="w-3 h-3" />
+              Verified
+            </span>
+          </div>
+
+          {liveMatches.length > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-[#FF3B30] font-bold">
+              <span className="w-2 h-2 rounded-full bg-[#FF3B30] animate-live-pulse" />
+              {liveMatches.length} Live
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-[#A5B0A6] mt-0.5">
+          Real-time match scoring and historic game records
+        </p>
+      </div>
+
+      {/* 2. Three Segment Tabs: My Live Matches | My Results | Score a Match */}
+      <div className="px-5 pt-2">
         <div className="flex rounded-2xl bg-[#141A15] p-1 border border-white/5">
           <button
             type="button"
             onClick={() => setActiveTab('live')}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-              activeTab === 'live'
-                ? 'bg-[#C8FF2E] text-[#0B0F0C] shadow-sm'
-                : 'text-[#A5B0A6] hover:text-[#F4F7F0]'
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+              activeTab === 'live' ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold' : 'text-[#A5B0A6] hover:text-white'
             }`}
           >
-            My Live Matches
+            My Live Matches ({liveMatches.length})
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('results')}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-              activeTab === 'results'
-                ? 'bg-[#C8FF2E] text-[#0B0F0C] shadow-sm'
-                : 'text-[#A5B0A6] hover:text-[#F4F7F0]'
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+              activeTab === 'results' ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold' : 'text-[#A5B0A6] hover:text-white'
             }`}
           >
-            My Results
+            My Results ({myResults.length})
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('score')}
-            className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
-              activeTab === 'score'
-                ? 'bg-[#C8FF2E] text-[#0B0F0C] shadow-sm'
-                : 'text-[#A5B0A6] hover:text-[#F4F7F0]'
+            onClick={() => {
+              if (effectiveIsGuest && onRequireAuth) {
+                onRequireAuth('score a match');
+                return;
+              }
+              setActiveTab('score');
+            }}
+            className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+              activeTab === 'score' ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold' : 'text-[#A5B0A6] hover:text-white'
             }`}
           >
             Score a Match
@@ -272,356 +247,318 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
         </div>
       </div>
 
-      {/* Content for Tabs */}
-      <div className="px-5 pt-3 space-y-4">
-        {/* TAB 1: MY LIVE MATCHES */}
+      <div className="px-5 pt-4 space-y-4">
+        {/* Tab 1: My Live Matches */}
         {activeTab === 'live' && (
-          <div className="space-y-3">
+          <div>
             {liveMatches.length > 0 ? (
-              liveMatches.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-4 rounded-3xl bg-[#141A15] border border-[#C8FF2E]/30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-3"
-                >
-                  {/* Top pill bar */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#FF3B30] animate-pulse" />
-                      <span className="text-[11px] font-bold text-[#FF3B30] uppercase tracking-wider">
-                        LIVE NOW • {m.currentPeriod}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-[#C8FF2E]">
-                      <SportIcon sport={m.sport} size={15} color="#C8FF2E" />
-                      <span className="font-semibold">{m.sport}</span>
-                    </div>
-                  </div>
-
-                  {/* Title & Venue */}
-                  <div>
-                    <h3 className="font-display font-black text-base text-[#F4F7F0]">
-                      {m.gameTitle}
-                    </h3>
-                    <p className="text-xs text-[#A5B0A6] flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-[#6F7B71]" />
-                      {m.venueName}
-                    </p>
-                  </div>
-
-                  {/* Live Score Board */}
-                  <div className="p-3.5 rounded-2xl bg-[#0B0F0C] border border-white/5 flex items-center justify-around">
-                    <div className="text-center flex-1">
-                      <span className="text-xs font-semibold text-[#A5B0A6] block truncate px-1">
-                        {m.teamA.name}
-                      </span>
-                      <span className="font-display font-black text-3xl text-[#F4F7F0]">
-                        {m.teamA.score}
+              <div className="space-y-3">
+                {liveMatches.map((m) => (
+                  <div
+                    key={m.id}
+                    className="p-4 rounded-3xl bg-[#141A15] border border-white/10 space-y-3 shadow-lg"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <SportIcon sport={m.sport} size={15} color="#C8FF2E" />
+                        <span className="font-bold text-[#F4F7F0]">{m.gameTitle}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-[#FF3B30]/20 text-[#FF3B30] text-[10px] font-bold animate-pulse">
+                        {m.currentPeriod}
                       </span>
                     </div>
 
-                    <div className="text-center px-3">
-                      <span className="text-xs font-bold text-[#6F7B71]">VS</span>
+                    {/* Score Board */}
+                    <div className="p-3 rounded-2xl bg-[#0F2A22] border border-white/5 flex items-center justify-between">
+                      <div className="text-center flex-1">
+                        <span className="text-xs text-[#A5B0A6] block truncate">{m.teamA.name}</span>
+                        <span className="text-3xl font-black font-display text-[#F4F7F0]">{m.teamA.score}</span>
+                      </div>
+                      <span className="text-xs text-[#A5B0A6] font-bold px-2">VS</span>
+                      <div className="text-center flex-1">
+                        <span className="text-xs text-[#A5B0A6] block truncate">{m.teamB.name}</span>
+                        <span className="text-3xl font-black font-display text-[#F4F7F0]">{m.teamB.score}</span>
+                      </div>
                     </div>
 
-                    <div className="text-center flex-1">
-                      <span className="text-xs font-semibold text-[#A5B0A6] block truncate px-1">
-                        {m.teamB.name}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-[#A5B0A6] flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-[#C8FF2E]" />
+                        {m.venueName}
                       </span>
-                      <span className="font-display font-black text-3xl text-[#F4F7F0]">
-                        {m.teamB.score}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="inline-flex items-center gap-1 text-[11px] text-[#3DDC84]">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Venue Check-in Verified
-                    </div>
-                    {m.isHost && (
                       <button
                         type="button"
-                        onClick={() => openScoringModal(m)}
-                        className="px-3 py-1.5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-white/10 text-xs font-semibold text-[#C8FF2E] transition-all"
+                        onClick={() => setScoringMatch(m)}
+                        className="px-3 py-1.5 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] text-xs font-bold hover:bg-[#d4ff52] transition-colors"
                       >
                         Update Score
                       </button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             ) : (
-              <div className="p-6 rounded-3xl bg-[#141A15] border border-white/5 text-center space-y-3 my-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#1C241E] text-[#A5B0A6] mx-auto flex items-center justify-center">
-                  <Lock className="w-6 h-6 text-[#A5B0A6]" />
+              <div className="p-8 rounded-3xl bg-[#141A15] border border-white/5 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#1C241E] border border-white/10 flex items-center justify-center mx-auto text-[#A5B0A6]">
+                  <Activity className="w-5 h-5 text-[#C8FF2E]" />
                 </div>
-                <h3 className="font-display font-bold text-base text-[#F4F7F0]">
-                  No Active Matches in Progress
-                </h3>
-                <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto leading-relaxed">
-                  Live scores are restricted to local games you are actively attending or authorized to administer. Join an open game from Play to access live court scorekeeping.
-                </p>
+                <div className="space-y-1">
+                  <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
+                    No live matches right now
+                  </h4>
+                  <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
+                    You haven't joined a live game yet. Check into a scheduled game on the Play feed to track live scores in real time.
+                  </p>
+                </div>
                 {onNavigateToPlay && (
-                  <Button
-                    variant="primary"
-                    size="sm"
+                  <button
+                    type="button"
                     onClick={onNavigateToPlay}
-                    className="font-bold mt-2"
+                    className="px-4 py-2 rounded-xl bg-[#1C241E] hover:bg-[#263028] text-xs font-bold text-[#C8FF2E] border border-[#C8FF2E]/30 transition-all"
                   >
-                    Discover Local Games
-                  </Button>
+                    Browse Community Runs
+                  </button>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 2: MY RESULTS */}
+        {/* Tab 2: My Results */}
         {activeTab === 'results' && (
-          <div className="space-y-3">
+          <div>
             {myResults.length > 0 ? (
-              myResults.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs text-[#A5B0A6]">
-                      <SportIcon sport={m.sport} size={14} color="#A5B0A6" />
-                      <span className="font-semibold">{m.sport}</span>
-                      <span>•</span>
-                      <span>{m.date}</span>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-[#A5B0A6]">
-                      FINAL
-                    </span>
-                  </div>
-
-                  <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-                    {m.gameTitle}
-                  </h3>
-
-                  <div className="p-3 rounded-2xl bg-[#0B0F0C] border border-white/5 flex items-center justify-between">
-                    <div className="flex items-center justify-between flex-1 pr-3 border-r border-white/5">
-                      <span className="text-xs text-[#F4F7F0] font-medium truncate">
-                        {m.teamA.name}
-                      </span>
-                      <span className="font-display font-bold text-base text-[#F4F7F0] ml-2">
-                        {m.teamA.score}
+              <div className="space-y-2.5">
+                {myResults.map((m) => (
+                  <div
+                    key={m.id}
+                    className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <SportIcon sport={m.sport} size={13} color="#C8FF2E" />
+                        <span className="font-bold text-[#F4F7F0]">{m.gameTitle}</span>
+                      </div>
+                      <span className="text-[10px] text-[#A5B0A6]">
+                        {m.venueName} • {m.date}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between flex-1 pl-3">
-                      <span className="text-xs text-[#F4F7F0] font-medium truncate">
-                        {m.teamB.name}
+
+                    <div className="text-right">
+                      <span className="font-mono font-bold text-sm text-[#F4F7F0]">
+                        {m.teamA.score} - {m.teamB.score}
                       </span>
-                      <span className="font-display font-bold text-base text-[#F4F7F0] ml-2">
-                        {m.teamB.score}
-                      </span>
+                      <span className="block text-[10px] text-[#3DDC84] font-semibold">Final</span>
                     </div>
                   </div>
-
-                  <p className="text-[11px] text-[#6F7B71] flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    {m.venueName}
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 rounded-3xl bg-[#141A15] border border-white/5 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#1C241E] border border-white/10 flex items-center justify-center mx-auto text-[#A5B0A6]">
+                  <Trophy className="w-5 h-5 text-[#C8FF2E]" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
+                    No match results yet
+                  </h4>
+                  <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
+                    Completed matches and verified final scores from games you attend will be recorded here.
                   </p>
                 </div>
-              ))
-            ) : (
-              <div className="p-6 rounded-3xl bg-[#141A15] border border-white/5 text-center space-y-2">
-                <Trophy className="w-10 h-10 text-[#6F7B71] mx-auto" />
-                <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-                  No Match Results Yet
-                </h3>
-                <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                  Completed games you participated in will appear here with final scores and attendance records.
-                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 3: SCORE A MATCH */}
+        {/* Tab 3: Score a Match Form (Authorized Users Only) */}
         {activeTab === 'score' && (
-          <div className="space-y-4">
-            <div className="p-3.5 rounded-2xl bg-[#0F2A22] border border-[#C8FF2E]/20 text-xs text-[#A5B0A6] space-y-1">
-              <span className="font-bold text-[#C8FF2E] block">
-                Authorized Scorekeeping
+          <form onSubmit={handleCreateScoredMatch} className="p-5 rounded-3xl bg-[#141A15] border border-white/5 space-y-3.5">
+            <div>
+              <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-wider block mb-1">
+                Authorized Match Scoring
               </span>
-              <span>
-                Game hosts, designated scorekeepers, and venue operators can manage manual scores for authorized local matches below.
-              </span>
+              <h3 className="font-display font-bold text-base text-[#F4F7F0]">
+                Record Real-Time Match Score
+              </h3>
+              <p className="text-xs text-[#A5B0A6]">
+                Set up a live scoreboard for your pickup run or tournament fixture.
+              </p>
             </div>
 
-            {scorables.length > 0 ? (
-              scorables.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-4 rounded-3xl bg-[#141A15] border border-white/10 space-y-3"
+            <div>
+              <label className="text-[11px] font-semibold text-[#A5B0A6] block mb-1">
+                Match Title
+              </label>
+              <input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="e.g. 5v5 Friendly Run or Championship Match"
+                required
+                className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-semibold text-[#A5B0A6] block mb-1">
+                  Sport
+                </label>
+                <select
+                  value={newSport}
+                  onChange={(e) => setNewSport(e.target.value as PrimarySport)}
+                  className="w-full h-11 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none cursor-pointer"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs text-[#C8FF2E]">
-                      <SportIcon sport={m.sport} size={15} color="#C8FF2E" />
-                      <span className="font-semibold">{m.sport}</span>
-                    </div>
-                    <span className="text-[11px] font-bold text-[#A5B0A6] uppercase">
-                      Status: {m.status}
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-                      {m.gameTitle}
-                    </h3>
-                    <p className="text-xs text-[#A5B0A6]">{m.venueName}</p>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-[#0B0F0C] border border-white/5 flex items-center justify-between text-xs text-[#F4F7F0]">
-                    <span>Current: {m.teamA.name} ({m.teamA.score}) vs {m.teamB.name} ({m.teamB.score})</span>
-                    <span className="text-[#C8FF2E]">{m.currentPeriod}</span>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => openScoringModal(m)}
-                    className="w-full font-bold"
-                  >
-                    Launch Scorekeeper Controls
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <div className="p-6 rounded-3xl bg-[#141A15] border border-white/5 text-center space-y-2">
-                <ShieldAlert className="w-10 h-10 text-[#A5B0A6] mx-auto" />
-                <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-                  No Matches to Score
-                </h3>
-                <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                  You are not currently hosting any active matches. Create or host a game in Play or your Facility Dashboard to record scores.
-                </p>
+                  {STANDARDIZED_SPORTS.filter((s) => s !== 'All').map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
-          </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-[#A5B0A6] block mb-1">
+                  Court / Venue
+                </label>
+                <input
+                  type="text"
+                  value={newVenue}
+                  onChange={(e) => setNewVenue(e.target.value)}
+                  placeholder="e.g. Court 1 or The Arena"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-semibold text-[#A5B0A6] block mb-1">
+                  Team / Player A
+                </label>
+                <input
+                  type="text"
+                  value={newTeamA}
+                  onChange={(e) => setNewTeamA(e.target.value)}
+                  placeholder="Team A"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-[#A5B0A6] block mb-1">
+                  Team / Player B
+                </label>
+                <input
+                  type="text"
+                  value={newTeamB}
+                  onChange={(e) => setNewTeamB(e.target.value)}
+                  placeholder="Team B"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-[#0B0F0C] font-bold text-xs transition-colors shadow-sm mt-2"
+            >
+              Start Live Scoring
+            </button>
+          </form>
         )}
       </div>
 
-      {/* Manual Sport-Specific Scorekeeping Modal */}
+      {/* Live Score Keeper Modal */}
       {scoringMatch && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="w-full max-w-md rounded-3xl bg-[#141A15] border border-white/10 p-5 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm rounded-3xl bg-[#141A15] border border-white/10 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
               <div>
-                <span className="text-[10px] font-bold text-[#C8FF2E] uppercase tracking-wider block">
-                  {scoringMatch.sport} Scorekeeper
-                </span>
-                <h3 className="font-display font-black text-base text-[#F4F7F0]">
+                <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
                   {scoringMatch.gameTitle}
-                </h3>
+                </h4>
+                <span className="text-[10px] text-[#A5B0A6]">{scoringMatch.venueName}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setScoringMatch(null)}
-                className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
+                className="w-7 h-7 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center text-xs"
               >
                 ✕
               </button>
             </div>
 
-            {/* Score Adjusters */}
+            {/* Incrementor Grid */}
             <div className="grid grid-cols-2 gap-3">
               {/* Team A */}
-              <div className="p-3.5 rounded-2xl bg-[#0B0F0C] border border-white/5 text-center space-y-2">
-                <span className="text-xs font-semibold text-[#A5B0A6] block truncate">
+              <div className="p-3 rounded-2xl bg-[#1C241E] text-center space-y-2">
+                <span className="text-xs font-bold text-[#F4F7F0] block truncate">
                   {scoringMatch.teamA.name}
                 </span>
-                <span className="font-display font-black text-4xl text-[#F4F7F0] block">
-                  {teamAScore}
+                <span className="text-4xl font-black font-display text-[#C8FF2E] block">
+                  {scoringMatch.teamA.score}
                 </span>
-                <div className="flex items-center justify-center gap-2 pt-1">
+                <div className="flex items-center justify-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setTeamAScore((s) => Math.max(0, s - 1))}
-                    className="w-9 h-9 rounded-xl bg-[#1C241E] hover:bg-[#263028] text-[#F4F7F0] flex items-center justify-center text-lg font-bold"
+                    onClick={() => handleUpdateLiveScore(-1, 0)}
+                    className="w-9 h-9 rounded-xl bg-[#141A15] text-[#A5B0A6] hover:text-white flex items-center justify-center"
                   >
-                    -
+                    <Minus className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTeamAScore((s) => s + 1)}
-                    className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center text-lg font-bold shadow-sm"
+                    onClick={() => handleUpdateLiveScore(1, 0)}
+                    className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] font-bold flex items-center justify-center"
                   >
-                    +
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>
 
               {/* Team B */}
-              <div className="p-3.5 rounded-2xl bg-[#0B0F0C] border border-white/5 text-center space-y-2">
-                <span className="text-xs font-semibold text-[#A5B0A6] block truncate">
+              <div className="p-3 rounded-2xl bg-[#1C241E] text-center space-y-2">
+                <span className="text-xs font-bold text-[#F4F7F0] block truncate">
                   {scoringMatch.teamB.name}
                 </span>
-                <span className="font-display font-black text-4xl text-[#F4F7F0] block">
-                  {teamBScore}
+                <span className="text-4xl font-black font-display text-[#C8FF2E] block">
+                  {scoringMatch.teamB.score}
                 </span>
-                <div className="flex items-center justify-center gap-2 pt-1">
+                <div className="flex items-center justify-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setTeamBScore((s) => Math.max(0, s - 1))}
-                    className="w-9 h-9 rounded-xl bg-[#1C241E] hover:bg-[#263028] text-[#F4F7F0] flex items-center justify-center text-lg font-bold"
+                    onClick={() => handleUpdateLiveScore(0, -1)}
+                    className="w-9 h-9 rounded-xl bg-[#141A15] text-[#A5B0A6] hover:text-white flex items-center justify-center"
                   >
-                    -
+                    <Minus className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTeamBScore((s) => s + 1)}
-                    className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center text-lg font-bold shadow-sm"
+                    onClick={() => handleUpdateLiveScore(0, 1)}
+                    className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] font-bold flex items-center justify-center"
                   >
-                    +
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Sport Period / Stage selection */}
-            <div>
-              <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block mb-1.5">
-                Match Period / Stage
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {getSportPeriodOptions(scoringMatch.sport).map((period) => (
-                  <button
-                    key={period}
-                    type="button"
-                    onClick={() => setPeriodText(period)}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-                      periodText === period
-                        ? 'bg-[#C8FF2E]/10 border-[#C8FF2E] text-[#C8FF2E] font-bold'
-                        : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
-                    }`}
-                  >
-                    {period}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="pt-2 flex items-center gap-2.5">
-              <Button
-                variant="primary"
-                size="md"
-                onClick={handleUpdateScore}
-                className="flex-1 font-bold"
-              >
-                Save Score
-              </Button>
+            <div className="pt-2 flex items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={handleFinalizeMatch}
-                className="px-4 py-2.5 rounded-2xl bg-[#1C241E] hover:bg-[#263028] border border-white/10 text-xs font-bold text-[#FF8FC7] transition-all"
+                onClick={() => handleFinishMatch(scoringMatch.id)}
+                className="flex-1 py-2.5 rounded-xl bg-[#1C241E] hover:bg-[#263028] text-xs font-bold text-[#3DDC84] border border-[#3DDC84]/30"
               >
-                Finalize & Archive
+                Mark Match Final
+              </button>
+              <button
+                type="button"
+                onClick={() => setScoringMatch(null)}
+                className="flex-1 py-2.5 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] text-xs font-bold"
+              >
+                Done
               </button>
             </div>
           </div>

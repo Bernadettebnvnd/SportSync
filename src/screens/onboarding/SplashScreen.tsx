@@ -6,9 +6,10 @@ import { APP_CONFIG } from '../../config/appConfig';
 interface SplashScreenProps {
   onGetStarted: () => void;
   onLogIn: () => void;
+  onGuest?: () => void;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogIn }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogIn, onGuest }) => {
   return (
     <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-6 pt-10 select-none">
       {/* Top Brand Tag & Scene */}
@@ -52,17 +53,27 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogI
           onClick={onGetStarted}
           className="w-full text-base font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)]"
         >
-          Get Started
+          Create Account
         </Button>
 
         <Button
           variant="secondary"
           size="md"
           onClick={onLogIn}
-          className="w-full"
+          className="w-full font-bold"
         >
-          I already have an account
+          Sign In
         </Button>
+
+        {onGuest && (
+          <button
+            type="button"
+            onClick={onGuest}
+            className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors py-1.5 font-medium"
+          >
+            Continue as Guest &rarr;
+          </button>
+        )}
       </div>
     </div>
   );

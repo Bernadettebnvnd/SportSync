@@ -272,6 +272,8 @@ export interface Session {
   current_players_count: number;
   rotation_format: string;
   status: 'upcoming' | 'active' | 'completed' | 'cancelled';
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface QueueEntry {

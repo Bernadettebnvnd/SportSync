@@ -874,6 +874,16 @@ export function VenueMap({
           </div>
         </div>
       )}
+
+      {/* Empty Map State when 0 venues listed */}
+      {venues.length === 0 && discoveredFacilities.length === 0 && (
+        <div className="absolute inset-x-4 bottom-4 z-20 max-w-sm mx-auto bg-[#141A15]/95 backdrop-blur-md rounded-2xl border border-white/10 p-3.5 shadow-xl text-center space-y-1">
+          <p className="font-display font-bold text-xs text-[#F4F7F0]">No courts listed yet</p>
+          <p className="text-[11px] text-[#A5B0A6]">
+            Courts registered by verified facility owners will appear as live pins on this OpenStreetMap view.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

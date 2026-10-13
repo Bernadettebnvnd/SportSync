@@ -36,6 +36,7 @@ import { SystemStatesScreen } from './screens/profile/SystemStatesScreen';
 import { LevelUpCelebrationModal } from './design-system/components/LevelUpCelebrationModal';
 import { BadgeClaimModal } from './design-system/components/BadgeClaimModal';
 import { WagerWinCelebrationModal } from './design-system/components/WagerWinCelebrationModal';
+import { GuestPromptModal } from './components/auth/GuestPromptModal';
 import { useSportSyncBridge } from './lib/useSportSyncBridge';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
@@ -101,6 +102,31 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string }>({});
+  const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('signup');
+  const [guestPrompt, setGuestPrompt] = useState<{
+    isOpen: boolean;
+    title?: string;
+    message?: string;
+    pendingAction?: () => void;
+  }>({ isOpen: false });
+
+  const requireAuth = (
+    title: string,
+    message: string,
+    action?: () => void
+  ): boolean => {
+    const isGuest = bridge.userProfile.isGuest || !bridge.userProfile.id || bridge.userProfile.name === 'Guest Player';
+    if (isGuest) {
+      setGuestPrompt({
+        isOpen: true,
+        title,
+        message,
+        pendingAction: action,
+      });
+      return false;
+    }
+    return true;
+  };
 
   // Navigate function with history stack
   const navigateTo = (screen: ScreenId) => {
@@ -160,27 +186,52 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'splash':
         return (
           <SplashScreen
-            onGetStarted={() => navigateTo('carousel')}
-            onLogIn={() => navigateTo('auth')}
+            onGetStarted={() => {
+              setAuthInitialMode('signup');
+              navigateTo('auth');
+            }}
+            onLogIn={() => {
+              setAuthInitialMode('login');
+              navigateTo('auth');
+            }}
+            onGuest={() => {
+              bridge.setAsGuest();
+              navigateTo('home');
+            }}
           />
         );
       case 'carousel':
         return (
           <CarouselScreen
-            onComplete={() => navigateTo('auth')}
-            onSkip={() => navigateTo('home')}
+            onComplete={() => {
+              setAuthInitialMode('signup');
+              navigateTo('auth');
+            }}
+            onSkip={() => {
+              bridge.setAsGuest();
+              navigateTo('home');
+            }}
           />
         );
       case 'auth':
         return (
           <AuthScreen
+            initialMode={authInitialMode}
             onSuccess={(role) => {
               if (role === 'facility_owner') {
                 if (typeof window !== 'undefined') {
                   window.location.href = '/organizer';
                 }
               } else {
-                navigateTo('personalization');
+                if (guestPrompt.pendingAction) {
+                  const act = guestPrompt.pendingAction;
+                  setGuestPrompt({ isOpen: false });
+                  act();
+                } else if (bridge.userProfile.onboardingCompleted) {
+                  navigateTo('home');
+                } else {
+                  navigateTo('personalization');
+                }
               }
             }}
             onBack={goBack}
@@ -195,10 +246,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   fullName: prefs.fullName || bridge.userProfile.name,
                   preferredSports: prefs.selectedSports,
                   skillLevel: prefs.skillLevel,
+                  preferredArea: prefs.preferredArea,
+                  avatarUrl: prefs.avatarUrl,
                 });
                 setToastMessage('Preferences saved! Welcome to SportSync.');
               }
-              navigateTo('home');
+              if (guestPrompt.pendingAction) {
+                const act = guestPrompt.pendingAction;
+                setGuestPrompt({ isOpen: false });
+                act();
+              } else {
+                navigateTo('home');
+              }
             }}
           />
         );
@@ -221,7 +280,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               setSelectedVenue(v);
               navigateTo('venue-detail');
             }}
-            onOpenNotifications={() => navigateTo('notifications')}
+            onOpenNotifications={() => {
+              if (!requireAuth('Notifications', 'Sign in to access your SportSync notifications.')) return;
+              navigateTo('notifications');
+            }}
             onNavigateToScores={() => navigateTo('scores')}
             onNavigateToPlay={() => navigateTo('social-home')}
             onNavigateToVenues={(filters) => {
@@ -235,6 +297,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'scores':
         return (
           <LiveScoresHubScreen
+            isGuest={bridge.userProfile.isGuest}
+            onRequireAuth={(actionName) => {
+              requireAuth('Match Scoring', actionName || 'Sign in to score official matches.');
+            }}
             onSelectMatch={() => navigateTo('match-center')}
             onNavigateToPlay={() => navigateTo('social-home')}
           />
@@ -282,13 +348,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <SocialHomeScreen
             games={bridge.games}
             user={bridge.userProfile}
-            onCreateMatch={() => navigateTo('create-match')}
+            onCreateMatch={() => {
+              if (!requireAuth('Create a Match', 'Join SportSync to create pickup games and recruit players.')) return;
+              navigateTo('create-match');
+            }}
             onJoinMatch={() => navigateTo('find-games')}
             onSelectGame={(g) => {
               setSelectedGame(g);
               navigateTo('match-detail');
             }}
-            onOpenNotifications={() => navigateTo('notifications')}
+            onOpenNotifications={() => {
+              if (!requireAuth('Notifications', 'Sign in to access your game notifications.')) return;
+              navigateTo('notifications');
+            }}
           />
         );
       case 'create-match':
@@ -320,11 +392,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             game={selectedGame}
             onBack={goBack}
             onJoin={() => {
+              if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', () => {
+                const result = bridge.joinCommunityGame(selectedGame.id);
+                if (result.game) setSelectedGame(result.game);
+                setToastMessage(result.xpResult.message);
+              })) return;
               const result = bridge.joinCommunityGame(selectedGame.id);
               if (result.game) setSelectedGame(result.game);
               setToastMessage(result.xpResult.message);
             }}
-            onOpenChat={() => navigateTo('match-chat')}
+            onOpenChat={() => {
+              if (!requireAuth('Team Chat', 'Sign in to participate in the match team chat.')) return;
+              navigateTo('match-chat');
+            }}
           />
         );
       case 'match-chat':
@@ -356,7 +436,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <VenueDetailScreen
             venue={selectedVenue}
             onBack={goBack}
-            onBookNow={() => navigateTo('booking-flow')}
+            onBookNow={() => {
+              if (!requireAuth('Reserve Court', 'Sign in to reserve court slots and complete booking.', () => {
+                navigateTo('booking-flow');
+              })) return;
+              navigateTo('booking-flow');
+            }}
           />
         );
       case 'booking-flow':
@@ -444,8 +529,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <ProfileScreen
             user={bridge.userProfile}
-            onOpenSettings={() => navigateTo('settings')}
+            onOpenSettings={() => {
+              if (!requireAuth('Account Settings', 'Sign in to manage your account settings.')) return;
+              navigateTo('settings');
+            }}
             onOpenLeaderboard={() => navigateTo('leaderboard')}
+            onLogout={bridge.logout}
+            onRequireAuth={(title, message) => {
+              requireAuth(title || 'Join SportSync', message || 'Create an account or sign in to save your progress.');
+            }}
           />
         );
       case 'leaderboard':
@@ -542,13 +634,43 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       <QuickActionSheet
         isOpen={isQuickActionOpen}
         onClose={() => setIsQuickActionOpen(false)}
-        onCreateMatch={() => navigateTo('create-match')}
-        onFindPlayers={() => navigateTo('find-games')}
+        onCreateMatch={() => {
+          setIsQuickActionOpen(false);
+          if (!requireAuth('Create a Match', 'Sign in or create an account to host games and recruit players.')) return;
+          navigateTo('create-match');
+        }}
+        onFindPlayers={() => {
+          setIsQuickActionOpen(false);
+          navigateTo('find-games');
+        }}
         onInviteFriends={() => {
+          setIsQuickActionOpen(false);
           setToastMessage('SportSync match link copied to clipboard!');
           setTimeout(() => setToastMessage(null), 3000);
         }}
-        onViewMyGames={() => navigateTo('my-bookings')}
+        onViewMyGames={() => {
+          setIsQuickActionOpen(false);
+          if (!requireAuth('My Bookings', 'Sign in to view your court reservations and joined matches.')) return;
+          navigateTo('my-bookings');
+        }}
+      />
+
+      {/* Guest Authentication Prompt Modal */}
+      <GuestPromptModal
+        isOpen={guestPrompt.isOpen}
+        title={guestPrompt.title}
+        message={guestPrompt.message}
+        onClose={() => setGuestPrompt({ isOpen: false })}
+        onSignIn={() => {
+          setGuestPrompt((prev) => ({ ...prev, isOpen: false }));
+          setAuthInitialMode('login');
+          navigateTo('auth');
+        }}
+        onCreateAccount={() => {
+          setGuestPrompt((prev) => ({ ...prev, isOpen: false }));
+          setAuthInitialMode('signup');
+          navigateTo('auth');
+        }}
       />
     </div>
   );

@@ -6,7 +6,7 @@ import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
-import { Payment, Match, EmptyCourtOpportunity } from '@/types';
+import { Payment, Match, EmptyCourtOpportunity, SportType, Court } from '@/types';
 import {
   formatCurrency,
   formatTimeAgo,
@@ -30,6 +30,10 @@ import {
   BarChart3,
   Flame,
   UserPlus,
+  Plus,
+  MapPin,
+  Building2,
+  User,
 } from 'lucide-react';
 
 export default function OrganizerDashboard() {
@@ -54,8 +58,27 @@ export default function OrganizerDashboard() {
   const [selectedScoreMatch, setSelectedScoreMatch] = useState<Match | null>(null);
   const [walkInName, setWalkInName] = useState('');
   const [walkInFormat, setWalkInFormat] = useState<'doubles' | 'singles'>('doubles');
-  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'monetize' | 'queue_ops' | 'payments'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments'>('overview');
   const [monetizeSuccessMessage, setMonetizeSuccessMessage] = useState<string | null>(null);
+
+  // Facility courts & custom added courts
+  const [customCourts, setCustomCourts] = useState<any[]>([]);
+  const [isAddCourtOpen, setIsAddCourtOpen] = useState(false);
+  const [newCourtName, setNewCourtName] = useState('');
+  const [newCourtSport, setNewCourtSport] = useState<SportType>('basketball');
+  const [newCourtRate, setNewCourtRate] = useState('600');
+  const [newCourtSurface, setNewCourtSurface] = useState('Hard Court');
+  const [courtStatusMap, setCourtStatusMap] = useState<Record<string, boolean>>({});
+
+  // Hosted Games state
+  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
+  const [newGameTitle, setNewGameTitle] = useState('');
+  const [newGameCourtId, setNewGameCourtId] = useState('');
+  const [newGameSport, setNewGameSport] = useState<SportType>('basketball');
+  const [newGameTime, setNewGameTime] = useState('18:00 - 20:00');
+  const [newGamePlayers, setNewGamePlayers] = useState('10');
+  const [newGameFee, setNewGameFee] = useState('350');
+  const [newGameRotation, setNewGameRotation] = useState('Open Pickup Rotation');
 
   const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
 
@@ -153,6 +176,63 @@ export default function OrganizerDashboard() {
     );
   }
 
+  const allFacilityCourts = [
+    ...(primaryVenue ? courts.filter((c) => c.venue_id === primaryVenue.id) : []),
+    ...customCourts,
+  ];
+
+  const handleAddCourt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCourtName.trim() || !primaryVenue) return;
+    const newCourt = {
+      id: `court_${Date.now()}`,
+      venue_id: primaryVenue.id,
+      name: newCourtName.trim(),
+      sport: newCourtSport,
+      floor_type: newCourtSurface,
+      hourly_rate_cents: Math.round(Number(newCourtRate || '600') * 100),
+      is_indoor: true,
+      is_active: true,
+      supports_doubles: true,
+      supports_singles: true,
+    };
+    setCustomCourts((prev) => [newCourt, ...prev]);
+    setIsAddCourtOpen(false);
+    setNewCourtName('');
+    setMonetizeSuccessMessage(`Court "${newCourt.name}" registered and published to player search!`);
+    setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+  };
+
+  const handleCreateHostedGame = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGameTitle.trim() || !primaryVenue) return;
+    const courtId = newGameCourtId || allFacilityCourts[0]?.id || 'court_default';
+    createOpenPlaySession({
+      venueId: primaryVenue.id,
+      title: newGameTitle.trim(),
+      description: `Official facility hosted game at ${primaryVenue.name}. Open to all recreational players.`,
+      sport: newGameSport,
+      courtIds: [courtId],
+      startTime: newGameTime.split(' - ')[0] || '18:00',
+      endTime: newGameTime.split(' - ')[1] || '20:00',
+      feeCents: Math.round(Number(newGameFee || '350') * 100),
+      maxPlayers: Number(newGamePlayers || '10'),
+      rotationFormat: newGameRotation,
+      skillLevel: 'all_levels',
+    });
+    setIsCreateGameOpen(false);
+    setNewGameTitle('');
+    setMonetizeSuccessMessage(`Hosted game "${newGameTitle.trim()}" published to player discovery feed!`);
+    setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+  };
+
+  const toggleCourtStatus = (courtId: string, currentActive: boolean) => {
+    setCourtStatusMap((prev) => ({
+      ...prev,
+      [courtId]: prev[courtId] !== undefined ? !prev[courtId] : !currentActive,
+    }));
+  };
+
   const handleAddWalkIn = (e: React.FormEvent) => {
     e.preventDefault();
     if (!walkInName.trim() || !primarySession) return;
@@ -200,13 +280,20 @@ export default function OrganizerDashboard() {
             <h1 className="text-2xl sm:text-3xl font-black text-[#1A241E] tracking-tight">
               Facility Ops &amp; Management
             </h1>
-            <span className="rounded-full bg-[#1E4A32] px-3 py-1 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#E9C46A]" />
-              Verified Operator
-            </span>
+            {primaryVenue?.is_verified ? (
+              <span className="rounded-full bg-[#1E4A32] px-3 py-1 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                Verified Facility
+              </span>
+            ) : (
+              <span className="rounded-full bg-[#FBF0E6] border border-[#C87D43]/30 px-3 py-1 text-xs font-bold text-[#A35C2B] flex items-center gap-1.5 shadow-sm">
+                <Clock className="w-3.5 h-3.5 text-[#C87D43]" />
+                Pending Verification (Draft Mode)
+              </span>
+            )}
           </div>
           <p className="text-xs sm:text-sm text-[#65756B] mt-1">
-            {primaryVenue?.name || 'Upper Deck Sports Center'} &bull; Real-time court utilization, bookings ledger &amp; cash desk.
+            {primaryVenue?.name || 'Sports Facility'} &bull; Real-time court utilization, bookings ledger &amp; cash desk.
           </p>
         </div>
 
@@ -225,6 +312,39 @@ export default function OrganizerDashboard() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('games')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'games'
+                ? 'bg-white text-[#1A241E] shadow-sm'
+                : 'text-[#65756B] hover:text-[#1A241E]'
+            }`}
+          >
+            Games
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('courts')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'courts'
+                ? 'bg-white text-[#1A241E] shadow-sm'
+                : 'text-[#65756B] hover:text-[#1A241E]'
+            }`}
+          >
+            Courts ({allFacilityCourts.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('profile')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              activeTab === 'profile'
+                ? 'bg-white text-[#1A241E] shadow-sm'
+                : 'text-[#65756B] hover:text-[#1A241E]'
+            }`}
+          >
+            Profile
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('bookings')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
               activeTab === 'bookings'
@@ -233,32 +353,6 @@ export default function OrganizerDashboard() {
             }`}
           >
             Bookings ({bookings.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('monetize')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeTab === 'monetize'
-                ? 'bg-white text-[#1A241E] shadow-sm'
-                : 'text-[#65756B] hover:text-[#1A241E]'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-[#C87D43]" />
-            <span>Fill Empty Courts</span>
-            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#C87D43] text-[9px] font-black text-white">
-              {emptyOpportunities.length}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('queue_ops')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-              activeTab === 'queue_ops'
-                ? 'bg-white text-[#1A241E] shadow-sm'
-                : 'text-[#65756B] hover:text-[#1A241E]'
-            }`}
-          >
-            Rotation &amp; Queue
           </button>
           <button
             type="button"
@@ -1062,6 +1156,423 @@ export default function OrganizerDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: GAMES & SESSIONS */}
+      {activeTab === 'games' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm">
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
+                Hosted Games &amp; Open Play Sessions
+              </h2>
+              <p className="text-xs text-[#65756B] mt-0.5">
+                Host official facility games, recruit local players to complete rosters, and manage court rotations.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsCreateGameOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold flex items-center gap-2 transition-all shadow-sm self-start sm:self-auto min-h-[42px]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Hosted Game</span>
+            </button>
+          </div>
+
+          {/* Create Hosted Game Modal / Drawer */}
+          {isCreateGameOpen && (
+            <div className="rounded-3xl border border-[#2D724E]/30 bg-[#F4F9F5] p-5 sm:p-6 shadow-md space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-[#2D724E]/20 pb-3">
+                <h3 className="font-bold text-sm text-[#1A241E]">Schedule Hosted Game at {primaryVenue.name}</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGameOpen(false)}
+                  className="text-xs text-[#65756B] hover:text-[#1A241E]"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateHostedGame} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Game Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={newGameTitle}
+                    onChange={(e) => setNewGameTitle(e.target.value)}
+                    placeholder="e.g. Friday Night 5v5 Open Play"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Select Court</label>
+                  <select
+                    value={newGameCourtId}
+                    onChange={(e) => setNewGameCourtId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  >
+                    {allFacilityCourts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({getSportDisplayName(c.sport)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Time Schedule</label>
+                  <input
+                    type="text"
+                    value={newGameTime}
+                    onChange={(e) => setNewGameTime(e.target.value)}
+                    placeholder="18:00 - 20:00"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Player Fee (₱)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newGameFee}
+                    onChange={(e) => setNewGameFee(e.target.value)}
+                    placeholder="350"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateGameOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-[#E8E5DF] text-xs font-semibold text-[#65756B]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm"
+                  >
+                    Publish Game to Feed
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Hosted Games List */}
+          <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-4">
+            <h3 className="font-bold text-sm text-[#1A241E]">Current Facility Sessions</h3>
+            {sessions.filter((s) => s.venue_id === primaryVenue.id).length === 0 ? (
+              <div className="py-8 text-center text-xs text-[#65756B]">
+                No upcoming facility-hosted games right now. Click &quot;Create Hosted Game&quot; to recruit players.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sessions.filter((s) => s.venue_id === primaryVenue.id).map((session) => (
+                  <div
+                    key={session.id}
+                    className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <span className="font-bold text-sm text-[#1A241E] block">{session.title}</span>
+                      <div className="text-[11px] text-[#65756B] flex items-center gap-2 mt-0.5">
+                        <span className="capitalize text-[#2D724E] font-semibold">{session.sport}</span>
+                        <span>&bull;</span>
+                        <span>{session.start_time} - {session.end_time}</span>
+                        <span>&bull;</span>
+                        <span>Max {session.max_players} players</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-sm text-[#2D724E] block">
+                        {formatCurrency(session.fee_cents)}
+                      </span>
+                      <span className="text-[10px] text-[#65756B] capitalize">{session.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: COURTS INVENTORY & MANAGEMENT */}
+      {activeTab === 'courts' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm">
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
+                Registered Courts &amp; Playing Areas
+              </h2>
+              <p className="text-xs text-[#65756B] mt-0.5">
+                Manage court availability, sport formats, hourly rates, and mark temporary closures.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAddCourtOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold flex items-center gap-2 transition-all shadow-sm self-start sm:self-auto min-h-[42px]"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Court</span>
+            </button>
+          </div>
+
+          {/* Add Court Form */}
+          {isAddCourtOpen && (
+            <div className="rounded-3xl border border-[#2D724E]/30 bg-[#F4F9F5] p-5 sm:p-6 shadow-md space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-[#2D724E]/20 pb-3">
+                <h3 className="font-bold text-sm text-[#1A241E]">Add New Court to {primaryVenue.name}</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAddCourtOpen(false)}
+                  className="text-xs text-[#65756B] hover:text-[#1A241E]"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <form onSubmit={handleAddCourt} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Court Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCourtName}
+                    onChange={(e) => setNewCourtName(e.target.value)}
+                    placeholder="e.g. Court 3 (Taraflex)"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Sport</label>
+                  <select
+                    value={newCourtSport}
+                    onChange={(e) => setNewCourtSport(e.target.value as SportType)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none capitalize"
+                  >
+                    <option value="basketball">Basketball</option>
+                    <option value="badminton">Badminton</option>
+                    <option value="volleyball">Volleyball</option>
+                    <option value="football">Football</option>
+                    <option value="pickleball">Pickleball</option>
+                    <option value="tennis">Tennis</option>
+                    <option value="billiards">Billiards</option>
+                    <option value="darts">Darts</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Hourly Rate (₱)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={newCourtRate}
+                    onChange={(e) => setNewCourtRate(e.target.value)}
+                    placeholder="600"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E]">Playing Surface</label>
+                  <input
+                    type="text"
+                    value={newCourtSurface}
+                    onChange={(e) => setNewCourtSurface(e.target.value)}
+                    placeholder="Hard Court, Taraflex, Wood"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCourtOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-[#E8E5DF] text-xs font-semibold text-[#65756B]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold shadow-sm"
+                  >
+                    Save &amp; Publish Court
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Courts Grid */}
+          {allFacilityCourts.length === 0 ? (
+            <div className="rounded-3xl border border-[#E8E5DF] bg-white p-12 text-center space-y-2">
+              <p className="font-bold text-sm text-[#1A241E]">No courts registered yet</p>
+              <p className="text-xs text-[#65756B]">Add your first court to publish it in SportSync player searches.</p>
+              <button
+                type="button"
+                onClick={() => setIsAddCourtOpen(true)}
+                className="mt-3 px-4 py-2 rounded-xl bg-[#2D724E] text-white text-xs font-bold"
+              >
+                + Add Court
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {allFacilityCourts.map((court) => {
+                const isCurrentlyActive =
+                  courtStatusMap[court.id] !== undefined ? courtStatusMap[court.id] : (court.is_active !== false);
+
+                return (
+                  <div
+                    key={court.id}
+                    className="rounded-3xl border border-[#E8E5DF] bg-white p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-[#2D724E] bg-[#EBF4EE] px-2 py-0.5 rounded-md capitalize">
+                          {getSportDisplayName(court.sport)}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isCurrentlyActive
+                              ? 'bg-[#EBF4EE] text-[#1E4A32]'
+                              : 'bg-red-50 text-red-700'
+                          }`}
+                        >
+                          {isCurrentlyActive ? 'Active & Available' : 'Temporarily Closed'}
+                        </span>
+                      </div>
+
+                      <h3 className="font-bold text-base text-[#1A241E]">{court.name}</h3>
+                      <p className="text-xs text-[#65756B] mt-0.5">
+                        Surface: {court.floor_type || court.surface || 'Standard'} &bull; Indoor
+                      </p>
+
+                      <div className="mt-3 pt-3 border-t border-[#E8E5DF] flex items-center justify-between">
+                        <span className="text-xs text-[#65756B]">Standard Rate</span>
+                        <span className="text-sm font-black text-[#1A241E]">
+                          {formatCurrency(court.hourly_rate_cents || 60000)} / hr
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleCourtStatus(court.id, court.is_active !== false)}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                          isCurrentlyActive
+                            ? 'border-[#E8E5DF] text-[#65756B] hover:bg-red-50 hover:text-red-700 hover:border-red-200'
+                            : 'bg-[#2D724E] text-white hover:bg-[#1E4A32] border-transparent'
+                        }`}
+                      >
+                        {isCurrentlyActive ? 'Mark Temporary Closure' : 'Reactivate Court'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB: FACILITY & OPERATOR PROFILE */}
+      {activeTab === 'profile' && (
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
+              <div>
+                <span className="text-xs font-bold text-[#65756B] uppercase tracking-wider block">
+                  Facility Profile
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-[#1A241E]">
+                  {primaryVenue.name}
+                </h2>
+                <p className="text-xs text-[#65756B] mt-0.5">{primaryVenue.description}</p>
+              </div>
+
+              <div>
+                {primaryVenue.is_verified ? (
+                  <span className="rounded-full bg-[#1E4A32] px-3.5 py-1.5 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
+                    <ShieldCheck className="w-4 h-4 text-[#C8FF2E]" />
+                    Verified Facility
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-[#FBF0E6] border border-[#C87D43]/40 px-3.5 py-1.5 text-xs font-bold text-[#A35C2B] flex items-center gap-1.5 shadow-sm">
+                    <Clock className="w-4 h-4 text-[#C87D43]" />
+                    Pending Verification (Draft Mode)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
+                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
+                  Location &amp; Coordinates
+                </span>
+                <p className="text-[#1A241E] font-medium">{primaryVenue.address}</p>
+                <p className="text-[#65756B]">{primaryVenue.city}, Philippines</p>
+                <p className="text-[10px] font-mono text-[#65756B] pt-1">
+                  Lat: {primaryVenue.latitude} &bull; Lon: {primaryVenue.longitude}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
+                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
+                  Operator Contact Desk
+                </span>
+                <p className="text-[#1A241E] font-medium">Owner: {currentUser.full_name || 'Facility Manager'}</p>
+                <p className="text-[#65756B]">Email: {currentUser.email || 'manager@facility.ph'}</p>
+                <p className="text-[#65756B]">Phone: {currentUser.phone || '0917-888-0000'}</p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
+                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
+                  Operating Hours
+                </span>
+                <p className="text-[#1A241E] font-medium">Monday &ndash; Sunday: 06:00 &ndash; 23:00</p>
+                <p className="text-[#65756B]">Online court booking open 24/7 on SportSync.</p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
+                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
+                  Supported Sports
+                </span>
+                <div className="flex gap-1.5 flex-wrap pt-1">
+                  {primaryVenue.featured_sports.map((s) => (
+                    <span
+                      key={s}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-[#E8E5DF] text-[11px] font-semibold text-[#1A241E] capitalize"
+                    >
+                      {getSportDisplayName(s)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-4 border-t border-[#E8E5DF] flex flex-col sm:flex-row items-center gap-3">
+              <Link
+                href="/"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-[#E8E5DF] hover:bg-[#FAF8F5] text-xs font-bold text-[#1A241E] text-center transition-colors"
+              >
+                &larr; Switch to Player Application
+              </Link>
             </div>
           </div>
         </div>

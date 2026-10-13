@@ -1,19 +1,39 @@
 import { Session, QueueEntry, MatchFormat } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
-import { INITIAL_SESSIONS } from '@/lib/mockData';
 
-let hasLoggedSessionsNetworkWarning = false;
+function getLocalStoredSessions(): Session[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('sportsync_user_sessions');
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalStoredSession(session: Session) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = getLocalStoredSessions();
+    const updated = [session, ...existing.filter((s) => s.id !== session.id)];
+    localStorage.setItem('sportsync_user_sessions', JSON.stringify(updated));
+  } catch (err) {
+    console.warn('Failed to save session to localStorage:', err);
+  }
+}
 
 /**
  * Fetch active and upcoming Open Play sessions from Supabase.
- * Gracefully falls back to offline sessions cache if Supabase is unreachable.
+ * Returns only genuine database or user-created records — never fake mock data.
+ * When no sessions exist, returns an empty array to trigger distinct empty states.
  */
 export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> {
   const supabase = getSupabaseClient();
-  const fallback = venueId ? INITIAL_SESSIONS.filter((s) => s.venue_id === venueId) : INITIAL_SESSIONS;
+  const localSessions = getLocalStoredSessions();
 
   if (!supabase || !isSupabaseConfigured) {
-    return fallback;
+    return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
   }
 
   try {
@@ -29,24 +49,24 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     const { data, error } = await query.order('start_time', { ascending: true });
 
     if (error) {
-      if (!hasLoggedSessionsNetworkWarning) {
-        hasLoggedSessionsNetworkWarning = true;
-        console.warn('[Sessions] Live database unreachable. Using offline sessions cache.');
+      console.warn('[Sessions] Query returned error, using local records:', error.message);
+      return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
+    }
+
+    const dbSessions = (data as Session[]) || [];
+    const combined = [...dbSessions];
+    localSessions.forEach((ls) => {
+      if (!combined.some((s) => s.id === ls.id)) {
+        if (!venueId || ls.venue_id === venueId) {
+          combined.push(ls);
+        }
       }
-      return fallback;
-    }
+    });
 
-    if (data && data.length > 0) {
-      return (data as Session[]);
-    }
-
-    return fallback;
+    return combined;
   } catch (err) {
-    if (!hasLoggedSessionsNetworkWarning) {
-      hasLoggedSessionsNetworkWarning = true;
-      console.warn('[Sessions] Network query exception. Using offline sessions cache:', err);
-    }
-    return fallback;
+    console.warn('[Sessions] Exception querying sessions:', err);
+    return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
   }
 }
 
@@ -158,8 +178,34 @@ export async function createOpenPlaySession(
   sessionData: Omit<Session, 'id' | 'venue' | 'current_players_count'>
 ): Promise<Session | null> {
   const supabase = getSupabaseClient();
+
+  const localId = `session_${Date.now()}`;
+  const localSession: Session = {
+    id: localId,
+    venue_id: sessionData.venue_id,
+    host_id: sessionData.host_id,
+    title: sessionData.title,
+    description: sessionData.description,
+    sport: sessionData.sport,
+    session_type: 'open_play',
+    allowed_formats: sessionData.allowed_formats,
+    skill_level: sessionData.skill_level,
+    court_ids: sessionData.court_ids,
+    start_time: sessionData.start_time,
+    end_time: sessionData.end_time,
+    fee_cents: sessionData.fee_cents,
+    max_players: sessionData.max_players,
+    current_players_count: 0,
+    rotation_format: sessionData.rotation_format,
+    status: 'active',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  saveLocalStoredSession(localSession);
+
   if (!supabase || !isSupabaseConfigured) {
-    throw new Error('Supabase is not configured.');
+    return localSession;
   }
 
   const { data: userData } = await supabase.auth.getUser();
@@ -197,9 +243,11 @@ export async function createOpenPlaySession(
     .single();
 
   if (error) {
-    console.error('Error creating open play session:', error);
-    throw new Error(error.message || 'Failed to create session.');
+    console.warn('Supabase create session fallback handled, returning local session:', error.message);
+    return localSession;
   }
 
-  return newSession as Session;
+  const created = newSession as Session;
+  saveLocalStoredSession(created);
+  return created;
 }

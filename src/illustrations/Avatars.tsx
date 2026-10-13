@@ -11,6 +11,23 @@ export type AvatarId =
   | 'jordan'
   | 'default';
 
+export const AVATAR_KEYS: AvatarId[] = [
+  'alex',
+  'martin',
+  'elena',
+  'marcus',
+  'sarah',
+  'kai',
+  'leo',
+  'jordan',
+];
+
+export function toAvatarId(id?: string): AvatarId {
+  if (!id) return 'alex';
+  const valid: AvatarId[] = ['martin', 'alex', 'elena', 'marcus', 'sarah', 'kai', 'leo', 'jordan', 'default'];
+  return (valid.includes(id as AvatarId) ? id : 'alex') as AvatarId;
+}
+
 interface UserAvatarProps {
   id?: AvatarId;
   name?: string;

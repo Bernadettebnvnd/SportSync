@@ -30,11 +30,15 @@ interface NewCourtInput {
 }
 
 const AVAILABLE_SPORTS: { id: SportType; label: string }[] = [
-  { id: 'pickleball', label: 'Pickleball' },
-  { id: 'badminton', label: 'Badminton' },
   { id: 'basketball', label: 'Basketball' },
+  { id: 'badminton', label: 'Badminton' },
+  { id: 'volleyball', label: 'Volleyball' },
+  { id: 'football' as any, label: 'Football' },
+  { id: 'pickleball', label: 'Pickleball' },
   { id: 'tennis', label: 'Tennis' },
-  { id: 'padel', label: 'Padel' },
+  { id: 'billiards' as any, label: 'Billiards' },
+  { id: 'darts' as any, label: 'Darts' },
+  { id: 'other' as any, label: 'Other' },
 ];
 
 const INVENTORY_OPTIONS: { id: FacilityInventorySource; title: string; desc: string }[] = [
@@ -163,6 +167,12 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
       });
 
       onClose();
+      // Redirect to Facility Dashboard per specification
+      if (typeof window !== 'undefined') {
+        setTimeout(() => {
+          window.location.href = '/organizer';
+        }, 500);
+      }
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to register facility.');
     } finally {
