@@ -15,16 +15,26 @@ export const LiveMatchRow: React.FC<LiveMatchRowProps> = ({ match, onClick, clas
       onClick={onClick}
       className={`w-full bg-[#141A15] hover:bg-[#1C241E] border border-white/5 hover:border-white/10 rounded-2xl p-4 transition-all press-scale cursor-pointer flex flex-col gap-3 ${className}`}
     >
-      {/* Top Header: League & LIVE Red Badge */}
+      {/* Top Header: League & Status Badge */}
       <div className="flex items-center justify-between text-xs">
         <span className="text-[#A5B0A6] font-medium tracking-tight truncate max-w-[200px]">
           {match.leagueName} • {match.matchday}
         </span>
 
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF3B30]/15 text-[#FF3B30] border border-[#FF3B30]/30 font-semibold text-[11px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] animate-live-pulse" />
-          <span>LIVE {match.minute ? `${match.minute}'` : ''}</span>
-        </div>
+        {match.status === 'LIVE' ? (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#FF3B30]/15 text-[#FF3B30] border border-[#FF3B30]/30 font-semibold text-[11px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] animate-live-pulse" />
+            <span>LIVE {match.minute ? `${match.minute}'` : ''}</span>
+          </div>
+        ) : match.status === 'FINISHED' ? (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/10 text-[#A5B0A6] border border-white/10 font-bold text-[10px]">
+            <span>FT</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/30 font-semibold text-[11px]">
+            <span>{match.time}</span>
+          </div>
+        )}
       </div>
 
       {/* Main Scoreboard Row */}
@@ -41,7 +51,9 @@ export const LiveMatchRow: React.FC<LiveMatchRowProps> = ({ match, onClick, clas
 
         {/* Tabular Score Center */}
         <div className="col-span-2 flex items-center justify-center">
-          <div className="bg-[#1C241E] px-2.5 py-1 rounded-lg border border-white/10 flex items-center gap-1 font-display font-bold text-base tabular-nums text-[#C8FF2E]">
+          <div className={`bg-[#1C241E] px-2.5 py-1 rounded-lg border border-white/10 flex items-center gap-1 font-display font-bold text-base tabular-nums ${
+            match.status === 'LIVE' ? 'text-[#C8FF2E]' : 'text-[#F4F7F0]'
+          }`}>
             <span>{match.homeScore ?? 0}</span>
             <span className="text-[#6F7B71] text-xs">:</span>
             <span>{match.awayScore ?? 0}</span>

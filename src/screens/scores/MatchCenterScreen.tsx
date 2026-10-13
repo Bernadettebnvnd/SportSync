@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Play, Share2, Star, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Play, Share2, Star, MessageSquare, Sparkles, CheckCircle2 } from 'lucide-react';
 import { TeamCrest } from '../../illustrations/TeamCrests';
 import { Match } from '../../mock/types';
 import { MomentumChart } from '../../design-system/components/MomentumChart';
@@ -19,6 +19,7 @@ export const MatchCenterScreen: React.FC<MatchCenterScreenProps> = ({
   onWatchLive,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'stats' | 'lineups' | 'timeline' | 'chat'>('overview');
+  const [selectedPredictionOption, setSelectedPredictionOption] = useState<string | null>(null);
 
   const matchChatMessages: ChatMessage[] = [
     { id: 'c1', senderName: 'Marcus Bell', avatarId: 'marcus', text: 'What a strike by Varga into the top bin!', time: '14\'' },
@@ -168,6 +169,73 @@ export const MatchCenterScreen: React.FC<MatchCenterScreenProps> = ({
                 <span className="font-bold text-[#F4F7F0]">{match.shotsOnTarget?.away ?? 4}</span>
               </div>
             </div>
+
+            {/* Fan Prediction Poll (Ref A: Free Fan Predictions) */}
+            <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#F4F7F0]">
+                    Fan Prediction
+                  </h4>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-[#1C241E] border border-[#C8FF2E]/30 text-[#C8FF2E] text-[10px] font-bold">
+                  +50 Playmaker XP
+                </span>
+              </div>
+              <p className="text-xs text-[#A5B0A6]">
+                {match.prediction?.question || 'Who will dominate the next quarter of play?'}
+              </p>
+
+              <div className="space-y-2 pt-1">
+                {(match.prediction?.options || [
+                  { id: 'opt1', label: match.homeTeam.name, percentage: 56 },
+                  { id: 'opt2', label: match.awayTeam.name, percentage: 34 },
+                  { id: 'opt3', label: 'Draw / Stalemate', percentage: 10 },
+                ]).map((opt) => {
+                  const isChosen = selectedPredictionOption === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setSelectedPredictionOption(opt.id)}
+                      className={`relative w-full p-3 rounded-xl border text-left transition-all overflow-hidden ${
+                        isChosen
+                          ? 'border-[#C8FF2E] bg-[#C8FF2E]/10'
+                          : 'border-white/5 bg-[#1C241E] hover:border-white/10'
+                      }`}
+                    >
+                      {selectedPredictionOption && (
+                        <div
+                          style={{ width: `${opt.percentage}%` }}
+                          className={`absolute inset-y-0 left-0 opacity-15 transition-all duration-700 ${
+                            isChosen ? 'bg-[#C8FF2E]' : 'bg-white'
+                          }`}
+                        />
+                      )}
+                      <div className="relative flex items-center justify-between text-xs font-semibold">
+                        <span className={isChosen ? 'text-[#C8FF2E] font-bold' : 'text-[#F4F7F0]'}>
+                          {opt.label}
+                        </span>
+                        {selectedPredictionOption ? (
+                          <span className="font-mono text-xs tabular-nums text-[#C8FF2E]">
+                            {opt.percentage}%
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[#A5B0A6]">Vote</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedPredictionOption && (
+                <div className="flex items-center gap-1.5 text-[11px] text-[#3DDC84] font-medium pt-1 animate-fadeIn">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Prediction locked in! +50 Playmaker XP awarded to your profile.</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -199,7 +267,10 @@ export const MatchCenterScreen: React.FC<MatchCenterScreenProps> = ({
         {/* LINEUPS TAB */}
         {activeTab === 'lineups' && (
           <div className="space-y-4">
-            <PitchLineup teamName={match.homeTeam.name} />
+            <PitchLineup
+              teamName={match.homeTeam.name}
+              players={match.lineupHome as any}
+            />
           </div>
         )}
 

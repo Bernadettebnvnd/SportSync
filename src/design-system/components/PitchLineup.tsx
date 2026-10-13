@@ -12,6 +12,7 @@ interface PitchLineupProps {
   formation?: string; // e.g. "4-3-3"
   teamName?: string;
   players?: PlayerDot[];
+  onSelectPlayer?: (player: PlayerDot) => void;
   className?: string;
 }
 
@@ -33,8 +34,16 @@ export const PitchLineup: React.FC<PitchLineupProps> = ({
   formation = '4-3-3 Attacking',
   teamName = 'Northgate FC',
   players = DEFAULT_LINEUP,
+  onSelectPlayer,
   className = '',
 }) => {
+  const [selectedPlayer, setSelectedPlayer] = React.useState<PlayerDot>(players[6] || players[0]);
+
+  const handlePlayerClick = (p: PlayerDot) => {
+    setSelectedPlayer(p);
+    onSelectPlayer?.(p);
+  };
+
   return (
     <div className={`p-4 rounded-2xl bg-[#141A15] border border-white/5 select-none ${className}`}>
       <div className="flex items-center justify-between text-xs mb-3">
@@ -62,21 +71,52 @@ export const PitchLineup: React.FC<PitchLineupProps> = ({
         </svg>
 
         {/* Player Dots */}
-        {players.map((p, idx) => (
-          <div
-            key={idx}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-transform hover:scale-110"
-          >
-            <div className="w-7 h-7 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] flex items-center justify-center font-display font-bold text-[11px] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.3)]">
-              {p.num}
+        {players.map((p, idx) => {
+          const isSelected = selectedPlayer.num === p.num;
+          return (
+            <div
+              key={idx}
+              style={{ left: `${p.x}%`, top: `${p.y}%` }}
+              onClick={() => handlePlayerClick(p)}
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-transform hover:scale-110 active:scale-95"
+            >
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center font-display font-bold text-[11px] transition-all shadow-[0_0_12px_rgba(200,255,46,0.3)] ${
+                  isSelected
+                    ? 'bg-[#C8FF2E] text-[#0B0F0C] ring-2 ring-white ring-offset-2 ring-offset-[#0F2A22]'
+                    : 'bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E]'
+                }`}
+              >
+                {p.num}
+              </div>
+              <span
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap mt-0.5 border ${
+                  isSelected
+                    ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                    : 'text-white bg-[#0B0F0C]/85 border-white/10'
+                }`}
+              >
+                {p.name.split(' ')[0]}
+              </span>
             </div>
-            <span className="text-[10px] font-semibold text-white bg-[#0B0F0C]/85 px-1.5 py-0.2 rounded-full whitespace-nowrap mt-0.5 border border-white/10">
-              {p.name.split(' ')[0]}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Selected Player Callout Pill */}
+      {selectedPlayer && (
+        <div className="mt-3 p-2.5 rounded-xl bg-[#1C241E] border border-white/5 flex items-center justify-between text-xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[10px] flex items-center justify-center">
+              {selectedPlayer.num}
+            </span>
+            <span className="font-display font-bold text-[#F4F7F0]">{selectedPlayer.name}</span>
+          </div>
+          <span className="px-2 py-0.5 rounded-full bg-[#141A15] text-[#A5B0A6] font-mono text-[10px] border border-white/5">
+            Role: {selectedPlayer.role}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

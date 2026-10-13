@@ -19,29 +19,31 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   className = '',
 }) => {
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (typeof window !== 'undefined' && window.innerWidth <= 480) {
+      if (isOpen) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = '';
+      }
+      return () => {
+        document.body.style.overflow = '';
+      };
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center select-none animate-fadeIn">
+    <div className="absolute inset-0 z-50 flex items-end justify-center select-none animate-fadeIn">
       {/* Backdrop */}
       <div
         onClick={onClose}
-        className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
       />
 
       {/* Frosted Bottom Sheet Container */}
       <div
-        className={`relative w-full max-w-[430px] rounded-t-[32px] bg-[#141A15]/95 backdrop-blur-2xl border-t border-white/10 shadow-[0_-12px_48px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col z-10 transition-transform ${maxHeight} ${className}`}
+        className={`relative w-full rounded-t-[32px] bg-[#141A15]/95 backdrop-blur-2xl border-t border-white/10 shadow-[0_-12px_48px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col z-10 transition-transform ${maxHeight} ${className}`}
       >
         {/* Drag Pill Handle */}
         <div className="w-full pt-3 pb-2 flex flex-col items-center shrink-0">
