@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+:root {
+  --bg-base: #0B0F0C;
+  --bg-forest: #0F2A22;
+  --surface-1: #141A15;
+  --surface-2: #1C241E;
+  --surface-3: #263028;
+  --stroke-subtle: rgba(255, 255, 255, 0.08);
+  --stroke-medium: rgba(255, 255, 255, 0.16);
+  --accent-lime: #C8FF2E;
+  --accent-lime-ink: #0B0F0C;
+  --accent-pink: #FF8FC7;
+  --accent-clay: #C8432B;
+  --live-red: #FF3B30;
+  --win-green: #3DDC84;
+  --loss-red: #FF5C5C;
+  --draw-amber: #FFC247;
+  --text-primary: #F4F7F0;
+  --text-secondary: #A5B0A6;
+  --text-tertiary: #6F7B71;
+  --light-surface: #F5F7F2;
+  --light-surface-ink: #0B0F0C;
+  --glass-bg: rgba(20, 26, 21, 0.68);
+  --glass-stroke: rgba(255, 255, 255, 0.12);
+}
+
+html.light, .light {
+  --bg-base: #F3F5F1;
+  --bg-forest: #14352B;
+  --surface-1: #FFFFFF;
+  --surface-2: #E8ECE4;
+  --surface-3: #DDE2D8;
+  --stroke-subtle: rgba(0, 0, 0, 0.07);
+  --stroke-medium: rgba(0, 0, 0, 0.14);
+  --accent-lime: #C8FF2E;
+  --accent-lime-ink: #0B0F0C;
+  --accent-pink: #FF8FC7;
+  --accent-clay: #C8432B;
+  --live-red: #FF3B30;
+  --win-green: #2CB368;
+  --loss-red: #E04848;
+  --draw-amber: #E29B24;
+  --text-primary: #0F1612;
+  --text-secondary: #4C5A50;
+  --text-tertiary: #77857A;
+  --light-surface: #FFFFFF;
+  --light-surface-ink: #0F1612;
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-stroke: rgba(0, 0, 0, 0.08);
+}
+
+body {
+  font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Typography Helpers */
+.font-display {
+  font-family: 'Sora', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-editorial {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.font-body {
+  font-family: 'Inter Tight', sans-serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-stroke);
+}
+
+.glass-pill {
+  background: rgba(20, 26, 21, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Live Pulse Animation */
+@keyframes live-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.65;
+  }
+}
+
+.animate-live-pulse {
+  animation: live-pulse 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Lime Glow & Shimmer */
+.lime-glow {
+  box-shadow: 0 0 32px rgba(200, 255, 46, 0.28);
+}
+
+.pink-glow {
+  box-shadow: 0 0 28px rgba(255, 143, 199, 0.25);
+}
+
+@keyframes lime-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.lime-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(200, 255, 46, 0.05) 0%,
+    rgba(200, 255, 46, 0.2) 50%,
+    rgba(200, 255, 46, 0.05) 100%
+  );
+  background-size: 200% 100%;
+  animation: lime-shimmer 2s infinite linear;
+}
+
+/* Perforated ticket edge */
+.ticket-perforation {
+  position: relative;
+}
+.ticket-perforation::before,
+.ticket-perforation::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--bg-base);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+.ticket-perforation::before {
+  left: -10px;
+}
+.ticket-perforation::after {
+  right: -10px;
+}
+
+/* Press Active Animation */
+.press-scale {
+  transition: transform 120ms ease-out;
+}
+.press-scale:active {
+  transform: scale(0.97);
+}

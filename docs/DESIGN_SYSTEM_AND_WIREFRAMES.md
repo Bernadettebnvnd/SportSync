@@ -1,5 +1,12 @@
 # APP NAME — COMPLETE UX/UI DESIGN SYSTEM & WIREFRAME SPECIFICATION
 
+> ⚡ **NEW — SIDELINE HIGH-FIDELITY MOBILE PROTOTYPE & DESIGN SYSTEM (OCT 2026)**:
+> The high-fidelity clickable mobile UI prototype, Dribbble showcase canvas, and modern design system are live:
+> - **Interactive App**: [`http://localhost:5173`](http://localhost:5173) or Next.js embedded [`http://localhost:3000/prototype`](http://localhost:3000/prototype)
+> - **Dribbble Showcase**: [`http://localhost:5173/showcase`](http://localhost:5173/showcase)
+> - **Design Tokens & Styleguide**: [`http://localhost:5173/styleguide`](http://localhost:5173/styleguide)
+> - **Documentation**: See [`README.md`](file:///c:/Users/kriss/matchi/README.md) and [`DESIGN_DECISIONS.md`](file:///c:/Users/kriss/matchi/DESIGN_DECISIONS.md)
+
 > **Product Statement**: *"App Name connects people and places through sport."*  
 > **Brand Notice**: The brand name, logo, tagline, colors, and visual identity are temporary and fully decoupled using design tokens. The placeholder name **"App Name"** is used universally throughout this document.  
 > **Iconography & Asset Standard**: 100% SVG Vector icons (Lucide icon library). Strict **Zero-Emoji** policy across all screens, navigation, chips, badges, and alerts.  

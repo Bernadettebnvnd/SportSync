@@ -50,6 +50,16 @@ export default function PrototypeViewerPage() {
         {/* Prototype Fidelity Mode Selector */}
         <div className="flex items-center bg-[#0D0E12] border border-[#262A35] rounded-lg p-1 gap-1">
           <button
+            onClick={() => setMode('sideline' as any)}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              (mode as any) === 'sideline'
+                ? 'bg-[#C8FF2E] text-[#0B0F0C] shadow font-bold'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            ⚡ SIDELINE HiFi Master (New)
+          </button>
+          <button
             onClick={() => setMode('lofi')}
             className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
               mode === 'lofi'
@@ -77,7 +87,7 @@ export default function PrototypeViewerPage() {
                 : 'text-gray-400 hover:text-white'
             }`}
           >
-            3. Side-by-Side (Compare Both)
+            3. Compare
           </button>
         </div>
 
@@ -137,17 +147,30 @@ export default function PrototypeViewerPage() {
           )}
 
           <a
-            href="/prototype/index.html?viewport=fullscreen"
+            href="/sideline.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <span>⚡ SIDELINE App</span>
+          </a>
+
+          <a
+            href="http://localhost:5173/showcase"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs bg-[#1F2520] hover:bg-[#283229] text-[#C8FF2E] border border-[#C8FF2E]/30 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+          >
+            <span>Dribbble Showcase</span>
+          </a>
+
+          <a
+            href="http://localhost:5173/styleguide"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs bg-[#20232B] hover:bg-[#282C37] text-gray-200 px-3 py-1.5 rounded-lg border border-[#303542] flex items-center gap-1.5 transition-colors"
           >
-            <span>Open Standalone Tab</span>
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
+            <span>Styleguide</span>
           </a>
         </div>
       </header>
@@ -192,9 +215,9 @@ export default function PrototypeViewerPage() {
               style={{ width: getViewportWidth() }}
             >
               <iframe
-                src={`/prototype/index.html?mode=${mode}&viewport=${viewport}`}
+                src={(mode as any) === 'sideline' ? '/sideline.html' : `/prototype/index.html?mode=${mode}&viewport=${viewport}`}
                 className="w-full h-full border-none"
-                title="App Name Prototype"
+                title="App Prototype"
               />
             </div>
           </div>
