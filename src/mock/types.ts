@@ -1,5 +1,6 @@
 import { TeamCrestId } from '../illustrations/TeamCrests';
 import { AvatarId } from '../illustrations/Avatars';
+export type { AvatarId };
 
 export type SportType = 'Football' | 'Basketball' | 'Tennis' | 'Padel' | 'Running';
 
@@ -67,8 +68,17 @@ export interface Match {
   lineupHome?: Array<{ name: string; num: number; x: number; y: number; role: string }>;
   lineupAway?: Array<{ name: string; num: number; x: number; y: number; role: string }>;
   prediction?: {
+    id?: string;
     question: string;
-    options: Array<{ id: string; label: string; percentage: number }>;
+    status?: 'open' | 'settled';
+    options: Array<{
+      id: string;
+      label: string;
+      percentage: number;
+      votesCount?: number;
+      odds?: number;
+    }>;
+    settledOptionId?: string;
   };
 }
 
@@ -149,4 +159,34 @@ export interface Friend {
   activity: string; // e.g. "Joined 5v5 Sunset Match 10m ago"
   matchesWon: number;
   streak: number;
+}
+
+export interface UserPredictionWager {
+  id: string;
+  matchId: string;
+  matchTitle: string;
+  pollQuestion: string;
+  optionId: string;
+  optionLabel: string;
+  stakeXp: number;
+  odds: number;
+  potentialWinXp: number;
+  status: 'active' | 'won' | 'lost';
+  placedAt: string;
+  resolvedAt?: string;
+  payoutXp?: number;
+}
+
+export interface BadgeItem {
+  id: string;
+  title: string;
+  desc: string;
+  icon: string;
+  category: 'predictions' | 'matches' | 'community' | 'streaks';
+  progress: number;
+  maxProgress: number;
+  unlocked: boolean;
+  claimed: boolean;
+  rewardXp: number;
+  dateUnlocked?: string;
 }

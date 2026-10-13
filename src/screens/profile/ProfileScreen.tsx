@@ -48,10 +48,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <span className="text-xs text-[#A5B0A6] block mb-1">
                 {currentUser.username}
               </span>
-              <LevelBadge
-                level={currentUser.level}
-                title={currentUser.levelTitle}
-              />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <LevelBadge
+                  level={currentUser.level}
+                  title={currentUser.levelTitle}
+                />
+                <span className="px-2 py-0.5 rounded-full bg-[#1C241E] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold">
+                  🔥 {currentUser.streakWeeks || 4}W Streak (1.5x)
+                </span>
+              </div>
             </div>
           </div>
 
@@ -64,15 +69,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           />
         </div>
 
-        {/* 3. Four Stat Tiles (Matches, Wins, Goals, Assists) (Ref B) */}
+        {/* 3. Stat Tiles (Matches, Wins, Predictions, Win Rate) */}
         <div>
           <div className="flex items-center justify-between mb-2.5">
             <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
-              Career Performance
+              Career Performance & Gamification
             </h3>
             <button
               onClick={onOpenLeaderboard}
-              className="text-xs text-[#C8FF2E] font-semibold flex items-center gap-1"
+              className="text-xs text-[#C8FF2E] font-semibold flex items-center gap-1 press-scale"
             >
               <Trophy className="w-3.5 h-3.5" />
               <span>Leaderboard</span>
@@ -80,10 +85,18 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-2.5">
-            <StatTile value={CURRENT_USER.matchesTotal} label="Matches Played" trend="+4 this wk" />
-            <StatTile value={CURRENT_USER.wins} label="Matches Won" trend="68% Win Rate" />
-            <StatTile value={CURRENT_USER.goals} label="Goals Scored" trend="0.8 / game" />
-            <StatTile value={CURRENT_USER.assists} label="Total Assists" trend="0.6 / game" />
+            <StatTile value={currentUser.matchesTotal || 38} label="Matches Played" trend="+4 this wk" />
+            <StatTile value={currentUser.wins || 26} label="Matches Won" trend="68% Win Rate" />
+            <StatTile
+              value={currentUser.predictionsCount || 6}
+              label="Predictions Cast"
+              trend={`${currentUser.predictionsWon || 5} Won (83%)`}
+            />
+            <StatTile
+              value={`${currentUser.xp} XP`}
+              label="Playmaker XP"
+              trend="1.5x Multiplier"
+            />
           </div>
         </div>
 

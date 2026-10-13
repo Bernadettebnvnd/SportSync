@@ -33,6 +33,9 @@ import { NotificationsScreen } from './screens/profile/NotificationsScreen';
 import { SearchScreen } from './screens/profile/SearchScreen';
 import { SettingsScreen } from './screens/profile/SettingsScreen';
 import { SystemStatesScreen } from './screens/profile/SystemStatesScreen';
+import { LevelUpCelebrationModal } from './design-system/components/LevelUpCelebrationModal';
+import { BadgeClaimModal } from './design-system/components/BadgeClaimModal';
+import { WagerWinCelebrationModal } from './design-system/components/WagerWinCelebrationModal';
 import { useSidelineBridge } from './lib/useSidelineBridge';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
@@ -125,8 +128,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleTabChange = (tab: NavTabId) => {
     setActiveTab(tab);
     if (tab === 'home') navigateTo('home');
-    else if (tab === 'scores') navigateTo('scores');
     else if (tab === 'play') navigateTo('social-home');
+    else if (tab === 'scores') navigateTo('scores');
     else if (tab === 'profile') navigateTo('profile');
   };
 
@@ -195,6 +198,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'home':
         return (
           <DiscoverScreen
+            user={bridge.userProfile}
             onSelectMatch={(m) => {
               setSelectedMatch(m);
               navigateTo('match-center');
@@ -229,8 +233,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <MatchCenterScreen
             match={selectedMatch}
+            poll={bridge.matchPolls[selectedMatch.id]}
+            userProfile={bridge.userProfile}
+            userWagers={bridge.wagers}
             onBack={goBack}
             onWatchLive={() => navigateTo('live-video')}
+            onPlaceWager={bridge.placePredictionWager}
+            onResolvePoll={bridge.resolveMatchPoll}
           />
         );
       case 'live-video':
@@ -428,7 +437,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'leaderboard':
-        return <AchievementsLeaderboardScreen onBack={goBack} />;
+        return (
+          <AchievementsLeaderboardScreen
+            onBack={goBack}
+            userProfile={bridge.userProfile}
+            badges={bridge.badges}
+            leaderboardPlayers={bridge.leaderboardPlayers}
+            onClaimBadge={bridge.claimBadge}
+            onAwardXp={bridge.awardXp}
+          />
+        );
       case 'notifications':
         return <NotificationsScreen onBack={goBack} />;
       case 'search':
@@ -458,6 +476,39 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           type="success"
           isOpen={true}
           onClose={() => setToastMessage(null)}
+        />
+      )}
+
+      {/* Gamification Celebration Modals */}
+      {bridge.celebrationState.type === 'level_up' && (
+        <LevelUpCelebrationModal
+          isOpen={true}
+          oldLevel={bridge.celebrationState.data.oldLevel}
+          newLevel={bridge.celebrationState.data.newLevel}
+          newTitle={bridge.celebrationState.data.newTitle}
+          rewardReason={bridge.celebrationState.data.rewardReason}
+          onClose={bridge.closeCelebration}
+        />
+      )}
+
+      {bridge.celebrationState.type === 'badge_claimed' && (
+        <BadgeClaimModal
+          isOpen={true}
+          badge={bridge.celebrationState.data.badge}
+          earnedXp={bridge.celebrationState.data.earnedXp}
+          multiplierBonus={bridge.celebrationState.data.multiplierBonus}
+          onClose={bridge.closeCelebration}
+        />
+      )}
+
+      {bridge.celebrationState.type === 'wager_won' && (
+        <WagerWinCelebrationModal
+          isOpen={true}
+          matchTitle={bridge.celebrationState.data.matchTitle}
+          optionLabel={bridge.celebrationState.data.optionLabel}
+          payoutXp={bridge.celebrationState.data.payoutXp}
+          stakeXp={bridge.celebrationState.data.stakeXp}
+          onClose={bridge.closeCelebration}
         />
       )}
 

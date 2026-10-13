@@ -18,21 +18,33 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: 'cover',
-  themeColor: '#1E4A32',
+  themeColor: '#0B0F0C',
 };
 
 export const metadata: Metadata = {
-  title: 'Matchi',
-  description: 'Court booking and live open play queues.',
+  title: 'SportSync | Find Players. Play Together.',
+  description: 'Find players, complete incomplete rosters, and join local recreational games.',
+  manifest: '/manifest.json',
   keywords: [
-    'matchi',
-    'court booking',
-    'badminton',
+    'SportSync',
+    'sports matchmaking',
+    'find players',
+    'pickup games',
+    'roster completion',
+    'football',
+    'basketball',
+    'tennis',
     'pickleball',
-    'padel',
-    'open play',
-    'philippines sports',
+    'badminton',
+    'volleyball',
+    'billiards',
+    'darts',
   ],
+  openGraph: {
+    title: 'SportSync | Find Players. Play Together.',
+    description: 'Sports matchmaking, roster completion, and local game discovery platform.',
+    siteName: 'SportSync',
+  },
 };
 
 export default function RootLayout({

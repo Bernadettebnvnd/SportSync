@@ -185,11 +185,13 @@ export const MATCHES: Match[] = [
       { name: 'O. Watkins', num: 9, x: 50, y: 18, role: 'FW' },
     ],
     prediction: {
+      id: 'pred_m1',
       question: 'Next team to score before 75’?',
+      status: 'open',
       options: [
-        { id: 'opt1', label: 'Northgate FC', percentage: 58 },
-        { id: 'opt2', label: 'Riverside Utd', percentage: 34 },
-        { id: 'opt3', label: 'No more goals', percentage: 8 },
+        { id: 'opt1', label: 'Northgate FC', percentage: 58, votesCount: 1420, odds: 1.72 },
+        { id: 'opt2', label: 'Riverside Utd', percentage: 34, votesCount: 830, odds: 2.45 },
+        { id: 'opt3', label: 'No more goals', percentage: 8, votesCount: 195, odds: 6.50 },
       ],
     },
   },
@@ -215,6 +217,16 @@ export const MATCHES: Match[] = [
     shotsOnTarget: { home: 2, away: 3 },
     momentumData: [-10, 5, -15, 10, 15, -20, -10, 0, 10, -5],
     events: [{ minute: 61, type: 'yellow_card', player: 'J. Davies', team: 'home' }],
+    prediction: {
+      id: 'pred_m2',
+      question: 'Full-time outcome at West Valley?',
+      status: 'open',
+      options: [
+        { id: 'm2_opt1', label: 'Marlow FC Win', percentage: 46, votesCount: 680, odds: 2.15 },
+        { id: 'm2_opt2', label: 'Apex FC Win', percentage: 32, votesCount: 470, odds: 2.80 },
+        { id: 'm2_opt3', label: 'Goalless Draw', percentage: 22, votesCount: 325, odds: 3.40 },
+      ],
+    },
   },
   // 3. LIVE MATCH 3 (Basketball)
   {
@@ -236,6 +248,15 @@ export const MATCHES: Match[] = [
     possession: { home: 50, away: 50 },
     shots: { home: 38, away: 41 },
     shotsOnTarget: { home: 28, away: 30 },
+    prediction: {
+      id: 'pred_m3',
+      question: '4th Quarter: Who reaches 90 points first?',
+      status: 'open',
+      options: [
+        { id: 'm3_opt1', label: 'Solar Flare', percentage: 54, votesCount: 940, odds: 1.85 },
+        { id: 'm3_opt2', label: 'Dynamo Hoops', percentage: 46, votesCount: 800, odds: 1.95 },
+      ],
+    },
   },
   // 4. UPCOMING MATCHES
   {
@@ -817,6 +838,10 @@ export const CURRENT_USER = {
   assists: 14,
   winRate: '68%',
   mvpCount: 8,
+  streakWeeks: 4,
+  streakMultiplier: 1.5,
+  predictionsCount: 6,
+  predictionsWon: 5,
   recentGames: [
     { title: '5v5 Sunset Game', date: 'Yesterday', rating: 9.2, role: 'Playmaker', result: 'W (7-4)' },
     { title: 'Midweek 7v7 League', date: '9 Oct', rating: 8.8, role: 'Midfielder', result: 'W (4-2)' },

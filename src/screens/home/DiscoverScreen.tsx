@@ -18,6 +18,7 @@ interface DiscoverScreenProps {
   onNavigateToScores: () => void;
   onNavigateToPlay: () => void;
   onNavigateToVenues: () => void;
+  user?: typeof CURRENT_USER;
 }
 
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
@@ -28,7 +29,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onNavigateToScores,
   onNavigateToPlay,
   onNavigateToVenues,
+  user,
 }) => {
+  const currentUser = user || CURRENT_USER;
   const [activeSport, setActiveSport] = useState<string>('All');
   const liveMatches = MATCHES.filter((m) => m.status === 'LIVE');
   const heroMatch = liveMatches[0] || MATCHES[0];
@@ -39,16 +42,16 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* 1. Header: Greeting + Avatar + Bell */}
       <header className="px-5 pt-4 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <UserAvatar id={CURRENT_USER.avatarId} size={42} showBadge badgeLevel={CURRENT_USER.level} />
+          <UserAvatar id={currentUser.avatarId} size={42} showBadge badgeLevel={currentUser.level} />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-[#A5B0A6]">Good morning 👋</span>
               <span className="px-2 py-0.2 rounded-full bg-[#1C241E] text-[#C8FF2E] text-[10px] font-bold border border-white/10">
-                Lv.{CURRENT_USER.level}
+                Lv.{currentUser.level}
               </span>
             </div>
             <h2 className="font-display font-black text-base text-[#F4F7F0] tracking-tight">
-              {CURRENT_USER.name}
+              {currentUser.name}
             </h2>
           </div>
         </div>

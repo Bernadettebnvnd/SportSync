@@ -6,8 +6,16 @@ import {
   COMMUNITY_GAMES as DEFAULT_GAMES,
   VENUES as DEFAULT_VENUES,
   CURRENT_USER as DEFAULT_USER,
+  MATCHES,
 } from '../mock/mockData';
-import { CommunityGame, Venue, Match } from '../mock/types';
+import {
+  CommunityGame,
+  Venue,
+  Match,
+  UserPredictionWager,
+  BadgeItem,
+  AvatarId,
+} from '../mock/types';
 import { SportType } from '../types';
 
 export interface SidelineBookingItem {
@@ -44,22 +52,160 @@ const DEFAULT_BOOKINGS: SidelineBookingItem[] = [
   },
 ];
 
+export const DEFAULT_BADGES: BadgeItem[] = [
+  {
+    id: 'oracle_vision',
+    title: 'Oracle Vision',
+    desc: 'Place 3 live match predictions in Match Center',
+    icon: '🔮',
+    category: 'predictions',
+    progress: 2,
+    maxProgress: 3,
+    unlocked: false,
+    claimed: false,
+    rewardXp: 200,
+  },
+  {
+    id: 'tactical_gambit',
+    title: 'High Roller',
+    desc: 'Wager 100+ XP on a live prediction with odds',
+    icon: '🎲',
+    category: 'predictions',
+    progress: 0,
+    maxProgress: 1,
+    unlocked: false,
+    claimed: false,
+    rewardXp: 150,
+  },
+  {
+    id: 'squad_captain',
+    title: 'Squad Captain',
+    desc: 'Host a community pickup match on the feed',
+    icon: '👑',
+    category: 'community',
+    progress: 1,
+    maxProgress: 1,
+    unlocked: true,
+    claimed: false,
+    rewardXp: 250,
+  },
+  {
+    id: 'streak_master',
+    title: 'Streak Master',
+    desc: 'Maintain a 4-week active playing streak (1.5x XP Boost)',
+    icon: '🔥',
+    category: 'streaks',
+    progress: 4,
+    maxProgress: 4,
+    unlocked: true,
+    claimed: true,
+    rewardXp: 200,
+  },
+  {
+    id: 'floodlight_warrior',
+    title: 'Floodlight Warrior',
+    desc: 'Play 5 evening games under floodlights',
+    icon: '⚡',
+    category: 'matches',
+    progress: 5,
+    maxProgress: 5,
+    unlocked: true,
+    claimed: true,
+    rewardXp: 100,
+  },
+  {
+    id: 'clay_specialist',
+    title: 'Clay Specialist',
+    desc: 'Win 3 tennis matches on clay court',
+    icon: '🎾',
+    category: 'matches',
+    progress: 3,
+    maxProgress: 3,
+    unlocked: true,
+    claimed: true,
+    rewardXp: 150,
+  },
+  {
+    id: 'century_club',
+    title: 'Century Club',
+    desc: 'Reach 8,000 career Playmaker XP',
+    icon: '🏆',
+    category: 'matches',
+    progress: 7240,
+    maxProgress: 8000,
+    unlocked: false,
+    claimed: false,
+    rewardXp: 300,
+  },
+  {
+    id: 'playmaker_elite',
+    title: 'Playmaker Elite',
+    desc: 'Reach Level 20 Master Playmaker status',
+    icon: '🌟',
+    category: 'matches',
+    progress: 18,
+    maxProgress: 20,
+    unlocked: false,
+    claimed: false,
+    rewardXp: 500,
+  },
+];
+
+export const SQUAD_FRIENDS_BASE = [
+  { rank: 1, name: 'Leo Varga', username: '@leovarga', avatar: 'leo' as const, xp: 11200, level: 22, color: '#C8FF2E' },
+  { rank: 2, name: 'Elena Rostova', username: '@elena_r', avatar: 'elena' as const, xp: 9400, level: 21, color: '#FF8FC7' },
+  { rank: 3, name: 'Martin Green', username: '@m_green', avatar: 'martin' as const, xp: 7800, level: 19, color: '#F4F7F0' },
+  { rank: 4, name: 'Marcus Bell', username: '@marcus_b', avatar: 'marcus' as const, xp: 7200, level: 18, color: '#A5B0A6' },
+  { rank: 5, name: 'Kai Takahashi', username: '@kai_t', avatar: 'kai' as const, xp: 6200, level: 16, color: '#A5B0A6' },
+  { rank: 6, name: 'Jordan Davies', username: '@jordan_d', avatar: 'jordan' as const, xp: 5800, level: 15, color: '#A5B0A6' },
+];
+
+export function getLevelTitle(level: number): string {
+  if (level < 5) return 'Rookie Starter';
+  if (level < 10) return 'Squad Contender';
+  if (level < 15) return 'Midfield Tactician';
+  if (level < 20) return 'Playmaker Visionary';
+  if (level < 25) return 'Master Playmaker';
+  return 'Living Legend';
+}
+
 export function useSidelineBridge() {
   const store = useMatchiStore();
 
-  // Dynamic user profile with XP and Gamification
+  // 1. Dynamic user profile with XP and Gamification
   const [userProfile, setUserProfile] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sideline_user_profile');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // ignore parsing error
+        }
+      }
+    }
     return {
       ...DEFAULT_USER,
       name: store.currentUser.full_name || DEFAULT_USER.name,
       username: store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : DEFAULT_USER.username,
+      streakWeeks: 4,
+      streakMultiplier: 1.5,
+      predictionsCount: 6,
+      predictionsWon: 5,
     };
   });
 
-  // Sync profile when store user updates
+  // Persist userProfile to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sideline_user_profile', JSON.stringify(userProfile));
+    }
+  }, [userProfile]);
+
+  // Sync profile name when store user updates
   useEffect(() => {
     if (store.currentUser.full_name || store.currentUser.nickname) {
-      setUserProfile((prev) => ({
+      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
         ...prev,
         name: store.currentUser.full_name || prev.name,
         username: store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : prev.username,
@@ -67,7 +213,7 @@ export function useSidelineBridge() {
     }
   }, [store.currentUser.full_name, store.currentUser.nickname]);
 
-  // Dynamic Community Pickup Games
+  // 2. Dynamic Community Pickup Games
   const [games, setGames] = useState<CommunityGame[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sideline_community_games');
@@ -75,21 +221,20 @@ export function useSidelineBridge() {
         try {
           return JSON.parse(saved);
         } catch {
-          // ignore parsing error
+          // ignore
         }
       }
     }
     return DEFAULT_GAMES;
   });
 
-  // Persist games to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('sideline_community_games', JSON.stringify(games));
     }
   }, [games]);
 
-  // Dynamic Bookings
+  // 3. Dynamic Bookings
   const [bookings, setBookings] = useState<SidelineBookingItem[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sideline_my_bookings');
@@ -97,21 +242,103 @@ export function useSidelineBridge() {
         try {
           return JSON.parse(saved);
         } catch {
-          // ignore parsing error
+          // ignore
         }
       }
     }
     return DEFAULT_BOOKINGS;
   });
 
-  // Persist bookings to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('sideline_my_bookings', JSON.stringify(bookings));
     }
   }, [bookings]);
 
-  // Dynamic Venues (merging default mock venues with any created in store)
+  // 4. Dynamic Badges
+  const [badges, setBadges] = useState<BadgeItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sideline_user_badges');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return DEFAULT_BADGES;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sideline_user_badges', JSON.stringify(badges));
+    }
+  }, [badges]);
+
+  // 5. Dynamic Match Polls
+  const [matchPolls, setMatchPolls] = useState<Record<string, Match['prediction']>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sideline_match_polls');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    const initialPolls: Record<string, Match['prediction']> = {};
+    MATCHES.forEach((m) => {
+      if (m.prediction) {
+        initialPolls[m.id] = m.prediction;
+      }
+    });
+    return initialPolls;
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sideline_match_polls', JSON.stringify(matchPolls));
+    }
+  }, [matchPolls]);
+
+  // 6. User Wagers
+  const [wagers, setWagers] = useState<UserPredictionWager[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sideline_user_wagers');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return [
+      {
+        id: 'wag_init_1',
+        matchId: 'm1',
+        matchTitle: 'Northgate FC vs Riverside Utd',
+        pollQuestion: 'Next team to score before 75’?',
+        optionId: 'opt1',
+        optionLabel: 'Northgate FC',
+        stakeXp: 50,
+        odds: 1.72,
+        potentialWinXp: 129, // 50 * 1.72 * 1.5
+        status: 'active',
+        placedAt: '52\'',
+      },
+    ];
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sideline_user_wagers', JSON.stringify(wagers));
+    }
+  }, [wagers]);
+
+  // 7. Dynamic Venues
   const [favoriteVenueIds, setFavoriteVenueIds] = useState<string[]>([]);
 
   const venues = useMemo<Venue[]>(() => {
@@ -143,44 +370,386 @@ export function useSidelineBridge() {
     ];
   }, [store.venues, favoriteVenueIds]);
 
-  // Toggle favorite venue
   const toggleFavoriteVenue = useCallback((venueId: string) => {
     setFavoriteVenueIds((prev) =>
       prev.includes(venueId) ? prev.filter((id) => id !== venueId) : [...prev, venueId]
     );
   }, []);
 
-  // Award Playmaker XP
-  const awardXp = useCallback((amount: number, reason: string): { leveledUp: boolean; newLevel: number; message: string } => {
-    let leveledUp = false;
-    let newLevel = userProfile.level;
+  // 8. Celebration Modals State
+  const [celebrationState, setCelebrationState] = useState<{
+    type: 'level_up' | 'wager_won' | 'badge_claimed' | null;
+    data: any;
+  }>({
+    type: null,
+    data: null,
+  });
 
-    setUserProfile((prev) => {
-      const nextXp = prev.xp + amount;
-      if (nextXp >= prev.xpNextLevel) {
-        leveledUp = true;
-        newLevel = prev.level + 1;
+  const closeCelebration = useCallback(() => {
+    setCelebrationState({ type: null, data: null });
+  }, []);
+
+  // 9. Award Playmaker XP with Streak Multiplier & Level Progression
+  const awardXp = useCallback(
+    (
+      amount: number,
+      reason: string,
+      options?: { applyStreakMultiplier?: boolean }
+    ) => {
+      const applyMultiplier = options?.applyStreakMultiplier ?? true;
+      const multiplier = applyMultiplier ? (userProfile.streakMultiplier || 1.5) : 1;
+      const bonusXp = Math.round(amount * (multiplier - 1));
+      const totalEarned = amount + bonusXp;
+
+      let leveledUp = false;
+      let newLevel = userProfile.level;
+      let newTitle = userProfile.levelTitle;
+      const oldLevel = userProfile.level;
+
+      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => {
+        let currentLevel = prev.level;
+        let currentXp = prev.xp + totalEarned;
+        let nextLevelCap = prev.xpNextLevel;
+
+        while (currentXp >= nextLevelCap) {
+          leveledUp = true;
+          currentLevel += 1;
+          currentXp -= nextLevelCap;
+          nextLevelCap = Math.round(nextLevelCap * 1.25);
+        }
+
+        newLevel = currentLevel;
+        newTitle = getLevelTitle(currentLevel);
+
         return {
           ...prev,
-          level: newLevel,
-          xp: nextXp - prev.xpNextLevel,
-          xpNextLevel: Math.round(prev.xpNextLevel * 1.3),
+          level: currentLevel,
+          levelTitle: newTitle,
+          xp: currentXp,
+          xpNextLevel: nextLevelCap,
+        };
+      });
+
+      // Update badge milestones dynamically
+      setBadges((prevBadges) =>
+        prevBadges.map((b) => {
+          if (b.id === 'century_club') {
+            const nextProg = Math.min(b.maxProgress, userProfile.xp + totalEarned);
+            const isUnlocked = nextProg >= b.maxProgress;
+            return {
+              ...b,
+              progress: nextProg,
+              unlocked: isUnlocked || b.unlocked,
+            };
+          }
+          if (b.id === 'playmaker_elite') {
+            const isUnlocked = newLevel >= b.maxProgress;
+            return {
+              ...b,
+              progress: Math.min(b.maxProgress, newLevel),
+              unlocked: isUnlocked || b.unlocked,
+            };
+          }
+          return b;
+        })
+      );
+
+      if (leveledUp) {
+        setCelebrationState({
+          type: 'level_up',
+          data: {
+            oldLevel,
+            newLevel,
+            newTitle,
+            rewardReason: reason,
+          },
+        });
+      }
+
+      const message = leveledUp
+        ? `🎉 LEVEL UP! You reached Level ${newLevel} (${newTitle})! (+${totalEarned} XP)`
+        : applyMultiplier && bonusXp > 0
+        ? `+${totalEarned} XP earned (${amount} base + ${bonusXp} 1.5x Streak Boost! 🔥)`
+        : `+${totalEarned} Playmaker XP earned: ${reason}`;
+
+      return {
+        leveledUp,
+        newLevel,
+        oldLevel,
+        newTitle,
+        baseAmount: amount,
+        multiplierBonus: bonusXp,
+        totalEarned,
+        message,
+      };
+    },
+    [userProfile.streakMultiplier, userProfile.level, userProfile.levelTitle, userProfile.xp]
+  );
+
+  // 10. Place Prediction Vote / Wager
+  const placePredictionWager = useCallback(
+    (params: {
+      matchId: string;
+      matchTitle: string;
+      pollQuestion: string;
+      optionId: string;
+      optionLabel: string;
+      stakeXp: number; // 0 = free fan vote
+      odds: number;
+    }) => {
+      const wagerId = `wag_${Date.now()}`;
+      const potentialWinXp =
+        params.stakeXp === 0
+          ? 0
+          : Math.round(params.stakeXp * params.odds * (userProfile.streakMultiplier || 1.5));
+
+      // Check balance if staking XP
+      if (params.stakeXp > 0) {
+        if (userProfile.xp < params.stakeXp) {
+          return {
+            success: false,
+            message: `Insufficient XP balance (${userProfile.xp} XP available, needed ${params.stakeXp} XP)`,
+          };
+        }
+        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+          ...prev,
+          xp: Math.max(0, prev.xp - params.stakeXp),
+          predictionsCount: (prev.predictionsCount || 0) + 1,
+        }));
+      } else {
+        // Free vote: user receives +50 XP × 1.5x = +75 XP immediately
+        awardXp(50, `voting on ${params.matchTitle} prediction`, { applyStreakMultiplier: true });
+        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+          ...prev,
+          predictionsCount: (prev.predictionsCount || 0) + 1,
+        }));
+      }
+
+      const newWager: UserPredictionWager = {
+        id: wagerId,
+        matchId: params.matchId,
+        matchTitle: params.matchTitle,
+        pollQuestion: params.pollQuestion,
+        optionId: params.optionId,
+        optionLabel: params.optionLabel,
+        stakeXp: params.stakeXp,
+        odds: params.odds,
+        potentialWinXp,
+        status: 'active',
+        placedAt: 'Just now',
+      };
+
+      setWagers((prev) => [newWager, ...prev]);
+
+      // Dynamically adjust poll percentage and votes count
+      setMatchPolls((prev) => {
+        const currentPoll = prev[params.matchId] || MATCHES.find((m) => m.id === params.matchId)?.prediction;
+        if (!currentPoll) return prev;
+
+        const updatedOptions = currentPoll.options.map((opt) => {
+          const isChosen = opt.id === params.optionId;
+          const prevVotes = opt.votesCount || 100;
+          const newVotes = prevVotes + (isChosen ? (params.stakeXp > 0 ? 15 : 5) : 2);
+          return {
+            ...opt,
+            votesCount: newVotes,
+          };
+        });
+
+        const totalVotes = updatedOptions.reduce((acc, o) => acc + (o.votesCount || 0), 0);
+        const optionsWithPercentage = updatedOptions.map((opt) => ({
+          ...opt,
+          percentage: Math.round(((opt.votesCount || 0) / totalVotes) * 100),
+        }));
+
+        return {
+          ...prev,
+          [params.matchId]: {
+            ...currentPoll,
+            options: optionsWithPercentage,
+          },
+        };
+      });
+
+      // Advance badges progress
+      setBadges((prev) =>
+        prev.map((b) => {
+          if (b.id === 'oracle_vision') {
+            const nextProg = Math.min(b.maxProgress, b.progress + 1);
+            return {
+              ...b,
+              progress: nextProg,
+              unlocked: nextProg >= b.maxProgress ? true : b.unlocked,
+            };
+          }
+          if (b.id === 'tactical_gambit' && params.stakeXp >= 100) {
+            return {
+              ...b,
+              progress: 1,
+              unlocked: true,
+            };
+          }
+          return b;
+        })
+      );
+
+      return {
+        success: true,
+        wager: newWager,
+        message:
+          params.stakeXp === 0
+            ? `Vote locked in! +75 Playmaker XP awarded to your balance! 🔮`
+            : `Wager placed! Staked ${params.stakeXp} XP @ ${params.odds}x. Potential Payout: +${potentialWinXp} XP 🎯`,
+      };
+    },
+    [userProfile.xp, userProfile.streakMultiplier, awardXp]
+  );
+
+  // 11. Resolve Match Prediction Poll & Settle Wagers
+  const resolveMatchPoll = useCallback(
+    (matchId: string, winningOptionId: string) => {
+      const wonWagers: UserPredictionWager[] = [];
+      let totalPayout = 0;
+
+      // Update poll status to settled
+      setMatchPolls((prev) => {
+        const currentPoll = prev[matchId] || MATCHES.find((m) => m.id === matchId)?.prediction;
+        if (!currentPoll) return prev;
+        return {
+          ...prev,
+          [matchId]: {
+            ...currentPoll,
+            status: 'settled',
+            settledOptionId: winningOptionId,
+          },
+        };
+      });
+
+      // Settle active wagers
+      setWagers((prev) =>
+        prev.map((w) => {
+          if (w.matchId === matchId && w.status === 'active') {
+            const isWinner = w.optionId === winningOptionId;
+            if (isWinner) {
+              const payout = w.stakeXp > 0 ? w.potentialWinXp : 120;
+              totalPayout += payout;
+              const wonWager: UserPredictionWager = {
+                ...w,
+                status: 'won',
+                payoutXp: payout,
+                resolvedAt: 'Just now',
+              };
+              wonWagers.push(wonWager);
+              return wonWager;
+            } else {
+              return {
+                ...w,
+                status: 'lost',
+                resolvedAt: 'Just now',
+              };
+            }
+          }
+          return w;
+        })
+      );
+
+      if (wonWagers.length > 0) {
+        awardXp(totalPayout, `winning live prediction wager on ${wonWagers[0].optionLabel}`, {
+          applyStreakMultiplier: false,
+        });
+        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+          ...prev,
+          predictionsWon: (prev.predictionsWon || 0) + 1,
+        }));
+        setCelebrationState({
+          type: 'wager_won',
+          data: {
+            matchTitle: wonWagers[0].matchTitle,
+            optionLabel: wonWagers[0].optionLabel,
+            payoutXp: totalPayout,
+            stakeXp: wonWagers[0].stakeXp,
+          },
+        });
+        return {
+          won: true,
+          payoutXp: totalPayout,
+          message: `🎯 PREDICTION WON! Payout of +${totalPayout} XP awarded to your balance!`,
+        };
+      } else {
+        // Consolation participation points
+        awardXp(20, `effort points for prediction participation`, { applyStreakMultiplier: false });
+        return {
+          won: false,
+          payoutXp: 0,
+          message: `Prediction resolved. Tough break on this call, but +20 XP effort points added!`,
         };
       }
-      return {
-        ...prev,
-        xp: nextXp,
-      };
-    });
+    },
+    [awardXp]
+  );
 
-    const message = leveledUp
-      ? `🎉 LEVEL UP! You reached Level ${newLevel}! (+${amount} XP for ${reason})`
-      : `+${amount} Playmaker XP earned: ${reason}`;
+  // 12. Claim Badge Reward
+  const claimBadge = useCallback(
+    (badgeId: string) => {
+      let claimedItem: BadgeItem | null = null;
 
-    return { leveledUp, newLevel, message };
-  }, [userProfile.level]);
+      setBadges((prev) =>
+        prev.map((b) => {
+          if (b.id === badgeId && b.unlocked && !b.claimed) {
+            claimedItem = { ...b, claimed: true };
+            return claimedItem;
+          }
+          return b;
+        })
+      );
 
-  // Create Community Match
+      if (claimedItem) {
+        const item = claimedItem as BadgeItem;
+        const xpRes = awardXp(item.rewardXp, `unlocking badge: ${item.title}`, {
+          applyStreakMultiplier: true,
+        });
+        setCelebrationState({
+          type: 'badge_claimed',
+          data: {
+            badge: item,
+            earnedXp: xpRes.totalEarned,
+            multiplierBonus: xpRes.multiplierBonus,
+          },
+        });
+        return {
+          success: true,
+          earnedXp: xpRes.totalEarned,
+          message: `Badge claimed! +${xpRes.totalEarned} XP awarded! 🏆`,
+        };
+      }
+
+      return { success: false, message: 'Badge already claimed or not unlocked yet' };
+    },
+    [awardXp]
+  );
+
+  // 13. Dynamic Leaderboard Players (Podium re-ranks dynamically)
+  const leaderboardPlayers = useMemo(() => {
+    const me = {
+      rank: 4,
+      name: `${userProfile.name} (You)`,
+      username: userProfile.username,
+      avatar: (userProfile.avatarId || 'alex') as AvatarId,
+      xp: userProfile.xp + (userProfile.level - 18) * 2000,
+      level: userProfile.level,
+      isMe: true,
+      color: '#C8FF2E',
+    };
+
+    const combined = [...SQUAD_FRIENDS_BASE, me].sort((a, b) => b.xp - a.xp);
+
+    return combined.map((player, idx) => ({
+      ...player,
+      rank: idx + 1,
+    }));
+  }, [userProfile.name, userProfile.username, userProfile.avatarId, userProfile.xp, userProfile.level]);
+
+  // 14. Create Community Game
   const createCommunityGame = useCallback(
     async (gameData: {
       sport: 'Football' | 'Basketball' | 'Tennis';
@@ -215,14 +784,19 @@ export function useSidelineBridge() {
 
       setGames((prev) => [newGame, ...prev]);
 
-      // Award host XP (+100 XP)
-      awardXp(100, 'hosting a new pickup match');
+      // Award host XP (+100 XP base × 1.5x = +150 XP)
+      awardXp(100, 'hosting a new pickup match', { applyStreakMultiplier: true });
 
-      // Bridge to global store open play session if possible
+      // Unlock Squad Captain badge
+      setBadges((prev) =>
+        prev.map((b) => (b.id === 'squad_captain' ? { ...b, progress: 1, unlocked: true } : b))
+      );
+
+      // Store sync
       try {
         const matchingSport: SportType =
           gameData.sport === 'Football'
-            ? 'pickleball' // mapped fallback for database enum
+            ? 'pickleball'
             : gameData.sport === 'Basketball'
             ? 'basketball'
             : 'tennis';
@@ -250,7 +824,7 @@ export function useSidelineBridge() {
     [userProfile.name, awardXp, store]
   );
 
-  // Join Community Match
+  // 15. Join Community Game
   const joinCommunityGame = useCallback(
     (gameId: string) => {
       let joinedGame: CommunityGame | null = null;
@@ -271,8 +845,7 @@ export function useSidelineBridge() {
         })
       );
 
-      // Award participant XP (+30 XP)
-      const xpResult = awardXp(30, 'joining a pickup game');
+      const xpResult = awardXp(30, 'joining a pickup game', { applyStreakMultiplier: true });
 
       return {
         game: joinedGame,
@@ -282,7 +855,7 @@ export function useSidelineBridge() {
     [userProfile.name, awardXp]
   );
 
-  // Reserve a Court / Venue Booking
+  // 16. Reserve Court / Venue Booking
   const createReservation = useCallback(
     (details: {
       venue: Venue;
@@ -305,10 +878,9 @@ export function useSidelineBridge() {
 
       setBookings((prev) => [newBooking, ...prev]);
 
-      // Award XP (+60 XP for court booking)
-      awardXp(60, 'reserving a verified court');
+      // Award XP (+60 XP base × 1.5x = +90 XP)
+      awardXp(60, 'reserving a verified court', { applyStreakMultiplier: true });
 
-      // Sync with global store createBooking
       try {
         store.createBooking({
           id: bookingId,
@@ -339,21 +911,20 @@ export function useSidelineBridge() {
     [awardXp, store]
   );
 
-  // Cancel Booking
   const cancelReservation = useCallback((bookingId: string) => {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
     );
   }, []);
 
-  // Complete Onboarding / Profile setup
+  // 17. Complete Onboarding
   const completeOnboarding = useCallback(
     async (prefs: {
       fullName: string;
       preferredSports: string[];
       skillLevel: string;
     }) => {
-      setUserProfile((prev) => ({
+      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
         ...prev,
         name: prefs.fullName || prev.name,
       }));
@@ -373,7 +944,7 @@ export function useSidelineBridge() {
         city: 'Metro Area',
       });
 
-      awardXp(150, 'completing profile onboarding');
+      awardXp(150, 'completing profile onboarding', { applyStreakMultiplier: true });
     },
     [store, awardXp]
   );
@@ -384,6 +955,12 @@ export function useSidelineBridge() {
     games,
     bookings,
     venues,
+    matchPolls,
+    wagers,
+    badges,
+    leaderboardPlayers,
+    celebrationState,
+    closeCelebration,
     toggleFavoriteVenue,
     createCommunityGame,
     joinCommunityGame,
@@ -391,5 +968,8 @@ export function useSidelineBridge() {
     cancelReservation,
     completeOnboarding,
     awardXp,
+    placePredictionWager,
+    resolveMatchPoll,
+    claimBadge,
   };
 }

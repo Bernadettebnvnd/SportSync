@@ -1,14 +1,15 @@
 /**
- * SIDELINE Global Application Configuration
- * To rename the application, update the `appName` property here.
+ * SportSync Global Application Configuration
+ * Official Name: SportSync
+ * Official Tagline: Find Players. Play Together.
  */
 export const APP_CONFIG = {
-  appName: 'SIDELINE',
-  tagline: 'Gather your friends. Play more.',
-  version: '2.4.0',
-  city: 'London / Metro',
-  currency: '£',
-  heroMeta: 'Stadium floodlights at night meets Sunday league with friends.',
+  appName: 'SportSync',
+  tagline: 'Find Players. Play Together.',
+  version: '3.0.0',
+  city: 'Metro Area',
+  currency: '₱',
+  heroMeta: 'Find Players. Complete Rosters. Play Together.',
 } as const;
 
 export type AppConfig = typeof APP_CONFIG;
