@@ -17,24 +17,6 @@ npm run build:vite
 - **`/showcase`**: Dribbble & Behance master presentation canvas on a soft dark-to-olive gradient background showing live, interactive phone frames organized by flow with faded ghost screen reflections.
 - **`/styleguide`**: Storybook-style interactive gallery documenting every design token, typographic scale, component primitive, and vector asset.
 
----
-
-## 🏷️ How to Rename the Application
-
-The entire app is decoupled through a single central configuration file:
-
-**File**: [`src/config/appConfig.ts`](file:///c:/Users/kriss/matchi/src/config/appConfig.ts)
-
-```typescript
-export const APP_CONFIG = {
-  appName: 'SIDELINE', // Change this single value to instantly rename the app everywhere
-  tagline: 'Gather your friends. Play more.',
-  version: '2.4.0',
-  city: 'London / Metro',
-  currency: '£',
-  heroMeta: 'Stadium floodlights at night meets Sunday league with friends.',
-} as const;
-```
 
 ---
 
