@@ -1,9 +1,3 @@
-# SIDELINE — Mobile Product Prototype
-
-> **"Gather your friends. Play more."**  
-> A unified, high-fidelity mobile sports companion prototype uniting **(1) Live match following**, **(2) Pickup game organizing**, and **(3) Court and pitch discovery & booking**.
-
----
 
 ## ⚡ Quick Start & Running Locally
 
@@ -17,7 +11,6 @@ npm run dev:vite
 npm run build:vite
 ```
 
-Open [http://localhost:5173](http://localhost:5173) to explore the clickable mobile application prototype.
 
 ### Primary Showcase Routes
 - **`/` or `/home`**: Single 390×844 hardware phone chassis mode with interactive screen switcher (instant jump to any of the 28 screens) and bottom navigation.
