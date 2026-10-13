@@ -136,7 +136,7 @@ export const SystemStatesScreen: React.FC<SystemStatesScreenProps> = ({ onBack }
                   Enable Nearby Court Discovery
                 </h4>
                 <p className="text-xs text-[#A5B0A6] mt-0.5 leading-relaxed">
-                  SIDELINE uses your GPS location to calculate pitch distance and display games happening within 5 miles.
+                  SportSync uses your GPS location to calculate pitch distance and display games happening within 5 miles.
                 </p>
               </div>
               <Button

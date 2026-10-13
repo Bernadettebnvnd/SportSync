@@ -6,6 +6,7 @@ import { MatchCard } from '../../design-system/components/MatchCard';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { COMMUNITY_GAMES, FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { CommunityGame } from '../../mock/types';
+import { SportIcon } from '../../illustrations/SportIcons';
 
 interface SocialHomeScreenProps {
   games?: CommunityGame[];
@@ -43,7 +44,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
                 Community Hub
               </span>
               <h2 className="font-display font-black text-base text-[#F4F7F0]">
-                Hey, {user.name.split(' ')[0]} 👋
+                Hey, {user.name.split(' ')[0]}
               </h2>
             </div>
           </div>
@@ -93,11 +94,11 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           </div>
         </div>
 
-        {/* 4. Friend Activity Feed with Mini Pitch Thumbnails (Ref B) */}
+        {/* 4. Participation Activity Feed (Sync Feed) */}
         <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
-              Squad Feed
+              Sync Feed
             </h3>
             <span className="text-[11px] text-[#C8FF2E] font-bold">Active now</span>
           </div>
@@ -113,9 +114,9 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
                   </div>
                   <p className="text-[11px] text-[#A5B0A6] truncate">{f.activity}</p>
                 </div>
-                {/* Mini Pitch Thumbnail indicator */}
+                {/* Vector Sport Icon thumbnail */}
                 <div className="w-8 h-8 rounded-lg bg-[#0F2A22] border border-[#C8FF2E]/30 flex items-center justify-center shrink-0">
-                  <span className="text-[10px] font-bold text-[#C8FF2E]">⚽</span>
+                  <SportIcon sport="Football" size={14} color="#C8FF2E" />
                 </div>
               </div>
             ))}

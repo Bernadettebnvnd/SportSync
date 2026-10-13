@@ -777,7 +777,7 @@ export function useSidelineBridge() {
         spotsTotal: gameData.playersCount,
         spotsJoined: 1,
         pricePerPlayer: gameData.pricePerPlayer,
-        notes: gameData.notes || 'Organized via SIDELINE Community Engine',
+        notes: gameData.notes || 'Organized via SportSync Community Engine',
         isPublic: true,
         members: [{ name: userProfile.name, avatar: 'alex' }],
       };
@@ -805,7 +805,7 @@ export function useSidelineBridge() {
           await store.createOpenPlaySession({
             venueId: store.venues[0].id,
             title: gameData.title,
-            description: gameData.notes || 'SIDELINE pickup game',
+            description: gameData.notes || 'SportSync pickup game',
             sport: matchingSport,
             courtIds: store.venues[0].courts?.map((c) => c.id) || [],
             startTime: '19:30',
@@ -885,7 +885,7 @@ export function useSidelineBridge() {
         store.createBooking({
           id: bookingId,
           booking_reference: bookingId,
-          user_id: store.currentUser.id || 'sideline_player',
+          user_id: store.currentUser.id || 'sportsync_player',
           venue_id: details.venue.id,
           court_id: `${details.venue.id}_c1`,
           sport: 'tennis',

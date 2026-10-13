@@ -41,7 +41,7 @@ const INVENTORY_OPTIONS: { id: FacilityInventorySource; title: string; desc: str
   {
     id: 'manual',
     title: 'Direct Marketplace Slots (Manual)',
-    desc: 'List dedicated court slots directly on Matchi and receive verified online bookings.',
+    desc: 'List dedicated court slots directly on SportSync and receive verified online bookings.',
   },
   {
     id: 'external_link',
@@ -51,7 +51,7 @@ const INVENTORY_OPTIONS: { id: FacilityInventorySource; title: string; desc: str
   {
     id: 'partner',
     title: 'Partner Synchronized Inventory',
-    desc: 'Work with Matchi operations to schedule weekly empty-court monetization batches.',
+    desc: 'Work with SportSync operations to schedule weekly empty-court monetization batches.',
   },
 ];
 
@@ -183,7 +183,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               </span>
             </div>
             <h3 className="text-base sm:text-lg font-black text-[#1A241E] mt-0.5">
-              List Your Facility on Matchi
+              List Your Facility on SportSync
             </h3>
           </div>
           <button
@@ -494,7 +494,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               <div>
                 <h4 className="text-sm font-black text-[#1A241E]">Marketplace Inventory Model</h4>
                 <p className="text-xs text-[#65756B]">
-                  Choose how Matchi connects to your courts. We do not force you to replace your existing POS.
+                  Choose how SportSync connects to your courts. We do not force you to replace your existing POS.
                 </p>
               </div>
 

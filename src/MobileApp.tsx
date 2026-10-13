@@ -173,7 +173,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'auth':
         return (
           <AuthScreen
-            onSuccess={() => navigateTo('personalization')}
+            onSuccess={(role) => {
+              if (role === 'facility_owner') {
+                if (typeof window !== 'undefined') {
+                  window.location.href = '/organizer';
+                }
+              } else {
+                navigateTo('personalization');
+              }
+            }}
             onBack={goBack}
           />
         );
@@ -183,11 +191,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onComplete={async (prefs) => {
               if (prefs) {
                 await bridge.completeOnboarding({
-                  fullName: bridge.userProfile.name,
+                  fullName: prefs.fullName || bridge.userProfile.name,
                   preferredSports: prefs.selectedSports,
                   skillLevel: prefs.skillLevel,
                 });
-                setToastMessage('Preferences saved! +150 Playmaker XP');
+                setToastMessage('Preferences saved! Welcome to SportSync.');
               }
               navigateTo('home');
             }}
@@ -222,11 +230,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'scores':
         return (
           <LiveScoresHubScreen
-            onSelectMatch={(m) => {
-              setSelectedMatch(m);
-              navigateTo('match-center');
-            }}
-            onOpenLeagueStandings={() => navigateTo('standings')}
+            onSelectMatch={() => navigateTo('match-center')}
+            onNavigateToPlay={() => navigateTo('social-home')}
           />
         );
       case 'match-center':
@@ -237,7 +242,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             userProfile={bridge.userProfile}
             userWagers={bridge.wagers}
             onBack={goBack}
-            onWatchLive={() => navigateTo('live-video')}
             onPlaceWager={bridge.placePredictionWager}
             onResolvePoll={bridge.resolveMatchPoll}
           />
@@ -531,11 +535,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         isOpen={isQuickActionOpen}
         onClose={() => setIsQuickActionOpen(false)}
         onCreateMatch={() => navigateTo('create-match')}
-        onBookCourt={() => navigateTo('venues-list')}
+        onFindPlayers={() => navigateTo('find-games')}
         onInviteFriends={() => {
-          setToastMessage('Invite link copied to clipboard!');
+          setToastMessage('SportSync match link copied to clipboard!');
           setTimeout(() => setToastMessage(null), 3000);
         }}
+        onViewMyGames={() => navigateTo('my-bookings')}
       />
     </div>
   );

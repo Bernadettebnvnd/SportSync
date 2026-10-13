@@ -709,4 +709,5 @@ export function useMatchiStore() {
   };
 }
 
+export const useSportSyncStore = useMatchiStore;
 export const useMonkeyStore = useMatchiStore;

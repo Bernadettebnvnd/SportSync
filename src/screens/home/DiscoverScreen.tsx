@@ -66,19 +66,29 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </button>
       </header>
 
-      {/* 2. Editorial Heading: Sora bold + Instrument Serif Italic */}
+      {/* 2. Official SportSync Tagline: Find Players. Play Together. */}
       <div className="px-5 py-3">
         <h1 className="text-3xl tracking-tight leading-tight text-[#F4F7F0]">
-          <span className="font-display font-bold">Choose your </span>
-          <span className="font-editorial text-[#C8FF2E] text-4xl font-normal">
-            Favorite game
+          <span className="font-display font-bold">Find Players. </span>
+          <span className="font-editorial text-[#C8FF2E] text-4xl font-normal block sm:inline">
+            Play Together.
           </span>
         </h1>
       </div>
 
       {/* 3. Horizontal Sport Chips */}
       <div className="px-5 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {['All', 'Football', 'Basketball', 'Tennis', 'Padel'].map((sport) => (
+        {[
+          'All',
+          'Football',
+          'Basketball',
+          'Tennis',
+          'Pickleball',
+          'Badminton',
+          'Volleyball',
+          'Billiards',
+          'Darts',
+        ].map((sport) => (
           <Chip
             key={sport}
             variant="sport"

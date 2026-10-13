@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal, Zap } from 'lucide-react';
 import { SearchBar } from '../../design-system/components/SearchBar';
 import { MatchCard } from '../../design-system/components/MatchCard';
 import { COMMUNITY_GAMES } from '../../mock/mockData';
@@ -89,13 +89,14 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
           </button>
           <button
             onClick={() => setActiveFilter('urgent')}
-            className={`h-8 px-3 rounded-full text-xs font-bold shrink-0 border ${
+            className={`h-8 px-3 rounded-full text-xs font-bold shrink-0 border flex items-center gap-1.5 ${
               activeFilter === 'urgent'
                 ? 'bg-[#FF8FC7] text-[#0B0F0C] border-[#FF8FC7]'
                 : 'bg-[#1C241E] text-[#FF8FC7] border-[#FF8FC7]/30'
             }`}
           >
-            ⚡ Spots Filling Fast (Pink Alert)
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>Spots Filling Fast</span>
           </button>
           <button
             onClick={() => setActiveFilter('today')}

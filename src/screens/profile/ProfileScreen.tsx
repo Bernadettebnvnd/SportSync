@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Award, Trophy, ChevronRight, Zap, Star } from 'lucide-react';
+import { Settings, Award, Trophy, ChevronRight, Zap, Star, Flame } from 'lucide-react';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
 import { CURRENT_USER } from '../../mock/mockData';
@@ -53,8 +53,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   level={currentUser.level}
                   title={currentUser.levelTitle}
                 />
-                <span className="px-2 py-0.5 rounded-full bg-[#1C241E] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold">
-                  🔥 {currentUser.streakWeeks || 4}W Streak (1.5x)
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1C241E] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold">
+                  <Flame className="w-3 h-3 text-[#C8FF2E]" />
+                  <span>{currentUser.streakWeeks || 4}W Streak (1.5x)</span>
                 </span>
               </div>
             </div>

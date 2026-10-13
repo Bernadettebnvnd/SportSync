@@ -717,7 +717,7 @@ export default function OrganizerDashboard() {
               </span>
             </div>
             <p className="text-xs text-[#65756B] leading-relaxed">
-              Matchi scans your court availability calendars to identify idle court hours. 
+              SportSync scans your court availability calendars to identify idle court hours. 
               With 1 click, you can transform empty time slots into public Open Play sessions or promote them with off-peak incentives.
             </p>
           </div>

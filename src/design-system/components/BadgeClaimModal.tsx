@@ -40,7 +40,7 @@ export const BadgeClaimModal: React.FC<BadgeClaimModalProps> = ({
 
         {/* Badge Icon */}
         <div className="w-20 h-20 rounded-3xl bg-[#1C241E] border-2 border-[#C8FF2E]/50 mx-auto mb-4 flex items-center justify-center text-4xl shadow-inner">
-          {badge.icon}
+          <Award className="w-10 h-10 text-[#C8FF2E]" />
         </div>
 
         {/* Title */}

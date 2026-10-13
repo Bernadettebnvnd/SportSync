@@ -27,7 +27,7 @@ interface MatchCenterScreenProps {
   userProfile?: any;
   userWagers?: UserPredictionWager[];
   onBack: () => void;
-  onWatchLive: () => void;
+  onWatchLive?: () => void;
   onPlaceWager?: (params: {
     matchId: string;
     matchTitle: string;
@@ -82,13 +82,10 @@ export const MatchCenterScreen: React.FC<MatchCenterScreenProps> = ({
           {match.leagueName}
         </span>
 
-        <button
-          onClick={onWatchLive}
-          className="h-9 px-3 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-bold text-xs flex items-center gap-1.5 shadow-[0_0_16px_rgba(200,255,46,0.3)] press-scale"
-        >
-          <Play className="w-3.5 h-3.5 fill-[#0B0F0C]" />
-          <span>Stream</span>
-        </button>
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#141A15] border border-white/10 text-xs text-[#A5B0A6]">
+          <span className="w-2 h-2 rounded-full bg-[#3DDC84]" />
+          <span>Verified Match</span>
+        </div>
       </div>
 
       {/* 2. Hero Scoreboard Container */}

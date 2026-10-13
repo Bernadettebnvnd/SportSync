@@ -326,7 +326,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
           <div className="p-4 rounded-2xl bg-[#141A15] border border-white/10 max-w-xs mx-auto text-left space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-[#A5B0A6]">Invite Link:</span>
-              <span className="text-[#C8FF2E] font-mono">sideline.app/m/892</span>
+              <span className="text-[#C8FF2E] font-mono">sportsync.app/m/892</span>
             </div>
             <Button
               variant="social"

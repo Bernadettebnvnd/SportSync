@@ -143,7 +143,7 @@ function ExploreContent() {
           <div className="flex items-center justify-between text-xs text-[#65756B] px-1">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2D724E]" />
-              <strong>{filteredVenues.length}</strong> available on Matchi
+              <strong>{filteredVenues.length}</strong> available on SportSync
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#334155]" />
@@ -154,7 +154,7 @@ function ExploreContent() {
           {filteredVenues.length > 0 && (
             <div className="space-y-3 pt-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-[#65756B]">
-                Matchi Venues
+                SportSync Venues
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                 {filteredVenues.map((venue) => (
@@ -194,7 +194,7 @@ function ExploreContent() {
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#2D724E]" />
                       <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
-                        Available on Matchi ({filteredVenues.length})
+                        Available on SportSync ({filteredVenues.length})
                       </h2>
                     </div>
                     <span className="text-xs text-[#65756B] font-bold">

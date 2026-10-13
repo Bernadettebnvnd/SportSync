@@ -286,7 +286,7 @@ export default function OnboardingPage() {
           <div className="space-y-6">
             <div className="space-y-2">
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                How will you use Matchi?
+                How will you use SportSync?
               </h1>
               <p className="text-xs sm:text-sm text-[#65756B]">
                 Choose how you want to experience the platform.

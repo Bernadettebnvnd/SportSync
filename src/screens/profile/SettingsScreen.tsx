@@ -99,11 +99,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </h4>
           <div className="flex items-center justify-between py-1">
             <span className="text-[#A5B0A6]">Primary Currency</span>
-            <span className="font-bold text-[#F4F7F0]">British Pound ({APP_CONFIG.currency})</span>
+            <span className="font-bold text-[#F4F7F0]">Philippine Peso ({APP_CONFIG.currency})</span>
           </div>
           <div className="flex items-center justify-between py-1 border-t border-white/5">
             <span className="text-[#A5B0A6]">Distance Measurement</span>
-            <span className="font-bold text-[#F4F7F0]">Miles (mi)</span>
+            <span className="font-bold text-[#F4F7F0]">Kilometers (km)</span>
           </div>
           <div className="flex items-center justify-between py-1 border-t border-white/5">
             <span className="text-[#A5B0A6]">Current Location City</span>
@@ -118,7 +118,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </h4>
           <div className="flex items-center justify-between py-1">
             <span className="text-[#A5B0A6]">Profile Visibility</span>
-            <span className="font-bold text-[#3DDC84]">Friends & Squad</span>
+            <span className="font-bold text-[#3DDC84]">Players & Facilities</span>
           </div>
           <div className="flex items-center justify-between py-1 border-t border-white/5">
             <span className="text-[#A5B0A6]">App Name & Build</span>
@@ -129,7 +129,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         {/* Log out */}
         <div className="pt-2">
           <button
-            onClick={() => alert('Logged out to Splash')}
+            type="button"
+            onClick={async () => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('sportsync_user_role');
+                localStorage.removeItem('sportsync_user_email');
+                localStorage.removeItem('matchi_onboarding_completed');
+              }
+              onBack();
+            }}
             className="w-full h-12 rounded-2xl bg-[#1C241E] text-[#FF5C5C] hover:bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
           >
             <LogOut className="w-4 h-4" />

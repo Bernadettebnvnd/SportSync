@@ -202,7 +202,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                   </span>
                 </div>
                 <span className={`font-display font-bold text-xs truncate max-w-[85px] ${dynamicPlayers[2].isMe ? 'text-[#C8FF2E]' : 'text-[#F4F7F0]'}`}>
-                  {dynamicPlayers[2].name.split(' ')[0]} {dynamicPlayers[2].isMe && '⭐'}
+                  {dynamicPlayers[2].name.split(' ')[0]} {dynamicPlayers[2].isMe && '(You)'}
                 </span>
                 <span className="text-[10px] text-[#A5B0A6] font-mono">
                   {dynamicPlayers[2].xp} XP
@@ -270,8 +270,9 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                 <h3 className="font-display font-black text-2xl text-[#F4F7F0]">
                   {userProfile.streakWeeks || 4} Weeks Active
                 </h3>
-                <span className="inline-block mt-0.5 text-xs text-[#C8FF2E] font-semibold">
-                  🔥 1.5x Playmaker XP Multiplier Active
+                <span className="inline-flex items-center gap-1 mt-0.5 text-xs text-[#C8FF2E] font-semibold">
+                  <Flame className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  <span>1.5x Playmaker XP Multiplier Active</span>
                 </span>
               </div>
             </div>
@@ -319,7 +320,17 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                   }`}
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <span className="text-3xl">{b.icon}</span>
+                    <div className="w-10 h-10 rounded-2xl bg-[#1C241E] border border-white/10 flex items-center justify-center">
+                      {b.id === 'oracle_vision' && <Target className="w-5 h-5 text-[#C8FF2E]" />}
+                      {b.id === 'tactical_gambit' && <Sparkles className="w-5 h-5 text-[#FF8FC7]" />}
+                      {b.id === 'squad_captain' && <Crown className="w-5 h-5 text-[#C8FF2E]" />}
+                      {b.id === 'streak_master' && <Flame className="w-5 h-5 text-[#FF8FC7]" />}
+                      {b.id === 'floodlight_warrior' && <Zap className="w-5 h-5 text-[#C8FF2E]" />}
+                      {b.id === 'clay_specialist' && <Trophy className="w-5 h-5 text-[#C8FF2E]" />}
+                      {!['oracle_vision', 'tactical_gambit', 'squad_captain', 'streak_master', 'floodlight_warrior', 'clay_specialist'].includes(b.id) && (
+                        <Award className="w-5 h-5 text-[#C8FF2E]" />
+                      )}
+                    </div>
                     <span className="px-2 py-0.5 rounded-full bg-[#1C241E] border border-white/10 text-[9px] font-bold text-[#C8FF2E]">
                       +{b.rewardXp} XP
                     </span>
