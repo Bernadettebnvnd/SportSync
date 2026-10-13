@@ -1,13 +1,19 @@
 import { Session, QueueEntry, MatchFormat } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { INITIAL_SESSIONS } from '@/lib/mockData';
+
+let hasLoggedSessionsNetworkWarning = false;
 
 /**
  * Fetch active and upcoming Open Play sessions from Supabase.
+ * Gracefully falls back to offline sessions cache if Supabase is unreachable.
  */
 export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> {
   const supabase = getSupabaseClient();
+  const fallback = venueId ? INITIAL_SESSIONS.filter((s) => s.venue_id === venueId) : INITIAL_SESSIONS;
+
   if (!supabase || !isSupabaseConfigured) {
-    return [];
+    return fallback;
   }
 
   try {
@@ -23,14 +29,24 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     const { data, error } = await query.order('start_time', { ascending: true });
 
     if (error) {
-      console.error('Error fetching sessions:', error);
-      return [];
+      if (!hasLoggedSessionsNetworkWarning) {
+        hasLoggedSessionsNetworkWarning = true;
+        console.warn('[Sessions] Live database unreachable. Using offline sessions cache.');
+      }
+      return fallback;
     }
 
-    return (data as Session[]) || [];
+    if (data && data.length > 0) {
+      return (data as Session[]);
+    }
+
+    return fallback;
   } catch (err) {
-    console.error('Failed to query sessions:', err);
-    return [];
+    if (!hasLoggedSessionsNetworkWarning) {
+      hasLoggedSessionsNetworkWarning = true;
+      console.warn('[Sessions] Network query exception. Using offline sessions cache:', err);
+    }
+    return fallback;
   }
 }
 

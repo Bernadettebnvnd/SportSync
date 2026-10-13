@@ -83,100 +83,105 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+let hasInitialized = false;
+let isInitializing = false;
+let authListenerRegistered = false;
+
+async function initializeStore() {
+  if (hasInitialized || isInitializing) return;
+  isInitializing = true;
+  globalState.isLoading = true;
+  notify();
+
+  try {
+    // 1. Fetch current authenticated user or check local storage
+    if (typeof window !== 'undefined') {
+      const storedCompleted = localStorage.getItem('matchi_onboarding_completed') === 'true';
+      globalState.currentUser.onboarding_completed = storedCompleted;
+      globalState.currentUser.has_completed_onboarding = storedCompleted;
+      const storedName = localStorage.getItem('matchi_user_name');
+      if (storedName) globalState.currentUser.full_name = storedName;
+      const storedNickname = localStorage.getItem('matchi_user_nickname');
+      if (storedNickname) globalState.currentUser.nickname = storedNickname;
+    }
+
+    const user = await getCurrentUser();
+    if (user) {
+      globalState.currentUser = user;
+    }
+
+    // 2. Fetch real venues & courts (gracefully backed by cache)
+    const venues = await getVenues();
+    globalState.venues = venues;
+    globalState.courts = venues.flatMap((v) => v.courts || []);
+
+    // 3. Fetch real sessions (gracefully backed by cache)
+    const sessions = await getOpenPlaySessions();
+    globalState.sessions = sessions;
+
+    // 4. If authenticated, fetch real bookings
+    if (user && user.auth_id) {
+      const bookings =
+        user.role === 'venue_owner' || user.role === 'organizer'
+          ? await getFacilityBookings()
+          : await getPlayerBookings();
+      globalState.bookings = bookings;
+    }
+  } catch (err) {
+    console.warn('[Store] Initial store load exception handled:', err);
+    globalState.error = 'Failed to load initial marketplace data.';
+  } finally {
+    isInitializing = false;
+    hasInitialized = true;
+    globalState.isLoading = false;
+    notify();
+  }
+}
+
+function setupGlobalAuthListener() {
+  if (authListenerRegistered || !isSupabaseConfigured || !supabase) return;
+  authListenerRegistered = true;
+
+  try {
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const user = await getCurrentUser();
+        if (user) {
+          globalState.currentUser = user;
+          const bookings = await getPlayerBookings();
+          globalState.bookings = bookings;
+          notify();
+        }
+      } else {
+        globalState.currentUser = GUEST_USER;
+        globalState.bookings = [];
+        notify();
+      }
+    });
+  } catch (err) {
+    console.warn('[Store] Supabase auth state listener skipped:', err);
+  }
+}
+
 export function useMatchiStore() {
   const [, setTick] = useState(0);
 
-  // Initial real-data fetching on mount
+  // Single mount effect: subscribe to store updates and trigger one-time init
   useEffect(() => {
     let isMounted = true;
-
-    async function initializeStore() {
-      globalState.isLoading = true;
-      notify();
-
-      try {
-        // 1. Fetch current authenticated user or check local storage
-        if (typeof window !== 'undefined') {
-          const storedCompleted = localStorage.getItem('matchi_onboarding_completed') === 'true';
-          globalState.currentUser.onboarding_completed = storedCompleted;
-          globalState.currentUser.has_completed_onboarding = storedCompleted;
-          const storedName = localStorage.getItem('matchi_user_name');
-          if (storedName) globalState.currentUser.full_name = storedName;
-          const storedNickname = localStorage.getItem('matchi_user_nickname');
-          if (storedNickname) globalState.currentUser.nickname = storedNickname;
-        }
-
-        const user = await getCurrentUser();
-        if (isMounted && user) {
-          globalState.currentUser = user;
-        }
-
-        // 2. Fetch real venues & courts
-        const venues = await getVenues();
-        if (isMounted) {
-          globalState.venues = venues;
-          globalState.courts = venues.flatMap((v) => v.courts || []);
-        }
-
-        // 3. Fetch real sessions
-        const sessions = await getOpenPlaySessions();
-        if (isMounted) {
-          globalState.sessions = sessions;
-        }
-
-        // 4. If authenticated, fetch real bookings
-        if (user && user.auth_id) {
-          const bookings =
-            user.role === 'venue_owner' || user.role === 'organizer'
-              ? await getFacilityBookings()
-              : await getPlayerBookings();
-          if (isMounted) {
-            globalState.bookings = bookings;
-          }
-        }
-      } catch (err) {
-        console.error('Error initializing store:', err);
-        if (isMounted) {
-          globalState.error = 'Failed to load initial marketplace data.';
-        }
-      } finally {
-        if (isMounted) {
-          globalState.isLoading = false;
-          notify();
-        }
-      }
-    }
-
-    initializeStore();
-
-    // Supabase Auth listener
-    if (isSupabaseConfigured && supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          const user = await getCurrentUser();
-          if (isMounted && user) {
-            globalState.currentUser = user;
-            const bookings = await getPlayerBookings();
-            globalState.bookings = bookings;
-            notify();
-          }
-        } else {
-          if (isMounted) {
-            globalState.currentUser = GUEST_USER;
-            globalState.bookings = [];
-            notify();
-          }
-        }
-      });
-
-      return () => {
-        isMounted = false;
-        authListener.subscription.unsubscribe();
-      };
-    }
-
-    const update = () => setTick((t) => t + 1);
+    const update = () => {
+      if (isMounted) setTick((t) => t + 1);
+    };
     listeners.add(update);
+
+    // Setup global auth listener once
+    setupGlobalAuthListener();
+
+    // Trigger one-time store initialization if not already done
+    if (!hasInitialized && !isInitializing) {
+      initializeStore();
+    }
+
     return () => {
       isMounted = false;
       listeners.delete(update);

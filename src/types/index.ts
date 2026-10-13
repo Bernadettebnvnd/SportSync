@@ -171,6 +171,8 @@ export interface Venue {
   inventory_source?: FacilityInventorySource;
   external_booking_url?: string;
   place_id?: string;
+  created_at?: string;
+  updated_at?: string;
   courts?: Court[];
 }
 

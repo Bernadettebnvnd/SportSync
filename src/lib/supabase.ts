@@ -11,35 +11,38 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  */
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-let _supabase: SupabaseClient | null = null;
+let _supabaseInstance: SupabaseClient | null = null;
 
 /**
- * Client-side Supabase client (singleton).
+ * Client-side Supabase client (strict singleton).
  * Returns null if Supabase is not configured — callers must handle this.
+ * Guarantees a single GoTrueClient instance in the same browser context.
  */
 export function getSupabaseClient(): SupabaseClient | null {
-  if (!isSupabaseConfigured) return null;
-  if (_supabase) return _supabase;
+  if (!isSupabaseConfigured || !supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
 
-  _supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  });
+  if (!_supabaseInstance) {
+    try {
+      _supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
+    } catch (err) {
+      console.warn('[Supabase] Failed to initialize client:', err);
+      return null;
+    }
+  }
 
-  return _supabase;
+  return _supabaseInstance;
 }
 
 /**
- * Legacy export for backwards compatibility during migration.
- * Components should migrate to getSupabaseClient() which returns null when unconfigured.
+ * Backwards-compatible singleton reference.
+ * Ensures NO second GoTrueClient is ever created.
  */
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl!, supabaseAnonKey!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-    })
-  : (null as unknown as SupabaseClient);
+export const supabase = (getSupabaseClient() || null) as unknown as SupabaseClient;
