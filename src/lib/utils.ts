@@ -34,14 +34,24 @@ export function getSportDisplayName(sport: string): string {
       return 'Pickleball';
     case 'basketball':
       return 'Basketball';
-    case 'padel':
-      return 'Padel';
+    case 'football':
+    case 'soccer':
+      return 'Football';
     case 'tennis':
       return 'Tennis';
     case 'volleyball':
       return 'Volleyball';
+    case 'billiards':
+    case 'pool':
+      return 'Billiards';
+    case 'darts':
+      return 'Darts';
+    case 'padel':
+      return 'Padel';
     case 'table_tennis':
       return 'Table Tennis';
+    case 'other':
+      return 'Other Sports';
     default:
       return sport;
   }

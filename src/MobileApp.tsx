@@ -100,6 +100,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     duration?: number;
   } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string }>({});
 
   // Navigate function with history stack
   const navigateTo = (screen: ScreenId) => {
@@ -206,6 +207,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'home':
         return (
           <DiscoverScreen
+            venues={bridge.venues}
             user={bridge.userProfile}
             onSelectMatch={(m) => {
               setSelectedMatch(m);
@@ -222,7 +224,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onOpenNotifications={() => navigateTo('notifications')}
             onNavigateToScores={() => navigateTo('scores')}
             onNavigateToPlay={() => navigateTo('social-home')}
-            onNavigateToVenues={() => navigateTo('venues-list')}
+            onNavigateToVenues={(filters) => {
+              setCourtSearchFilter(filters || {});
+              navigateTo('venues-list');
+            }}
           />
         );
 
@@ -337,6 +342,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <VenuesListScreen
             venues={bridge.venues}
+            onBack={goBack}
+            initialQuery={courtSearchFilter.query}
+            initialSport={courtSearchFilter.sport}
             onSelectVenue={(v) => {
               setSelectedVenue(v);
               navigateTo('venue-detail');

@@ -2,7 +2,18 @@ import { TeamCrestId } from '../illustrations/TeamCrests';
 import { AvatarId } from '../illustrations/Avatars';
 export type { AvatarId };
 
-export type SportType = 'Football' | 'Basketball' | 'Tennis' | 'Padel' | 'Running';
+export type SportType =
+  | 'Football'
+  | 'Basketball'
+  | 'Tennis'
+  | 'Pickleball'
+  | 'Badminton'
+  | 'Volleyball'
+  | 'Billiards'
+  | 'Darts'
+  | 'Other'
+  | 'Padel'
+  | 'Running';
 
 export interface Team {
   id: string;
@@ -115,7 +126,7 @@ export interface Venue {
   sport: SportType;
   city: string;
   address: string;
-  surface: 'Clay' | 'Grass' | 'Hardcourt' | '3G Turf' | 'Panoramic Glass';
+  surface: string;
   isIndoor: boolean;
   pricePerHour: number;
   rating: number;
@@ -126,6 +137,11 @@ export interface Venue {
   amenities: string[];
   courtsCount: number;
   availableSlots: string[];
+  courts?: any[];
+  phone?: string;
+  operatingHours?: string;
+  featuredSports?: string[];
+  isVerified?: boolean;
 }
 
 export interface CommunityGame {

@@ -14,13 +14,20 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
   const isFull = game.spotsJoined >= game.spotsTotal;
 
   // Ref B sport tile icon color
-  const sportTileStyles = {
+  const sportTileStyles: Record<string, string> = {
     Football: 'bg-[#0F2A22] text-[#C8FF2E] border-[#C8FF2E]/30',
     Basketball: 'bg-[#C8432B]/20 text-[#FF8570] border-[#C8432B]/40',
     Tennis: 'bg-[#1C241E] text-[#FF8FC7] border-[#FF8FC7]/30',
+    Pickleball: 'bg-[#0F2A22] text-[#C8FF2E] border-[#C8FF2E]/30',
+    Badminton: 'bg-[#1C241E] text-[#00E599] border-[#00E599]/30',
+    Volleyball: 'bg-[#2A1D0F] text-[#FFB800] border-[#FFB800]/30',
+    Billiards: 'bg-[#151D28] text-[#5AC8FA] border-[#5AC8FA]/30',
+    Darts: 'bg-[#28151D] text-[#FF2D55] border-[#FF2D55]/30',
     Padel: 'bg-[#141A15] text-[#3DDC84] border-[#3DDC84]/30',
     Running: 'bg-[#263028] text-[#C8FF2E] border-white/10',
-  }[game.sport] || 'bg-[#1C241E] text-[#C8FF2E]';
+    Other: 'bg-[#1C241E] text-[#A5B0A6] border-white/10',
+  };
+  const currentSportStyle = sportTileStyles[game.sport] || 'bg-[#1C241E] text-[#C8FF2E]';
 
   return (
     <div
@@ -29,7 +36,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
     >
       {/* Left: Colored Sport Icon Tile (Ref B) */}
       <div
-        className={`w-12 h-12 rounded-2xl border flex flex-col items-center justify-center shrink-0 font-display font-bold text-xs uppercase ${sportTileStyles}`}
+        className={`w-12 h-12 rounded-2xl border flex flex-col items-center justify-center shrink-0 font-display font-bold text-xs uppercase ${currentSportStyle}`}
       >
         <span>{game.sport.slice(0, 3)}</span>
         <span className="text-[9px] opacity-80">{game.format}</span>

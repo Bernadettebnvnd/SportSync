@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
-import { Bell, ChevronRight, Sparkles, MapPin, ArrowRight } from 'lucide-react';
+import {
+  Bell,
+  ChevronRight,
+  Sparkles,
+  MapPin,
+  ArrowRight,
+  Search,
+  ShieldCheck,
+  Compass,
+} from 'lucide-react';
 import { UserAvatar } from '../../illustrations/Avatars';
-import { Chip } from '../../design-system/components/Chip';
 import { HeroEventCard } from '../../design-system/components/HeroEventCard';
 import { LiveMatchRow } from '../../design-system/components/LiveMatchRow';
 import { MatchCard } from '../../design-system/components/MatchCard';
@@ -9,19 +17,34 @@ import { VenueCard } from '../../design-system/components/VenueCard';
 import { MATCHES, COMMUNITY_GAMES, VENUES, FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { Match, CommunityGame, Venue } from '../../mock/types';
 import { APP_CONFIG } from '../../config/appConfig';
+import { SportIcon } from '../../illustrations/SportIcons';
 
 interface DiscoverScreenProps {
+  venues?: Venue[];
   onSelectMatch: (match: Match) => void;
   onSelectGame: (game: CommunityGame) => void;
   onSelectVenue: (venue: Venue) => void;
   onOpenNotifications: () => void;
   onNavigateToScores: () => void;
   onNavigateToPlay: () => void;
-  onNavigateToVenues: () => void;
+  onNavigateToVenues: (filters?: { query?: string; sport?: string }) => void;
   user?: typeof CURRENT_USER;
 }
 
+const OFFICIAL_SPORTS = [
+  'All',
+  'Football',
+  'Basketball',
+  'Tennis',
+  'Pickleball',
+  'Badminton',
+  'Volleyball',
+  'Billiards',
+  'Darts',
+];
+
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
+  venues = VENUES,
   onSelectMatch,
   onSelectGame,
   onSelectVenue,
@@ -33,9 +56,29 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 }) => {
   const currentUser = user || CURRENT_USER;
   const [activeSport, setActiveSport] = useState<string>('All');
+  const [courtSearchInput, setCourtSearchInput] = useState<string>('');
+
   const liveMatches = MATCHES.filter((m) => m.status === 'LIVE');
   const heroMatch = liveMatches[0] || MATCHES[0];
-  const tuckingMatch = MATCHES[1]; // Second match tucking under the lime hero card!
+  const tuckingMatch = MATCHES[1]; // Second match tucking under the lime hero card
+
+  // Filter featured courts by active sport if selected
+  const featuredCourts = venues.filter((v) => {
+    if (activeSport === 'All') return true;
+    const sportLower = activeSport.toLowerCase();
+    const primaryMatch = v.sport.toLowerCase().includes(sportLower);
+    const featuredMatch = v.featuredSports?.some((s) => s.toLowerCase().includes(sportLower));
+    const courtsMatch = v.courts?.some((c: any) => c.sport?.toLowerCase().includes(sportLower));
+    return primaryMatch || featuredMatch || courtsMatch;
+  });
+
+  const handleSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    onNavigateToVenues({
+      query: courtSearchInput.trim(),
+      sport: activeSport !== 'All' ? activeSport : undefined,
+    });
+  };
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
@@ -45,7 +88,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           <UserAvatar id={currentUser.avatarId} size={42} showBadge badgeLevel={currentUser.level} />
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-[#A5B0A6]">Good morning 👋</span>
+              <span className="text-xs text-[#A5B0A6]">Good day 👋</span>
               <span className="px-2 py-0.2 rounded-full bg-[#1C241E] text-[#C8FF2E] text-[10px] font-bold border border-white/10">
                 Lv.{currentUser.level}
               </span>
@@ -67,7 +110,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       </header>
 
       {/* 2. Official SportSync Tagline: Find Players. Play Together. */}
-      <div className="px-5 py-3">
+      <div className="px-5 pt-2 pb-1">
         <h1 className="text-3xl tracking-tight leading-tight text-[#F4F7F0]">
           <span className="font-display font-bold">Find Players. </span>
           <span className="font-editorial text-[#C8FF2E] text-4xl font-normal block sm:inline">
@@ -76,30 +119,62 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </h1>
       </div>
 
-      {/* 3. Horizontal Sport Chips */}
-      <div className="px-5 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
-        {[
-          'All',
-          'Football',
-          'Basketball',
-          'Tennis',
-          'Pickleball',
-          'Badminton',
-          'Volleyball',
-          'Billiards',
-          'Darts',
-        ].map((sport) => (
-          <Chip
-            key={sport}
-            variant="sport"
-            label={sport}
-            active={activeSport === sport}
-            onClick={() => setActiveSport(sport)}
+      {/* 3. PROMINENT COURT SEARCH ENTRY POINT */}
+      <div className="px-5 py-2.5">
+        <form
+          onSubmit={handleSearchSubmit}
+          className="group relative flex items-center bg-[#141A15] border border-white/10 rounded-2xl p-1.5 transition-all focus-within:border-[#C8FF2E] focus-within:ring-1 focus-within:ring-[#C8FF2E]/30 shadow-lg"
+        >
+          <div className="pl-3 pr-2 text-[#A5B0A6] group-focus-within:text-[#C8FF2E] transition-colors">
+            <Search className="w-4 h-4" />
+          </div>
+          <input
+            type="text"
+            value={courtSearchInput}
+            onChange={(e) => setCourtSearchInput(e.target.value)}
+            placeholder="Search courts by facility, city, or sport..."
+            className="w-full bg-transparent text-xs sm:text-sm text-[#F4F7F0] placeholder-[#6F7B71] focus:outline-none py-1"
           />
-        ))}
+          <button
+            type="submit"
+            className="px-3 py-1.5 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] text-xs font-bold flex items-center gap-1 shrink-0 hover:bg-[#d4ff52] transition-colors press-scale"
+          >
+            <span>Search</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </form>
       </div>
 
-      {/* 4. Top Events: Lime Notch Hero Card + Tucking Dark Card Underneath (Ref A Signature) */}
+      {/* 4. Horizontal Sport Chips with Vector SportIcons */}
+      <div className="px-5 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        {OFFICIAL_SPORTS.map((sport) => {
+          const isActive = activeSport === sport;
+          return (
+            <button
+              key={sport}
+              onClick={() => setActiveSport(sport)}
+              className={`h-9 px-3.5 rounded-full text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 border press-scale ${
+                isActive
+                  ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] shadow-sm'
+                  : 'bg-[#141A15] text-[#A5B0A6] border-white/10 hover:text-white hover:border-white/20'
+              }`}
+            >
+              {sport !== 'All' ? (
+                <SportIcon
+                  sport={sport}
+                  size={13}
+                  color={isActive ? '#0B0F0C' : '#A5B0A6'}
+                />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5" />
+              )}
+              <span>{sport}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 5. Top Events: Lime Notch Hero Card + Tucking Dark Card Underneath */}
       <section className="px-5 pt-3">
         <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
@@ -132,7 +207,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         )}
       </section>
 
-      {/* 5. Live Now Horizontal Rail */}
+      {/* 6. Live Right Now Horizontal Rail */}
       <section className="pt-6">
         <div className="px-5 flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -162,20 +237,80 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </div>
       </section>
 
-      {/* 6. Pickup Games Near You (Ref B Community) */}
-      <section className="px-5 pt-6">
+      {/* 7. FEATURED COURTS SECTION (CRITICAL: APPEARS ABOVE "UPCOMING FOR YOU") */}
+      <section className="px-5 pt-7">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#00E599]" />
+              <h3 className="font-display font-black text-base text-[#F4F7F0] tracking-tight">
+                Featured Courts
+              </h3>
+            </div>
+            <p className="text-[11px] text-[#A5B0A6]">
+              Real courts registered on SportSync • Live verified rates
+            </p>
+          </div>
+
+          <button
+            onClick={() =>
+              onNavigateToVenues({
+                sport: activeSport !== 'All' ? activeSport : undefined,
+              })
+            }
+            className="text-xs text-[#C8FF2E] font-bold flex items-center gap-0.5 hover:underline press-scale"
+          >
+            <span>See All ({venues.length})</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Featured Court Cards Rail */}
+        <div className="space-y-3.5">
+          {featuredCourts.slice(0, 2).map((venue) => (
+            <VenueCard
+              key={venue.id}
+              venue={venue}
+              variant="featured"
+              onClick={() => onSelectVenue(venue)}
+            />
+          ))}
+
+          {/* Dedicated Search Courts Quick Link Banner */}
+          <div
+            onClick={() => onNavigateToVenues()}
+            className="p-4 rounded-2xl bg-gradient-to-r from-[#141A15] to-[#1C241E] border border-white/10 flex items-center justify-between cursor-pointer hover:border-[#C8FF2E]/40 transition-all press-scale"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 flex items-center justify-center text-[#C8FF2E]">
+                <Compass className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-display font-bold text-xs text-[#F4F7F0]">Explore All Sports Facilities</h4>
+                <p className="text-[10px] text-[#A5B0A6]">Filter by 9 sports, metro cities & instant booking</p>
+              </div>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[#C8FF2E]">
+              <ArrowRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 8. UPCOMING FOR YOU / PICKUP GAMES (APPEARS BELOW FEATURED COURTS) */}
+      <section className="px-5 pt-7">
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-              Pickup Games Near You
+              Upcoming For You
             </h3>
-            <p className="text-[11px] text-[#A5B0A6]">Join a squad and get on the pitch</p>
+            <p className="text-[11px] text-[#A5B0A6]">Join an active squad and get on the pitch</p>
           </div>
           <button
             onClick={onNavigateToPlay}
-            className="text-xs text-[#C8FF2E] font-semibold flex items-center gap-0.5"
+            className="text-xs text-[#C8FF2E] font-semibold flex items-center gap-0.5 hover:underline"
           >
-            <span>Explore</span>
+            <span>Explore Games</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -191,8 +326,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </div>
       </section>
 
-      {/* 7. Friend Activity Feed (Ref B) */}
-      <section className="px-5 pt-6">
+      {/* 9. Squad Activity Feed */}
+      <section className="px-5 pt-7">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
             Squad Activity
@@ -220,26 +355,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
           ))}
         </div>
-      </section>
-
-      {/* 8. Book a Court Promo Card (Ref C Tennis Zone energy) */}
-      <section className="px-5 pt-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
-            Featured Court Reservation
-          </h3>
-          <button
-            onClick={onNavigateToVenues}
-            className="text-xs text-[#C8FF2E] font-semibold"
-          >
-            Browse Courts
-          </button>
-        </div>
-
-        <VenueCard
-          venue={VENUES[0]}
-          onClick={() => onSelectVenue(VENUES[0])}
-        />
       </section>
     </div>
   );

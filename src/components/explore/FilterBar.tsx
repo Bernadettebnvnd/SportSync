@@ -20,11 +20,15 @@ interface FilterBarProps {
 
 const SPORTS: (SportType | 'all')[] = [
   'all',
-  'pickleball',
-  'badminton',
+  'football',
   'basketball',
   'tennis',
-  'padel',
+  'pickleball',
+  'badminton',
+  'volleyball',
+  'billiards',
+  'darts',
+  'other',
 ];
 
 export function FilterBar({

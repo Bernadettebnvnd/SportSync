@@ -5,6 +5,10 @@ export type SportType =
   | 'padel'
   | 'tennis'
   | 'volleyball'
+  | 'football'
+  | 'billiards'
+  | 'darts'
+  | 'other'
   | 'table_tennis';
 
 export interface Sport {

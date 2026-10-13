@@ -15,8 +15,9 @@ import {
   UserPredictionWager,
   BadgeItem,
   AvatarId,
+  SportType,
 } from '../mock/types';
-import { SportType } from '../types';
+import { SportType as DbSportType } from '../types';
 
 export interface SportSyncBookingItem {
   id: string;
@@ -343,32 +344,83 @@ export function useSportSyncBridge() {
   const [favoriteVenueIds, setFavoriteVenueIds] = useState<string[]>([]);
 
   const venues = useMemo<Venue[]>(() => {
-    const adaptedDbVenues: Venue[] = store.venues.map((dbV) => ({
-      id: dbV.id,
-      name: dbV.name,
-      sport: 'Football',
-      city: dbV.city || 'Metro Area',
-      address: dbV.address,
-      surface: '3G Turf',
-      isIndoor: true,
-      pricePerHour: 45,
-      rating: dbV.rating || 4.9,
-      reviewCount: dbV.review_count || 12,
-      image: dbV.images?.[0] || DEFAULT_VENUES[0].image,
-      distanceMiles: 1.8,
-      amenities: dbV.amenities || ['Parking', 'Changing Rooms', 'Floodlights'],
-      courtsCount: dbV.courts?.length || 2,
-      availableSlots: ['10:00', '14:00', '18:00'],
-      isFavorite: favoriteVenueIds.includes(dbV.id),
-    }));
+    const mapDbSportToUi = (s?: string): SportType => {
+      if (!s) return 'Pickleball';
+      const lower = s.toLowerCase();
+      if (lower.includes('badminton')) return 'Badminton';
+      if (lower.includes('pickle')) return 'Pickleball';
+      if (lower.includes('basket')) return 'Basketball';
+      if (lower.includes('foot') || lower.includes('futsal')) return 'Football';
+      if (lower.includes('tennis')) return 'Tennis';
+      if (lower.includes('volley')) return 'Volleyball';
+      if (lower.includes('dart')) return 'Darts';
+      if (lower.includes('billiard') || lower.includes('pool')) return 'Billiards';
+      return 'Pickleball';
+    };
 
-    return [
-      ...DEFAULT_VENUES.map((v) => ({
-        ...v,
-        isFavorite: favoriteVenueIds.includes(v.id) || v.isFavorite,
-      })),
-      ...adaptedDbVenues.filter((dv) => !DEFAULT_VENUES.some((mv) => mv.id === dv.id)),
-    ];
+    const sourceVenues = store.venues && store.venues.length > 0 ? store.venues : [];
+
+    const adaptedDbVenues: Venue[] = sourceVenues.map((dbV) => {
+      const primaryCourt = dbV.courts?.[0];
+      const primarySport = mapDbSportToUi(dbV.featured_sports?.[0] || primaryCourt?.sport);
+      const calculatedPrice = primaryCourt?.hourly_rate_cents
+        ? Math.round(primaryCourt.hourly_rate_cents / 100)
+        : 450;
+      const opHoursStr =
+        dbV.operating_hours && typeof dbV.operating_hours === 'object'
+          ? Object.values(dbV.operating_hours).join(' • ')
+          : '06:00 AM - 11:00 PM';
+
+      const allSportsForVenue = (dbV.featured_sports && dbV.featured_sports.length > 0
+        ? dbV.featured_sports.map((s: string) => mapDbSportToUi(s))
+        : [primarySport]
+      ) as string[];
+
+      // If courts specify other sports, include them
+      if (dbV.courts && dbV.courts.length > 0) {
+        dbV.courts.forEach((c: any) => {
+          if (c.sport) {
+            const mapped = mapDbSportToUi(c.sport);
+            if (!allSportsForVenue.includes(mapped)) {
+              allSportsForVenue.push(mapped);
+            }
+          }
+        });
+      }
+
+      return {
+        id: dbV.id,
+        name: dbV.name,
+        sport: primarySport,
+        city: dbV.city || 'Metro Manila',
+        address: dbV.address,
+        surface: primaryCourt?.floor_type || 'Competition Surface',
+        isIndoor: primaryCourt?.is_indoor ?? true,
+        pricePerHour: calculatedPrice,
+        rating: dbV.rating || 4.9,
+        reviewCount: dbV.review_count || 32,
+        image: dbV.images?.[0] || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80',
+        distanceMiles: 1.6,
+        amenities: dbV.amenities || ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
+        courtsCount: dbV.courts?.length || 2,
+        availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00', '20:00'],
+        isFavorite: favoriteVenueIds.includes(dbV.id),
+        courts: dbV.courts || [],
+        operatingHours: opHoursStr,
+        phone: (dbV.payment_info as any)?.gcash_number || '0917-888-SYNC',
+        featuredSports: allSportsForVenue,
+        isVerified: dbV.is_verified ?? true,
+      };
+    });
+
+    if (adaptedDbVenues.length > 0) {
+      return adaptedDbVenues;
+    }
+
+    return DEFAULT_VENUES.map((v) => ({
+      ...v,
+      isFavorite: favoriteVenueIds.includes(v.id) || v.isFavorite,
+    }));
   }, [store.venues, favoriteVenueIds]);
 
   const toggleFavoriteVenue = useCallback((venueId: string) => {
@@ -789,7 +841,7 @@ export function useSportSyncBridge() {
       // Store sync
       try {
         const sportNorm = gameData.sport.toLowerCase();
-        const matchingSport: SportType =
+        const matchingSport: DbSportType =
           sportNorm.includes('basket')
             ? 'basketball'
             : sportNorm.includes('tennis')
@@ -959,7 +1011,7 @@ export function useSportSyncBridge() {
         city: prefs.preferredArea || prev.city || 'Metro Area',
       }));
 
-      const mappedSports: SportType[] = prefs.preferredSports.map((s) => {
+      const mappedSports: DbSportType[] = prefs.preferredSports.map((s) => {
         const norm = s.toLowerCase();
         if (norm.includes('tennis')) return 'tennis';
         if (norm.includes('basket')) return 'basketball';
