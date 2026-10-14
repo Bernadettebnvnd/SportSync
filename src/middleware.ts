@@ -14,7 +14,9 @@ export function middleware(request: NextRequest) {
     // Supabase stores tokens in cookies like sb-<project-ref>-auth-token or sb-access-token
     const allCookies = request.cookies.getAll();
     const hasAuthCookie = allCookies.some(
-      (c) => c.name.startsWith('sb-') && (c.name.endsWith('-auth-token') || c.name.includes('access-token') || c.name.includes('auth'))
+      (c) =>
+        c.name === 'sportsync-auth-token' ||
+        (c.name.startsWith('sb-') && (c.name.endsWith('-auth-token') || c.name.includes('access-token') || c.name.includes('auth')))
     );
 
     // If no auth cookie is present, redirect to home with signin modal trigger

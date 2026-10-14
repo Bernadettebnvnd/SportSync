@@ -22,8 +22,9 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModalProps) {
-  const { currentUser } = useMatchiStore();
+  const { currentUser, setAuthenticatedUser, logoutUser } = useMatchiStore();
   const [mode, setMode] = useState<'signin' | 'signup' | 'magic_link'>(defaultMode);
+  const [role, setRole] = useState<'player' | 'facility_owner'>('player');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -39,52 +40,83 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    const trimmedEmail = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setErrorMsg('Please enter a valid email address.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (mode === 'signup' && !fullName.trim()) {
+      setErrorMsg('Please enter your full name.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      if (!isSupabaseConfigured) {
-        // Local simulation with persistent storage update
-        setSuccessMsg(
-          mode === 'signup'
-            ? 'Account registered! Email verification sent.'
-            : 'Signed in successfully.'
-        );
-        setTimeout(() => {
-          onClose();
-        }, 1200);
-        return;
+      const endpoint = mode === 'signup' ? '/api/auth/register' : '/api/auth/login';
+      const payload = mode === 'signup'
+        ? {
+            email: trimmedEmail,
+            password,
+            fullName: fullName.trim(),
+            role,
+          }
+        : {
+            email: trimmedEmail,
+            password,
+          };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || (mode === 'signup' ? 'Registration failed.' : 'Login failed. Please check credentials.'));
       }
 
-      if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              full_name: fullName.trim() || email.split('@')[0],
-            },
-          },
+      if (data.user) {
+        setAuthenticatedUser({
+          id: data.user.id,
+          auth_id: data.user.id,
+          email: data.user.email,
+          full_name: data.user.full_name,
+          nickname: data.user.nickname,
+          role: data.user.role,
+          onboarding_completed: data.user.onboarding_completed,
         });
 
-        if (error) throw error;
-
-        if (data.session) {
-          setSuccessMsg('Account registered and signed in!');
-          setTimeout(onClose, 1200);
-        } else {
-          setSuccessMsg('Confirmation email sent. Please verify your email address to continue.');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sportsync_user_email', data.user.email);
+          localStorage.setItem('sportsync_user_role', data.user.role);
+          localStorage.setItem('sportsync_user_name', data.user.full_name);
         }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (error) throw error;
-
-        setSuccessMsg('Welcome back! Signed in.');
-        setTimeout(onClose, 1000);
       }
+
+      setSuccessMsg(
+        mode === 'signup'
+          ? 'Account registered successfully! Welcome to SportSync.'
+          : 'Welcome back! Signed in.'
+      );
+      setTimeout(() => {
+        onClose();
+      }, 1000);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Authentication failed';
+      let message = err instanceof Error ? err.message : 'Authentication failed';
+      if (message === 'Failed to fetch') {
+        message = 'Unable to connect to the authentication server. Please check your network connection.';
+      }
       setErrorMsg(message);
     } finally {
       setIsLoading(false);
@@ -99,8 +131,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
 
     try {
       if (!isSupabaseConfigured) {
-        setSuccessMsg(`Simulated magic link dispatched to ${email}. Check your inbox.`);
-        setTimeout(onClose, 1500);
+        setErrorMsg('Magic link authentication requires Supabase configuration.');
+        setIsLoading(false);
         return;
       }
 
@@ -114,7 +146,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       if (error) throw error;
       setSuccessMsg(`Magic login link sent to ${email}. Check your email.`);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to send magic link';
+      let message = err instanceof Error ? err.message : 'Failed to send magic link';
+      if (message === 'Failed to fetch') {
+        message = 'Unable to connect to the authentication server.';
+      }
       setErrorMsg(message);
     } finally {
       setIsLoading(false);
@@ -124,9 +159,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
   const handleSignOut = async () => {
     setIsLoading(true);
     try {
-      if (isSupabaseConfigured) {
-        await supabase.auth.signOut();
-      }
+      await logoutUser();
       setSuccessMsg('Signed out successfully.');
       setTimeout(onClose, 800);
     } catch (err: unknown) {
@@ -137,11 +170,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
     }
   };
 
-  const isAlreadyLoggedIn = Boolean(currentUser.email && currentUser.auth_id);
+  const isAlreadyLoggedIn = Boolean(currentUser.email && (currentUser.auth_id || currentUser.id));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-md rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto no-scrollbar rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl flex flex-col">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-[#E8E5DF] bg-[#FAF8F5] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -296,22 +329,56 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
               ) : (
                 <form onSubmit={handlePasswordAuth} className="space-y-3 pt-1">
                   {mode === 'signup' && (
-                    <div>
-                      <label className="text-[11px] font-bold text-[#65756B] block mb-1">
-                        Full Name
-                      </label>
-                      <div className="relative">
-                        <User className="w-4 h-4 text-[#65756B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="text"
-                          required
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
-                          placeholder="Juan Dela Cruz"
-                          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-semibold text-[#1A241E] focus:bg-white focus:border-[#2D724E] focus:outline-none"
-                        />
+                    <>
+                      <div>
+                        <label className="text-[11px] font-bold text-[#65756B] block mb-1.5">
+                          Account Type
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setRole('player')}
+                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
+                              role === 'player'
+                                ? 'bg-[#EBF4EE] border-[#2D724E] text-[#1E4A32] font-bold shadow-xs'
+                                : 'bg-[#FAF8F5] border-[#E8E5DF] text-[#65756B]'
+                            }`}
+                          >
+                            <User className="w-4 h-4 shrink-0" />
+                            <span className="text-xs">Player</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRole('facility_owner')}
+                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
+                              role === 'facility_owner'
+                                ? 'bg-[#EBF4EE] border-[#2D724E] text-[#1E4A32] font-bold shadow-xs'
+                                : 'bg-[#FAF8F5] border-[#E8E5DF] text-[#65756B]'
+                            }`}
+                          >
+                            <Building2 className="w-4 h-4 shrink-0" />
+                            <span className="text-xs">Facility Owner</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
+
+                      <div>
+                        <label className="text-[11px] font-bold text-[#65756B] block mb-1">
+                          {role === 'facility_owner' ? 'Owner / Contact Name' : 'Full Name'}
+                        </label>
+                        <div className="relative">
+                          <User className="w-4 h-4 text-[#65756B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            required
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            placeholder={role === 'facility_owner' ? 'Alex Morgan' : 'Juan Dela Cruz'}
+                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-semibold text-[#1A241E] focus:bg-white focus:border-[#2D724E] focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </>
                   )}
 
                   <div>

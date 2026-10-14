@@ -119,7 +119,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-[#A5B0A6]">{salutation}</span>
               {!effectiveIsGuest && (
-                <span className="px-2 py-0.2 rounded-full bg-[#1C241E] text-[#C8FF2E] text-[10px] font-bold border border-white/10">
+                <span className="px-2 py-0.5 rounded-full bg-[#1C241E] text-[#C8FF2E] text-[10px] font-bold border border-white/10">
                   Lv.{user?.level || 1}
                 </span>
               )}

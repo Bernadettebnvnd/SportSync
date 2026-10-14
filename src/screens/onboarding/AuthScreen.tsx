@@ -14,7 +14,7 @@ interface AuthScreenProps {
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', onSuccess, onBack }) => {
-  const { currentUser } = useMatchiStore();
+  const { currentUser, setAuthenticatedUser } = useMatchiStore();
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
   const [selectedRole, setSelectedRole] = useState<AuthRole>('player');
   const [fullName, setFullName] = useState('');
@@ -31,91 +31,125 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const supabase = getSupabaseClient();
+    // 1. Client-Side Validation
+    const trimmedEmail = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email address (e.g. player@example.com).');
+      setIsLoading(false);
+      return;
+    }
 
     // Password reset flow
     if (isPasswordReset) {
-      if (!email.trim()) {
-        setErrorMessage('Please enter your email address.');
-        setIsLoading(false);
-        return;
-      }
       try {
+        const supabase = getSupabaseClient();
         if (supabase && isSupabaseConfigured) {
-          const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
             redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
           });
           if (error) throw error;
         }
         setSuccessMessage('Password reset link sent! Check your inbox.');
-        setTimeout(() => setIsPasswordReset(false), 2000);
+        setTimeout(() => setIsPasswordReset(false), 2500);
       } catch (err: unknown) {
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to send reset link.');
+        let msg = err instanceof Error ? err.message : 'Failed to send reset link.';
+        if (msg === 'Failed to fetch') {
+          msg = 'Unable to reach the authentication service. Please verify your connection.';
+        }
+        setErrorMessage(msg);
       } finally {
         setIsLoading(false);
       }
       return;
     }
 
-    // Standard SignUp / LogIn flow
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (isSignUp && !fullName.trim()) {
+      setErrorMessage(selectedRole === 'facility_owner' ? 'Please enter contact / owner name.' : 'Please enter your full name.');
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Perform Real Authentication Request via Backend API
     try {
-      if (supabase && isSupabaseConfigured) {
-        if (isSignUp) {
-          const { data, error } = await supabase.auth.signUp({
-            email: email.trim(),
+      const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
+      const payload = isSignUp
+        ? {
+            email: trimmedEmail,
             password,
-            options: {
-              data: {
-                full_name: fullName.trim() || email.split('@')[0],
-                role: selectedRole === 'facility_owner' ? 'venue_owner' : 'player',
-              },
-            },
-          });
-          if (error) throw error;
-
-          if (data.session) {
-            setSuccessMessage('Account created! Entering SportSync...');
-            setTimeout(() => onSuccess(selectedRole), 1000);
-          } else {
-            setSuccessMessage('Verification email sent! Check your inbox to confirm your account.');
-            setTimeout(() => onSuccess(selectedRole), 1800);
+            fullName: fullName.trim(),
+            role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
           }
-        } else {
-          // Log In
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
+        : {
+            email: trimmedEmail,
             password,
-          });
-          if (error) throw error;
+          };
 
-          // Check user role from metadata or user record
-          const userMetaRole = data.user?.user_metadata?.role;
-          const detectedRole: AuthRole =
-            userMetaRole === 'venue_owner' || userMetaRole === 'organizer'
-              ? 'facility_owner'
-              : 'player';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-          setSuccessMessage('Welcome back to SportSync!');
-          setTimeout(() => onSuccess(detectedRole), 800);
-        }
-      } else {
-        // Fallback local persistence when Supabase credentials are not locally configured
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('sportsync_user_email', email);
-          localStorage.setItem('sportsync_user_role', selectedRole);
-          if (fullName.trim()) {
-            localStorage.setItem('sportsync_user_name', fullName.trim());
-          }
-        }
-        setSuccessMessage(
-          isSignUp
-            ? `Account registered as ${selectedRole === 'facility_owner' ? 'Facility Owner' : 'Player'}!`
-            : 'Signed in successfully.'
-        );
-        setTimeout(() => onSuccess(selectedRole), 900);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || (isSignUp ? 'Registration failed.' : 'Login failed. Please check credentials.'));
       }
+
+      // Update store user state with real authenticated session
+      if (data.user) {
+        setAuthenticatedUser({
+          id: data.user.id,
+          auth_id: data.user.id,
+          email: data.user.email,
+          full_name: data.user.full_name,
+          nickname: data.user.nickname,
+          role: data.user.role,
+          onboarding_completed: data.user.onboarding_completed,
+        });
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('sportsync_user_email', data.user.email);
+          localStorage.setItem('sportsync_user_role', data.user.role);
+          localStorage.setItem('sportsync_user_name', data.user.full_name);
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: data.user.id,
+              name: data.user.full_name,
+              username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
+              role: data.user.role,
+              isGuest: false,
+            })
+          );
+        }
+      }
+
+      const userRole = data.user?.role;
+      const detectedRole: AuthRole =
+        userRole === 'venue_owner' || userRole === 'organizer' || selectedRole === 'facility_owner'
+          ? 'facility_owner'
+          : 'player';
+
+      setSuccessMessage(
+        isSignUp
+          ? `Account registered successfully! Welcome to SportSync.`
+          : 'Welcome back! Signed in.'
+      );
+      setTimeout(() => onSuccess(detectedRole), 900);
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : 'Authentication failed. Please check credentials.');
+      let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
+      if (message === 'Failed to fetch') {
+        message = 'Unable to connect to the authentication server. Please verify that the backend is running and reachable.';
+      }
+      setErrorMessage(message);
     } finally {
       setIsLoading(false);
     }

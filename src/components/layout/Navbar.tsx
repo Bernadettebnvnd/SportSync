@@ -128,7 +128,7 @@ export function Navbar() {
                   </Link>
                 )}
 
-                {(!isAuthenticated || !isOnboarded) ? (
+                {!isAuthenticated ? (
                   // Quick Auth CTAs
                   <div className="flex items-center gap-2">
                     <button

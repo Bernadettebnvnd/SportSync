@@ -185,7 +185,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
       </div>
 
       {/* Sticky Bottom Bar with Big Lime "Join Match" CTA + Heart Button (Ref B) */}
-      <div className="fixed bottom-0 inset-x-0 z-40 p-4 bg-[#0B0F0C]/95 backdrop-blur-2xl border-t border-white/10 flex items-center gap-3">
+      <div className="sticky bottom-0 w-full z-40 p-4 bg-[#0B0F0C]/95 backdrop-blur-2xl border-t border-white/10 flex items-center gap-3 mt-6">
         <button
           onClick={() => setIsLiked(!isLiked)}
           className={`w-14 h-14 rounded-full border flex items-center justify-center transition-all press-scale shrink-0 ${

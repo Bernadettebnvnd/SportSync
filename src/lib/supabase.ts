@@ -7,9 +7,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 /**
  * Whether Supabase environment variables are configured.
- * When false, the app shows empty/error states instead of fake data.
+ * When false, the app uses the built-in Next.js server authentication API.
  */
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnonKey &&
+  !supabaseUrl.includes('xyzcompany.supabase.co') &&
+  !supabaseUrl.includes('placeholder') &&
+  !supabaseAnonKey.startsWith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...')
+);
 
 let _supabaseInstance: SupabaseClient | null = null;
 

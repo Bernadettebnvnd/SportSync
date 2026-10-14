@@ -255,6 +255,49 @@ export function useMatchiStore() {
     setUserRole(nextRole);
   }, [setUserRole]);
 
+  const setAuthenticatedUser = useCallback((user: Partial<User>) => {
+    globalState = {
+      ...globalState,
+      currentUser: {
+        ...globalState.currentUser,
+        ...user,
+        id: user.id || globalState.currentUser.id,
+        auth_id: user.id || user.auth_id || globalState.currentUser.auth_id,
+        email: user.email || globalState.currentUser.email,
+        full_name: user.full_name || globalState.currentUser.full_name,
+        nickname: user.nickname || user.full_name?.split(' ')[0] || globalState.currentUser.nickname,
+        role: user.role || globalState.currentUser.role,
+        active_mode: user.role === 'venue_owner' || user.role === 'organizer' ? 'manage' : 'play',
+      },
+    };
+    notify();
+  }, []);
+
+  const logoutUser = useCallback(async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('sportsync_user_email');
+      localStorage.removeItem('sportsync_user_role');
+      localStorage.removeItem('sportsync_user_name');
+      localStorage.removeItem('matchi_onboarding_completed');
+      localStorage.removeItem('matchi_user_name');
+      localStorage.removeItem('matchi_user_nickname');
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch {}
+    }
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch {}
+    }
+    globalState = {
+      ...globalState,
+      currentUser: GUEST_USER,
+      bookings: [],
+    };
+    notify();
+  }, []);
+
   // Complete Player Onboarding
   const completePlayerOnboarding = useCallback(
     async (data: {
@@ -606,6 +649,8 @@ export function useMatchiStore() {
     toggleMode,
     setUserRole,
     toggleRole,
+    setAuthenticatedUser,
+    logoutUser,
     refreshVenues,
     refreshBookings,
     completePlayerOnboarding,

@@ -4,7 +4,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnonKey &&
+  !supabaseUrl.includes('xyzcompany.supabase.co') &&
+  !supabaseUrl.includes('placeholder') &&
+  !supabaseAnonKey.startsWith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...')
+);
 
 /**
  * Server-side Supabase client for Route Handlers and Server Actions.

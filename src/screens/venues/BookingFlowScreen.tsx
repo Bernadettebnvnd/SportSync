@@ -214,7 +214,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
       </div>
 
       {/* Sticky Bottom Pill CTA "Booking Now" with Trailing Arrow (Ref C) */}
-      <div className="fixed bottom-0 inset-x-0 z-40 p-4 bg-[#0B0F0C]/95 backdrop-blur-2xl border-t border-white/10">
+      <div className="sticky bottom-0 w-full z-40 p-4 bg-[#0B0F0C]/95 backdrop-blur-2xl border-t border-white/10 mt-6">
         <Button
           variant="pill-arrow"
           onClick={() =>

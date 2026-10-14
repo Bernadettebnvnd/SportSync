@@ -28,7 +28,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       aria-label="SportSync Primary Navigation"
-      className={`fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-32px)] max-w-[390px] z-40 select-none ${className}`}
+      className={`sticky bottom-4 left-0 right-0 mx-auto w-[calc(100%-24px)] sm:w-[calc(100%-32px)] max-w-[440px] z-40 select-none ${className}`}
     >
       {/* Floating Glass Pill Container — Fixed dimensions to prevent layout shifts */}
       <div className="h-16 rounded-full bg-[#141A15]/95 backdrop-blur-2xl border border-white/10 shadow-[0_16px_40px_rgba(0,0,0,0.65)] px-2 flex items-center justify-between">

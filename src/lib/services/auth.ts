@@ -7,50 +7,81 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
  */
 export async function getCurrentUser(): Promise<User | null> {
   const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured) {
-    return null;
-  }
+  
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user) {
+        const authUser = authData.user;
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('auth_id', authUser.id)
+          .maybeSingle();
 
-  try {
-    const { data: authData } = await supabase.auth.getUser();
-    if (!authData?.user) return null;
+        if (!profile) {
+          return {
+            id: authUser.id,
+            auth_id: authUser.id,
+            email: authUser.email || '',
+            full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Player',
+            nickname: authUser.email?.split('@')[0] || 'Player',
+            role: (authUser.user_metadata?.role as UserRole) || 'player',
+            primary_sport: 'pickleball',
+            skill_level: 'intermediate',
+            city: 'Metro Manila',
+            matches_played: 0,
+            matches_won: 0,
+            win_streak: 0,
+            highest_streak: 0,
+            email_verified: Boolean(authUser.email_confirmed_at),
+            created_at: authUser.created_at,
+          };
+        }
 
-    const authUser = authData.user;
-    const { data: profile } = await supabase
-      .from('users')
-      .select('*')
-      .eq('auth_id', authUser.id)
-      .maybeSingle();
-
-    if (!profile) {
-      // User is authenticated in auth.users, return basic profile
-      return {
-        id: authUser.id,
-        auth_id: authUser.id,
-        email: authUser.email || '',
-        full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Player',
-        nickname: authUser.email?.split('@')[0] || 'Player',
-        role: (authUser.user_metadata?.role as UserRole) || 'player',
-        primary_sport: 'pickleball',
-        skill_level: 'intermediate',
-        city: 'Metro Manila',
-        matches_played: 0,
-        matches_won: 0,
-        win_streak: 0,
-        highest_streak: 0,
-        email_verified: Boolean(authUser.email_confirmed_at),
-        created_at: authUser.created_at,
-      };
+        return {
+          ...profile,
+          email_verified: Boolean(authUser.email_confirmed_at),
+        };
+      }
+    } catch (err) {
+      console.warn('Error fetching Supabase user session:', err);
     }
-
-    return {
-      ...profile,
-      email_verified: Boolean(authUser.email_confirmed_at),
-    };
-  } catch (err) {
-    console.error('Error getting current user:', err);
-    return null;
   }
+
+  // Check server session endpoint via /api/auth/me
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.user) {
+          return {
+            id: json.user.id,
+            auth_id: json.user.id,
+            email: json.user.email,
+            full_name: json.user.full_name,
+            nickname: json.user.nickname,
+            role: json.user.role,
+            primary_sport: 'pickleball',
+            skill_level: 'intermediate',
+            city: 'Metro Manila',
+            matches_played: 0,
+            matches_won: 0,
+            win_streak: 0,
+            highest_streak: 0,
+            email_verified: true,
+            created_at: json.user.created_at,
+            onboarding_completed: json.user.onboarding_completed,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching /api/auth/me:', err);
+    }
+  }
+
+  return null;
 }
 
 /**
