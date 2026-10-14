@@ -207,13 +207,14 @@ export function useSportSyncBridge() {
       const saved = localStorage.getItem('sportsync_community_games') || localStorage.getItem('sideline_community_games');
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
         } catch {
           // ignore
         }
       }
     }
-    return [];
+    return DEFAULT_GAMES;
   });
 
   useEffect(() => {
@@ -221,6 +222,40 @@ export function useSportSyncBridge() {
       localStorage.setItem('sportsync_community_games', JSON.stringify(games));
     }
   }, [games]);
+
+  // Sync store open play sessions into games feed
+  useEffect(() => {
+    if (store.sessions.length > 0) {
+      setGames((prev) => {
+        const added: CommunityGame[] = [];
+        store.sessions.forEach((s) => {
+          if (!prev.some((g) => g.id === s.id || g.title === s.title)) {
+            const venue = store.venues.find((v) => v.id === s.venue_id);
+            added.push({
+              id: s.id,
+              sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
+              title: s.title,
+              format: s.rotation_format || 'Open Rotation',
+              skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
+              date: 'Today',
+              time: s.start_time || '18:00',
+              locationName: venue?.name || 'Verified Court Facility',
+              distance: '0.9 km away',
+              hostName: 'Facility Host',
+              hostAvatar: 'alex',
+              spotsTotal: s.max_players || 12,
+              spotsJoined: s.current_players_count || 1,
+              pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
+              notes: s.description || 'Verified SportSync session',
+              isPublic: true,
+              members: [{ name: 'Host', avatar: 'alex' }],
+            });
+          }
+        });
+        return added.length > 0 ? [...added, ...prev] : prev;
+      });
+    }
+  }, [store.sessions, store.venues]);
 
   // 3. Dynamic Bookings
   const [bookings, setBookings] = useState<SportSyncBookingItem[]>(() => {
@@ -902,8 +937,9 @@ export function useSportSyncBridge() {
       date: string;
       slot: string;
       price: number;
+      bookingReference?: string;
     }) => {
-      const bookingId = `BK-${Math.floor(10000 + Math.random() * 90000)}`;
+      const bookingId = details.bookingReference || `BK-${Math.floor(10000 + Math.random() * 90000)}`;
       const newBooking: SportSyncBookingItem = {
         id: bookingId,
         venue: details.venue,
@@ -921,16 +957,22 @@ export function useSportSyncBridge() {
       awardXp(60, 'reserving a verified court', { applyStreakMultiplier: true });
 
       try {
+        const venueObj = store.venues.find((v) => v.id === details.venue.id) || details.venue;
         store.createBooking({
           id: bookingId,
           booking_reference: bookingId,
           user_id: store.currentUser.id || 'sportsync_player',
+          user: {
+            id: store.currentUser.id || 'sportsync_player',
+            full_name: store.currentUser.full_name || userProfile.name,
+            email: store.currentUser.email || '',
+          } as any,
           venue_id: details.venue.id,
           court_id: `${details.venue.id}_c1`,
-          sport: 'tennis',
+          sport: (details.venue as any)?.sport || 'pickleball',
           booking_date: '2026-10-17',
-          start_time: details.slot.split('–')[0]?.trim() || '10:00',
-          end_time: details.slot.split('–')[1]?.trim() || '11:30',
+          start_time: details.slot.split('–')[0]?.trim() || details.slot.split('-')[0]?.trim() || '10:00',
+          end_time: details.slot.split('–')[1]?.trim() || details.slot.split('-')[1]?.trim() || '11:30',
           duration_minutes: 90,
           court_rate_cents: details.price * 100,
           booking_amount_cents: details.price * 100,
@@ -939,7 +981,11 @@ export function useSportSyncBridge() {
           status: 'confirmed',
           payment_status: 'approved',
           created_at: new Date().toISOString(),
-          venue: store.venues.find((v) => v.id === details.venue.id),
+          venue: venueObj as any,
+          court: {
+            id: `${details.venue.id}_c1`,
+            name: details.court,
+          } as any,
         });
       } catch (err) {
         console.warn('[SportSyncBridge] Global store createBooking warning handled:', err);

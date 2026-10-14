@@ -127,6 +127,12 @@ export async function serverRegister(data: {
   // If Supabase is real and configured, sync with Supabase
   if (isSupabaseConfigured) {
     const admin = createAdminClient();
+    const serverClient = createServerClient();
+    const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
+
+    let supaUserId: string | null = null;
+    let supaCreatedAt: string = new Date().toISOString();
+
     if (admin) {
       const { data: supaUser, error } = await admin.auth.admin.createUser({
         email: normalizedEmail,
@@ -134,7 +140,7 @@ export async function serverRegister(data: {
         email_confirm: true,
         user_metadata: {
           full_name: data.fullName.trim(),
-          role: data.role === 'facility_owner' ? 'venue_owner' : 'player',
+          role: assignedRole,
         },
       });
 
@@ -146,18 +152,88 @@ export async function serverRegister(data: {
       }
 
       if (supaUser?.user) {
-        const sanitized: SanitizedUser = {
-          id: supaUser.user.id,
-          email: supaUser.user.email || normalizedEmail,
-          full_name: data.fullName.trim(),
-          nickname: normalizedEmail.split('@')[0],
-          role: (data.role === 'facility_owner' ? 'venue_owner' : 'player') as UserRole,
-          onboarding_completed: false,
-          created_at: supaUser.user.created_at,
-        };
-        const token = createSessionToken(sanitized);
-        return { user: sanitized, token };
+        supaUserId = supaUser.user.id;
+        supaCreatedAt = supaUser.user.created_at;
       }
+    } else if (serverClient) {
+      const { data: supaUser, error } = await serverClient.auth.signUp({
+        email: normalizedEmail,
+        password: data.password,
+        options: {
+          data: {
+            full_name: data.fullName.trim(),
+            role: assignedRole,
+          },
+        },
+      });
+
+      if (error) {
+        if (error.message.toLowerCase().includes('already') || error.status === 422) {
+          throw new Error('An account with this email already exists. Please log in instead.');
+        }
+        throw new Error(error.message);
+      }
+
+      if (supaUser?.user) {
+        supaUserId = supaUser.user.id;
+        supaCreatedAt = supaUser.user.created_at;
+      }
+    }
+
+    if (supaUserId) {
+      const dbClient = admin || serverClient;
+      if (dbClient) {
+        try {
+          await dbClient.from('users').upsert(
+            {
+              auth_id: supaUserId,
+              email: normalizedEmail,
+              full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
+              role: assignedRole,
+              onboarding_completed: false,
+            },
+            { onConflict: 'auth_id' }
+          );
+        } catch (dbErr) {
+          console.warn('[ServerAuth] public.users upsert warning:', dbErr);
+        }
+      }
+
+      const sanitized: SanitizedUser = {
+        id: supaUserId,
+        email: normalizedEmail,
+        full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
+        nickname: normalizedEmail.split('@')[0],
+        role: assignedRole,
+        onboarding_completed: false,
+        created_at: supaCreatedAt,
+      };
+
+      // Also persist locally to keep session lookup resilient
+      const users = readLocalUsers();
+      const existingIdx = users.findIndex((u) => u.email.toLowerCase() === normalizedEmail);
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = hashPassword(data.password, salt);
+      const localEntry: StoredUser = {
+        id: supaUserId,
+        email: normalizedEmail,
+        passwordHash,
+        salt,
+        full_name: sanitized.full_name,
+        role: assignedRole,
+        onboarding_completed: false,
+        created_at: supaCreatedAt,
+        updated_at: new Date().toISOString(),
+      };
+      if (existingIdx >= 0) {
+        users[existingIdx] = localEntry;
+      } else {
+        users.push(localEntry);
+      }
+      writeLocalUsers(users);
+
+      const token = createSessionToken(sanitized);
+      return { user: sanitized, token };
     }
   }
 
@@ -213,16 +289,51 @@ export async function serverLogin(data: {
       }
 
       if (supaData?.user) {
+        // Retrieve database profile from public.users table
+        let dbProfile: any = null;
+        try {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', supaData.user.id)
+            .maybeSingle();
+          dbProfile = profile;
+        } catch {}
+
         const userMeta = supaData.user.user_metadata;
         const sanitized: SanitizedUser = {
           id: supaData.user.id,
           email: supaData.user.email || normalizedEmail,
-          full_name: userMeta?.full_name || normalizedEmail.split('@')[0],
-          nickname: normalizedEmail.split('@')[0],
-          role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
-          onboarding_completed: Boolean(userMeta?.onboarding_completed),
+          full_name: dbProfile?.full_name || userMeta?.full_name || normalizedEmail.split('@')[0],
+          nickname: dbProfile?.nickname || userMeta?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
+          role: (dbProfile?.role || userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
+          onboarding_completed: Boolean(dbProfile?.onboarding_completed ?? userMeta?.onboarding_completed),
           created_at: supaData.user.created_at,
         };
+
+        // Cache or sync local user entry
+        const users = readLocalUsers();
+        const existingIdx = users.findIndex((u) => u.email.toLowerCase() === normalizedEmail);
+        const salt = crypto.randomBytes(16).toString('hex');
+        const passwordHash = hashPassword(data.password, salt);
+        const localEntry: StoredUser = {
+          id: supaData.user.id,
+          email: normalizedEmail,
+          passwordHash,
+          salt,
+          full_name: sanitized.full_name,
+          role: sanitized.role,
+          onboarding_completed: sanitized.onboarding_completed,
+          created_at: supaData.user.created_at,
+          updated_at: new Date().toISOString(),
+        };
+        if (existingIdx >= 0) {
+          users[existingIdx] = localEntry;
+        } else {
+          users.push(localEntry);
+        }
+        writeLocalUsers(users);
+
         const token = createSessionToken(sanitized);
         return { user: sanitized, token };
       }
@@ -248,7 +359,85 @@ export async function serverLogin(data: {
 }
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
+  if (isSupabaseConfigured) {
+    try {
+      const db = createAdminClient() || createServerClient();
+      if (db) {
+        const { data: supaUser } = await db
+          .from('users')
+          .select('*')
+          .or(`auth_id.eq.${userId},id.eq.${userId}`)
+          .maybeSingle();
+
+        if (supaUser) {
+          return {
+            id: supaUser.auth_id || supaUser.id,
+            email: supaUser.email,
+            full_name: supaUser.full_name || supaUser.email.split('@')[0],
+            nickname: supaUser.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
+            role: supaUser.role as UserRole,
+            onboarding_completed: Boolean(supaUser.onboarding_completed),
+            created_at: supaUser.created_at,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[ServerAuth] Supabase lookup error in serverGetUser:', err);
+    }
+  }
+
   const users = readLocalUsers();
   const user = users.find((u) => u.id === userId);
   return user ? sanitizeUser(user) : null;
+}
+
+export async function serverUpdateUserProfile(
+  userId: string,
+  data: {
+    fullName?: string;
+    nickname?: string;
+    primarySport?: string;
+    preferredSports?: string[];
+    city?: string;
+    skillLevel?: string;
+    onboardingCompleted?: boolean;
+  }
+): Promise<SanitizedUser | null> {
+  if (isSupabaseConfigured) {
+    try {
+      const db = createAdminClient() || createServerClient();
+      if (db) {
+        await db
+          .from('users')
+          .update({
+            full_name: data.fullName,
+            nickname: data.nickname,
+            primary_sport: data.primarySport,
+            preferred_sports: data.preferredSports,
+            city: data.city,
+            skill_level: data.skillLevel,
+            onboarding_completed: data.onboardingCompleted ?? true,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`auth_id.eq.${userId},id.eq.${userId}`);
+      }
+    } catch (err) {
+      console.warn('[ServerAuth] Supabase update warning:', err);
+    }
+  }
+
+  const users = readLocalUsers();
+  const userIdx = users.findIndex((u) => u.id === userId);
+  if (userIdx >= 0) {
+    users[userIdx] = {
+      ...users[userIdx],
+      full_name: data.fullName || users[userIdx].full_name,
+      onboarding_completed: data.onboardingCompleted ?? true,
+      updated_at: new Date().toISOString(),
+    };
+    writeLocalUsers(users);
+    return sanitizeUser(users[userIdx]);
+  }
+
+  return null;
 }

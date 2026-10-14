@@ -113,7 +113,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
               3. Time Slot
             </label>
             <span className="text-[10px] text-[#A5B0A6]">
-              ⚡ Peak evening lights: +£8
+              ⚡ Peak evening lights: +₱80
             </span>
           </div>
 
@@ -199,8 +199,8 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
         {/* 7. Price Breakdown */}
         <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2 text-xs">
           <div className="flex justify-between text-[#A5B0A6]">
-            <span>Court Fee ({durationHours} hrs × £{venue.pricePerHour})</span>
-            <span>£{calculatedTotal}</span>
+            <span>Court Fee ({durationHours} hrs × ₱{venue.pricePerHour})</span>
+            <span>₱{calculatedTotal}</span>
           </div>
           <div className="flex justify-between text-[#A5B0A6]">
             <span>Booking & Lighting Fee</span>
@@ -208,7 +208,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
           </div>
           <div className="pt-2 border-t border-white/10 flex justify-between font-display font-bold text-sm text-[#F4F7F0]">
             <span>Total Amount Due</span>
-            <span className="text-[#C8FF2E] text-base">£{calculatedTotal}</span>
+            <span className="text-[#C8FF2E] text-base">₱{calculatedTotal}</span>
           </div>
         </div>
       </div>
@@ -226,7 +226,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
             })
           }
         >
-          Booking Now • £{calculatedTotal}
+          Booking Now • ₱{calculatedTotal}
         </Button>
       </div>
     </div>

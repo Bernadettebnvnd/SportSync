@@ -177,7 +177,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
                       <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{venue.name}</h4>
                       <span className="text-[10px] text-[#A5B0A6]">{venue.surface} • {venue.city}</span>
                     </div>
-                    <span className="text-xs font-bold text-[#C8FF2E]">£{venue.pricePerHour}/hr</span>
+                    <span className="text-xs font-bold text-[#C8FF2E]">₱{venue.pricePerHour}/hr</span>
                   </div>
                 ))}
               </div>

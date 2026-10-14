@@ -95,11 +95,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [selectedTeam, setSelectedTeam] = useState<Team>(TEAMS.northgate);
   const [activeBookingDetails, setActiveBookingDetails] = useState<{
     venue: Venue;
+    venueId?: string;
+    venueName?: string;
     court: string;
+    courtId?: string;
     slot: string;
+    date?: string;
+    sport?: string;
     totalPrice: number;
     duration?: number;
   } | null>(null);
+  const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string }>({});
   const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('signup');
@@ -240,6 +246,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'personalization':
         return (
           <PersonalizationScreen
+            onBack={goBack}
+            initialValues={personalizationDraft}
+            onDraftChange={setPersonalizationDraft}
             onComplete={async (prefs) => {
               if (prefs) {
                 await bridge.completeOnboarding({
@@ -249,6 +258,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   preferredArea: prefs.preferredArea,
                   avatarUrl: prefs.avatarUrl,
                 });
+                setPersonalizationDraft(null);
                 setToastMessage('Preferences saved! Welcome to SportSync.');
               }
               if (guestPrompt.pendingAction) {
@@ -267,6 +277,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <DiscoverScreen
             venues={bridge.venues}
+            games={bridge.games}
             user={bridge.userProfile}
             onSelectMatch={(m) => {
               setSelectedMatch(m);
@@ -280,6 +291,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               setSelectedVenue(v);
               navigateTo('venue-detail');
             }}
+            onCreateGame={() => navigateTo('create-match')}
             onOpenNotifications={() => {
               if (!requireAuth('Notifications', 'Sign in to access your SportSync notifications.')) return;
               navigateTo('notifications');
@@ -371,6 +383,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               const newGame = await bridge.createCommunityGame(gameData);
               setSelectedGame(newGame);
               setToastMessage('Match published to feed! +100 Playmaker XP');
+              return newGame;
+            }}
+            onFinish={() => {
               navigateTo('match-detail');
             }}
           />
@@ -452,10 +467,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onProceedToPayment={(details) => {
               setActiveBookingDetails({
                 venue: selectedVenue,
+                venueId: selectedVenue.id,
+                venueName: selectedVenue.name,
                 court: details.court,
+                courtId: `${selectedVenue.id}_c1`,
                 slot: details.slot,
                 totalPrice: details.totalPrice,
                 duration: details.duration,
+                date: '2026-10-17',
+                sport: (selectedVenue as any)?.sport || 'pickleball',
               });
               navigateTo('payment');
             }}
@@ -464,10 +484,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'payment':
         return (
           <PaymentScreen
-            totalAmount={activeBookingDetails?.totalPrice || 54}
+            totalAmount={activeBookingDetails?.totalPrice || 450}
             bookingDetails={activeBookingDetails || undefined}
             onBack={goBack}
-            onPaymentSuccess={() => {
+            onPaymentSuccess={(confirmedBooking) => {
               if (activeBookingDetails) {
                 bridge.createReservation({
                   venue: activeBookingDetails.venue,
@@ -475,6 +495,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   date: 'Sat, 17 Oct',
                   slot: activeBookingDetails.slot,
                   price: activeBookingDetails.totalPrice,
+                  bookingReference: confirmedBooking?.bookingReference || confirmedBooking?.booking_reference,
                 });
               }
               setToastMessage('Court booking confirmed! +60 Playmaker XP');

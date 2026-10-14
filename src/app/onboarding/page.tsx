@@ -805,7 +805,7 @@ export default function OnboardingPage() {
 
                   <div>
                     <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                      Hourly Court Rate (PHP)
+                      Hourly Court Rate (₱)
                     </label>
                     <div className="flex items-center gap-2">
                       {[350, 450, 500, 600, 800].map((rate) => (

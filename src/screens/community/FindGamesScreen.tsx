@@ -21,12 +21,20 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
 
   const filteredGames = games.filter((g) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        g.title.toLowerCase().includes(q) ||
+        g.sport.toLowerCase().includes(q) ||
+        g.locationName.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+    }
     if (activeFilter === 'urgent') {
       const left = g.spotsTotal - g.spotsJoined;
       return left <= 2 && left > 0;
     }
     if (activeFilter === 'today') {
-      return g.date.toLowerCase() === 'today';
+      return g.date.toLowerCase().includes('today');
     }
     return true;
   });

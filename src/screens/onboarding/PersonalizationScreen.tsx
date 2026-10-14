@@ -1,13 +1,26 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, ArrowRight, MapPin, User, Calendar, Clock, Camera } from 'lucide-react';
+import { Check, ArrowRight, ArrowLeft, MapPin, User, Calendar, Clock, Camera } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { PRIMARY_SPORTS, PrimarySport } from '../../config/sports';
 
+export interface PersonalizationDraftData {
+  displayName?: string;
+  selectedAvatar?: string;
+  selectedSports?: string[];
+  customSportInput?: string;
+  skillLevel?: number;
+  preferredArea?: string;
+  availability?: string;
+}
+
 interface PersonalizationScreenProps {
+  onBack?: () => void;
+  initialValues?: PersonalizationDraftData;
+  onDraftChange?: (draft: PersonalizationDraftData) => void;
   onComplete: (preferences?: {
     fullName?: string;
     selectedSports: string[];
@@ -18,14 +31,36 @@ interface PersonalizationScreenProps {
   }) => void;
 }
 
-export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({ onComplete }) => {
-  const [displayName, setDisplayName] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState<string>('alex');
-  const [selectedSports, setSelectedSports] = useState<string[]>(['Basketball', 'Pickleball']);
-  const [customSportInput, setCustomSportInput] = useState<string>('');
-  const [skillLevel, setSkillLevel] = useState(2); // 0: Beginner, 1: Casual, 2: Intermediate, 3: Competitive
-  const [preferredArea, setPreferredArea] = useState('Metro Manila');
-  const [availability, setAvailability] = useState('Weekday Evenings & Weekends');
+export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
+  onBack,
+  initialValues,
+  onDraftChange,
+  onComplete,
+}) => {
+  const [displayName, setDisplayName] = useState(initialValues?.displayName ?? '');
+  const [selectedAvatar, setSelectedAvatar] = useState<string>(initialValues?.selectedAvatar ?? 'alex');
+  const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? ['Basketball', 'Pickleball']);
+  const [customSportInput, setCustomSportInput] = useState<string>(initialValues?.customSportInput ?? '');
+  const [skillLevel, setSkillLevel] = useState(initialValues?.skillLevel ?? 2); // 0: Beginner, 1: Casual, 2: Intermediate, 3: Competitive
+  const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Metro Manila');
+  const [availability, setAvailability] = useState(initialValues?.availability ?? 'Weekday Evenings & Weekends');
+
+  const handleBack = () => {
+    if (onDraftChange) {
+      onDraftChange({
+        displayName,
+        selectedAvatar,
+        selectedSports,
+        customSportInput,
+        skillLevel,
+        preferredArea,
+        availability,
+      });
+    }
+    if (onBack) {
+      onBack();
+    }
+  };
 
   const skillLabels = ['Beginner', 'Casual', 'Intermediate', 'Competitive'];
 
@@ -76,16 +111,30 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({ on
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-6 pt-8 select-none overflow-y-auto no-scrollbar">
+    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-6 pt-6 select-none overflow-y-auto no-scrollbar">
       <div className="space-y-6">
-        {/* Header */}
+        {/* Header with Back Button */}
         <div>
-          <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block mb-1">
-            Player Onboarding • Preferences
-          </span>
-          <h2 className="font-display font-black text-2xl text-[#F4F7F0]">
-            Profile &amp; Playing Preferences
-          </h2>
+          <div className="flex items-center gap-3 mb-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={handleBack}
+                className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+                aria-label="Go back to previous screen"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div>
+              <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
+                Player Onboarding &bull; Preferences
+              </span>
+              <h2 className="font-display font-black text-2xl text-[#F4F7F0]">
+                Profile &amp; Playing Preferences
+              </h2>
+            </div>
+          </div>
           <p className="text-xs text-[#A5B0A6] mt-0.5">
             SportSync connects you with compatible local players and complete rosters.
           </p>

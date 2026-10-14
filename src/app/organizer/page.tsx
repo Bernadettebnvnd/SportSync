@@ -51,6 +51,7 @@ export default function OrganizerDashboard() {
     joinQueue,
     updateBookingStatus,
     createOpenPlaySession,
+    refreshBookings,
   } = useMatchiStore();
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
@@ -60,6 +61,10 @@ export default function OrganizerDashboard() {
   const [walkInFormat, setWalkInFormat] = useState<'doubles' | 'singles'>('doubles');
   const [activeTab, setActiveTab] = useState<'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments'>('overview');
   const [monetizeSuccessMessage, setMonetizeSuccessMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    refreshBookings();
+  }, [refreshBookings, activeTab]);
 
   // Facility courts & custom added courts
   const [customCourts, setCustomCourts] = useState<any[]>([]);
@@ -96,7 +101,9 @@ export default function OrganizerDashboard() {
   const verifiedPayments = payments.filter((p) => p.status === 'approved');
 
   // Revenue & Accounting metrics
-  const facilityBookings = bookings.filter((b) => primaryVenue && b.venue_id === primaryVenue.id);
+  const facilityBookings = bookings.filter((b) =>
+    primaryVenue ? (b.venue_id === primaryVenue.id || b.venue_id === primaryVenue.slug || !b.venue_id) : true
+  );
   const totalGrossCents =
     verifiedPayments.reduce((acc, curr) => acc + curr.amount_cents, 0) +
     facilityBookings.filter((b) => b.status === 'confirmed').reduce((acc, b) => acc + b.total_amount_cents, 0);
@@ -352,7 +359,7 @@ export default function OrganizerDashboard() {
                 : 'text-[#65756B] hover:text-[#1A241E]'
             }`}
           >
-            Bookings ({bookings.length})
+            Bookings ({facilityBookings.length})
           </button>
           <button
             type="button"
@@ -598,7 +605,7 @@ export default function OrganizerDashboard() {
             </div>
 
             <div className="divide-y divide-[#E8E5DF]">
-              {bookings.slice(0, 5).map((booking) => (
+              {facilityBookings.slice(0, 5).map((booking) => (
                 <div key={booking.id} className="py-3 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-3">
                     <div className="h-9 w-9 rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center text-xs font-bold text-[#1A241E]">
@@ -715,7 +722,7 @@ export default function OrganizerDashboard() {
               </p>
             </div>
             <span className="text-xs font-bold text-[#2D724E] bg-[#EBF4EE] px-3 py-1 rounded-full self-start sm:self-auto">
-              {bookings.length} Total Bookings
+              {facilityBookings.length} Total Bookings
             </span>
           </div>
 
@@ -733,7 +740,7 @@ export default function OrganizerDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E8E5DF]">
-                {bookings.map((b) => (
+                {facilityBookings.map((b) => (
                   <tr key={b.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
                     <td className="py-3 pr-4 font-mono font-bold text-[#1A241E]">
                       {b.booking_reference}

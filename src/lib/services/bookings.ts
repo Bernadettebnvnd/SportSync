@@ -91,39 +91,47 @@ export async function getCourtDailyAvailability(
  */
 export async function getPlayerBookings(): Promise<Booking[]> {
   const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured) {
-    return [];
-  }
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        const { data: publicUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_id', userData.user.id)
+          .maybeSingle();
 
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user) return [];
+        if (publicUser) {
+          const { data, error } = await supabase
+            .from('bookings')
+            .select('*, venue:venues(*), court:courts(*)')
+            .eq('user_id', publicUser.id)
+            .order('booking_date', { ascending: false })
+            .order('start_time', { ascending: false });
 
-    const { data: publicUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', userData.user.id)
-      .maybeSingle();
-
-    if (!publicUser) return [];
-
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('*, venue:venues(*), court:courts(*)')
-      .eq('user_id', publicUser.id)
-      .order('booking_date', { ascending: false })
-      .order('start_time', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching player bookings:', error);
-      return [];
+          if (!error && data && data.length > 0) {
+            return data as Booking[];
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase getPlayerBookings notice:', err);
     }
-
-    return (data as Booking[]) || [];
-  } catch (err) {
-    console.error('Failed to fetch player bookings:', err);
-    return [];
   }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/bookings', { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.bookings)) return json.bookings as Booking[];
+      }
+    } catch (err) {
+      console.warn('API getPlayerBookings fallback notice:', err);
+    }
+  }
+
+  return [];
 }
 
 /**
@@ -131,33 +139,43 @@ export async function getPlayerBookings(): Promise<Booking[]> {
  */
 export async function getFacilityBookings(venueId?: string): Promise<Booking[]> {
   const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured) {
-    return [];
+  if (supabase && isSupabaseConfigured) {
+    try {
+      let query = supabase
+        .from('bookings')
+        .select('*, user:users(*), court:courts(*), venue:venues(*)');
+
+      if (venueId) {
+        query = query.eq('venue_id', venueId);
+      }
+
+      const { data, error } = await query
+        .order('booking_date', { ascending: false })
+        .order('start_time', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data as Booking[];
+      }
+    } catch (err) {
+      console.warn('Supabase getFacilityBookings notice:', err);
+    }
   }
 
-  try {
-    let query = supabase
-      .from('bookings')
-      .select('*, user:users(*), court:courts(*), venue:venues(*)');
-
-    if (venueId) {
-      query = query.eq('venue_id', venueId);
+  // Fallback to /api/bookings
+  if (typeof window !== 'undefined') {
+    try {
+      const url = venueId ? `/api/bookings?venueId=${encodeURIComponent(venueId)}` : '/api/bookings';
+      const res = await fetch(url, { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.bookings)) return json.bookings as Booking[];
+      }
+    } catch (err) {
+      console.warn('API getFacilityBookings fallback notice:', err);
     }
-
-    const { data, error } = await query
-      .order('booking_date', { ascending: false })
-      .order('start_time', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching facility bookings:', error);
-      return [];
-    }
-
-    return (data as Booking[]) || [];
-  } catch (err) {
-    console.error('Failed to fetch facility bookings:', err);
-    return [];
   }
+
+  return [];
 }
 
 /**
