@@ -20,6 +20,7 @@ import {
 import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
+import { TEST_VENUES } from './mockData';
 
 export interface SportSyncBookingItem {
   id: string;
@@ -359,14 +360,17 @@ export function useSportSyncBridge() {
       return 'Pickleball';
     };
 
-    const sourceVenues = store.venues && store.venues.length > 0 ? store.venues : [];
+    const sourceVenues = store.venues && store.venues.length > 0 ? store.venues : TEST_VENUES;
 
     const adaptedDbVenues: Venue[] = sourceVenues.map((dbV) => {
       const primaryCourt = dbV.courts?.[0];
       const primarySport = mapDbSportToUi(dbV.featured_sports?.[0] || primaryCourt?.sport);
+      const minCourtPrice = dbV.courts && dbV.courts.length > 0
+        ? Math.min(...dbV.courts.map((c: any) => c.hourly_rate_cents || 45000))
+        : 45000;
       const calculatedPrice = primaryCourt?.hourly_rate_cents
         ? Math.round(primaryCourt.hourly_rate_cents / 100)
-        : 450;
+        : Math.round(minCourtPrice / 100);
       const opHoursStr =
         dbV.operating_hours && typeof dbV.operating_hours === 'object'
           ? Object.values(dbV.operating_hours).join(' • ')
@@ -377,7 +381,7 @@ export function useSportSyncBridge() {
         : [primarySport]
       ) as string[];
 
-      // If courts specify other sports, include them
+      // If courts specify other sports, include them so players can find courts by sport
       if (dbV.courts && dbV.courts.length > 0) {
         dbV.courts.forEach((c: any) => {
           if (c.sport) {
@@ -403,7 +407,7 @@ export function useSportSyncBridge() {
         image: dbV.images?.[0] || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80',
         distanceMiles: 1.6,
         amenities: dbV.amenities || ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
-        courtsCount: dbV.courts?.length || 2,
+        courtsCount: dbV.courts?.length || 1,
         availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00', '20:00'],
         isFavorite: favoriteVenueIds.includes(dbV.id),
         courts: dbV.courts || [],

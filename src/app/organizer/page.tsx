@@ -34,6 +34,8 @@ import {
   MapPin,
   Building2,
   User,
+  Edit3,
+  X,
 } from 'lucide-react';
 
 export default function OrganizerDashboard() {
@@ -52,6 +54,8 @@ export default function OrganizerDashboard() {
     updateBookingStatus,
     createOpenPlaySession,
     refreshBookings,
+    addCourt,
+    updateVenueProfile,
   } = useMatchiStore();
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
@@ -66,8 +70,7 @@ export default function OrganizerDashboard() {
     refreshBookings();
   }, [refreshBookings, activeTab]);
 
-  // Facility courts & custom added courts
-  const [customCourts, setCustomCourts] = useState<any[]>([]);
+  // Facility courts & added courts
   const [isAddCourtOpen, setIsAddCourtOpen] = useState(false);
   const [newCourtName, setNewCourtName] = useState('');
   const [newCourtSport, setNewCourtSport] = useState<SportType>('basketball');
@@ -88,7 +91,76 @@ export default function OrganizerDashboard() {
   const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
 
   // Facility context
-  const primaryVenue = venues.find((v) => v.owner_id === currentUser.id) || (currentUser.role === 'admin' ? venues[0] : null);
+  const primaryVenue =
+    venues.find((v) => v.owner_id === currentUser.id) ||
+    venues.find((v) => v.owner_id === 'local_owner' || v.owner_id === 'owner_pending') ||
+    (isOwner ? venues[0] : null);
+
+  // Edit Facility Profile state
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [editFacilityName, setEditFacilityName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editHours, setEditHours] = useState('06:00 AM - 11:00 PM');
+  const [editPhone, setEditPhone] = useState('');
+  const [editSports, setEditSports] = useState<SportType[]>([]);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const openEditProfile = () => {
+    if (!primaryVenue) return;
+    setEditFacilityName(primaryVenue.name);
+    setEditDescription(primaryVenue.description || '');
+    setEditAddress(primaryVenue.address || '');
+    setEditCity(primaryVenue.city || 'Metro Manila');
+    setEditHours(
+      primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
+        ? Object.values(primaryVenue.operating_hours)[0] || '06:00 AM - 11:00 PM'
+        : '06:00 AM - 11:00 PM'
+    );
+    setEditPhone((primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000');
+    setEditSports(primaryVenue.featured_sports || ['pickleball']);
+    setIsEditProfileOpen(true);
+  };
+
+  const toggleEditSport = (sport: SportType) => {
+    if (editSports.includes(sport)) {
+      if (editSports.length > 1) {
+        setEditSports(editSports.filter((s) => s !== sport));
+      }
+    } else {
+      setEditSports([...editSports, sport]);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!primaryVenue || !editFacilityName.trim()) return;
+    setIsSavingProfile(true);
+    try {
+      await updateVenueProfile(primaryVenue.id, {
+        name: editFacilityName.trim(),
+        description: editDescription.trim(),
+        address: editAddress.trim(),
+        city: editCity.trim(),
+        operating_hours: { mon_sun: editHours },
+        featured_sports: editSports,
+        payment_info: {
+          ...(primaryVenue.payment_info || {}),
+          accepts_cash: true,
+          gcash_number: editPhone.trim(),
+        },
+      });
+      setIsEditProfileOpen(false);
+      setMonetizeSuccessMessage(`Facility profile "${editFacilityName.trim()}" saved and synchronized with database!`);
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+    } catch (err) {
+      console.error('Failed to update facility profile:', err);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const primarySession = sessions.find((s) => s.venue_id === primaryVenue?.id) || null;
 
   const sessionCourts = primarySession ? courts.filter((c) => primarySession.court_ids.includes(c.id)) : [];
@@ -112,7 +184,7 @@ export default function OrganizerDashboard() {
   const totalBookingsCount = facilityBookings.length;
 
   // Dynamic Occupancy calculation based on real bookings vs available court-hours
-  const facilityCourts = primaryVenue ? courts.filter((c) => c.venue_id === primaryVenue.id) : [];
+  const facilityCourts = primaryVenue ? (primaryVenue.courts && primaryVenue.courts.length > 0 ? primaryVenue.courts : courts.filter((c) => c.venue_id === primaryVenue.id)) : [];
   const totalCapacitySlots = (facilityCourts.length || 1) * 14;
   const bookedSlotsCount = facilityBookings.filter((b) => b.status !== 'cancelled').length;
   const occupancyRate = Math.min(100, Math.round((bookedSlotsCount / Math.max(1, totalCapacitySlots)) * 100));
@@ -183,31 +255,35 @@ export default function OrganizerDashboard() {
     );
   }
 
-  const allFacilityCourts = [
-    ...(primaryVenue ? courts.filter((c) => c.venue_id === primaryVenue.id) : []),
-    ...customCourts,
-  ];
+  const allFacilityCourts = primaryVenue
+    ? (primaryVenue.courts && primaryVenue.courts.length > 0
+        ? primaryVenue.courts
+        : courts.filter((c) => c.venue_id === primaryVenue.id))
+    : [];
 
-  const handleAddCourt = (e: React.FormEvent) => {
+  const handleAddCourt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCourtName.trim() || !primaryVenue) return;
-    const newCourt = {
-      id: `court_${Date.now()}`,
-      venue_id: primaryVenue.id,
-      name: newCourtName.trim(),
-      sport: newCourtSport,
-      floor_type: newCourtSurface,
-      hourly_rate_cents: Math.round(Number(newCourtRate || '600') * 100),
-      is_indoor: true,
-      is_active: true,
-      supports_doubles: true,
-      supports_singles: true,
-    };
-    setCustomCourts((prev) => [newCourt, ...prev]);
-    setIsAddCourtOpen(false);
-    setNewCourtName('');
-    setMonetizeSuccessMessage(`Court "${newCourt.name}" registered and published to player search!`);
-    setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+    try {
+      const created = await addCourt({
+        venue_id: primaryVenue.id,
+        name: newCourtName.trim(),
+        sport: newCourtSport,
+        floor_type: newCourtSurface,
+        court_type: 'standard',
+        hourly_rate_cents: Math.round(Number(newCourtRate || '600') * 100),
+        is_indoor: true,
+        is_active: true,
+        supports_doubles: true,
+        supports_singles: true,
+      });
+      setIsAddCourtOpen(false);
+      setNewCourtName('');
+      setMonetizeSuccessMessage(`Court "${created.name}" registered and published to player search!`);
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+    } catch (err) {
+      console.error('Failed to add court:', err);
+    }
   };
 
   const handleCreateHostedGame = (e: React.FormEvent) => {
@@ -1511,7 +1587,15 @@ export default function OrganizerDashboard() {
                 <p className="text-xs text-[#65756B] mt-0.5">{primaryVenue.description}</p>
               </div>
 
-              <div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openEditProfile}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Facility Profile</span>
+                </button>
                 {primaryVenue.is_verified ? (
                   <span className="rounded-full bg-[#1E4A32] px-3.5 py-1.5 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
                     <ShieldCheck className="w-4 h-4 text-[#C8FF2E]" />
@@ -1544,14 +1628,18 @@ export default function OrganizerDashboard() {
                 </span>
                 <p className="text-[#1A241E] font-medium">Owner: {currentUser.full_name || 'Facility Manager'}</p>
                 <p className="text-[#65756B]">Email: {currentUser.email || 'manager@facility.ph'}</p>
-                <p className="text-[#65756B]">Phone: {currentUser.phone || '0917-888-0000'}</p>
+                <p className="text-[#65756B]">Phone: {(primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000'}</p>
               </div>
 
               <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
                 <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
                   Operating Hours
                 </span>
-                <p className="text-[#1A241E] font-medium">Monday &ndash; Sunday: 06:00 &ndash; 23:00</p>
+                <p className="text-[#1A241E] font-medium">
+                  {primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
+                    ? Object.values(primaryVenue.operating_hours)[0] || 'Monday – Sunday: 06:00 – 23:00'
+                    : 'Monday – Sunday: 06:00 – 23:00'}
+                </p>
                 <p className="text-[#65756B]">Online court booking open 24/7 on SportSync.</p>
               </div>
 
@@ -1574,6 +1662,13 @@ export default function OrganizerDashboard() {
 
             {/* Actions */}
             <div className="pt-4 border-t border-[#E8E5DF] flex flex-col sm:flex-row items-center gap-3">
+              <button
+                type="button"
+                onClick={openEditProfile}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold text-center transition-colors shadow-sm"
+              >
+                Edit Facility Profile
+              </button>
               <Link
                 href="/"
                 className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-[#E8E5DF] hover:bg-[#FAF8F5] text-xs font-bold text-[#1A241E] text-center transition-colors"
@@ -1582,6 +1677,151 @@ export default function OrganizerDashboard() {
               </Link>
             </div>
           </div>
+
+          {/* Edit Facility Profile Modal */}
+          {isEditProfileOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+              <div className="relative w-full max-w-xl rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+                {/* Header */}
+                <div className="p-4 sm:p-5 border-b border-[#E8E5DF] bg-[#FAF8F5] flex items-center justify-between shrink-0">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-[#2D724E]" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#2D724E]">
+                        Facility Settings &amp; Profile
+                      </span>
+                    </div>
+                    <h3 className="font-display text-base sm:text-lg font-black text-black mt-0.5">
+                      Edit Facility Profile
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditProfileOpen(false)}
+                    className="rounded-full p-2 text-black hover:bg-[#E8E5DF] transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Form Body */}
+                <form onSubmit={handleSaveProfile} className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                  <div>
+                    <label className="text-[11px] font-black text-black block mb-1">Facility Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFacilityName}
+                      onChange={(e) => setEditFacilityName(e.target.value)}
+                      placeholder="e.g. BGC Center Court & Smash Hub"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-black text-black block mb-1">Full Street Address</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAddress}
+                      onChange={(e) => setEditAddress(e.target.value)}
+                      placeholder="e.g. 32nd St cor 9th Ave, Bonifacio Global City"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-black text-black block mb-1">City / Municipality</label>
+                      <input
+                        type="text"
+                        required
+                        value={editCity}
+                        onChange={(e) => setEditCity(e.target.value)}
+                        placeholder="e.g. Taguig City"
+                        className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-black text-black block mb-1">Operating Hours</label>
+                      <input
+                        type="text"
+                        value={editHours}
+                        onChange={(e) => setEditHours(e.target.value)}
+                        placeholder="e.g. 06:00 AM - 11:00 PM"
+                        className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-black text-black block mb-1">Contact Phone (GCash / SMS)</label>
+                    <input
+                      type="text"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="e.g. 0917-888-0000"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-black text-black block mb-1">Short Description</label>
+                    <textarea
+                      rows={3}
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Mention flooring surface quality, air conditioning, parking, racket stringing, etc..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none resize-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-black text-black block mb-1.5">
+                      Supported Sports
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(['badminton', 'pickleball', 'basketball', 'volleyball', 'tennis', 'football', 'padel'] as SportType[]).map((sport) => {
+                        const isSelected = editSports.includes(sport);
+                        return (
+                          <button
+                            key={sport}
+                            type="button"
+                            onClick={() => toggleEditSport(sport)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                              isSelected
+                                ? 'bg-[#2D724E] text-white border-[#2D724E] shadow-xs'
+                                : 'bg-white border-[#E8E5DF] text-black font-bold hover:border-[#2D724E]'
+                            }`}
+                          >
+                            {getSportDisplayName(sport)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Footer inside form */}
+                  <div className="pt-4 border-t border-[#E8E5DF] flex items-center justify-end gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditProfileOpen(false)}
+                      className="px-4 py-2 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black hover:bg-[#FAF8F5] transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingProfile}
+                      className="px-6 py-2.5 min-h-[44px] rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isSavingProfile ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

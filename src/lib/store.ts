@@ -22,7 +22,7 @@ import {
   FacilityInventorySource,
 } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { getVenues, createVenueWithCourts } from './services/venues';
+import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile } from './services/venues';
 import { getPlayerBookings, getFacilityBookings, updateBookingStatus as updateDbBookingStatus } from './services/bookings';
 import { getOpenPlaySessions, getSessionQueues, joinSessionQueue, createOpenPlaySession as createDbOpenPlaySession } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
@@ -504,6 +504,54 @@ export function useMatchiStore() {
     []
   );
 
+  // Add Court to Venue (persisting to Supabase + local cache)
+  const addCourt = useCallback(
+    async (courtData: Omit<Court, 'id'>) => {
+      const createdCourt = await createDbCourt(courtData);
+      globalState = {
+        ...globalState,
+        courts: [createdCourt, ...globalState.courts],
+        venues: globalState.venues.map((v) => {
+          if (v.id === courtData.venue_id) {
+            const existingCourts = v.courts || [];
+            const updatedCourts = [createdCourt, ...existingCourts.filter((c) => c.id !== createdCourt.id)];
+            const updatedSports = v.featured_sports.includes(courtData.sport)
+              ? v.featured_sports
+              : [...v.featured_sports, courtData.sport];
+            return {
+              ...v,
+              courts: updatedCourts,
+              featured_sports: updatedSports,
+            };
+          }
+          return v;
+        }),
+      };
+      notify();
+      return createdCourt;
+    },
+    []
+  );
+
+  // Update Facility Profile (persisting to Supabase + local cache)
+  const updateVenueProfile = useCallback(
+    async (venueId: string, updates: Partial<Venue>) => {
+      const result = await updateDbVenueProfile(venueId, updates);
+      globalState = {
+        ...globalState,
+        venues: globalState.venues.map((v) => {
+          if (v.id === venueId) {
+            return { ...v, ...updates, ...(result || {}) };
+          }
+          return v;
+        }),
+      };
+      notify();
+      return result;
+    },
+    []
+  );
+
   // Create Booking
   const createBooking = useCallback(
     (newBooking: Booking) => {
@@ -656,6 +704,8 @@ export function useMatchiStore() {
     completePlayerOnboarding,
     resetOnboardingState,
     completeOwnerOnboarding,
+    addCourt,
+    updateVenueProfile,
     createBooking,
     updateBookingStatus,
     createOpenPlaySession,

@@ -192,63 +192,64 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                 Business Facility Onboarding
               </span>
             </div>
-            <h3 className="text-base sm:text-lg font-black text-[#1A241E] mt-0.5">
+            <h3 className="font-display text-base sm:text-lg font-black text-black mt-0.5">
               List Your Facility on SportSync
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-[#65756B] hover:bg-[#E8E5DF] transition-colors"
+            className="rounded-full p-2 text-black hover:bg-[#E8E5DF] transition-colors"
+            aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Stepper Progress Bar */}
-        <div className="bg-[#FAF8F5] px-4 sm:px-6 py-2 border-b border-[#E8E5DF] flex items-center justify-between text-xs font-bold text-[#65756B] shrink-0">
+        <div className="bg-[#FAF8F5] px-4 sm:px-6 py-2.5 border-b border-[#E8E5DF] flex items-center justify-between text-xs font-bold text-black shrink-0">
           <div className="flex items-center gap-1.5">
             <span
               className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 1 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-[#65756B]'
+                step >= 1 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
               }`}
             >
               1
             </span>
-            <span className={step === 1 ? 'text-[#1A241E]' : ''}>Contact</span>
+            <span className={step === 1 ? 'text-black font-black' : 'text-black/80 font-bold'}>Contact</span>
           </div>
           <div className="h-0.5 w-6 bg-[#E8E5DF]" />
           <div className="flex items-center gap-1.5">
             <span
               className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 2 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-[#65756B]'
+                step >= 2 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
               }`}
             >
               2
             </span>
-            <span className={step === 2 ? 'text-[#1A241E]' : ''}>Facility</span>
+            <span className={step === 2 ? 'text-black font-black' : 'text-black/80 font-bold'}>Facility</span>
           </div>
           <div className="h-0.5 w-6 bg-[#E8E5DF]" />
           <div className="flex items-center gap-1.5">
             <span
               className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 3 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-[#65756B]'
+                step >= 3 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
               }`}
             >
               3
             </span>
-            <span className={step === 3 ? 'text-[#1A241E]' : ''}>Courts</span>
+            <span className={step === 3 ? 'text-black font-black' : 'text-black/80 font-bold'}>Courts</span>
           </div>
           <div className="h-0.5 w-6 bg-[#E8E5DF]" />
           <div className="flex items-center gap-1.5">
             <span
               className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 4 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-[#65756B]'
+                step >= 4 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
               }`}
             >
               4
             </span>
-            <span className={step === 4 ? 'text-[#1A241E]' : ''}>Model</span>
+            <span className={step === 4 ? 'text-black font-black' : 'text-black/80 font-bold'}>Model</span>
           </div>
         </div>
 
@@ -258,45 +259,45 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
           {step === 1 && (
             <div className="space-y-3.5">
               <div>
-                <h4 className="text-sm font-black text-[#1A241E]">Owner / Representative Details</h4>
-                <p className="text-xs text-[#65756B]">
+                <h4 className="font-display text-sm font-black text-black">Owner / Representative Details</h4>
+                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
                   Used for verified booking notifications, payout confirmations, and court ops access.
                 </p>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Full Name</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Full Name</label>
                   <input
                     type="text"
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
                     placeholder="e.g. Carlos Tan"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Business Email</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Business Email</label>
                   <input
                     type="email"
                     value={ownerEmail}
                     onChange={(e) => setOwnerEmail(e.target.value)}
                     placeholder="e.g. carlos@upperdecksports.ph"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Contact Phone (GCash / SMS)</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Contact Phone (GCash / SMS)</label>
                   <input
                     type="text"
                     value={ownerPhone}
                     onChange={(e) => setOwnerPhone(e.target.value)}
                     placeholder="e.g. 0917-888-0000"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     required
                   />
                 </div>
@@ -308,67 +309,67 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
           {step === 2 && (
             <div className="space-y-3.5">
               <div>
-                <h4 className="text-sm font-black text-[#1A241E]">Facility Profile</h4>
-                <p className="text-xs text-[#65756B]">
+                <h4 className="font-display text-sm font-black text-black">Facility Profile</h4>
+                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
                   Tell players where you are located and what sports you host.
                 </p>
               </div>
 
               <div className="space-y-2.5">
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Facility Name</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Facility Name</label>
                   <input
                     type="text"
                     value={facilityName}
                     onChange={(e) => setFacilityName(e.target.value)}
                     placeholder="e.g. BGC Center Court & Smash Hub"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Full Street Address</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Full Street Address</label>
                   <input
                     type="text"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="e.g. 32nd St cor 9th Ave, Bonifacio Global City"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     required
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-[11px] font-black text-[#1A241E] block mb-1">City / Municipality</label>
+                    <label className="text-[11px] font-black text-black block mb-1">City / Municipality</label>
                     <input
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                       placeholder="e.g. Taguig City"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] font-black text-[#1A241E] block mb-1">Hours</label>
+                    <label className="text-[11px] font-black text-black block mb-1">Hours</label>
                     <input
                       type="text"
                       defaultValue="06:00 AM - 11:00 PM"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs bg-[#FAF8F5]"
+                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] text-xs font-semibold text-black bg-[#FAF8F5]"
                       readOnly
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-black text-[#1A241E] block mb-1">Short Description</label>
+                  <label className="text-[11px] font-black text-black block mb-1">Short Description</label>
                   <textarea
-                    rows={2}
+                    rows={3}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Mention flooring quality, air conditioning, parking, racket stringing, etc..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none resize-none transition-all"
                   />
                 </div>
               </div>
@@ -379,15 +380,15 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
           {step === 3 && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-black text-[#1A241E]">Sports &amp; Playing Areas</h4>
-                <p className="text-xs text-[#65756B]">
+                <h4 className="font-display text-sm font-black text-black">Sports &amp; Playing Areas</h4>
+                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
                   Select the sports your facility supports and define court rates.
                 </p>
               </div>
 
               {/* Multi-Sport selector */}
               <div>
-                <label className="text-[11px] font-black text-[#1A241E] block mb-1.5">
+                <label className="text-[11px] font-black text-black block mb-1.5">
                   Supported Sports (Hybrid Facilities Supported)
                 </label>
                 <div className="flex flex-wrap gap-1.5">
@@ -401,7 +402,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
                           isSelected
                             ? 'bg-[#2D724E] text-white border-[#2D724E] shadow-xs'
-                            : 'bg-white border-[#E8E5DF] text-[#65756B] hover:border-[#2D724E]'
+                            : 'bg-white border-[#E8E5DF] text-black font-bold hover:border-[#2D724E]'
                         }`}
                       >
                         {sport.label}
@@ -414,24 +415,24 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               {/* Courts list */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-black text-[#1A241E]">
+                  <label className="text-[11px] font-black text-black">
                     Courts &amp; Pricing ({courts.length})
                   </label>
                   <button
                     type="button"
                     onClick={handleAddCourt}
-                    className="text-xs font-black text-[#2D724E] hover:underline flex items-center gap-1"
+                    className="text-xs font-black text-[#2D724E] hover:text-[#1E4A32] flex items-center gap-1 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add Court</span>
                   </button>
                 </div>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                   {courts.map((court, idx) => (
                     <div
                       key={idx}
-                      className="p-3 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] space-y-2"
+                      className="p-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] space-y-2.5"
                     >
                       <div className="flex items-center gap-2">
                         <input
@@ -439,12 +440,12 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                           value={court.name}
                           onChange={(e) => handleUpdateCourt(idx, 'name', e.target.value)}
                           placeholder="Court Name"
-                          className="flex-1 px-2.5 py-1.5 rounded-lg border border-[#E8E5DF] bg-white text-xs font-bold"
+                          className="flex-1 px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
                         />
                         <select
                           value={court.sport}
                           onChange={(e) => handleUpdateCourt(idx, 'sport', e.target.value as SportType)}
-                          className="px-2 py-1.5 rounded-lg border border-[#E8E5DF] bg-white text-xs font-bold"
+                          className="px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
                         >
                           {selectedSports.map((s) => (
                             <option key={s} value={s}>
@@ -456,10 +457,10 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                           <button
                             type="button"
                             onClick={() => handleRemoveCourt(idx)}
-                            className="p-1.5 text-[#DC2626] hover:bg-[#FEE2E2] rounded-lg"
+                            className="p-2 text-[#DC2626] hover:bg-[#FEE2E2] rounded-xl transition-colors"
                             title="Remove court"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -471,12 +472,12 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                             value={court.floorType}
                             onChange={(e) => handleUpdateCourt(idx, 'floorType', e.target.value)}
                             placeholder="Floor Surface (e.g. BWF Taraflex)"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-[#E8E5DF] bg-white text-xs text-[#65756B]"
+                            className="w-full px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
                           />
                         </div>
                         <div className="w-32">
                           <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold text-[#65756B]">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-black">
                               ₱
                             </span>
                             <input
@@ -486,7 +487,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                                 handleUpdateCourt(idx, 'hourlyRateCents', Number(e.target.value) * 100)
                               }
                               placeholder="Rate/hr"
-                              className="w-full pl-5 pr-2 py-1.5 rounded-lg border border-[#E8E5DF] bg-white text-xs font-bold text-right"
+                              className="w-full pl-6 pr-2.5 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-black text-black text-right focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
                             />
                           </div>
                         </div>
@@ -502,8 +503,8 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
           {step === 4 && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-sm font-black text-[#1A241E]">Marketplace Inventory Model</h4>
-                <p className="text-xs text-[#65756B]">
+                <h4 className="font-display text-sm font-black text-black">Marketplace Inventory Model</h4>
+                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
                   Choose how SportSync connects to your courts. We do not force you to replace your existing POS.
                 </p>
               </div>
@@ -523,8 +524,8 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                       }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-black text-[#1A241E]">{opt.title}</div>
-                        <p className="text-[11px] text-[#65756B] mt-0.5 leading-relaxed">
+                        <div className="text-xs font-black text-black">{opt.title}</div>
+                        <p className="text-[11px] text-black font-medium mt-0.5 leading-relaxed">
                           {opt.desc}
                         </p>
                       </div>
@@ -542,9 +543,9 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               </div>
 
               {inventorySource === 'external_link' && (
-                <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1.5 animate-in fade-in">
-                  <label className="text-xs font-bold text-[#1A241E] flex items-center gap-1">
-                    <ExternalLink className="w-3 h-3 text-[#2D724E]" />
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1.5 animate-in fade-in">
+                  <label className="text-xs font-black text-black flex items-center gap-1">
+                    <ExternalLink className="w-3.5 h-3.5 text-[#2D724E]" />
                     External Booking URL
                   </label>
                   <input
@@ -552,9 +553,9 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                     value={externalUrl}
                     onChange={(e) => setExternalUrl(e.target.value)}
                     placeholder="https://yourfacilitybooking.com/reserve"
-                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] bg-white text-xs"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                   />
-                  <p className="text-[10px] text-[#65756B]">
+                  <p className="text-[10px] text-black font-medium">
                     Players will see a direct link to your existing booking system.
                   </p>
                 </div>
@@ -569,20 +570,20 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3 | 4)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-[#1A241E] hover:bg-[#FAF8F5]"
+              className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black hover:bg-[#FAF8F5] transition-all"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
           ) : (
-            <span className="text-[11px] text-[#65756B] font-bold">Step 1 of 4</span>
+            <span className="text-[11px] text-black font-bold">Step 1 of 4</span>
           )}
 
           {step < 4 ? (
             <button
               type="button"
               onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3 | 4)}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 min-h-[44px] rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
             >
               <span>Continue</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -596,7 +597,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleFinish}
-                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-[#1E4A32] hover:bg-[#153423] text-[#E9C46A] text-xs font-black shadow-md transition-all active:scale-95 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-xl bg-[#1E4A32] hover:bg-[#153423] text-[#E9C46A] text-xs font-black shadow-md transition-all active:scale-95 disabled:opacity-50"
               >
                 <ShieldCheck className="w-4 h-4 text-[#E9C46A]" />
                 <span>{isSubmitting ? 'Publishing...' : 'Publish Facility'}</span>
