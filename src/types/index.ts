@@ -125,6 +125,8 @@ export interface Court {
   supports_doubles: boolean;
   supports_singles: boolean;
   operating_schedule?: Record<string, string>;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface VenuePaymentInfo {

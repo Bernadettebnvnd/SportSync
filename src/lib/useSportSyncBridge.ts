@@ -304,7 +304,7 @@ export function useSportSyncBridge() {
               id: s.id,
               sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
               title: s.title,
-              format: s.rotation_format || 'Open Rotation',
+              format: (s.rotation_format || '5v5') as any,
               skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
               date: 'Today',
               time: s.start_time || '18:00',

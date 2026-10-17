@@ -121,6 +121,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   return (
     <div
       style={{ width: size, height: size }}
+      suppressHydrationWarning
       className={`relative inline-block shrink-0 rounded-full select-none ${className}`}
     >
       {getAvatarGraphic()}

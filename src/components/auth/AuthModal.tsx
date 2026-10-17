@@ -13,6 +13,7 @@ import {
   ArrowRight,
   LogOut,
   User,
+  Building2,
 } from 'lucide-react';
 
 interface AuthModalProps {
