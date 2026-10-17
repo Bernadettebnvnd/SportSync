@@ -24,7 +24,7 @@ export const PhoneFrame: React.FC<PhoneFrameProps> = ({
       )}
 
       {/* 390x844 Hardware Shell — Responsive to smaller viewports */}
-      <div className="relative w-[390px] max-w-[calc(100vw-16px)] h-[844px] max-h-[92vh] rounded-[48px] bg-[#0B0F0C] border-[8px] sm:border-[10px] border-[#18201A] ring-1 ring-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col select-none">
+      <div className="relative w-full max-w-[390px] h-[844px] max-h-[90dvh] rounded-3xl sm:rounded-[48px] bg-[#0B0F0C] border-4 sm:border-[10px] border-[#18201A] ring-1 ring-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col select-none">
         {/* Dynamic Island Notch */}
         <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-7 bg-black rounded-full z-50 flex items-center justify-between px-2.5 shadow-md border border-white/5 pointer-events-none">
           <div className="w-2.5 h-2.5 rounded-full bg-[#141A15] border border-white/10" />

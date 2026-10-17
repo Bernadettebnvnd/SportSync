@@ -108,6 +108,12 @@ async function initializeStore() {
     const user = await getCurrentUser();
     if (user) {
       globalState.currentUser = user;
+      if (user.onboarding_completed) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
+        }
+      }
     }
 
     // 2. Fetch real venues & courts (gracefully backed by cache)
@@ -256,6 +262,12 @@ export function useMatchiStore() {
   }, [setUserRole]);
 
   const setAuthenticatedUser = useCallback((user: Partial<User>) => {
+    const isOnboarded = Boolean(
+      user.onboarding_completed ??
+      user.has_completed_onboarding ??
+      globalState.currentUser.onboarding_completed
+    );
+
     globalState = {
       ...globalState,
       currentUser: {
@@ -267,9 +279,22 @@ export function useMatchiStore() {
         full_name: user.full_name || globalState.currentUser.full_name,
         nickname: user.nickname || user.full_name?.split(' ')[0] || globalState.currentUser.nickname,
         role: user.role || globalState.currentUser.role,
+        primary_sport: user.primary_sport || globalState.currentUser.primary_sport,
+        preferred_sports: user.preferred_sports || globalState.currentUser.preferred_sports,
+        preferred_format: user.preferred_format || globalState.currentUser.preferred_format,
+        skill_level: user.skill_level || globalState.currentUser.skill_level,
+        city: user.city || globalState.currentUser.city,
+        onboarding_completed: isOnboarded,
+        has_completed_onboarding: isOnboarded,
         active_mode: user.role === 'venue_owner' || user.role === 'organizer' ? 'manage' : 'play',
       },
     };
+
+    if (isOnboarded && typeof window !== 'undefined') {
+      localStorage.setItem('matchi_onboarding_completed', 'true');
+      localStorage.setItem('sportsync_onboarding_completed', 'true');
+    }
+
     notify();
   }, []);
 
@@ -278,7 +303,9 @@ export function useMatchiStore() {
       localStorage.removeItem('sportsync_user_email');
       localStorage.removeItem('sportsync_user_role');
       localStorage.removeItem('sportsync_user_name');
+      localStorage.removeItem('sportsync_user_profile');
       localStorage.removeItem('matchi_onboarding_completed');
+      localStorage.removeItem('sportsync_onboarding_completed');
       localStorage.removeItem('matchi_user_name');
       localStorage.removeItem('matchi_user_nickname');
       try {
@@ -310,7 +337,7 @@ export function useMatchiStore() {
     }) => {
       const primarySport = data.preferredSports[0] || 'pickleball';
 
-      if (globalState.currentUser.auth_id) {
+      if (globalState.currentUser.auth_id || globalState.currentUser.id || globalState.currentUser.email) {
         await updatePlayerProfile({
           fullName: data.fullName,
           nickname: data.nickname,
@@ -324,6 +351,7 @@ export function useMatchiStore() {
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('matchi_onboarding_completed', 'true');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
         if (data.fullName) localStorage.setItem('matchi_user_name', data.fullName);
         if (data.nickname) localStorage.setItem('matchi_user_nickname', data.nickname);
       }

@@ -141,9 +141,9 @@ export function Navbar() {
                     <button
                       type="button"
                       onClick={() => setIsAuthModalOpen(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-[#0B0F0C] text-xs font-bold transition-all shadow-sm"
+                      className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-[#0B0F0C] text-xs font-bold transition-all shadow-sm shrink-0"
                     >
-                      Join SportSync
+                      <span>Join<span className="hidden sm:inline"> SportSync</span></span>
                     </button>
                   </div>
                 ) : (

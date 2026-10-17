@@ -89,11 +89,11 @@ export default function RootHomePage() {
       {/* Main App Container */}
       <main className="w-full flex-1 flex flex-col items-center justify-center">
         {useDeviceChassis ? (
-          <div className="py-6 sm:py-8">
+          <div className="py-4 sm:py-8 w-full flex items-center justify-center px-2 sm:px-4">
             <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} />
           </div>
         ) : (
-          <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl min-h-[calc(100vh-57px)] bg-[#0B0F0C] sm:border-x sm:border-white/5 relative flex flex-col shadow-2xl">
+          <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl min-h-screen md:min-h-[calc(100vh-57px)] bg-[#0B0F0C] sm:border-x sm:border-white/5 relative flex flex-col shadow-2xl">
             <MobileApp initialScreen={selectedScreen} inPhoneFrame={false} />
           </div>
         )}

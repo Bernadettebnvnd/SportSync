@@ -10,7 +10,14 @@ export interface StoredUser {
   passwordHash: string;
   salt: string;
   full_name: string;
+  nickname?: string;
+  avatar_url?: string;
   role: UserRole;
+  primary_sport?: string;
+  preferred_sports?: string[];
+  preferred_format?: string;
+  skill_level?: string;
+  city?: string;
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
@@ -21,7 +28,13 @@ export interface SanitizedUser {
   email: string;
   full_name: string;
   nickname: string;
+  avatar_url?: string;
   role: UserRole;
+  primary_sport?: string;
+  preferred_sports?: string[];
+  preferred_format?: string;
+  skill_level?: string;
+  city?: string;
   onboarding_completed: boolean;
   created_at: string;
 }
@@ -63,9 +76,15 @@ export function sanitizeUser(user: StoredUser): SanitizedUser {
     id: user.id,
     email: user.email,
     full_name: user.full_name,
-    nickname: user.email.split('@')[0],
+    nickname: user.nickname || user.full_name?.split(' ')[0] || user.email.split('@')[0],
+    avatar_url: user.avatar_url,
     role: user.role,
-    onboarding_completed: user.onboarding_completed,
+    primary_sport: user.primary_sport || 'pickleball',
+    preferred_sports: user.preferred_sports || ['pickleball', 'badminton'],
+    preferred_format: user.preferred_format || 'doubles',
+    skill_level: user.skill_level || 'intermediate',
+    city: user.city || 'Metro Manila',
+    onboarding_completed: Boolean(user.onboarding_completed),
     created_at: user.created_at,
   };
 }
@@ -184,16 +203,36 @@ export async function serverRegister(data: {
       const dbClient = admin || serverClient;
       if (dbClient) {
         try {
-          await dbClient.from('users').upsert(
-            {
+          const { data: existingUser } = await dbClient
+            .from('users')
+            .select('id')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
+
+          if (existingUser) {
+            await dbClient
+              .from('users')
+              .update({
+                auth_id: supaUserId,
+                full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
+                role: assignedRole,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingUser.id);
+          } else {
+            await dbClient.from('users').insert({
               auth_id: supaUserId,
               email: normalizedEmail,
               full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
               role: assignedRole,
               onboarding_completed: false,
-            },
-            { onConflict: 'auth_id' }
-          );
+              primary_sport: 'pickleball',
+              preferred_sports: ['pickleball', 'badminton'],
+              preferred_format: 'doubles',
+              skill_level: 'intermediate',
+              city: 'Metro Manila',
+            });
+          }
         } catch (dbErr) {
           console.warn('[ServerAuth] public.users upsert warning:', dbErr);
         }
@@ -205,6 +244,11 @@ export async function serverRegister(data: {
         full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
         nickname: normalizedEmail.split('@')[0],
         role: assignedRole,
+        primary_sport: 'pickleball',
+        preferred_sports: ['pickleball', 'badminton'],
+        preferred_format: 'doubles',
+        skill_level: 'intermediate',
+        city: 'Metro Manila',
         onboarding_completed: false,
         created_at: supaCreatedAt,
       };
@@ -220,7 +264,13 @@ export async function serverRegister(data: {
         passwordHash,
         salt,
         full_name: sanitized.full_name,
+        nickname: sanitized.nickname,
         role: assignedRole,
+        primary_sport: sanitized.primary_sport,
+        preferred_sports: sanitized.preferred_sports,
+        preferred_format: sanitized.preferred_format,
+        skill_level: sanitized.skill_level,
+        city: sanitized.city,
         onboarding_completed: false,
         created_at: supaCreatedAt,
         updated_at: new Date().toISOString(),
@@ -254,7 +304,13 @@ export async function serverRegister(data: {
     passwordHash,
     salt,
     full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
+    nickname: normalizedEmail.split('@')[0],
     role: assignedRole,
+    primary_sport: 'pickleball',
+    preferred_sports: ['pickleball', 'badminton'],
+    preferred_format: 'doubles',
+    skill_level: 'intermediate',
+    city: 'Metro Manila',
     onboarding_completed: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -278,6 +334,7 @@ export async function serverLogin(data: {
   // If Supabase is real and configured
   if (isSupabaseConfigured) {
     const supabase = createServerClient();
+    const admin = createAdminClient();
     if (supabase) {
       const { data: supaData, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
@@ -289,16 +346,28 @@ export async function serverLogin(data: {
       }
 
       if (supaData?.user) {
-        // Retrieve database profile from public.users table
+        // Retrieve database profile from public.users table (match by auth_id or email)
+        const dbClient = admin || supabase;
         let dbProfile: any = null;
         try {
-          const { data: profile } = await supabase
+          const { data: profile } = await dbClient
             .from('users')
             .select('*')
-            .eq('auth_id', supaData.user.id)
+            .or(`auth_id.eq.${supaData.user.id},email.eq.${normalizedEmail}`)
             .maybeSingle();
           dbProfile = profile;
-        } catch {}
+
+          // If found by email but auth_id is not yet linked, link it now
+          if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
+            await dbClient
+              .from('users')
+              .update({ auth_id: supaData.user.id, updated_at: new Date().toISOString() })
+              .eq('id', dbProfile.id);
+            dbProfile.auth_id = supaData.user.id;
+          }
+        } catch (dbErr) {
+          console.warn('[ServerAuth] Error loading profile from Supabase:', dbErr);
+        }
 
         const userMeta = supaData.user.user_metadata;
         const sanitized: SanitizedUser = {
@@ -306,7 +375,13 @@ export async function serverLogin(data: {
           email: supaData.user.email || normalizedEmail,
           full_name: dbProfile?.full_name || userMeta?.full_name || normalizedEmail.split('@')[0],
           nickname: dbProfile?.nickname || userMeta?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
-          role: (dbProfile?.role || userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
+          avatar_url: dbProfile?.avatar_url,
+          role: (dbProfile?.role || (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player')) as UserRole,
+          primary_sport: dbProfile?.primary_sport || 'pickleball',
+          preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
+          preferred_format: dbProfile?.preferred_format || 'doubles',
+          skill_level: dbProfile?.skill_level || 'intermediate',
+          city: dbProfile?.city || 'Metro Manila',
           onboarding_completed: Boolean(dbProfile?.onboarding_completed ?? userMeta?.onboarding_completed),
           created_at: supaData.user.created_at,
         };
@@ -322,7 +397,14 @@ export async function serverLogin(data: {
           passwordHash,
           salt,
           full_name: sanitized.full_name,
+          nickname: sanitized.nickname,
+          avatar_url: sanitized.avatar_url,
           role: sanitized.role,
+          primary_sport: sanitized.primary_sport,
+          preferred_sports: sanitized.preferred_sports,
+          preferred_format: sanitized.preferred_format,
+          skill_level: sanitized.skill_level,
+          city: sanitized.city,
           onboarding_completed: sanitized.onboarding_completed,
           created_at: supaData.user.created_at,
           updated_at: new Date().toISOString(),
@@ -375,7 +457,13 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
             email: supaUser.email,
             full_name: supaUser.full_name || supaUser.email.split('@')[0],
             nickname: supaUser.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
+            avatar_url: supaUser.avatar_url,
             role: supaUser.role as UserRole,
+            primary_sport: supaUser.primary_sport || 'pickleball',
+            preferred_sports: supaUser.preferred_sports || ['pickleball', 'badminton'],
+            preferred_format: supaUser.preferred_format || 'doubles',
+            skill_level: supaUser.skill_level || 'intermediate',
+            city: supaUser.city || 'Metro Manila',
             onboarding_completed: Boolean(supaUser.onboarding_completed),
             created_at: supaUser.created_at,
           };
@@ -395,30 +483,53 @@ export async function serverUpdateUserProfile(
   userId: string,
   data: {
     fullName?: string;
+    full_name?: string;
     nickname?: string;
+    avatarUrl?: string;
+    avatar_url?: string;
     primarySport?: string;
+    primary_sport?: string;
     preferredSports?: string[];
+    preferred_sports?: string[];
+    preferredFormat?: string;
+    preferred_format?: string;
     city?: string;
     skillLevel?: string;
+    skill_level?: string;
     onboardingCompleted?: boolean;
+    onboarding_completed?: boolean;
   }
 ): Promise<SanitizedUser | null> {
+  const resolvedFullName = data.fullName || data.full_name;
+  const resolvedNickname = data.nickname;
+  const resolvedAvatarUrl = data.avatarUrl || data.avatar_url;
+  const resolvedPrimarySport = data.primarySport || data.primary_sport;
+  const resolvedPreferredSports = data.preferredSports || data.preferred_sports;
+  const resolvedPreferredFormat = data.preferredFormat || data.preferred_format;
+  const resolvedCity = data.city;
+  const resolvedSkillLevel = data.skillLevel || data.skill_level;
+  const resolvedOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed ?? true;
+
   if (isSupabaseConfigured) {
     try {
       const db = createAdminClient() || createServerClient();
       if (db) {
+        const updatePayload: Record<string, any> = {
+          onboarding_completed: resolvedOnboardingCompleted,
+          updated_at: new Date().toISOString(),
+        };
+        if (resolvedFullName) updatePayload.full_name = resolvedFullName;
+        if (resolvedNickname) updatePayload.nickname = resolvedNickname;
+        if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
+        if (resolvedPrimarySport) updatePayload.primary_sport = resolvedPrimarySport;
+        if (resolvedPreferredSports) updatePayload.preferred_sports = resolvedPreferredSports;
+        if (resolvedPreferredFormat) updatePayload.preferred_format = resolvedPreferredFormat;
+        if (resolvedCity) updatePayload.city = resolvedCity;
+        if (resolvedSkillLevel) updatePayload.skill_level = resolvedSkillLevel;
+
         await db
           .from('users')
-          .update({
-            full_name: data.fullName,
-            nickname: data.nickname,
-            primary_sport: data.primarySport,
-            preferred_sports: data.preferredSports,
-            city: data.city,
-            skill_level: data.skillLevel,
-            onboarding_completed: data.onboardingCompleted ?? true,
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .or(`auth_id.eq.${userId},id.eq.${userId}`);
       }
     } catch (err) {
@@ -427,12 +538,19 @@ export async function serverUpdateUserProfile(
   }
 
   const users = readLocalUsers();
-  const userIdx = users.findIndex((u) => u.id === userId);
+  const userIdx = users.findIndex((u) => u.id === userId || (u as any).auth_id === userId);
   if (userIdx >= 0) {
     users[userIdx] = {
       ...users[userIdx],
-      full_name: data.fullName || users[userIdx].full_name,
-      onboarding_completed: data.onboardingCompleted ?? true,
+      full_name: resolvedFullName || users[userIdx].full_name,
+      nickname: resolvedNickname || users[userIdx].nickname,
+      avatar_url: resolvedAvatarUrl || users[userIdx].avatar_url,
+      primary_sport: resolvedPrimarySport || users[userIdx].primary_sport,
+      preferred_sports: resolvedPreferredSports || users[userIdx].preferred_sports,
+      preferred_format: resolvedPreferredFormat || users[userIdx].preferred_format,
+      city: resolvedCity || users[userIdx].city,
+      skill_level: resolvedSkillLevel || users[userIdx].skill_level,
+      onboarding_completed: resolvedOnboardingCompleted,
       updated_at: new Date().toISOString(),
     };
     writeLocalUsers(users);

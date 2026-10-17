@@ -111,7 +111,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-6 pt-6 select-none overflow-y-auto no-scrollbar">
+    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-4 sm:pt-6 select-none overflow-y-auto no-scrollbar">
       <div className="space-y-6">
         {/* Header with Back Button */}
         <div>
@@ -130,7 +130,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
               <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
                 Player Onboarding &bull; Preferences
               </span>
-              <h2 className="font-display font-black text-2xl text-[#F4F7F0]">
+              <h2 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0]">
                 Profile &amp; Playing Preferences
               </h2>
             </div>
@@ -247,7 +247,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {skillLabels.map((label, idx) => (
               <button
                 key={label}

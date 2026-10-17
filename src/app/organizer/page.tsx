@@ -381,7 +381,7 @@ export default function OrganizerDashboard() {
         </div>
 
         {/* Action / Tab Bar */}
-        <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto self-start lg:self-auto max-w-full">
+        <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar self-start lg:self-auto max-w-full">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}

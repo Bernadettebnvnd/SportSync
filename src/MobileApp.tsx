@@ -233,7 +233,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   const act = guestPrompt.pendingAction;
                   setGuestPrompt({ isOpen: false });
                   act();
-                } else if (bridge.userProfile.onboardingCompleted) {
+                } else if (
+                  bridge.userProfile.onboardingCompleted ||
+                  bridge.store.currentUser.onboarding_completed ||
+                  bridge.store.currentUser.has_completed_onboarding ||
+                  (typeof window !== 'undefined' && (
+                    localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+                    localStorage.getItem('sportsync_onboarding_completed') === 'true'
+                  ))
+                ) {
                   navigateTo('home');
                 } else {
                   navigateTo('personalization');

@@ -207,7 +207,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
         </div>
 
         {/* Stepper Progress Bar */}
-        <div className="bg-[#FAF8F5] px-4 sm:px-6 py-2.5 border-b border-[#E8E5DF] flex items-center justify-between text-xs font-bold text-black shrink-0">
+        <div className="bg-[#FAF8F5] px-3 sm:px-6 py-2.5 border-b border-[#E8E5DF] flex items-center justify-between text-xs font-bold text-black shrink-0 overflow-x-auto no-scrollbar gap-1 sm:gap-0">
           <div className="flex items-center gap-1.5">
             <span
               className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${

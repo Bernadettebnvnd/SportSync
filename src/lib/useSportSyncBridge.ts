@@ -159,21 +159,45 @@ export function useSportSyncBridge() {
 
   // 1. Dynamic user profile with XP and Gamification
   const [userProfile, setUserProfile] = useState(() => {
+    const isStoreCompleted = Boolean(
+      store.currentUser.onboarding_completed || store.currentUser.has_completed_onboarding
+    );
+    let localCompleted = false;
     if (typeof window !== 'undefined') {
+      localCompleted =
+        localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+        localStorage.getItem('matchi_onboarding_completed') === 'true';
       const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          return {
+            ...parsed,
+            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
+          };
         } catch {
           // ignore parsing error
         }
       }
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
+    const completed = isStoreCompleted || localCompleted;
     return {
       ...DEFAULT_USER,
+      id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
       name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
-      username: isAuthenticated ? (store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : '@player') : '@guest',
+      username: isAuthenticated
+        ? (store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : `@${store.currentUser.email?.split('@')[0] || 'player'}`)
+        : '@guest',
+      city: store.currentUser.city || 'Metro Manila',
+      primarySport: store.currentUser.primary_sport || 'pickleball',
+      preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
+        ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        : ['Pickleball', 'Badminton'],
+      skillLevel: store.currentUser.skill_level
+        ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
+        : 'Intermediate',
+      onboardingCompleted: completed,
       streakWeeks: store.currentUser.win_streak || 0,
       streakMultiplier: 1.0,
       predictionsCount: 0,
@@ -191,16 +215,60 @@ export function useSportSyncBridge() {
     }
   }, [userProfile]);
 
-  // Sync profile name when store user updates
+  // Sync complete profile when store user updates
   useEffect(() => {
-    if (store.currentUser.full_name || store.currentUser.nickname) {
-      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+    const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
+    const isCompleted = Boolean(
+      store.currentUser.onboarding_completed ||
+      store.currentUser.has_completed_onboarding ||
+      (typeof window !== 'undefined' && (
+        localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+        localStorage.getItem('sportsync_onboarding_completed') === 'true'
+      ))
+    );
+
+    if (isAuthenticated) {
+      setUserProfile((prev: any) => ({
         ...prev,
+        id: store.currentUser.id || store.currentUser.auth_id || prev.id,
+        email: store.currentUser.email,
         name: store.currentUser.full_name || prev.name,
-        username: store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : prev.username,
+        username: store.currentUser.nickname
+          ? `@${store.currentUser.nickname.toLowerCase()}`
+          : (store.currentUser.email ? `@${store.currentUser.email.split('@')[0]}` : prev.username),
+        role: store.currentUser.role || prev.role,
+        city: store.currentUser.city || prev.city || 'Metro Manila',
+        primarySport: store.currentUser.primary_sport || prev.primarySport || 'pickleball',
+        preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
+          ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+          : prev.preferredSports,
+        skillLevel: store.currentUser.skill_level
+          ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
+          : prev.skillLevel,
+        onboardingCompleted: Boolean(isCompleted || prev.onboardingCompleted),
+        matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
+        wins: store.currentUser.matches_won ?? prev.wins,
+        streakWeeks: store.currentUser.win_streak ?? prev.streakWeeks,
+        isGuest: false,
       }));
     }
-  }, [store.currentUser.full_name, store.currentUser.nickname]);
+  }, [
+    store.currentUser.id,
+    store.currentUser.auth_id,
+    store.currentUser.email,
+    store.currentUser.full_name,
+    store.currentUser.nickname,
+    store.currentUser.role,
+    store.currentUser.city,
+    store.currentUser.primary_sport,
+    store.currentUser.preferred_sports,
+    store.currentUser.skill_level,
+    store.currentUser.onboarding_completed,
+    store.currentUser.has_completed_onboarding,
+    store.currentUser.matches_played,
+    store.currentUser.matches_won,
+    store.currentUser.win_streak,
+  ]);
 
   // 2. Dynamic Community Pickup Games
   const [games, setGames] = useState<CommunityGame[]>(() => {
@@ -1057,9 +1125,27 @@ export function useSportSyncBridge() {
         console.warn('Profile update warning:', err);
       }
 
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        localStorage.setItem('matchi_onboarding_completed', 'true');
+      }
+
+      try {
+        await store.completePlayerOnboarding({
+          fullName: prefs.fullName,
+          nickname: prefs.fullName.split(' ')[0],
+          preferredSports: mappedSports,
+          skillLevel: mappedSkill,
+          city: prefs.preferredArea || 'Metro Manila',
+          preferredFormat: 'doubles',
+        });
+      } catch (e) {
+        console.warn('Store completePlayerOnboarding error:', e);
+      }
+
       awardXp(150, 'completing profile onboarding', { applyStreakMultiplier: true });
     },
-    [awardXp]
+    [awardXp, store]
   );
 
   return {

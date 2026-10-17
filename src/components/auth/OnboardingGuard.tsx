@@ -20,7 +20,8 @@ export function OnboardingGuard() {
 
     // Check localStorage status for first-time / guest users
     const storedCompleted = typeof window !== 'undefined'
-      ? localStorage.getItem('matchi_onboarding_completed') === 'true'
+      ? (localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+         localStorage.getItem('sportsync_onboarding_completed') === 'true')
       : false;
 
     const isOnboarded = Boolean(

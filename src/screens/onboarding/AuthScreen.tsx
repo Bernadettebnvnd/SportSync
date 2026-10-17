@@ -105,20 +105,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
 
       // Update store user state with real authenticated session
       if (data.user) {
+        const isOnboarded = Boolean(data.user.onboarding_completed);
         setAuthenticatedUser({
           id: data.user.id,
           auth_id: data.user.id,
           email: data.user.email,
           full_name: data.user.full_name,
           nickname: data.user.nickname,
+          avatar_url: data.user.avatar_url,
           role: data.user.role,
-          onboarding_completed: data.user.onboarding_completed,
+          primary_sport: data.user.primary_sport || 'pickleball',
+          preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
+          preferred_format: data.user.preferred_format || 'doubles',
+          skill_level: data.user.skill_level || 'intermediate',
+          city: data.user.city || 'Metro Manila',
+          onboarding_completed: isOnboarded,
+          has_completed_onboarding: isOnboarded,
         });
 
         if (typeof window !== 'undefined') {
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', data.user.role);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
+          if (isOnboarded) {
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+          }
           localStorage.setItem(
             'sportsync_user_profile',
             JSON.stringify({
@@ -126,6 +138,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               name: data.user.full_name,
               username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
               role: data.user.role,
+              city: data.user.city || 'Metro Manila',
+              primarySport: data.user.primary_sport || 'pickleball',
+              preferredSports: data.user.preferred_sports || ['Pickleball', 'Badminton'],
+              skillLevel: data.user.skill_level || 'Intermediate',
+              onboardingCompleted: isOnboarded,
               isGuest: false,
             })
           );
@@ -156,7 +173,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-6 pt-8 select-none overflow-y-auto no-scrollbar">
+    <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-5 sm:pt-8 select-none overflow-y-auto no-scrollbar">
       {/* Top Header */}
       <div>
         <button
