@@ -201,11 +201,10 @@ export default function RootHomePage() {
                           setSelectedScreen(s.id as ScreenId);
                           setShowScreenDrawer(false);
                         }}
-                        className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${
-                          selectedScreen === s.id
+                        className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${selectedScreen === s.id
                             ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
                             : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white hover:border-white/20'
-                        }`}
+                          }`}
                       >
                         {s.label}
                       </button>
