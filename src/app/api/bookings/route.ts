@@ -1,53 +1,7 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { calculateBookingFees, generateBookingReference } from '@/lib/utils';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, serverGetUser } from '@/lib/auth/serverAuth';
-
-const DATA_DIR = path.join(process.cwd(), '.data');
-const BOOKINGS_FILE = path.join(DATA_DIR, 'bookings.json');
-const PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
-
-function ensureDataFiles() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(BOOKINGS_FILE)) {
-    fs.writeFileSync(BOOKINGS_FILE, JSON.stringify([]), 'utf-8');
-  }
-  if (!fs.existsSync(PAYMENTS_FILE)) {
-    fs.writeFileSync(PAYMENTS_FILE, JSON.stringify([]), 'utf-8');
-  }
-}
-
-function readLocalBookings(): any[] {
-  ensureDataFiles();
-  try {
-    const raw = fs.readFileSync(BOOKINGS_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('[BookingsAPI] Error reading bookings file:', err);
-    return [];
-  }
-}
-
-function writeLocalBookings(bookings: any[]): void {
-  ensureDataFiles();
-  fs.writeFileSync(BOOKINGS_FILE, JSON.stringify(bookings, null, 2), 'utf-8');
-}
-
-function appendLocalPayment(payment: any): void {
-  ensureDataFiles();
-  try {
-    const raw = fs.readFileSync(PAYMENTS_FILE, 'utf-8');
-    const list = JSON.parse(raw);
-    list.unshift(payment);
-    fs.writeFileSync(PAYMENTS_FILE, JSON.stringify(list, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[BookingsAPI] Error appending payment:', err);
-  }
-}
 
 function resolveUserFromRequest(request: Request): { userId: string; email?: string } | null {
   // 1. Check Bearer token in Authorization header
@@ -107,19 +61,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Local / fallback bookings
-    let localList = readLocalBookings();
-    if (venueId) {
-      localList = localList.filter((b) => b.venue_id === venueId || b.venueId === venueId);
-    }
-    if (courtId) {
-      localList = localList.filter((b) => b.court_id === courtId || b.courtId === courtId);
-    }
-    if (bookingDate) {
-      localList = localList.filter((b) => b.booking_date === bookingDate || b.bookingDate === bookingDate);
-    }
-
-    return NextResponse.json({ success: true, bookings: localList });
+    return NextResponse.json({ success: true, bookings: [] });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to retrieve bookings.';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -237,7 +179,7 @@ export async function POST(request: Request) {
     const initialPaymentStatus = isCash ? 'cash_at_venue' : 'pending';
     const finalReference = (referenceCode || '').trim() || bookingRef;
 
-    let createdBookingId = `bk_${Date.now()}`;
+    let createdBooking: any = null;
 
     // 5. Database Insertion if Supabase is active
     if (isSupabaseConfigured) {
@@ -293,11 +235,11 @@ export async function POST(request: Request) {
               reference_code: finalReference,
               notes,
             })
-            .select()
+            .select('*, court:courts(*), venue:venues(*)')
             .single();
 
           if (newBooking) {
-            createdBookingId = newBooking.id;
+            createdBooking = newBooking;
 
             // Lock court availability
             await dbClient.from('court_availability').insert({
@@ -326,9 +268,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // 6. Always persist to local ledger for instant offline/dev synchronization
-    const localRecord = {
-      id: createdBookingId,
+    const bookingResponse = createdBooking || {
+      id: `bk_${Date.now()}`,
       booking_reference: bookingRef,
       bookingReference: bookingRef,
       user_id: publicUser.id,
@@ -370,28 +311,10 @@ export async function POST(request: Request) {
       created_at: new Date().toISOString(),
     };
 
-    const localList = readLocalBookings();
-    localList.unshift(localRecord);
-    writeLocalBookings(localList);
-
-    appendLocalPayment({
-      id: `pay_${Date.now()}`,
-      booking_id: createdBookingId,
-      court_id: courtId,
-      user_id: publicUser.id,
-      user_name: publicUser.full_name,
-      amount_cents: fees.totalAmountCents,
-      payment_method: normalizedMethod,
-      reference_code: finalReference,
-      status: initialPaymentStatus,
-      notes: `Reservation: ${bookingRef} | ${bookingDate} ${startTime}`,
-      created_at: new Date().toISOString(),
-    });
-
     return NextResponse.json({
       success: true,
       message: 'Court reserved successfully.',
-      booking: localRecord,
+      booking: bookingResponse,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Internal server error processing reservation.';
