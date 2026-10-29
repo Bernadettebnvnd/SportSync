@@ -22,7 +22,7 @@ import {
 import 'leaflet/dist/leaflet.css';
 import type * as LeafletType from 'leaflet';
 
-interface VenueMapProps {
+export interface VenueMapProps {
   venues: Venue[];
   discoveredFacilities?: DiscoveredFacility[];
   selectedVenueId?: string;
@@ -34,6 +34,8 @@ interface VenueMapProps {
   initialZoom?: number;
   heightClass?: string;
   showSearch?: boolean;
+  onLocateSuccess?: (coords: { latitude: number; longitude: number; accuracy?: number }) => void;
+  onLocateError?: (errorMessage: string) => void;
 }
 
 interface NominatimResult {
@@ -43,10 +45,14 @@ interface NominatimResult {
   display_name: string;
 }
 
-const OSM_PH_CENTER: [number, number] = [13.02, 121.77];
-const OSM_PH_ZOOM = 6;
+// Pilot Testing Area: Naga City, Camarines Sur
+export const NAGA_CITY_CENTER: [number, number] = [13.6218, 123.1948];
+export const NAGA_CITY_ZOOM = 13;
 
-// Helper to calculate approximate distance in km
+export const OSM_PH_CENTER: [number, number] = [13.02, 121.77];
+export const OSM_PH_ZOOM = 6;
+
+// Helper to calculate approximate distance in km (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371; // Earth radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -73,11 +79,20 @@ export function VenueMap({
   initialZoom,
   heightClass = 'h-[440px] sm:h-[520px]',
   showSearch = true,
+  onLocateSuccess,
+  onLocateError,
 }: VenueMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<LeafletType.Map | null>(null);
   const markersRef = useRef<{ [key: string]: LeafletType.Marker }>({});
   const searchMarkerRef = useRef<LeafletType.Marker | null>(null);
+  const userLocationMarkerRef = useRef<LeafletType.Marker | null>(null);
+  const userAccuracyCircleRef = useRef<LeafletType.Circle | null>(null);
+
+  const [mapReady, setMapReady] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isPilotArea, setIsPilotArea] = useState(!initialCenter);
 
   // Clicked item override state (when user clicks a marker)
   const [clickedItem, setClickedItem] = useState<
@@ -114,7 +129,6 @@ export function VenueMap({
   }, [selectedVenueId, selectedDiscoveredId, clickedItem, venues, discoveredFacilities, activeVenueIndex]);
 
   const activeItemId = activeItem?.type === 'platform' ? activeItem.venue.id : activeItem?.facility.id;
-  const activeItemType = activeItem?.type;
 
   // Search OpenStreetMap Nominatim via provider
   const searchNominatim = useCallback(async (query: string) => {
@@ -143,7 +157,6 @@ export function VenueMap({
       setIsSearching(false);
     }
   }, []);
-
 
   const handleQueryChange = (val: string) => {
     setSearchQuery(val);
@@ -219,6 +232,7 @@ export function VenueMap({
           setSearchNotice(`Nearest court: ${nearest.name} (~${Math.round(minDistance)} km)`);
         }
 
+        setIsPilotArea(false);
         map.flyTo([lat, lon], 12, { duration: 1.2 });
       });
     }
@@ -229,84 +243,202 @@ export function VenueMap({
   // Fly to Philippines Overview (6/13.02/121.77)
   const flyToPhilippines = () => {
     if (mapInstanceRef.current) {
+      setIsPilotArea(false);
       mapInstanceRef.current.flyTo(OSM_PH_CENTER, OSM_PH_ZOOM, { duration: 1.2 });
     }
   };
 
-  // Locate user via GPS
-  const locateUser = () => {
-    if (typeof navigator !== 'undefined' && navigator.geolocation && mapInstanceRef.current) {
-      setIsSearching(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setIsSearching(false);
-          const { latitude, longitude } = pos.coords;
-          if (mapInstanceRef.current) {
-            import('leaflet').then((L) => {
-              if (!mapInstanceRef.current) return;
-              if (searchMarkerRef.current) searchMarkerRef.current.remove();
+  // User-triggered location request using native navigator.geolocation.getCurrentPosition API
+  const locateUser = useCallback(() => {
+    if (typeof window === 'undefined') return;
 
-              const myIcon = L.divIcon({
-                html: `
-                  <div style="
-                    background: #1E4A32;
-                    color: #E9C46A;
-                    padding: 4px 10px;
-                    border-radius: 9999px;
-                    font-size: 11px;
-                    font-weight: 800;
-                    box-shadow: 0 4px 14px rgba(30, 74, 50, 0.6);
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                    white-space: nowrap;
-                  ">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                    <span>You are here</span>
-                  </div>
-                `,
-                className: 'my-loc-pin',
-                iconSize: [100, 26],
-                iconAnchor: [50, 13],
-              });
+    if (!('geolocation' in navigator) || !navigator.geolocation) {
+      const msg = 'Geolocation is not supported by your browser. Centered on Naga City (Pilot Area).';
+      setSearchNotice(msg);
+      setIsPilotArea(true);
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo(NAGA_CITY_CENTER, NAGA_CITY_ZOOM, { duration: 1.2 });
+      }
+      if (onLocateError) onLocateError(msg);
+      setTimeout(() => setSearchNotice(null), 5000);
+      return;
+    }
 
-              searchMarkerRef.current = L.marker([latitude, longitude], { icon: myIcon }).addTo(
-                mapInstanceRef.current
-              );
+    setIsLocating(true);
+    setSearchNotice('Finding nearby games & courts from your location...');
+
+    navigator.geolocation.getCurrentPosition(
+      (pos: GeolocationPosition) => {
+        setIsLocating(false);
+        const { latitude, longitude, accuracy } = pos.coords;
+        setUserCoords({ latitude, longitude });
+        setIsPilotArea(false);
+
+        if (!mapInstanceRef.current) return;
+        const map = mapInstanceRef.current;
+
+        import('leaflet').then((L) => {
+          if (!mapInstanceRef.current) return;
+
+          // Remove prior user markers if any
+          if (userLocationMarkerRef.current) {
+            try {
+              userLocationMarkerRef.current.remove();
+            } catch {}
+            userLocationMarkerRef.current = null;
+          }
+          if (userAccuracyCircleRef.current) {
+            try {
+              userAccuracyCircleRef.current.remove();
+            } catch {}
+            userAccuracyCircleRef.current = null;
+          }
+
+          // Accuracy radius circle
+          if (accuracy && accuracy < 5000) {
+            try {
+              userAccuracyCircleRef.current = L.circle([latitude, longitude], {
+                radius: Math.max(accuracy, 25),
+                color: '#1E4A32',
+                weight: 1.5,
+                opacity: 0.6,
+                fillColor: '#C8FF2E',
+                fillOpacity: 0.15,
+              }).addTo(map);
+            } catch {}
+          }
+
+          // Custom pulsing user location marker (Electric Lime radar glow)
+          const userIcon = L.divIcon({
+            html: `
+              <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
+                <div style="
+                  position: absolute;
+                  width: 32px;
+                  height: 32px;
+                  border-radius: 9999px;
+                  background: rgba(200, 255, 46, 0.45);
+                  animation: user-radar-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+                "></div>
+                <div style="
+                  position: relative;
+                  width: 20px;
+                  height: 20px;
+                  border-radius: 9999px;
+                  background: #0F2A22;
+                  border: 3px solid #C8FF2E;
+                  box-shadow: 0 0 12px rgba(200, 255, 46, 0.8), 0 3px 6px rgba(0,0,0,0.4);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                ">
+                  <div style="width: 6px; height: 6px; border-radius: 9999px; background: #C8FF2E;"></div>
+                </div>
+              </div>
+            `,
+            className: 'sportsync-user-loc-pin',
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          });
+
+          const userMarker = L.marker([latitude, longitude], {
+            icon: userIcon,
+            zIndexOffset: 1000,
+          }).addTo(map);
+
+          userMarker.bindPopup(`
+            <div style="font-family: inherit; font-size: 12px; line-height: 1.4; padding: 2px;">
+              <strong style="color: #0F2A22; display: flex; align-items: center; gap: 4px; font-weight: 800;">
+                <span>📍 Your Current Location</span>
+              </strong>
+              <div style="color: #65756B; font-size: 10px; margin-top: 2px;">
+                Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}
+              </div>
+            </div>
+          `);
+
+          userLocationMarkerRef.current = userMarker;
+
+          // Center map smoothly on coordinates
+          map.flyTo([latitude, longitude], 14, { duration: 1.2 });
+
+          // Calculate distance to nearest venue
+          if (venues.length > 0) {
+            let nearest = venues[0];
+            let minDist = Infinity;
+            venues.forEach((v) => {
+              const d = calculateDistance(latitude, longitude, v.latitude, v.longitude);
+              if (d < minDist) {
+                minDist = d;
+                nearest = v;
+              }
             });
 
-            if (venues.length > 0) {
-              let nearest = venues[0];
-              let minDist = Infinity;
-              venues.forEach((v) => {
-                const d = calculateDistance(latitude, longitude, v.latitude, v.longitude);
-                if (d < minDist) {
-                  minDist = d;
-                  nearest = v;
-                }
-              });
-              setSearchNotice(`Found you! Nearest court: ${nearest.name} (~${Math.round(minDist)} km)`);
-              const idx = venues.findIndex((v) => v.id === nearest.id);
-              if (idx !== -1) {
-                setActiveVenueIndex(idx);
-                if (onSelectVenue) onSelectVenue(nearest);
-              }
+            const idx = venues.findIndex((v) => v.id === nearest.id);
+            if (idx !== -1) {
+              setActiveVenueIndex(idx);
+              if (onSelectVenue) onSelectVenue(nearest);
             }
 
-            mapInstanceRef.current.flyTo([latitude, longitude], 13, { duration: 1.2 });
+            const distStr = minDist < 1 ? `${Math.round(minDist * 1000)}m` : `${minDist.toFixed(1)} km`;
+            setSearchNotice(`Found you! Nearest court: ${nearest.name} (~${distStr})`);
+          } else {
+            setSearchNotice('Located your position! Showing sports courts nearby.');
           }
-        },
-        () => {
-          setIsSearching(false);
-          setSearchNotice('Location permission not granted. Use search bar above.');
-          setTimeout(() => setSearchNotice(null), 4000);
+
+          if (onLocateSuccess) {
+            onLocateSuccess({ latitude, longitude, accuracy });
+          }
+
+          setTimeout(() => setSearchNotice(null), 5000);
+        });
+      },
+      (error: GeolocationPositionError) => {
+        setIsLocating(false);
+
+        let errorReason = 'Location permission denied.';
+        if (error.code === error.TIMEOUT) {
+          errorReason = 'Location request timed out.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorReason = 'Location information is unavailable.';
         }
-      );
+
+        const fallbackNotice = `${errorReason} Defaulted to Naga City, Camarines Sur (Pilot Area).`;
+        setSearchNotice(fallbackNotice);
+        setIsPilotArea(true);
+
+        // Fallback mechanism: gracefully default the map's center to Naga City, Camarines Sur
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.flyTo(NAGA_CITY_CENTER, NAGA_CITY_ZOOM, { duration: 1.2 });
+        }
+
+        if (onLocateError) {
+          onLocateError(fallbackNotice);
+        }
+
+        setTimeout(() => setSearchNotice(null), 6000);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  }, [venues, onSelectVenue, onLocateSuccess, onLocateError]);
+
+  // Jump to Pilot Testing Area (Naga City, Camarines Sur)
+  const jumpToPilotArea = useCallback(() => {
+    if (mapInstanceRef.current) {
+      setIsPilotArea(true);
+      mapInstanceRef.current.flyTo(NAGA_CITY_CENTER, NAGA_CITY_ZOOM, { duration: 1.0 });
+      setSearchNotice('Centered on Naga City, Camarines Sur (Pilot Testing Area)');
+      setTimeout(() => setSearchNotice(null), 4000);
     }
-  };
+  }, []);
 
   const jumpToRegion = (region: 'manila' | 'visayas' | 'mindanao' | 'luzon') => {
     if (!mapInstanceRef.current) return;
+    setIsPilotArea(false);
     if (region === 'manila') {
       mapInstanceRef.current.flyTo([14.5828, 121.0664], 12, { duration: 1.0 });
     } else if (region === 'visayas') {
@@ -318,14 +450,15 @@ export function VenueMap({
     }
   };
 
-  const [mapReady, setMapReady] = useState(false);
-
   // Initialize Map ONCE on mount
   useEffect(() => {
     if (typeof window === 'undefined' || !mapContainerRef.current) return;
 
     let isMounted = true;
     let resizeObserver: ResizeObserver | null = null;
+    let t1: NodeJS.Timeout | null = null;
+    let t2: NodeJS.Timeout | null = null;
+    let t3: NodeJS.Timeout | null = null;
 
     import('leaflet').then((L) => {
       if (!isMounted || !mapContainerRef.current) return;
@@ -354,8 +487,9 @@ export function VenueMap({
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      const defaultCenter: [number, number] = initialCenter || OSM_PH_CENTER;
-      const defaultZoom = initialZoom || 11;
+      // Default center: fallback to Naga City, Camarines Sur (pilot testing area)
+      const defaultCenter: [number, number] = initialCenter || NAGA_CITY_CENTER;
+      const defaultZoom = initialZoom || (initialCenter ? 12 : NAGA_CITY_ZOOM);
 
       const map = L.map(container, {
         center: defaultCenter,
@@ -378,16 +512,33 @@ export function VenueMap({
       mapInstanceRef.current = map;
       if (isMounted) setMapReady(true);
 
-      // Auto invalidate size on mount
-      setTimeout(() => {
+      // Invalidate size immediately and after staggered intervals so map never loads as blank screen
+      map.invalidateSize();
+      t1 = setTimeout(() => {
         if (isMounted && map) {
           try {
             map.invalidateSize();
           } catch {}
         }
-      }, 200);
+      }, 100);
 
-      // Sizing observer for layout changes
+      t2 = setTimeout(() => {
+        if (isMounted && map) {
+          try {
+            map.invalidateSize();
+          } catch {}
+        }
+      }, 300);
+
+      t3 = setTimeout(() => {
+        if (isMounted && map) {
+          try {
+            map.invalidateSize();
+          } catch {}
+        }
+      }, 800);
+
+      // Sizing observer for container layout changes
       if (typeof ResizeObserver !== 'undefined' && container) {
         resizeObserver = new ResizeObserver(() => {
           if (isMounted && map) {
@@ -398,6 +549,22 @@ export function VenueMap({
         });
         resizeObserver.observe(container);
       }
+
+      const handleWinResize = () => {
+        if (isMounted && map) {
+          try {
+            map.invalidateSize();
+          } catch {}
+        }
+      };
+      window.addEventListener('resize', handleWinResize);
+
+      return () => {
+        window.removeEventListener('resize', handleWinResize);
+        if (t1) clearTimeout(t1);
+        if (t2) clearTimeout(t2);
+        if (t3) clearTimeout(t3);
+      };
     });
 
     return () => {
@@ -405,6 +572,9 @@ export function VenueMap({
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+      if (t3) clearTimeout(t3);
       if (mapInstanceRef.current) {
         try {
           mapInstanceRef.current.stop();
@@ -413,7 +583,7 @@ export function VenueMap({
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [initialCenter, initialZoom]);
 
   // Update Markers when venues, discovered facilities, or selection changes
   useEffect(() => {
@@ -473,6 +643,7 @@ export function VenueMap({
         marker.on('click', () => {
           setActiveVenueIndex(index);
           setClickedItem({ type: 'platform', venue });
+          setIsPilotArea(false);
           if (onSelectVenue) onSelectVenue(venue);
           try {
             map.flyTo([venue.latitude, venue.longitude], 14, { duration: 0.8 });
@@ -520,6 +691,7 @@ export function VenueMap({
 
         marker.on('click', () => {
           setClickedItem({ type: 'discovered', facility });
+          setIsPilotArea(false);
           if (onSelectDiscovered) onSelectDiscovered(facility);
           try {
             map.flyTo([facility.latitude, facility.longitude], 14, { duration: 0.8 });
@@ -529,15 +701,10 @@ export function VenueMap({
         markersRef.current[facility.id] = marker;
       });
 
-      // Fit bounds across all points if multiple locations and no specific center provided
-      const allPoints: [number, number][] = [
-        ...venues.map((v) => [v.latitude, v.longitude] as [number, number]),
-        ...discoveredFacilities.map((d) => [d.latitude, d.longitude] as [number, number]),
-      ];
-      if (!initialCenter && allPoints.length > 1 && !clickedItem) {
+      // If explicit initial center was passed and we have a single venue, focus it
+      if (initialCenter && venues.length === 1 && singleVenueMode) {
         try {
-          const bounds = L.latLngBounds(allPoints);
-          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 13 });
+          map.setView(initialCenter, initialZoom || 15);
         } catch {}
       }
     });
@@ -547,6 +714,8 @@ export function VenueMap({
     discoveredFacilities,
     activeItemId,
     initialCenter,
+    initialZoom,
+    singleVenueMode,
     onSelectVenue,
     onSelectDiscovered,
   ]);
@@ -556,6 +725,7 @@ export function VenueMap({
     if (mapInstanceRef.current && (venues.length > 0 || discoveredFacilities.length > 0)) {
       import('leaflet').then((L) => {
         if (!mapInstanceRef.current) return;
+        setIsPilotArea(false);
         const all = [
           ...venues.map((v) => [v.latitude, v.longitude] as [number, number]),
           ...discoveredFacilities.map((d) => [d.latitude, d.longitude] as [number, number]),
@@ -578,6 +748,7 @@ export function VenueMap({
     const target = venues[nextIdx];
     if (target && mapInstanceRef.current) {
       setClickedItem({ type: 'platform', venue: target });
+      setIsPilotArea(false);
       if (onSelectVenue) onSelectVenue(target);
       mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
     }
@@ -590,6 +761,7 @@ export function VenueMap({
     const target = venues[prevIdx];
     if (target && mapInstanceRef.current) {
       setClickedItem({ type: 'platform', venue: target });
+      setIsPilotArea(false);
       if (onSelectVenue) onSelectVenue(target);
       mapInstanceRef.current.flyTo([target.latitude, target.longitude], 14, { duration: 0.8 });
     }
@@ -597,10 +769,21 @@ export function VenueMap({
 
   return (
     <div
-      className={`relative w-full ${heightClass} rounded-3xl overflow-hidden border border-[#E8E5DF] shadow-sm bg-white`}
+      className={`relative w-full ${heightClass} rounded-3xl overflow-hidden border border-[#E8E5DF] shadow-sm bg-[#FAF8F5]`}
     >
-      {/* Map Element */}
+      {/* Map DOM Element */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
+
+      {/* Loading Skeleton / Placeholder while Map Initializes */}
+      {!mapReady && (
+        <div className="absolute inset-0 z-30 bg-[#FAF8F5] flex flex-col items-center justify-center p-4 text-center">
+          <div className="w-10 h-10 rounded-2xl bg-[#1E4A32] text-[#E9C46A] flex items-center justify-center shadow-md animate-pulse mb-2">
+            <Compass className="w-5 h-5 text-[#E9C46A]" />
+          </div>
+          <p className="text-xs font-black text-[#1A241E]">Loading Interactive Map...</p>
+          <p className="text-[10px] text-[#65756B] mt-0.5">Pilot testing area: Naga City, Camarines Sur</p>
+        </div>
+      )}
 
       {/* Top Map Bar: OpenStreetMap Search + Quick View Switchers */}
       <div className="absolute top-2.5 left-2.5 right-14 z-20 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pointer-events-none">
@@ -665,15 +848,48 @@ export function VenueMap({
         {/* Quick View Controls */}
         {!singleVenueMode && (
           <div className="pointer-events-auto flex items-center gap-1 overflow-x-auto max-w-full pb-0.5 no-scrollbar self-start">
+            {/* Locate Me / Find Nearby Games Button */}
             <button
               type="button"
               onClick={locateUser}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#1E4A32] text-white border border-[#1E4A32] text-[10px] font-extrabold shadow-sm shrink-0 active:scale-95"
-              title="Locate nearest court near you"
+              disabled={isLocating}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-sm shrink-0 transition-all active:scale-95 ${
+                isLocating
+                  ? 'bg-[#1E4A32]/80 text-[#E9C46A] cursor-wait'
+                  : userCoords
+                  ? 'bg-[#2D724E] text-white hover:bg-[#1E4A32] border border-[#2D724E]'
+                  : 'bg-[#1E4A32] text-[#E9C46A] hover:bg-[#153423] border border-[#1E4A32]'
+              }`}
+              title="Request location to find nearby games and courts"
             >
-              <Crosshair className="w-3 h-3 text-[#E9C46A]" />
-              <span>Near Me</span>
+              {isLocating ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E9C46A]" />
+                  <span>Locating...</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="w-3.5 h-3.5 text-[#E9C46A]" />
+                  <span>{userCoords ? 'My Location' : 'Locate Me'}</span>
+                </>
+              )}
             </button>
+
+            {/* Quick jump to Naga City Pilot Area */}
+            <button
+              type="button"
+              onClick={jumpToPilotArea}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-extrabold shadow-sm shrink-0 transition-all ${
+                isPilotArea
+                  ? 'bg-[#FAF8F5] text-[#2D724E] border-2 border-[#2D724E]'
+                  : 'bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[#1A241E] hover:bg-[#FAF8F5]'
+              }`}
+              title="Center on Naga City, Camarines Sur (Pilot Area)"
+            >
+              <MapPin className="w-3 h-3 text-[#2D724E]" />
+              <span>Naga (Pilot)</span>
+            </button>
+
             <button
               type="button"
               onClick={fitAllCourts}
@@ -683,6 +899,7 @@ export function VenueMap({
               <Compass className="w-3 h-3 text-[#2D724E]" />
               <span>All ({venues.length})</span>
             </button>
+
             <button
               type="button"
               onClick={() => jumpToRegion('manila')}
@@ -715,7 +932,7 @@ export function VenueMap({
               type="button"
               onClick={flyToPhilippines}
               className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-              title="Zoom to OpenStreetMap Philippines view"
+              title="Zoom to OpenStreetMap Philippines overview"
             >
               <Globe className="w-3 h-3 text-[#C87D43]" />
               <span>PH</span>
@@ -724,11 +941,21 @@ export function VenueMap({
         )}
       </div>
 
-      {/* Search Result Distance Notice */}
+      {/* Pilot Area Indicator Badge */}
+      {isPilotArea && !singleVenueMode && (
+        <div className="absolute top-12 sm:top-12 right-2.5 z-20 pointer-events-none">
+          <div className="bg-[#1E4A32]/95 backdrop-blur-md text-white border border-[#E9C46A]/40 px-2.5 py-1 rounded-xl shadow-md text-[10px] font-bold flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#E9C46A] animate-pulse"></span>
+            <span>Pilot Area: Naga City, Cam. Sur</span>
+          </div>
+        </div>
+      )}
+
+      {/* Search Result / Geolocation Notice */}
       {searchNotice && (
-        <div className="absolute top-14 left-2.5 z-20 bg-[#1E4A32] text-white px-3 py-1 rounded-xl shadow-md text-[11px] font-bold flex items-center gap-1.5 animate-fadeIn">
-          <MapPin className="w-3 h-3 text-[#E9C46A]" />
-          <span>{searchNotice}</span>
+        <div className="absolute top-14 left-2.5 z-20 bg-[#1E4A32] text-white px-3 py-1.5 rounded-xl shadow-md text-[11px] font-bold flex items-center gap-1.5 animate-fadeIn max-w-sm sm:max-w-md">
+          <MapPin className="w-3.5 h-3.5 text-[#E9C46A] shrink-0" />
+          <span className="truncate">{searchNotice}</span>
         </div>
       )}
 

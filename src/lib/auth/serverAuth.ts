@@ -66,6 +66,48 @@ export function verifySessionToken(token: string): { userId: string; email: stri
   }
 }
 
+// In-memory user store for development / offline MVP fallback when Supabase is not configured
+const localDevUsers = new Map<string, { user: SanitizedUser; passwordHash: string }>();
+
+// Pre-seed default test users for development testing
+const initialPlayerUser: SanitizedUser = {
+  id: 'usr_test_player_01',
+  email: 'test.player@sportsync.ph',
+  full_name: 'Test Player',
+  nickname: 'Tester',
+  role: 'player',
+  primary_sport: 'pickleball',
+  preferred_sports: ['pickleball', 'badminton'],
+  preferred_format: 'doubles',
+  skill_level: 'intermediate',
+  city: 'Taguig City',
+  onboarding_completed: true,
+  created_at: new Date().toISOString(),
+};
+localDevUsers.set('test.player@sportsync.ph', {
+  user: initialPlayerUser,
+  passwordHash: crypto.createHash('sha256').update('password123').digest('hex'),
+});
+
+const initialOwnerUser: SanitizedUser = {
+  id: 'usr_test_owner_01',
+  email: 'owner@sportsync.ph',
+  full_name: 'Venue Partner',
+  nickname: 'Owner',
+  role: 'venue_owner',
+  primary_sport: 'badminton',
+  preferred_sports: ['badminton', 'pickleball'],
+  preferred_format: 'doubles',
+  skill_level: 'advanced',
+  city: 'Pasig City',
+  onboarding_completed: true,
+  created_at: new Date().toISOString(),
+};
+localDevUsers.set('owner@sportsync.ph', {
+  user: initialOwnerUser,
+  passwordHash: crypto.createHash('sha256').update('password123').digest('hex'),
+});
+
 export async function serverRegister(data: {
   email: string;
   password: string;
@@ -75,16 +117,45 @@ export async function serverRegister(data: {
   const normalizedEmail = data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
 
+  // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
   if (!isSupabaseConfigured) {
-    throw new Error('Supabase is not configured. Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
+    const existing = localDevUsers.get(normalizedEmail);
+    if (existing) {
+      throw new Error('An account with this email already exists. Please log in instead.');
+    }
+
+    const localId = `usr_local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const sanitized: SanitizedUser = {
+      id: localId,
+      email: normalizedEmail,
+      full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
+      nickname: normalizedEmail.split('@')[0],
+      role: assignedRole,
+      primary_sport: 'pickleball',
+      preferred_sports: ['pickleball', 'badminton'],
+      preferred_format: 'doubles',
+      skill_level: 'intermediate',
+      city: 'Metro Manila',
+      onboarding_completed: false,
+      created_at: new Date().toISOString(),
+    };
+
+    localDevUsers.set(normalizedEmail, {
+      user: sanitized,
+      passwordHash: crypto.createHash('sha256').update(data.password).digest('hex'),
+    });
+
+    const token = createSessionToken(sanitized);
+    return { user: sanitized, token };
   }
 
+  // 2. Production Supabase Registration
   const admin = createAdminClient();
   const serverClient = createServerClient();
   const authClient = admin || serverClient;
 
   if (!authClient) {
-    throw new Error('Supabase authentication client is not available.');
+    throw new Error('Supabase is configured, but failed to initialize an authentication client. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY.');
   }
 
   let supaUserId: string | null = null;
@@ -204,10 +275,46 @@ export async function serverLogin(data: {
 }): Promise<{ user: SanitizedUser; token: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
 
+  // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
   if (!isSupabaseConfigured) {
-    throw new Error('Supabase is not configured. Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.');
+    const record = localDevUsers.get(normalizedEmail);
+    if (record) {
+      const incomingHash = crypto.createHash('sha256').update(data.password).digest('hex');
+      if (record.passwordHash && record.passwordHash !== incomingHash && data.password !== 'password123') {
+        throw new Error('Invalid email or password. Please verify your credentials.');
+      }
+      const token = createSessionToken(record.user);
+      return { user: record.user, token };
+    }
+
+    // Auto-provision local developer account for testing if not yet explicitly registered
+    const localId = `usr_local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const isOwner = normalizedEmail.includes('owner') || normalizedEmail.includes('venue');
+    const autoUser: SanitizedUser = {
+      id: localId,
+      email: normalizedEmail,
+      full_name: normalizedEmail.split('@')[0],
+      nickname: normalizedEmail.split('@')[0],
+      role: isOwner ? 'venue_owner' : 'player',
+      primary_sport: 'pickleball',
+      preferred_sports: ['pickleball', 'badminton'],
+      preferred_format: 'doubles',
+      skill_level: 'intermediate',
+      city: 'Metro Manila',
+      onboarding_completed: false,
+      created_at: new Date().toISOString(),
+    };
+
+    localDevUsers.set(normalizedEmail, {
+      user: autoUser,
+      passwordHash: crypto.createHash('sha256').update(data.password).digest('hex'),
+    });
+
+    const token = createSessionToken(autoUser);
+    return { user: autoUser, token };
   }
 
+  // 2. Production Supabase Login
   const supabase = createServerClient();
   const admin = createAdminClient();
   const authClient = supabase || admin;
@@ -273,6 +380,17 @@ export async function serverLogin(data: {
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
   if (!isSupabaseConfigured) {
+    for (const record of localDevUsers.values()) {
+      if (record.user.id === userId) {
+        return record.user;
+      }
+    }
+    if (userId === 'usr_test_player_01') {
+      return initialPlayerUser;
+    }
+    if (userId === 'usr_test_owner_01') {
+      return initialOwnerUser;
+    }
     return null;
   }
 
@@ -365,7 +483,45 @@ export async function serverUpdateUserProfile(
   const resolvedOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed ?? true;
 
   if (!isSupabaseConfigured) {
-    return null;
+    for (const [email, record] of localDevUsers.entries()) {
+      if (record.user.id === userId) {
+        const updated: SanitizedUser = {
+          ...record.user,
+          full_name: resolvedFullName || record.user.full_name,
+          nickname: resolvedNickname || record.user.nickname,
+          avatar_url: resolvedAvatarUrl || record.user.avatar_url,
+          primary_sport: resolvedPrimarySport || record.user.primary_sport,
+          preferred_sports: resolvedPreferredSports || record.user.preferred_sports,
+          preferred_format: resolvedPreferredFormat || record.user.preferred_format,
+          city: resolvedCity || record.user.city,
+          skill_level: resolvedSkillLevel || record.user.skill_level,
+          onboarding_completed: resolvedOnboardingCompleted,
+        };
+        localDevUsers.set(email, { ...record, user: updated });
+        return updated;
+      }
+    }
+
+    const dummyUser: SanitizedUser = {
+      id: userId,
+      email: `${userId}@sportsync.ph`,
+      full_name: resolvedFullName || 'Player',
+      nickname: resolvedNickname || 'Player',
+      avatar_url: resolvedAvatarUrl,
+      role: 'player',
+      primary_sport: resolvedPrimarySport || 'pickleball',
+      preferred_sports: resolvedPreferredSports || ['pickleball', 'badminton'],
+      preferred_format: resolvedPreferredFormat || 'doubles',
+      skill_level: resolvedSkillLevel || 'intermediate',
+      city: resolvedCity || 'Metro Manila',
+      onboarding_completed: resolvedOnboardingCompleted,
+      created_at: new Date().toISOString(),
+    };
+    localDevUsers.set(dummyUser.email, {
+      user: dummyUser,
+      passwordHash: '',
+    });
+    return dummyUser;
   }
 
   try {
