@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Calendar, MapPin, Clock, MoreVertical, X } from 'lucide-react';
-import { VENUES } from '../../mock/mockData';
 import { BottomSheet } from '../../design-system/components/BottomSheet';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -21,7 +20,7 @@ interface MyBookingsScreenProps {
 }
 
 export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
-  bookings,
+  bookings = [],
   onBack,
   onViewPass,
   onCancelBooking,
@@ -29,41 +28,9 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [sheetBooking, setSheetBooking] = useState<{ id: string; venueName: string } | null>(null);
 
-  const defaultUpcoming = [
-    {
-      id: 'BK-89421',
-      venue: VENUES[0],
-      court: 'Court 2 (Clay)',
-      date: 'Sat, 17 Oct',
-      time: '10:00 – 11:30 AM',
-      price: 54,
-      status: 'confirmed',
-    },
-    {
-      id: 'BK-88930',
-      venue: VENUES[1],
-      court: 'Pitch 4 (3G Turf)',
-      date: 'Wed, 21 Oct',
-      time: '19:00 – 20:00',
-      price: 55,
-      status: 'confirmed',
-    },
-  ];
-
-  const pastBookings = [
-    {
-      id: 'BK-84102',
-      venue: VENUES[2],
-      court: 'Dome Court 1',
-      date: 'Sat, 10 Oct',
-      time: '14:00 – 15:30',
-      price: 48,
-      status: 'confirmed',
-    },
-  ];
-
-  const upcomingList = (bookings || defaultUpcoming).filter((b) => b.status !== 'cancelled');
-  const list = activeTab === 'upcoming' ? upcomingList : pastBookings;
+  const upcomingList = (bookings || []).filter((b) => b.status !== 'cancelled');
+  const pastList: any[] = [];
+  const list = activeTab === 'upcoming' ? upcomingList : pastList;
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar">
@@ -103,65 +70,81 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
               : 'text-[#A5B0A6]'
           }`}
         >
-          Past Sessions ({pastBookings.length})
+          Past Sessions ({pastList.length})
         </button>
       </div>
 
-      {/* 3. Cards List */}
-      <div className="space-y-3">
-        {list.map((item) => (
-          <div
-            key={item.id}
-            className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="px-2.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] font-display font-bold text-[10px] uppercase">
-                {item.id}
-              </span>
-              <button
-                onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
-                className="text-[#6F7B71] hover:text-white p-1"
-              >
-                <MoreVertical className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div>
-              <h3 className="font-display font-bold text-base text-[#F4F7F0]">
-                {item.venue.name}
-              </h3>
-              <p className="text-xs text-[#A5B0A6] mt-0.5">{item.court}</p>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-[#1C241E] flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2 text-[#A5B0A6]">
-                <Clock className="w-4 h-4 text-[#C8FF2E]" />
-                <span>{item.date} • {item.time}</span>
-              </div>
-              <span className="font-bold text-[#F4F7F0]">
-                {APP_CONFIG.currency}{item.price}
-              </span>
-            </div>
-
-            <div className="pt-1 flex items-center justify-between">
-              <button
-                onClick={() => onViewPass(item.id)}
-                className="text-xs font-bold text-[#C8FF2E] underline underline-offset-2"
-              >
-                View Entry QR Pass →
-              </button>
-              {activeTab === 'upcoming' && (
+      {/* 3. Cards List or Empty State */}
+      {list.length > 0 ? (
+        <div className="space-y-3">
+          {list.map((item) => (
+            <div
+              key={item.id}
+              className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] font-display font-bold text-[10px] uppercase">
+                  {item.id}
+                </span>
                 <button
                   onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
-                  className="text-xs text-[#A5B0A6] hover:text-white"
+                  className="text-[#6F7B71] hover:text-white p-1"
                 >
-                  Manage
+                  <MoreVertical className="w-4 h-4" />
                 </button>
-              )}
+              </div>
+
+              <div>
+                <h3 className="font-display font-bold text-base text-[#F4F7F0]">
+                  {item.venue.name}
+                </h3>
+                <p className="text-xs text-[#A5B0A6] mt-0.5">{item.court}</p>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-[#1C241E] flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-[#A5B0A6]">
+                  <Clock className="w-4 h-4 text-[#C8FF2E]" />
+                  <span>{item.date} • {item.time}</span>
+                </div>
+                <span className="font-bold text-[#F4F7F0]">
+                  {APP_CONFIG.currency}{item.price}
+                </span>
+              </div>
+
+              <div className="pt-1 flex items-center justify-between">
+                <button
+                  onClick={() => onViewPass(item.id)}
+                  className="text-xs font-bold text-[#C8FF2E] underline underline-offset-2"
+                >
+                  View Entry QR Pass →
+                </button>
+                {activeTab === 'upcoming' && (
+                  <button
+                    onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
+                    className="text-xs text-[#A5B0A6] hover:text-white"
+                  >
+                    Manage
+                  </button>
+                )}
+              </div>
             </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#1C241E] text-[#C8FF2E] flex items-center justify-center mx-auto">
+            <Calendar className="w-6 h-6" />
           </div>
-        ))}
-      </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-[#F4F7F0]">No reservations found</h3>
+            <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
+              {activeTab === 'upcoming'
+                ? "You haven't reserved any courts yet. Explore verified facilities and lock in your hourly slot."
+                : "You don't have any past reservations."}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 4. Reschedule / Cancel Bottom Sheet */}
       <BottomSheet

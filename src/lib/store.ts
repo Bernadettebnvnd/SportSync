@@ -96,22 +96,34 @@ async function initializeStore() {
   try {
     // 1. Fetch current authenticated user or check local storage
     if (typeof window !== 'undefined') {
-      const storedCompleted = localStorage.getItem('matchi_onboarding_completed') === 'true';
-      globalState.currentUser.onboarding_completed = storedCompleted;
-      globalState.currentUser.has_completed_onboarding = storedCompleted;
-      const storedName = localStorage.getItem('matchi_user_name');
+      const storedCompleted =
+        localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+        localStorage.getItem('sportsync_onboarding_completed') === 'true';
+      const storedEmail = localStorage.getItem('sportsync_user_email');
+      const hasAuthUser = Boolean(localStorage.getItem('sportsync_auth_user'));
+
+      if (storedCompleted || hasAuthUser || storedEmail) {
+        globalState.currentUser.onboarding_completed = true;
+        globalState.currentUser.has_completed_onboarding = true;
+      }
+      const storedName = localStorage.getItem('matchi_user_name') || localStorage.getItem('sportsync_user_name');
       if (storedName) globalState.currentUser.full_name = storedName;
-      const storedNickname = localStorage.getItem('matchi_user_nickname');
+      const storedNickname = localStorage.getItem('matchi_user_nickname') || localStorage.getItem('sportsync_user_nickname');
       if (storedNickname) globalState.currentUser.nickname = storedNickname;
     }
 
     const user = await getCurrentUser();
     if (user) {
+      user.onboarding_completed = true;
+      user.has_completed_onboarding = true;
       globalState.currentUser = user;
-      if (user.onboarding_completed) {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('matchi_onboarding_completed', 'true');
-          localStorage.setItem('sportsync_onboarding_completed', 'true');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('matchi_onboarding_completed', 'true');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        if (user.email) localStorage.setItem('sportsync_user_email', user.email);
+        if (user.full_name) {
+          localStorage.setItem('sportsync_user_name', user.full_name);
+          localStorage.setItem('matchi_user_name', user.full_name);
         }
       }
     }
@@ -153,7 +165,18 @@ function setupGlobalAuthListener() {
       if (session?.user) {
         const user = await getCurrentUser();
         if (user) {
+          user.onboarding_completed = true;
+          user.has_completed_onboarding = true;
           globalState.currentUser = user;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+            if (user.email) localStorage.setItem('sportsync_user_email', user.email);
+            if (user.full_name) {
+              localStorage.setItem('sportsync_user_name', user.full_name);
+              localStorage.setItem('matchi_user_name', user.full_name);
+            }
+          }
           const bookings = await getPlayerBookings();
           globalState.bookings = bookings;
           notify();
@@ -262,10 +285,10 @@ export function useMatchiStore() {
   }, [setUserRole]);
 
   const setAuthenticatedUser = useCallback((user: Partial<User>) => {
+    const hasAccount = Boolean((user.id && user.email) || user.auth_id || user.id || user.email);
     const isOnboarded = Boolean(
-      user.onboarding_completed ??
-      user.has_completed_onboarding ??
-      globalState.currentUser.onboarding_completed
+      hasAccount ||
+      (user.onboarding_completed ?? user.has_completed_onboarding ?? globalState.currentUser.onboarding_completed)
     );
 
     globalState = {
@@ -293,6 +316,11 @@ export function useMatchiStore() {
     if (isOnboarded && typeof window !== 'undefined') {
       localStorage.setItem('matchi_onboarding_completed', 'true');
       localStorage.setItem('sportsync_onboarding_completed', 'true');
+      if (user.email) localStorage.setItem('sportsync_user_email', user.email);
+      if (user.full_name) {
+        localStorage.setItem('sportsync_user_name', user.full_name);
+        localStorage.setItem('matchi_user_name', user.full_name);
+      }
     }
 
     notify();

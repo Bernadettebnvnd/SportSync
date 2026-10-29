@@ -17,10 +17,10 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { VenueCard } from '../../design-system/components/VenueCard';
-import { VENUES } from '../../mock/mockData';
 import { Venue } from '../../mock/types';
 import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
+import { STANDARDIZED_SPORTS } from '../../config/sports';
 
 interface VenuesListScreenProps {
   venues?: Venue[];
@@ -30,18 +30,10 @@ interface VenuesListScreenProps {
   initialSport?: string;
 }
 
-const OFFICIAL_SPORTS: Array<{ label: string; value: string }> = [
-  { label: 'All Sports', value: 'All' },
-  { label: 'Football', value: 'Football' },
-  { label: 'Basketball', value: 'Basketball' },
-  { label: 'Tennis', value: 'Tennis' },
-  { label: 'Pickleball', value: 'Pickleball' },
-  { label: 'Badminton', value: 'Badminton' },
-  { label: 'Volleyball', value: 'Volleyball' },
-  { label: 'Billiards', value: 'Billiards' },
-  { label: 'Darts', value: 'Darts' },
-  { label: 'Other', value: 'Other' },
-];
+const OFFICIAL_SPORTS: Array<{ label: string; value: string }> = STANDARDIZED_SPORTS.map((s) => ({
+  label: s === 'All' ? 'All Sports' : s,
+  value: s,
+}));
 
 const CITIES = [
   { label: 'All Cities', value: 'all' },
@@ -62,7 +54,7 @@ const TIME_OPTIONS = [
 ];
 
 export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
-  venues = VENUES,
+  venues = [],
   onSelectVenue,
   onBack,
   initialQuery = '',

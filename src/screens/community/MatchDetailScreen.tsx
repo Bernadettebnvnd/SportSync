@@ -29,6 +29,15 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
     onJoin();
   };
 
+  if (!game) {
+    return (
+      <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-6 text-center space-y-4 bg-[#0B0F0C] text-[#F4F7F0]">
+        <p className="text-sm text-[#A5B0A6]">No match selected or match has ended.</p>
+        <Button onClick={onBack} variant="secondary">Go Back</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-32 select-none">
       {/* 1. Illustrated Header with Sport Badge (Ref B) */}

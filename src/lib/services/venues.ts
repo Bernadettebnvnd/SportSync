@@ -1,6 +1,5 @@
 import { Venue, Court, SportType } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
-import { TEST_VENUES } from '@/lib/mockData';
 
 export interface VenueFilterOptions {
   sport?: SportType | 'all';
@@ -79,15 +78,13 @@ export function saveLocalStoredVenues(venue: Venue) {
 /**
  * Fetch all venues with their court facilities from Supabase.
  * Returns genuine database or user-created records.
- * Gracefully merges locally cached venues and falls back to Philippine seed venues.
  */
 export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue[]> {
   const supabase = getSupabaseClient();
   const localVenues = getLocalStoredVenues();
 
   if (!supabase || !isSupabaseConfigured) {
-    const fallbackList = localVenues.length > 0 ? localVenues : TEST_VENUES;
-    return filterVenuesList(fallbackList, options);
+    return filterVenuesList(localVenues, options);
   }
 
   try {
@@ -114,8 +111,7 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
 
     if (error) {
       console.warn('[Venues] Live Supabase query returned error, using local records:', error.message);
-      const fallbackList = localVenues.length > 0 ? localVenues : TEST_VENUES;
-      return filterVenuesList(fallbackList, options);
+      return filterVenuesList(localVenues, options);
     }
 
     const dbVenues = (data as Venue[]) || [];
@@ -127,15 +123,10 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
       }
     });
 
-    if (combined.length === 0) {
-      return filterVenuesList(TEST_VENUES, options);
-    }
-
     return filterVenuesList(combined, options);
   } catch (err) {
     console.warn('[Venues] Exception querying venues:', err);
-    const fallbackList = localVenues.length > 0 ? localVenues : TEST_VENUES;
-    return filterVenuesList(fallbackList, options);
+    return filterVenuesList(localVenues, options);
   }
 }
 
@@ -147,7 +138,7 @@ export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
   const localVenue = getLocalStoredVenues().find((v) => v.id === idOrSlug || v.slug === idOrSlug) || null;
 
   if (!supabase || !isSupabaseConfigured) {
-    return localVenue || TEST_VENUES.find((v) => v.id === idOrSlug || v.slug === idOrSlug) || null;
+    return localVenue;
   }
 
   try {
@@ -159,12 +150,12 @@ export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
       : await query.eq('slug', idOrSlug).maybeSingle();
 
     if (error || !data) {
-      return localVenue || TEST_VENUES.find((v) => v.id === idOrSlug || v.slug === idOrSlug) || null;
+      return localVenue;
     }
 
     return data as Venue;
   } catch {
-    return localVenue || TEST_VENUES.find((v) => v.id === idOrSlug || v.slug === idOrSlug) || null;
+    return localVenue;
   }
 }
 
@@ -174,7 +165,7 @@ export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
 export async function getCourtsByVenueId(venueId: string): Promise<Court[]> {
   const supabase = getSupabaseClient();
   if (!supabase || !isSupabaseConfigured) {
-    const v = getLocalStoredVenues().find((x) => x.id === venueId) || TEST_VENUES.find((x) => x.id === venueId);
+    const v = getLocalStoredVenues().find((x) => x.id === venueId);
     return v?.courts || [];
   }
 

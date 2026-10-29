@@ -136,7 +136,7 @@ export async function serverRegister(data: {
       preferred_format: 'doubles',
       skill_level: 'intermediate',
       city: 'Metro Manila',
-      onboarding_completed: false,
+      onboarding_completed: true,
       created_at: new Date().toISOString(),
     };
 
@@ -169,6 +169,7 @@ export async function serverRegister(data: {
       user_metadata: {
         full_name: data.fullName.trim(),
         role: assignedRole,
+        onboarding_completed: true,
       },
     });
 
@@ -191,6 +192,7 @@ export async function serverRegister(data: {
         data: {
           full_name: data.fullName.trim(),
           role: assignedRole,
+          onboarding_completed: true,
         },
       },
     });
@@ -228,6 +230,7 @@ export async function serverRegister(data: {
             auth_id: supaUserId,
             full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
             role: assignedRole,
+            onboarding_completed: true,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingUser.id);
@@ -237,7 +240,7 @@ export async function serverRegister(data: {
           email: normalizedEmail,
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
           role: assignedRole,
-          onboarding_completed: false,
+          onboarding_completed: true,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
           preferred_format: 'doubles',
@@ -261,7 +264,7 @@ export async function serverRegister(data: {
     preferred_format: 'doubles',
     skill_level: 'intermediate',
     city: 'Metro Manila',
-    onboarding_completed: false,
+    onboarding_completed: true,
     created_at: supaCreatedAt,
   };
 
@@ -301,7 +304,7 @@ export async function serverLogin(data: {
       preferred_format: 'doubles',
       skill_level: 'intermediate',
       city: 'Metro Manila',
-      onboarding_completed: false,
+      onboarding_completed: true,
       created_at: new Date().toISOString(),
     };
 
@@ -332,6 +335,8 @@ export async function serverLogin(data: {
     throw new Error('Invalid email or password. Please verify your credentials.');
   }
 
+  const userMeta = supaData.user.user_metadata || {};
+
   // Retrieve database profile from public.users table (match by auth_id or email)
   const dbClient = admin || supabase;
   let dbProfile: any = null;
@@ -344,20 +349,40 @@ export async function serverLogin(data: {
         .maybeSingle();
       dbProfile = profile;
 
-      // If found by email but auth_id is not yet linked, link it now
-      if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
+      // If found by email but auth_id is not yet linked or onboarding_completed is false, update now
+      if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id || !dbProfile.onboarding_completed)) {
         await dbClient
           .from('users')
-          .update({ auth_id: supaData.user.id, updated_at: new Date().toISOString() })
+          .update({
+            auth_id: supaData.user.id,
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', dbProfile.id);
         dbProfile.auth_id = supaData.user.id;
+        dbProfile.onboarding_completed = true;
+      } else if (!dbProfile) {
+        // Auto-provision public.users row if missing
+        const newProfile = {
+          auth_id: supaData.user.id,
+          email: normalizedEmail,
+          full_name: userMeta?.full_name || normalizedEmail.split('@')[0],
+          role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
+          primary_sport: 'pickleball',
+          preferred_sports: ['pickleball', 'badminton'],
+          preferred_format: 'doubles',
+          skill_level: 'intermediate',
+          city: 'Metro Manila',
+          onboarding_completed: true,
+        };
+        await dbClient.from('users').insert(newProfile);
+        dbProfile = newProfile;
       }
     } catch (dbErr) {
       console.warn('[ServerAuth] Error loading profile from Supabase:', dbErr);
     }
   }
 
-  const userMeta = supaData.user.user_metadata;
   const sanitized: SanitizedUser = {
     id: supaData.user.id,
     email: supaData.user.email || normalizedEmail,
@@ -370,7 +395,7 @@ export async function serverLogin(data: {
     preferred_format: dbProfile?.preferred_format || 'doubles',
     skill_level: dbProfile?.skill_level || 'intermediate',
     city: dbProfile?.city || 'Metro Manila',
-    onboarding_completed: Boolean(dbProfile?.onboarding_completed ?? userMeta?.onboarding_completed),
+    onboarding_completed: true,
     created_at: supaData.user.created_at,
   };
 
@@ -416,7 +441,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           preferred_format: supaUser.preferred_format || 'doubles',
           skill_level: supaUser.skill_level || 'intermediate',
           city: supaUser.city || 'Metro Manila',
-          onboarding_completed: Boolean(supaUser.onboarding_completed),
+          onboarding_completed: true,
           created_at: supaUser.created_at,
         };
       }
@@ -438,7 +463,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
             preferred_format: 'doubles',
             skill_level: 'intermediate',
             city: 'Metro Manila',
-            onboarding_completed: Boolean(u.user_metadata?.onboarding_completed),
+            onboarding_completed: true,
             created_at: u.created_at,
           };
         }
@@ -543,7 +568,7 @@ export async function serverUpdateUserProfile(
       const { data: updatedUser, error } = await db
         .from('users')
         .update(updatePayload)
-        .or(`auth_id.eq.${userId},id.eq.${userId}`)
+        .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
         .select('*')
         .maybeSingle();
 

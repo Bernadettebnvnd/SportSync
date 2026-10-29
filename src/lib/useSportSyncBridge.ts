@@ -2,12 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useMatchiStore } from './store';
-import {
-  COMMUNITY_GAMES as DEFAULT_GAMES,
-  VENUES as DEFAULT_VENUES,
-  CURRENT_USER as DEFAULT_USER,
-  MATCHES,
-} from '../mock/mockData';
+import { MATCHES } from '../mock/mockData';
 import {
   CommunityGame,
   Venue,
@@ -20,7 +15,6 @@ import {
 import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
-import { TEST_VENUES } from './mockData';
 
 export interface SportSyncBookingItem {
   id: string;
@@ -154,6 +148,37 @@ export function getLevelTitle(level: number): string {
   return 'Living Legend';
 }
 
+export const INITIAL_USER_PROFILE = {
+  id: undefined as string | undefined,
+  name: 'Guest Player',
+  username: '@guest',
+  avatarId: 'alex' as const,
+  level: 1,
+  levelTitle: 'Rookie Starter',
+  xp: 0,
+  xpNextLevel: 1000,
+  city: 'Metro Manila',
+  primarySport: 'pickleball',
+  preferredSports: ['Basketball', 'Pickleball', 'Badminton'],
+  skillLevel: 'Intermediate',
+  onboardingCompleted: false,
+  streakWeeks: 0,
+  streakMultiplier: 1.0,
+  predictionsCount: 0,
+  predictionsWon: 0,
+  matchesTotal: 0,
+  wins: 0,
+  goals: 0,
+  assists: 0,
+  winRate: '0%',
+  mvpCount: 0,
+  recentGames: [] as any[],
+  favoriteTeams: [] as any[],
+  isGuest: true,
+};
+
+export type SportSyncUserProfile = typeof INITIAL_USER_PROFILE;
+
 export function useSportSyncBridge() {
   const store = useMatchiStore();
 
@@ -173,7 +198,7 @@ export function useSportSyncBridge() {
           const parsed = JSON.parse(saved);
           return {
             ...parsed,
-            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
+            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted || parsed.id || parsed.email),
           };
         } catch {
           // ignore parsing error
@@ -181,19 +206,23 @@ export function useSportSyncBridge() {
       }
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
-    const completed = isStoreCompleted || localCompleted;
+    const completed = Boolean(isStoreCompleted || localCompleted || isAuthenticated);
     return {
-      ...DEFAULT_USER,
       id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
       name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
       username: isAuthenticated
         ? (store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : `@${store.currentUser.email?.split('@')[0] || 'player'}`)
         : '@guest',
+      avatarId: 'alex' as const,
+      level: 1,
+      levelTitle: getLevelTitle(1),
+      xp: 0,
+      xpNextLevel: 1000,
       city: store.currentUser.city || 'Metro Manila',
       primarySport: store.currentUser.primary_sport || 'pickleball',
       preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
         ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-        : ['Pickleball', 'Badminton'],
+        : ['Basketball', 'Pickleball', 'Badminton'],
       skillLevel: store.currentUser.skill_level
         ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
         : 'Intermediate',
@@ -204,6 +233,12 @@ export function useSportSyncBridge() {
       predictionsWon: 0,
       matchesTotal: store.currentUser.matches_played || 0,
       wins: store.currentUser.matches_won || 0,
+      goals: 0,
+      assists: 0,
+      winRate: '0%',
+      mvpCount: 0,
+      recentGames: [],
+      favoriteTeams: [],
       isGuest: !isAuthenticated,
     };
   });
@@ -245,7 +280,7 @@ export function useSportSyncBridge() {
         skillLevel: store.currentUser.skill_level
           ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
           : prev.skillLevel,
-        onboardingCompleted: Boolean(isCompleted || prev.onboardingCompleted),
+        onboardingCompleted: Boolean(isAuthenticated || isCompleted || prev.onboardingCompleted),
         matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
         wins: store.currentUser.matches_won ?? prev.wins,
         streakWeeks: store.currentUser.win_streak ?? prev.streakWeeks,
@@ -283,7 +318,7 @@ export function useSportSyncBridge() {
         }
       }
     }
-    return DEFAULT_GAMES;
+    return [];
   });
 
   useEffect(() => {
@@ -428,7 +463,7 @@ export function useSportSyncBridge() {
       return 'Pickleball';
     };
 
-    const sourceVenues = store.venues && store.venues.length > 0 ? store.venues : TEST_VENUES;
+    const sourceVenues = store.venues || [];
 
     const adaptedDbVenues: Venue[] = sourceVenues.map((dbV) => {
       const primaryCourt = dbV.courts?.[0];
@@ -525,7 +560,7 @@ export function useSportSyncBridge() {
       let newTitle = userProfile.levelTitle;
       const oldLevel = userProfile.level;
 
-      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => {
+      setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => {
         let currentLevel = prev.level;
         let currentXp = prev.xp + totalEarned;
         let nextLevelCap = prev.xpNextLevel;
@@ -629,14 +664,14 @@ export function useSportSyncBridge() {
             message: `Insufficient XP balance (${userProfile.xp} XP available, needed ${params.stakeXp} XP)`,
           };
         }
-        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+        setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
           ...prev,
           xp: Math.max(0, prev.xp - params.stakeXp),
           predictionsCount: (prev.predictionsCount || 0) + 1,
         }));
       } else {
         awardXp(50, `voting on ${params.matchTitle} prediction`, { applyStreakMultiplier: true });
-        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+        setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
           ...prev,
           predictionsCount: (prev.predictionsCount || 0) + 1,
         }));
@@ -770,7 +805,7 @@ export function useSportSyncBridge() {
         awardXp(totalPayout, `winning live prediction wager on ${wonWagers[0].optionLabel}`, {
           applyStreakMultiplier: false,
         });
-        setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
+        setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number }) => ({
           ...prev,
           predictionsWon: (prev.predictionsWon || 0) + 1,
         }));
@@ -1083,7 +1118,7 @@ export function useSportSyncBridge() {
       preferredArea?: string;
       avatarUrl?: string;
     }) => {
-      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
+      setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
         ...prev,
         name: prefs.fullName || prev.name,
         city: prefs.preferredArea || prev.city || 'Metro Area',
@@ -1168,7 +1203,7 @@ export function useSportSyncBridge() {
     cancelReservation,
     completeOnboarding,
     setAsGuest: () => {
-      setUserProfile((prev: typeof DEFAULT_USER & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
+      setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
         ...prev,
         name: 'Guest Player',
         username: '@guest',
@@ -1196,7 +1231,7 @@ export function useSportSyncBridge() {
         localStorage.removeItem('matchi_onboarding_completed');
       }
       setUserProfile({
-        ...DEFAULT_USER,
+        ...INITIAL_USER_PROFILE,
         name: 'Guest Player',
         username: '@guest',
         isGuest: true,

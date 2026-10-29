@@ -37,8 +37,8 @@ export async function getCurrentUser(): Promise<User | null> {
             win_streak: 0,
             highest_streak: 0,
             email_verified: Boolean(authUser.email_confirmed_at),
-            onboarding_completed: false,
-            has_completed_onboarding: false,
+            onboarding_completed: true,
+            has_completed_onboarding: true,
             created_at: authUser.created_at,
           };
         }
@@ -53,8 +53,8 @@ export async function getCurrentUser(): Promise<User | null> {
           skill_level: profile.skill_level || 'intermediate',
           city: profile.city || 'Metro Manila',
           email_verified: Boolean(authUser.email_confirmed_at),
-          onboarding_completed: Boolean(profile.onboarding_completed),
-          has_completed_onboarding: Boolean(profile.onboarding_completed),
+          onboarding_completed: true,
+          has_completed_onboarding: true,
         };
       }
     } catch (err) {
@@ -69,7 +69,6 @@ export async function getCurrentUser(): Promise<User | null> {
       if (res.ok) {
         const json = await res.json();
         if (json?.user) {
-          const isOnboarded = Boolean(json.user.onboarding_completed);
           return {
             id: json.user.id,
             auth_id: json.user.id,
@@ -89,8 +88,8 @@ export async function getCurrentUser(): Promise<User | null> {
             highest_streak: 0,
             email_verified: true,
             created_at: json.user.created_at,
-            onboarding_completed: isOnboarded,
-            has_completed_onboarding: isOnboarded,
+            onboarding_completed: true,
+            has_completed_onboarding: true,
           };
         }
       }

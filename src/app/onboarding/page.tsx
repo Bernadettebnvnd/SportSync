@@ -49,6 +49,25 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { currentUser, completePlayerOnboarding, completeOwnerOnboarding } = useMatchiStore();
 
+  const hasAccount = Boolean(currentUser.id && currentUser.email);
+  const isCompleted = Boolean(
+    hasAccount ||
+    currentUser.onboarding_completed ||
+    currentUser.has_completed_onboarding ||
+    (typeof window !== 'undefined' && (
+      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+      localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+      Boolean(localStorage.getItem('sportsync_user_email'))
+    ))
+  );
+
+  React.useEffect(() => {
+    if (hasAccount || isCompleted) {
+      const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
+      router.replace(target);
+    }
+  }, [hasAccount, isCompleted, currentUser.role, router]);
+
   // Role: player or facility owner
   const [role, setRole] = useState<'player' | 'owner'>('player');
   // Step 1: Role, Step 2: Name, Step 3: Sports, Step 4: Location, Step 5: Preferences, Step 6: Confirmation
@@ -229,6 +248,17 @@ export default function OnboardingPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (hasAccount || isCompleted) {
+    return (
+      <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#2D724E] border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-[#65756B]">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1A241E] flex flex-col justify-between p-4 sm:p-8 max-w-xl mx-auto">

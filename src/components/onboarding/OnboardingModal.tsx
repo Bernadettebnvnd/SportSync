@@ -24,9 +24,9 @@ interface OnboardingModalProps {
 
 const AVAILABLE_SPORTS: { id: SportType; label: string; desc: string }[] = [
   {
-    id: 'pickleball',
-    label: 'Pickleball',
-    desc: 'Dinks, kitchen line rallies, fast doubles transitions & open play.',
+    id: 'basketball',
+    label: 'Basketball',
+    desc: 'Pickup runs, 3v3 half-court, and 5v5 covered court sessions.',
   },
   {
     id: 'badminton',
@@ -34,14 +34,34 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; desc: string }[] = [
     desc: 'High-speed smashes, agile drops, doubles rotations & singles ladders.',
   },
   {
-    id: 'basketball',
-    label: 'Basketball',
-    desc: 'Pickup runs, 3v3 half-court, and 5v5 covered court sessions.',
+    id: 'volleyball',
+    label: 'Volleyball',
+    desc: 'Spikes, sets, beach volleyball and covered court recreational rotations.',
+  },
+  {
+    id: 'football' as any,
+    label: 'Football',
+    desc: 'Pitch action, 7v7 turf, futsal, and penalty box competitive runs.',
+  },
+  {
+    id: 'pickleball',
+    label: 'Pickleball',
+    desc: 'Dinks, kitchen line rallies, fast doubles transitions & open play.',
   },
   {
     id: 'tennis',
     label: 'Tennis',
     desc: 'Baseline endurance, clay, and tournament hardcourt slots.',
+  },
+  {
+    id: 'billiards' as any,
+    label: 'Billiards',
+    desc: 'Cue sports, 8-ball, 9-ball, and recreational community tournaments.',
+  },
+  {
+    id: 'darts' as any,
+    label: 'Darts',
+    desc: 'Precision target sports, electronic dartboards, and local leagues.',
   },
   {
     id: 'padel',

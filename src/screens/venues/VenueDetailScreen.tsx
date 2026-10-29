@@ -31,9 +31,18 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
   onBack,
   onBookNow,
 }) => {
-  const [isFav, setIsFav] = useState(venue.isFavorite ?? false);
+  const [isFav, setIsFav] = useState(venue?.isFavorite ?? false);
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [selectedSlot, setSelectedSlot] = useState<string>(venue.availableSlots?.[0] || '10:00');
+  const [selectedSlot, setSelectedSlot] = useState<string>(venue?.availableSlots?.[0] || '10:00');
+
+  if (!venue) {
+    return (
+      <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-6 text-center space-y-4 bg-[#0B0F0C] text-[#F4F7F0]">
+        <p className="text-sm text-[#A5B0A6]">No venue selected or venue unavailable.</p>
+        <Button onClick={onBack} variant="secondary">Go Back</Button>
+      </div>
+    );
+  }
 
   const gallery = [
     venue.image,

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal, Zap } from 'lucide-react';
 import { SearchBar } from '../../design-system/components/SearchBar';
 import { MatchCard } from '../../design-system/components/MatchCard';
-import { COMMUNITY_GAMES } from '../../mock/mockData';
 import { CommunityGame } from '../../mock/types';
 
 interface FindGamesScreenProps {
@@ -12,7 +11,7 @@ interface FindGamesScreenProps {
 }
 
 export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
-  games = COMMUNITY_GAMES,
+  games = [],
   onBack,
   onSelectGame,
 }) => {
@@ -123,13 +122,27 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
       <div className="px-5 pt-3">
         {viewMode === 'list' ? (
           <div className="space-y-3">
-            {filteredGames.map((game) => (
-              <MatchCard
-                key={game.id}
-                game={game}
-                onClick={() => onSelectGame(game)}
-              />
-            ))}
+            {filteredGames.length > 0 ? (
+              filteredGames.map((game) => (
+                <MatchCard
+                  key={game.id}
+                  game={game}
+                  onClick={() => onSelectGame(game)}
+                />
+              ))
+            ) : (
+              <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-[#1C241E] text-[#C8FF2E] flex items-center justify-center mx-auto">
+                  <MapPin className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-[#F4F7F0]">No pickup games found</h3>
+                  <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
+                    No community matches are currently scheduled matching your filters.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* Map View with Interactive Pins */

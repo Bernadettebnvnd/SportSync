@@ -6,9 +6,8 @@ import { useMatchiStore } from '@/lib/store';
 
 /**
  * Route protection guard for onboarding state.
- * Ensures first-time users or users who have NOT completed onboarding
- * are strictly routed to /onboarding.
- * Users who have completed onboarding go directly to the main dashboard.
+ * Any user who has an authenticated account or has completed onboarding
+ * is redirected directly to their destination and never sees /onboarding.
  */
 export function OnboardingGuard() {
   const pathname = usePathname();
@@ -18,13 +17,16 @@ export function OnboardingGuard() {
   useEffect(() => {
     if (isLoading) return;
 
-    // Check localStorage status for first-time / guest users
+    // Check localStorage status for authenticated or returning users
     const storedCompleted = typeof window !== 'undefined'
       ? (localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-         localStorage.getItem('sportsync_onboarding_completed') === 'true')
+         localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+         Boolean(localStorage.getItem('sportsync_user_email')))
       : false;
 
+    const isAuthenticated = Boolean(currentUser.id && currentUser.email);
     const isOnboarded = Boolean(
+      isAuthenticated ||
       currentUser.onboarding_completed ||
       currentUser.has_completed_onboarding ||
       storedCompleted
@@ -32,20 +34,11 @@ export function OnboardingGuard() {
 
     const isOnboardingPath = pathname === '/onboarding';
     const isApiPath = pathname.startsWith('/api');
-    const isPrototypePath = pathname.startsWith('/prototype');
-    const isPublicPreviewPath = pathname === '/' || pathname === '/explore';
 
-    // If user has an authenticated account but has not completed onboarding, strictly enforce /onboarding
-    const isAuthenticated = Boolean(currentUser.id && currentUser.email);
-    if (isAuthenticated && !isOnboarded && !isOnboardingPath && !isApiPath) {
-      router.replace('/onboarding');
-      return;
-    }
-
-    // For unauthenticated users, protect private player routes (/bookings, /profile)
-    const isPrivatePlayerRoute = pathname.startsWith('/bookings') || pathname.startsWith('/profile');
-    if (!isOnboarded && isPrivatePlayerRoute) {
-      router.replace('/onboarding');
+    // If user already has an account or completed onboarding, never let them see /onboarding
+    if ((isAuthenticated || isOnboarded) && isOnboardingPath) {
+      const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
+      router.replace(target);
       return;
     }
   }, [

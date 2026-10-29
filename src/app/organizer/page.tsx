@@ -192,27 +192,27 @@ export default function OrganizerDashboard() {
   if (!isOwner) {
     return (
       <div className="mx-auto max-w-xl px-4 py-20 text-center">
-        <div className="rounded-2xl border border-[#E8E5DF] bg-white p-8 sm:p-12 space-y-4">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#FBF0E6] text-[#C87D43]">
+        <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 sm:p-12 space-y-4 shadow-xl">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-400">
             <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-black text-[#1A241E]">
+          <h2 className="text-xl font-black text-[#F4F7F0]">
             Facility Access Required
           </h2>
-          <p className="text-xs text-[#65756B] max-w-sm mx-auto">
+          <p className="text-xs text-[#A5B0A6] max-w-sm mx-auto">
             This section is reserved for verified sports facility owners.
           </p>
           <div className="flex items-center justify-center gap-2 pt-2">
             <button
               type="button"
               onClick={() => setIsOwnerModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold transition-all"
+              className="px-4 py-2 rounded-xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-bold transition-all shadow-sm"
             >
               List Facility
             </button>
             <Link
               href="/"
-              className="px-4 py-2 rounded-xl border border-[#E8E5DF] hover:bg-[#FAF8F5] text-xs font-bold text-[#1A241E] transition-all"
+              className="px-4 py-2 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#F4F7F0] transition-all"
             >
               Player Mode
             </Link>
@@ -228,21 +228,21 @@ export default function OrganizerDashboard() {
   if (!primaryVenue) {
     return (
       <div className="mx-auto max-w-xl px-4 py-20 text-center">
-        <div className="rounded-2xl border border-[#E8E5DF] bg-white p-8 sm:p-12 space-y-4">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#EBF4EE] text-[#2D724E]">
+        <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 sm:p-12 space-y-4 shadow-xl">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C8FF2E]/10 text-[#C8FF2E]">
             <Shield className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-black text-[#1A241E]">
+          <h2 className="text-xl font-black text-[#F4F7F0]">
             No Facility Listed Yet
           </h2>
-          <p className="text-xs text-[#65756B] max-w-sm mx-auto">
+          <p className="text-xs text-[#A5B0A6] max-w-sm mx-auto">
             Add your sports facility to start managing courts and bookings.
           </p>
           <div className="pt-2">
             <button
               type="button"
               onClick={() => setIsOwnerModalOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold transition-all"
+              className="px-5 py-2.5 rounded-xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-bold transition-all shadow-sm"
             >
               List Facility
             </button>

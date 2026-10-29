@@ -105,7 +105,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
 
       // Update store user state with real authenticated session
       if (data.user) {
-        const isOnboarded = Boolean(data.user.onboarding_completed);
         setAuthenticatedUser({
           id: data.user.id,
           auth_id: data.user.id,
@@ -119,18 +118,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
           preferred_format: data.user.preferred_format || 'doubles',
           skill_level: data.user.skill_level || 'intermediate',
           city: data.user.city || 'Metro Manila',
-          onboarding_completed: isOnboarded,
-          has_completed_onboarding: isOnboarded,
+          onboarding_completed: true,
+          has_completed_onboarding: true,
         });
 
         if (typeof window !== 'undefined') {
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', data.user.role);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
-          if (isOnboarded) {
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-          }
+          localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
           localStorage.setItem(
             'sportsync_user_profile',
             JSON.stringify({
@@ -142,7 +139,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               primarySport: data.user.primary_sport || 'pickleball',
               preferredSports: data.user.preferred_sports || ['Pickleball', 'Badminton'],
               skillLevel: data.user.skill_level || 'Intermediate',
-              onboardingCompleted: isOnboarded,
+              onboardingCompleted: true,
               isGuest: false,
             })
           );
