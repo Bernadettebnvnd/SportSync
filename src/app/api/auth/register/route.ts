@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     // 2. Perform Registration
     const result = await serverRegister({
       email: email.trim(),
-      password,
+      password: password.trim(),
       fullName: (fullName || '').trim(),
       role: role || 'player',
     });

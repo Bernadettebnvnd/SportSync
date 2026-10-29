@@ -14,6 +14,8 @@ import {
   LogOut,
   User,
   Building2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -28,6 +30,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
   const [role, setRole] = useState<'player' | 'facility_owner'>('player');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -41,7 +44,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
       setErrorMsg('Please enter a valid email address.');
@@ -49,7 +53,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       return;
     }
 
-    if (!password || password.length < 6) {
+    if (!cleanPassword || cleanPassword.length < 6) {
       setErrorMsg('Password must be at least 6 characters long.');
       setIsLoading(false);
       return;
@@ -66,13 +70,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       const payload = mode === 'signup'
         ? {
             email: trimmedEmail,
-            password,
+            password: cleanPassword,
             fullName: fullName.trim(),
             role,
           }
         : {
             email: trimmedEmail,
-            password,
+            password: cleanPassword,
           };
 
       const res = await fetch(endpoint, {
@@ -417,6 +421,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         placeholder="player@domain.ph"
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-semibold text-[#1A241E] focus:bg-white focus:border-[#2D724E] focus:outline-none"
                       />
@@ -430,14 +437,25 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                     <div className="relative">
                       <Lock className="w-4 h-4 text-[#65756B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         required
                         minLength={6}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                         placeholder="••••••••"
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-semibold text-[#1A241E] focus:bg-white focus:border-[#2D724E] focus:outline-none"
+                        className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] text-xs font-semibold text-[#1A241E] focus:bg-white focus:border-[#2D724E] focus:outline-none"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#65756B] hover:text-[#2D724E] p-1 transition-colors"
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
 

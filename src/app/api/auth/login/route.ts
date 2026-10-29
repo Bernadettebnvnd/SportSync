@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     // 2. Perform Login
     const result = await serverLogin({
       email: email.trim(),
-      password,
+      password: password.trim(),
     });
 
     const response = NextResponse.json(

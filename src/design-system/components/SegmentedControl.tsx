@@ -61,13 +61,16 @@ export const Toggle: React.FC<{
   className?: string;
 }> = ({ checked, onChange, label, sublabel, disabled = false, className = '' }) => {
   return (
-    <label
-      className={`inline-flex items-center justify-between gap-4 cursor-pointer select-none ${
+    <div
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
+      className={`w-full flex items-center justify-between gap-4 cursor-pointer select-none ${
         disabled ? 'opacity-50 cursor-not-allowed' : ''
       } ${className}`}
     >
       {(label || sublabel) && (
-        <div className="flex flex-col">
+        <div className="flex flex-col text-left">
           {label && <span className="text-sm font-semibold text-[#F4F7F0]">{label}</span>}
           {sublabel && <span className="text-xs text-[#A5B0A6]">{sublabel}</span>}
         </div>
@@ -77,7 +80,10 @@ export const Toggle: React.FC<{
         role="switch"
         aria-checked={checked}
         disabled={disabled}
-        onClick={() => !disabled && onChange(!checked)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!disabled) onChange(!checked);
+        }}
         className={`w-12 h-7 rounded-full transition-colors duration-200 p-0.5 relative shrink-0 ${
           checked ? 'bg-[#C8FF2E]' : 'bg-[#263028]'
         }`}
@@ -88,7 +94,7 @@ export const Toggle: React.FC<{
           }`}
         />
       </button>
-    </label>
+    </div>
   );
 };
 

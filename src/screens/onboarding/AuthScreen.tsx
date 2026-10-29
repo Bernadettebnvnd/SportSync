@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
@@ -20,6 +20,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -32,7 +33,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
     setSuccessMessage(null);
 
     // 1. Client-Side Validation
-    const trimmedEmail = email.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
       setErrorMessage('Please enter a valid email address (e.g. player@example.com).');
@@ -64,7 +66,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
       return;
     }
 
-    if (!password || password.length < 6) {
+    if (!cleanPassword || cleanPassword.length < 6) {
       setErrorMessage('Password must be at least 6 characters long.');
       setIsLoading(false);
       return;
@@ -82,13 +84,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
       const payload = isSignUp
         ? {
             email: trimmedEmail,
-            password,
+            password: cleanPassword,
             fullName: fullName.trim(),
             role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
           }
         : {
             email: trimmedEmail,
-            password,
+            password: cleanPassword,
           };
 
       const res = await fetch(endpoint, {
@@ -327,6 +329,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 className="w-full h-12 pl-10 pr-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
                 placeholder="your.email@sport.com"
                 required
@@ -356,14 +361,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               <div className="relative flex items-center">
                 <Lock className="absolute left-3.5 w-4 h-4 text-[#6F7B71]" />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-12 pl-10 pr-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full h-12 pl-10 pr-11 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
                   placeholder="Min. 6 characters"
                   required
                   minLength={6}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 text-[#6F7B71] hover:text-[#C8FF2E] transition-colors p-1"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
           )}

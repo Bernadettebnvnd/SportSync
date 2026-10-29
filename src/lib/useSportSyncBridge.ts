@@ -907,8 +907,12 @@ export function useSportSyncBridge() {
       skillLevel: 'Casual' | 'Competitive' | 'Beginner' | 'Intermediate';
       pricePerPlayer: number;
       notes?: string;
+      coordinates?: [number, number];
     }) => {
       const newId = `cg_${Date.now()}`;
+      const distanceStr = gameData.locationName.toLowerCase().includes('naga')
+        ? 'Naga City • 0.5 km away'
+        : '0.8 miles away';
       const newGame: CommunityGame = {
         id: newId,
         sport: (gameData.sport as any) || 'Football',
@@ -918,7 +922,7 @@ export function useSportSyncBridge() {
         date: gameData.date,
         time: '19:30',
         locationName: gameData.locationName,
-        distance: '0.8 miles away',
+        distance: distanceStr,
         hostName: userProfile.name,
         hostAvatar: 'alex',
         spotsTotal: gameData.playersCount,
