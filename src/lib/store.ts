@@ -22,7 +22,7 @@ import {
   FacilityInventorySource,
 } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile } from './services/venues';
+import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile, saveLocalStoredVenues } from './services/venues';
 import { getPlayerBookings, getFacilityBookings, updateBookingStatus as updateDbBookingStatus } from './services/bookings';
 import { getOpenPlaySessions, getSessionQueues, joinSessionQueue, createOpenPlaySession as createDbOpenPlaySession } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
@@ -447,8 +447,10 @@ export function useMatchiStore() {
       inventorySource: FacilityInventorySource;
     }) => {
       try {
+        const ownerId = globalState.currentUser.id || globalState.currentUser.auth_id || 'owner_pending';
         const result = await createVenueWithCourts(
           {
+            owner_id: ownerId,
             name: data.facilityName,
             slug: data.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
             description: data.description,
@@ -479,11 +481,17 @@ export function useMatchiStore() {
         );
 
         if (result) {
+          saveLocalStoredVenues(result.venue);
           if (typeof window !== 'undefined') {
             localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_user_role', 'venue_owner');
+            localStorage.setItem('sportsync_facility_venue_id', result.venue.id);
+            if (globalState.currentUser.id) {
+              localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, result.venue.id);
+            }
           }
-          globalState.venues = [result.venue, ...globalState.venues];
-          globalState.courts = [...result.courts, ...globalState.courts];
+          globalState.venues = [result.venue, ...globalState.venues.filter((v) => v.id !== result.venue.id)];
+          globalState.courts = [...result.courts, ...globalState.courts.filter((c) => c.venue_id !== result.venue.id)];
           globalState.currentUser = {
             ...globalState.currentUser,
             full_name: data.ownerName,
@@ -521,6 +529,7 @@ export function useMatchiStore() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+        (fallbackVenue as any).owner_email = data.ownerEmail || globalState.currentUser.email;
 
         const fallbackCourts: Court[] = data.courts.map((c, i) => ({
           id: `court_${fallbackVenueId}_${i + 1}`,
@@ -539,10 +548,16 @@ export function useMatchiStore() {
         }));
 
         fallbackVenue.courts = fallbackCourts;
+        saveLocalStoredVenues(fallbackVenue);
         if (typeof window !== 'undefined') {
           localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_user_role', 'venue_owner');
+          localStorage.setItem('sportsync_facility_venue_id', fallbackVenueId);
+          if (globalState.currentUser.id) {
+            localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, fallbackVenueId);
+          }
         }
-        globalState.venues = [fallbackVenue, ...globalState.venues];
+        globalState.venues = [fallbackVenue, ...globalState.venues.filter((v) => v.id !== fallbackVenueId)];
         globalState.courts = [...fallbackCourts, ...globalState.courts];
         globalState.currentUser = {
           ...globalState.currentUser,

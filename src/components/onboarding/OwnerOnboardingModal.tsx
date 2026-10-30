@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMatchiStore } from '@/lib/store';
 import { SportType, FacilityInventorySource } from '@/types';
 import { getSportDisplayName } from '@/lib/utils';
@@ -64,10 +64,14 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  // Form State
   const [ownerName, setOwnerName] = useState(currentUser.full_name || '');
   const [ownerEmail, setOwnerEmail] = useState(currentUser.email || '');
   const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '0917-888-0000');
+
+  useEffect(() => {
+    if (currentUser.full_name && !ownerName) setOwnerName(currentUser.full_name);
+    if (currentUser.email && !ownerEmail) setOwnerEmail(currentUser.email);
+  }, [currentUser.full_name, currentUser.email]);
 
   const [facilityName, setFacilityName] = useState('');
   const [description, setDescription] = useState('');

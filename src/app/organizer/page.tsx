@@ -57,6 +57,11 @@ export default function OrganizerDashboard() {
     addCourt,
     updateVenueProfile,
   } = useMatchiStore();
+  const [mounted, setMounted] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -88,13 +93,33 @@ export default function OrganizerDashboard() {
   const [newGameFee, setNewGameFee] = useState('350');
   const [newGameRotation, setNewGameRotation] = useState('Open Pickup Rotation');
 
-  const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
+  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
+  const isOwner =
+    currentUser.role === 'venue_owner' ||
+    currentUser.role === 'organizer' ||
+    currentUser.role === 'admin' ||
+    (currentUser.role as string) === 'facility_owner' ||
+    storedRole === 'facility_owner' ||
+    storedRole === 'venue_owner';
 
-  // Facility context
-  const primaryVenue =
-    venues.find((v) => v.owner_id === currentUser.id) ||
-    venues.find((v) => v.owner_id === 'local_owner' || v.owner_id === 'owner_pending') ||
-    (isOwner ? venues[0] : null);
+  // Facility context: Only venues belonging strictly to this authenticated facility owner
+  const storedVenueId =
+    typeof window !== 'undefined' && currentUser.id
+      ? localStorage.getItem(`sportsync_venue_id_${currentUser.id}`)
+      : null;
+
+  const primaryVenue = currentUser.id
+    ? (venues.find((v) => v.owner_id === currentUser.id || v.owner_id === currentUser.auth_id) ||
+       (storedVenueId ? venues.find((v) => v.id === storedVenueId) : null) ||
+       (currentUser.email ? venues.find((v) => (v as any).owner_email === currentUser.email) : null))
+    : null;
+
+  // Auto-prompt facility owner to configure venue before accessing dashboard
+  React.useEffect(() => {
+    if (isOwner && !primaryVenue) {
+      setIsOwnerModalOpen(true);
+    }
+  }, [isOwner, primaryVenue]);
 
   // Edit Facility Profile state
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -189,9 +214,20 @@ export default function OrganizerDashboard() {
   const bookedSlotsCount = facilityBookings.filter((b) => b.status !== 'cancelled').length;
   const occupancyRate = Math.min(100, Math.round((bookedSlotsCount / Math.max(1, totalCapacitySlots)) * 100));
 
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4" suppressHydrationWarning>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-[#A5B0A6]">Loading facility portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isOwner) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center">
+      <div className="mx-auto max-w-xl px-4 py-20 text-center" suppressHydrationWarning>
         <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 sm:p-12 space-y-4 shadow-xl">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-400">
             <Shield className="w-6 h-6" />
@@ -227,25 +263,38 @@ export default function OrganizerDashboard() {
 
   if (!primaryVenue) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-20 text-center">
-        <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 sm:p-12 space-y-4 shadow-xl">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#C8FF2E]/10 text-[#C8FF2E]">
-            <Shield className="w-6 h-6" />
+      <div className="mx-auto max-w-xl px-4 py-16 sm:py-24 text-center" suppressHydrationWarning>
+        <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 sm:p-12 space-y-5 shadow-2xl">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 text-[#C8FF2E]">
+            <Building2 className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-black text-[#F4F7F0]">
-            No Facility Listed Yet
-          </h2>
-          <p className="text-xs text-[#A5B0A6] max-w-sm mx-auto">
-            Add your sports facility to start managing courts and bookings.
-          </p>
-          <div className="pt-2">
+          <div className="space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#C8FF2E] bg-[#C8FF2E]/10 px-3 py-1 rounded-full border border-[#C8FF2E]/20 inline-block">
+              Initial Facility Setup Required
+            </span>
+            <h2 className="text-xl sm:text-2xl font-black text-[#F4F7F0]">
+              Set Up Your Facility First
+            </h2>
+            <p className="text-xs sm:text-sm text-[#A5B0A6] max-w-md mx-auto leading-relaxed">
+              Welcome to the SportSync Facility Partner Portal! You must set up your facility details and courts before accessing your management dashboard.
+            </p>
+          </div>
+
+          <div className="pt-3 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               type="button"
               onClick={() => setIsOwnerModalOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-bold transition-all shadow-sm"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-black transition-all shadow-[0_0_24px_rgba(200,255,46,0.3)] flex items-center justify-center gap-2"
             >
-              List Facility
+              <Building2 className="w-4 h-4" />
+              <span>Set Up Facility & Courts</span>
             </button>
+            <Link
+              href="/"
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center"
+            >
+              Return to Home
+            </Link>
           </div>
         </div>
         {isOwnerModalOpen && (
@@ -355,7 +404,7 @@ export default function OrganizerDashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12" suppressHydrationWarning>
       {/* Executive Operations Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
         <div>

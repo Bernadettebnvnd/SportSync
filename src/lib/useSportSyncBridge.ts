@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useMatchiStore } from './store';
-import { MATCHES } from '../mock/mockData';
 import {
   CommunityGame,
   Venue,
@@ -327,6 +326,9 @@ export function useSportSyncBridge() {
     }
   }, [games]);
 
+  // Dynamic Matches initialized to empty array (no mock data fallback)
+  const [matches, setMatches] = useState<Match[]>([]);
+
   // Sync store open play sessions into games feed
   useEffect(() => {
     if (store.sessions.length > 0) {
@@ -510,7 +512,7 @@ export function useSportSyncBridge() {
         image: dbV.images?.[0] || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80',
         distanceMiles: 1.6,
         amenities: dbV.amenities || ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
-        courtsCount: dbV.courts?.length || 1,
+        courtsCount: dbV.courts?.length || 0,
         availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00', '20:00'],
         isFavorite: favoriteVenueIds.includes(dbV.id),
         courts: dbV.courts || [],
@@ -694,7 +696,7 @@ export function useSportSyncBridge() {
       setWagers((prev) => [newWager, ...prev]);
 
       setMatchPolls((prev) => {
-        const currentPoll = prev[params.matchId] || MATCHES.find((m) => m.id === params.matchId)?.prediction;
+        const currentPoll = prev[params.matchId];
         if (!currentPoll) return prev;
 
         const updatedOptions = currentPoll.options.map((opt) => {
@@ -762,7 +764,7 @@ export function useSportSyncBridge() {
       let totalPayout = 0;
 
       setMatchPolls((prev) => {
-        const currentPoll = prev[matchId] || MATCHES.find((m) => m.id === matchId)?.prediction;
+        const currentPoll = prev[matchId];
         if (!currentPoll) return prev;
         return {
           ...prev,
@@ -1191,8 +1193,11 @@ export function useSportSyncBridge() {
     store,
     userProfile,
     games,
+    matches,
+    setMatches,
     bookings,
     venues,
+    courts: venues.flatMap((v) => v.courts || []),
     matchPolls,
     wagers,
     badges,
