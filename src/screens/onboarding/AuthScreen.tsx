@@ -9,7 +9,7 @@ export type AuthRole = 'player' | 'facility_owner';
 
 interface AuthScreenProps {
   initialMode?: 'signup' | 'login';
-  onSuccess: (role: AuthRole) => void;
+  onSuccess: (role: AuthRole, isNewAccount?: boolean) => void;
   onBack: () => void;
 }
 
@@ -107,6 +107,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
 
       // Update store user state with real authenticated session
       if (data.user) {
+        const isNewUser = isSignUp;
         setAuthenticatedUser({
           id: data.user.id,
           auth_id: data.user.id,
@@ -120,16 +121,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
           preferred_format: data.user.preferred_format || 'doubles',
           skill_level: data.user.skill_level || 'intermediate',
           city: data.user.city || 'Metro Manila',
-          onboarding_completed: true,
-          has_completed_onboarding: true,
+          onboarding_completed: !isNewUser,
+          has_completed_onboarding: !isNewUser,
         });
 
         if (typeof window !== 'undefined') {
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', data.user.role);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
-          localStorage.setItem('matchi_onboarding_completed', 'true');
-          localStorage.setItem('sportsync_onboarding_completed', 'true');
+          if (isNewUser) {
+            localStorage.setItem('sportsync_pending_onboarding', 'true');
+            localStorage.removeItem('matchi_onboarding_completed');
+            localStorage.removeItem('sportsync_onboarding_completed');
+          } else {
+            localStorage.removeItem('sportsync_pending_onboarding');
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+          }
           localStorage.setItem(
             'sportsync_user_profile',
             JSON.stringify({
@@ -141,7 +149,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               primarySport: data.user.primary_sport || 'pickleball',
               preferredSports: data.user.preferred_sports || ['Pickleball', 'Badminton'],
               skillLevel: data.user.skill_level || 'Intermediate',
-              onboardingCompleted: true,
+              onboardingCompleted: !isNewUser,
               isGuest: false,
             })
           );
@@ -159,7 +167,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
           ? `Account registered successfully! Welcome to SportSync.`
           : 'Welcome back! Signed in.'
       );
-      setTimeout(() => onSuccess(detectedRole), 900);
+      setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
       if (message === 'Failed to fetch') {

@@ -96,15 +96,20 @@ async function initializeStore() {
   try {
     // 1. Fetch current authenticated user or check local storage
     if (typeof window !== 'undefined') {
-      const storedCompleted =
+      const hasPendingOnboarding = localStorage.getItem('sportsync_pending_onboarding') === 'true';
+      const storedCompleted = !hasPendingOnboarding && (
         localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-        localStorage.getItem('sportsync_onboarding_completed') === 'true';
+        localStorage.getItem('sportsync_onboarding_completed') === 'true'
+      );
       const storedEmail = localStorage.getItem('sportsync_user_email');
       const hasAuthUser = Boolean(localStorage.getItem('sportsync_auth_user'));
 
-      if (storedCompleted || hasAuthUser || storedEmail) {
+      if (storedCompleted) {
         globalState.currentUser.onboarding_completed = true;
         globalState.currentUser.has_completed_onboarding = true;
+      } else if (hasPendingOnboarding) {
+        globalState.currentUser.onboarding_completed = false;
+        globalState.currentUser.has_completed_onboarding = false;
       }
       const storedName = localStorage.getItem('matchi_user_name') || localStorage.getItem('sportsync_user_name');
       if (storedName) globalState.currentUser.full_name = storedName;
@@ -114,12 +119,21 @@ async function initializeStore() {
 
     const user = await getCurrentUser();
     if (user) {
-      user.onboarding_completed = true;
-      user.has_completed_onboarding = true;
+      const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+      const isUserOnboarded = !hasPendingOnboarding && Boolean(
+        user.onboarding_completed ?? user.has_completed_onboarding ?? false
+      );
+      user.onboarding_completed = isUserOnboarded;
+      user.has_completed_onboarding = isUserOnboarded;
       globalState.currentUser = user;
       if (typeof window !== 'undefined') {
-        localStorage.setItem('matchi_onboarding_completed', 'true');
-        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        if (isUserOnboarded) {
+          localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
+        } else {
+          localStorage.removeItem('matchi_onboarding_completed');
+          localStorage.removeItem('sportsync_onboarding_completed');
+        }
         if (user.email) localStorage.setItem('sportsync_user_email', user.email);
         if (user.full_name) {
           localStorage.setItem('sportsync_user_name', user.full_name);
@@ -165,12 +179,21 @@ function setupGlobalAuthListener() {
       if (session?.user) {
         const user = await getCurrentUser();
         if (user) {
-          user.onboarding_completed = true;
-          user.has_completed_onboarding = true;
+          const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+          const isUserOnboarded = !hasPendingOnboarding && Boolean(
+            user.onboarding_completed ?? user.has_completed_onboarding ?? false
+          );
+          user.onboarding_completed = isUserOnboarded;
+          user.has_completed_onboarding = isUserOnboarded;
           globalState.currentUser = user;
           if (typeof window !== 'undefined') {
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
+            if (isUserOnboarded) {
+              localStorage.setItem('matchi_onboarding_completed', 'true');
+              localStorage.setItem('sportsync_onboarding_completed', 'true');
+            } else {
+              localStorage.removeItem('matchi_onboarding_completed');
+              localStorage.removeItem('sportsync_onboarding_completed');
+            }
             if (user.email) localStorage.setItem('sportsync_user_email', user.email);
             if (user.full_name) {
               localStorage.setItem('sportsync_user_name', user.full_name);
@@ -285,11 +308,15 @@ export function useMatchiStore() {
   }, [setUserRole]);
 
   const setAuthenticatedUser = useCallback((user: Partial<User>) => {
-    const hasAccount = Boolean((user.id && user.email) || user.auth_id || user.id || user.email);
-    const isOnboarded = Boolean(
-      hasAccount ||
-      (user.onboarding_completed ?? user.has_completed_onboarding ?? globalState.currentUser.onboarding_completed)
-    );
+    const explicitlyCompleted = user.onboarding_completed ?? user.has_completed_onboarding;
+    const storedCompleted = typeof window !== 'undefined'
+      ? (localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+         localStorage.getItem('matchi_onboarding_completed') === 'true')
+      : false;
+
+    const isOnboarded = explicitlyCompleted !== undefined
+      ? Boolean(explicitlyCompleted)
+      : Boolean(globalState.currentUser.onboarding_completed || storedCompleted);
 
     globalState = {
       ...globalState,
@@ -313,9 +340,14 @@ export function useMatchiStore() {
       },
     };
 
-    if (isOnboarded && typeof window !== 'undefined') {
-      localStorage.setItem('matchi_onboarding_completed', 'true');
-      localStorage.setItem('sportsync_onboarding_completed', 'true');
+    if (typeof window !== 'undefined') {
+      if (isOnboarded) {
+        localStorage.setItem('matchi_onboarding_completed', 'true');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+      } else {
+        localStorage.removeItem('matchi_onboarding_completed');
+        localStorage.removeItem('sportsync_onboarding_completed');
+      }
       if (user.email) localStorage.setItem('sportsync_user_email', user.email);
       if (user.full_name) {
         localStorage.setItem('sportsync_user_name', user.full_name);
@@ -328,6 +360,7 @@ export function useMatchiStore() {
 
   const logoutUser = useCallback(async () => {
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('sportsync_pending_onboarding');
       localStorage.removeItem('sportsync_user_email');
       localStorage.removeItem('sportsync_user_role');
       localStorage.removeItem('sportsync_user_name');
@@ -378,6 +411,7 @@ export function useMatchiStore() {
       }
 
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
         localStorage.setItem('matchi_onboarding_completed', 'true');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
         if (data.fullName) localStorage.setItem('matchi_user_name', data.fullName);
@@ -408,7 +442,9 @@ export function useMatchiStore() {
   // Development-only onboarding reset
   const resetOnboardingState = useCallback(async () => {
     if (typeof window !== 'undefined') {
+      localStorage.setItem('sportsync_pending_onboarding', 'true');
       localStorage.removeItem('matchi_onboarding_completed');
+      localStorage.removeItem('sportsync_onboarding_completed');
       localStorage.removeItem('matchi_user_name');
       localStorage.removeItem('matchi_user_nickname');
     }
@@ -483,6 +519,7 @@ export function useMatchiStore() {
         if (result) {
           saveLocalStoredVenues(result.venue);
           if (typeof window !== 'undefined') {
+            localStorage.removeItem('sportsync_pending_onboarding');
             localStorage.setItem('matchi_onboarding_completed', 'true');
             localStorage.setItem('sportsync_user_role', 'venue_owner');
             localStorage.setItem('sportsync_facility_venue_id', result.venue.id);

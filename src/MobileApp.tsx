@@ -223,8 +223,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <AuthScreen
             initialMode={authInitialMode}
-            onSuccess={(role) => {
-              if (role === 'facility_owner') {
+            onSuccess={(role, isNewAccount) => {
+              if (isNewAccount) {
+                if (typeof window !== 'undefined') {
+                  window.location.href = '/onboarding';
+                }
+              } else if (role === 'facility_owner') {
                 if (typeof window !== 'undefined') {
                   window.location.href = '/organizer';
                 }

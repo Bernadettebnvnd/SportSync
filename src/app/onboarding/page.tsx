@@ -28,6 +28,7 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; desc: string }[] = [
 ];
 
 const QUICK_LOCATIONS = [
+  'Naga City',
   'BGC & Taguig',
   'Makati',
   'Pasig',
@@ -49,27 +50,30 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { currentUser, completePlayerOnboarding, completeOwnerOnboarding } = useMatchiStore();
 
-  const hasAccount = Boolean(currentUser.id && currentUser.email);
-  const isCompleted = Boolean(
-    hasAccount ||
-    currentUser.onboarding_completed ||
-    currentUser.has_completed_onboarding ||
-    (typeof window !== 'undefined' && (
+  const [hasPendingOnboarding, setHasPendingOnboarding] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+  });
+
+  const isCompleted = !hasPendingOnboarding && Boolean(
+    currentUser.onboarding_completed === true ||
+    currentUser.has_completed_onboarding === true ||
+    (!currentUser.id && typeof window !== 'undefined' && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-      localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
-      Boolean(localStorage.getItem('sportsync_user_email'))
+      localStorage.getItem('sportsync_onboarding_completed') === 'true'
     ))
   );
 
   React.useEffect(() => {
-    if (hasAccount || isCompleted) {
+    if (isCompleted) {
       const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
       router.replace(target);
     }
-  }, [hasAccount, isCompleted, currentUser.role, router]);
+  }, [isCompleted, currentUser.role, router]);
 
   // Role: player or facility owner
-  const [role, setRole] = useState<'player' | 'owner'>('player');
+  const [role, setRole] = useState<'player' | 'owner'>(
+    currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? 'owner' : 'player'
+  );
   // Step 1: Role, Step 2: Name, Step 3: Sports, Step 4: Location, Step 5: Preferences, Step 6: Confirmation
   const [step, setStep] = useState<number>(1);
   const totalSteps = role === 'player' ? 6 : 5;
@@ -187,6 +191,10 @@ export default function OnboardingPage() {
   const handleFinishPlayer = async () => {
     setIsSubmitting(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      }
+      setHasPendingOnboarding(false);
       await completePlayerOnboarding({
         fullName: fullName.trim() || currentUser.full_name || 'Player',
         nickname: nickname.trim() || fullName.split(' ')[0] || currentUser.nickname || 'Player',
@@ -213,6 +221,10 @@ export default function OnboardingPage() {
   const handleFinishOwner = async () => {
     setIsSubmitting(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      }
+      setHasPendingOnboarding(false);
       const generatedCourts = Array.from({ length: courtCount }).map((_, idx) => ({
         name: `Court ${idx + 1}`,
         sport: facilitySports[idx % facilitySports.length],
@@ -249,7 +261,7 @@ export default function OnboardingPage() {
     }
   };
 
-  if (hasAccount || isCompleted) {
+  if (isCompleted) {
     return (
       <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">

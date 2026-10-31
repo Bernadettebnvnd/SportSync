@@ -32,6 +32,7 @@ export function Navbar() {
   const pathname = usePathname();
   const { currentUser } = useMatchiStore();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
 
   const isFacilityView = pathname.startsWith('/organizer');
@@ -133,14 +134,20 @@ export function Navbar() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setIsAuthModalOpen(true)}
+                      onClick={() => {
+                        setAuthModalMode('signin');
+                        setIsAuthModalOpen(true);
+                      }}
                       className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#F4F7F0] hover:bg-[#1C241E] transition-colors"
                     >
                       Sign In
                     </button>
                     <button
                       type="button"
-                      onClick={() => setIsAuthModalOpen(true)}
+                      onClick={() => {
+                        setAuthModalMode('signup');
+                        setIsAuthModalOpen(true);
+                      }}
                       className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-[#0B0F0C] text-xs font-bold transition-all shadow-sm shrink-0"
                     >
                       <span>Join<span className="hidden sm:inline"> SportSync</span></span>
@@ -150,7 +157,10 @@ export function Navbar() {
                   // Authenticated User Pill
                   <button
                     type="button"
-                    onClick={() => setIsAuthModalOpen(true)}
+                    onClick={() => {
+                      setAuthModalMode('signin');
+                      setIsAuthModalOpen(true);
+                    }}
                     className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-[#141A15] border border-white/10 hover:border-[#C8FF2E]/40 transition-all cursor-pointer shadow-sm"
                     title="Account & Authentication Session"
                   >
@@ -178,6 +188,7 @@ export function Navbar() {
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+        defaultMode={authModalMode}
       />
     </>
   );

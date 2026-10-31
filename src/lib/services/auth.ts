@@ -37,8 +37,8 @@ export async function getCurrentUser(): Promise<User | null> {
             win_streak: 0,
             highest_streak: 0,
             email_verified: Boolean(authUser.email_confirmed_at),
-            onboarding_completed: true,
-            has_completed_onboarding: true,
+            onboarding_completed: Boolean(authUser.user_metadata?.onboarding_completed === true),
+            has_completed_onboarding: Boolean(authUser.user_metadata?.onboarding_completed === true),
             created_at: authUser.created_at,
           };
         }
@@ -53,8 +53,8 @@ export async function getCurrentUser(): Promise<User | null> {
           skill_level: profile.skill_level || 'intermediate',
           city: profile.city || 'Metro Manila',
           email_verified: Boolean(authUser.email_confirmed_at),
-          onboarding_completed: true,
-          has_completed_onboarding: true,
+          onboarding_completed: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
+          has_completed_onboarding: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
         };
       }
     } catch (err) {
@@ -88,8 +88,8 @@ export async function getCurrentUser(): Promise<User | null> {
             highest_streak: 0,
             email_verified: true,
             created_at: json.user.created_at,
-            onboarding_completed: true,
-            has_completed_onboarding: true,
+            onboarding_completed: Boolean(json.user.onboarding_completed ?? json.user.has_completed_onboarding ?? false),
+            has_completed_onboarding: Boolean(json.user.onboarding_completed ?? json.user.has_completed_onboarding ?? false),
           };
         }
       }

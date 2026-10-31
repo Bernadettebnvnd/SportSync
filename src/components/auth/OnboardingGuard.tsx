@@ -6,8 +6,9 @@ import { useMatchiStore } from '@/lib/store';
 
 /**
  * Route protection guard for onboarding state.
- * Any user who has an authenticated account or has completed onboarding
+ * Any user who has already completed onboarding or is already registered
  * is redirected directly to their destination and never sees /onboarding.
+ * Users creating a new account will see /onboarding until completed.
  */
 export function OnboardingGuard() {
   const pathname = usePathname();
@@ -17,26 +18,28 @@ export function OnboardingGuard() {
   useEffect(() => {
     if (isLoading) return;
 
-    // Check localStorage status for authenticated or returning users
+    const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+    if (hasPendingOnboarding) {
+      // User is currently completing onboarding for their new account!
+      return;
+    }
+
+    // Check localStorage status for completed onboarding
     const storedCompleted = typeof window !== 'undefined'
       ? (localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-         localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
-         Boolean(localStorage.getItem('sportsync_user_email')))
+         localStorage.getItem('sportsync_onboarding_completed') === 'true')
       : false;
 
-    const isAuthenticated = Boolean(currentUser.id && currentUser.email);
     const isOnboarded = Boolean(
-      isAuthenticated ||
-      currentUser.onboarding_completed ||
-      currentUser.has_completed_onboarding ||
-      storedCompleted
+      currentUser.onboarding_completed === true ||
+      currentUser.has_completed_onboarding === true ||
+      (!currentUser.id && storedCompleted)
     );
 
     const isOnboardingPath = pathname === '/onboarding';
-    const isApiPath = pathname.startsWith('/api');
 
-    // If user already has an account or completed onboarding, never let them see /onboarding
-    if ((isAuthenticated || isOnboarded) && isOnboardingPath) {
+    // If user has already completed onboarding or is already registered, never let them see /onboarding
+    if (isOnboarded && isOnboardingPath) {
       const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
       router.replace(target);
       return;

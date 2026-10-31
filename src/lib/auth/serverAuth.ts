@@ -152,7 +152,7 @@ export async function serverRegister(data: {
       preferred_format: 'doubles',
       skill_level: 'intermediate',
       city: 'Metro Manila',
-      onboarding_completed: true,
+      onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
 
@@ -186,7 +186,7 @@ export async function serverRegister(data: {
       user_metadata: {
         full_name: data.fullName.trim(),
         role: assignedRole,
-        onboarding_completed: true,
+        onboarding_completed: false,
       },
     });
 
@@ -209,7 +209,7 @@ export async function serverRegister(data: {
         data: {
           full_name: data.fullName.trim(),
           role: assignedRole,
-          onboarding_completed: true,
+          onboarding_completed: false,
         },
       },
     });
@@ -247,7 +247,7 @@ export async function serverRegister(data: {
             auth_id: supaUserId,
             full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
             role: assignedRole,
-            onboarding_completed: true,
+            onboarding_completed: false,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingUser.id);
@@ -257,7 +257,7 @@ export async function serverRegister(data: {
           email: normalizedEmail,
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
           role: assignedRole,
-          onboarding_completed: true,
+          onboarding_completed: false,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
           preferred_format: 'doubles',
@@ -332,7 +332,7 @@ export async function serverLogin(data: {
       preferred_format: 'doubles',
       skill_level: 'intermediate',
       city: 'Metro Manila',
-      onboarding_completed: true,
+      onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
 
@@ -519,7 +519,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           preferred_format: supaUser.preferred_format || 'doubles',
           skill_level: supaUser.skill_level || 'intermediate',
           city: supaUser.city || 'Metro Manila',
-          onboarding_completed: true,
+          onboarding_completed: Boolean(supaUser.onboarding_completed ?? false),
           created_at: supaUser.created_at,
         };
       }
@@ -541,7 +541,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
             preferred_format: 'doubles',
             skill_level: 'intermediate',
             city: 'Metro Manila',
-            onboarding_completed: true,
+            onboarding_completed: Boolean(u.user_metadata?.onboarding_completed === true),
             created_at: u.created_at,
           };
         }

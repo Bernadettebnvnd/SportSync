@@ -183,21 +183,23 @@ export function useSportSyncBridge() {
 
   // 1. Dynamic user profile with XP and Gamification
   const [userProfile, setUserProfile] = useState(() => {
-    const isStoreCompleted = Boolean(
+    const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+    const isStoreCompleted = !hasPendingOnboarding && Boolean(
       store.currentUser.onboarding_completed || store.currentUser.has_completed_onboarding
     );
     let localCompleted = false;
     if (typeof window !== 'undefined') {
-      localCompleted =
+      localCompleted = !hasPendingOnboarding && (
         localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
-        localStorage.getItem('matchi_onboarding_completed') === 'true';
+        localStorage.getItem('matchi_onboarding_completed') === 'true'
+      );
       const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           return {
             ...parsed,
-            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted || parsed.id || parsed.email),
+            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
           };
         } catch {
           // ignore parsing error
@@ -205,7 +207,7 @@ export function useSportSyncBridge() {
       }
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
-    const completed = Boolean(isStoreCompleted || localCompleted || isAuthenticated);
+    const completed = Boolean(isStoreCompleted || localCompleted);
     return {
       id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
       name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
@@ -252,10 +254,11 @@ export function useSportSyncBridge() {
   // Sync complete profile when store user updates
   useEffect(() => {
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
-    const isCompleted = Boolean(
+    const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+    const isCompleted = !hasPendingOnboarding && Boolean(
       store.currentUser.onboarding_completed ||
       store.currentUser.has_completed_onboarding ||
-      (typeof window !== 'undefined' && (
+      (!store.currentUser.id && typeof window !== 'undefined' && (
         localStorage.getItem('matchi_onboarding_completed') === 'true' ||
         localStorage.getItem('sportsync_onboarding_completed') === 'true'
       ))
@@ -279,7 +282,7 @@ export function useSportSyncBridge() {
         skillLevel: store.currentUser.skill_level
           ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
           : prev.skillLevel,
-        onboardingCompleted: Boolean(isAuthenticated || isCompleted || prev.onboardingCompleted),
+        onboardingCompleted: Boolean(isCompleted),
         matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
         wins: store.currentUser.matches_won ?? prev.wins,
         streakWeeks: store.currentUser.win_streak ?? prev.streakWeeks,
