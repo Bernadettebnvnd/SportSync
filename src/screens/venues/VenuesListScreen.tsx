@@ -28,6 +28,7 @@ interface VenuesListScreenProps {
   onBack?: () => void;
   initialQuery?: string;
   initialSport?: string;
+  initialCity?: string;
 }
 
 const OFFICIAL_SPORTS: Array<{ label: string; value: string }> = STANDARDIZED_SPORTS.map((s) => ({
@@ -37,6 +38,7 @@ const OFFICIAL_SPORTS: Array<{ label: string; value: string }> = STANDARDIZED_SP
 
 const CITIES = [
   { label: 'All Cities', value: 'all' },
+  { label: 'Naga City', value: 'naga' },
   { label: 'Taguig / BGC', value: 'taguig' },
   { label: 'Pasig / Ortigas', value: 'pasig' },
   { label: 'Makati', value: 'makati' },
@@ -59,10 +61,11 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
   onBack,
   initialQuery = '',
   initialSport = 'All',
+  initialCity = 'all',
 }) => {
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedSport, setSelectedSport] = useState<string>(initialSport);
-  const [selectedCity, setSelectedCity] = useState<string>('all');
+  const [selectedCity, setSelectedCity] = useState<string>(initialCity || 'all');
   const [selectedDate, setSelectedDate] = useState<string>('Any Date');
   const [selectedTime, setSelectedTime] = useState<string>('all');
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'available_only' | 'inquire'>('all');
@@ -106,9 +109,23 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
       // 2. City / Location filter
       if (selectedCity !== 'all') {
         const cLower = selectedCity.toLowerCase();
-        const cityMatch = v.city.toLowerCase().includes(cLower);
-        const addressMatch = v.address.toLowerCase().includes(cLower);
-        if (!cityMatch && !addressMatch) return false;
+        const vCity = (v.city || '').toLowerCase();
+        const vAddr = (v.address || '').toLowerCase();
+        if (cLower === 'naga') {
+          if (!vCity.includes('naga') && !vAddr.includes('naga') && !vAddr.includes('camarines')) return false;
+        } else if (cLower === 'taguig') {
+          if (!vCity.includes('taguig') && !vAddr.includes('taguig') && !vAddr.includes('bgc')) return false;
+        } else if (cLower === 'pasig') {
+          if (!vCity.includes('pasig') && !vAddr.includes('pasig') && !vAddr.includes('ortigas')) return false;
+        } else if (cLower === 'makati') {
+          if (!vCity.includes('makati') && !vAddr.includes('makati')) return false;
+        } else if (cLower === 'quezon') {
+          if (!vCity.includes('quezon') && !vAddr.includes('quezon') && !vCity.includes('qc')) return false;
+        } else if (cLower === 'cebu') {
+          if (!vCity.includes('cebu') && !vAddr.includes('cebu')) return false;
+        } else {
+          if (!vCity.includes(cLower) && !vAddr.includes(cLower)) return false;
+        }
       }
 
       // 3. Availability Filter

@@ -79,7 +79,9 @@ export const VenueCard: React.FC<VenueCardProps> = ({
             {venue.rating}
           </span>
           <span className="text-[11px] font-medium opacity-90 bg-black/50 backdrop-blur-md px-2 py-0.5 rounded-full">
-            {venue.distanceMiles} mi away
+            {venue.distanceMiles < 100
+              ? `${venue.distanceMiles} km away`
+              : `${Math.round(venue.distanceMiles)} km away`}
           </span>
         </div>
 

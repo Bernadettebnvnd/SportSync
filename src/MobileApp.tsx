@@ -107,7 +107,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   } | null>(null);
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string }>({});
+  const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
   const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('signup');
   const [guestPrompt, setGuestPrompt] = useState<{
     isOpen: boolean;
@@ -442,6 +442,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onBack={goBack}
             initialQuery={courtSearchFilter.query}
             initialSport={courtSearchFilter.sport}
+            initialCity={courtSearchFilter.city}
             onSelectVenue={(v) => {
               setSelectedVenue(v);
               navigateTo('venue-detail');

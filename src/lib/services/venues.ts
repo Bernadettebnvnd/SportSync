@@ -1,5 +1,6 @@
 import { Venue, Court, SportType } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { INITIAL_VENUES } from '@/lib/mockData';
 
 export interface VenueFilterOptions {
   sport?: SportType | 'all';
@@ -33,7 +34,17 @@ export function filterVenuesList(venues: Venue[], options: VenueFilterOptions = 
 
   if (options.city && options.city.trim() && options.city !== 'all' && options.city !== 'All Cities') {
     const c = options.city.trim().toLowerCase();
-    result = result.filter((v) => v.city.toLowerCase().includes(c));
+    result = result.filter((v) => {
+      const vCity = (v.city || '').toLowerCase();
+      const vAddr = (v.address || '').toLowerCase();
+      if (c === 'naga') return vCity.includes('naga') || vAddr.includes('naga') || vAddr.includes('camarines');
+      if (c === 'taguig') return vCity.includes('taguig') || vAddr.includes('taguig') || vAddr.includes('bgc');
+      if (c === 'pasig') return vCity.includes('pasig') || vAddr.includes('pasig') || vAddr.includes('ortigas');
+      if (c === 'makati') return vCity.includes('makati') || vAddr.includes('makati');
+      if (c === 'quezon') return vCity.includes('quezon') || vAddr.includes('quezon') || vCity.includes('qc');
+      if (c === 'cebu') return vCity.includes('cebu') || vAddr.includes('cebu');
+      return vCity.includes(c) || vAddr.includes(c);
+    });
   }
 
   if (options.searchQuery && options.searchQuery.trim()) {
@@ -84,7 +95,13 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
   const localVenues = getLocalStoredVenues();
 
   if (!supabase || !isSupabaseConfigured) {
-    return filterVenuesList(localVenues, options);
+    const combined = [...localVenues];
+    INITIAL_VENUES.forEach((iv) => {
+      if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
+        combined.push(iv);
+      }
+    });
+    return filterVenuesList(combined, options);
   }
 
   try {
@@ -122,6 +139,13 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
         combined.push(lv);
       }
     });
+    if (combined.length === 0) {
+      INITIAL_VENUES.forEach((iv) => {
+        if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
+          combined.push(iv);
+        }
+      });
+    }
 
     return filterVenuesList(combined, options);
   } catch (err) {

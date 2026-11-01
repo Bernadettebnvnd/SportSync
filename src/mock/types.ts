@@ -137,6 +137,8 @@ export interface Venue {
   amenities: string[];
   courtsCount: number;
   availableSlots: string[];
+  latitude?: number;
+  longitude?: number;
   courts?: any[];
   phone?: string;
   operatingHours?: string;

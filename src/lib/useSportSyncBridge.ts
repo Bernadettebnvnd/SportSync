@@ -501,6 +501,37 @@ export function useSportSyncBridge() {
         });
       }
 
+      // Dynamic realistic distance in km based on user city and venue coordinates
+      const userCityLower = (store.currentUser.city || '').toLowerCase();
+      const vCityLower = (dbV.city || '').toLowerCase();
+      const vAddrLower = (dbV.address || '').toLowerCase();
+
+      let computedDistance = 1.6;
+      if (userCityLower.includes('naga') || userCityLower.includes('camarines')) {
+        if (vCityLower.includes('naga') || vAddrLower.includes('naga')) {
+          computedDistance = dbV.name.toLowerCase().includes('metro naga') ? 1.2 : 0.8;
+        } else if (vCityLower.includes('cebu')) {
+          computedDistance = 375;
+        } else {
+          computedDistance = 268;
+        }
+      } else if (userCityLower.includes('cebu')) {
+        if (vCityLower.includes('cebu')) {
+          computedDistance = 1.5;
+        } else if (vCityLower.includes('naga')) {
+          computedDistance = 375;
+        } else {
+          computedDistance = 570;
+        }
+      } else {
+        if (vCityLower.includes('taguig')) computedDistance = 0.9;
+        else if (vCityLower.includes('makati')) computedDistance = 2.4;
+        else if (vCityLower.includes('pasig')) computedDistance = 4.8;
+        else if (vCityLower.includes('quezon')) computedDistance = 11.2;
+        else if (vCityLower.includes('naga')) computedDistance = 268;
+        else if (vCityLower.includes('cebu')) computedDistance = 570;
+      }
+
       return {
         id: dbV.id,
         name: dbV.name,
@@ -513,7 +544,7 @@ export function useSportSyncBridge() {
         rating: dbV.rating || 4.9,
         reviewCount: dbV.review_count || 32,
         image: dbV.images?.[0] || 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80',
-        distanceMiles: 1.6,
+        distanceMiles: computedDistance,
         amenities: dbV.amenities || ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
         courtsCount: dbV.courts?.length || 0,
         availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00', '20:00'],
@@ -523,11 +554,13 @@ export function useSportSyncBridge() {
         phone: (dbV.payment_info as any)?.gcash_number || '0917-888-SYNC',
         featuredSports: allSportsForVenue,
         isVerified: dbV.is_verified ?? true,
+        latitude: dbV.latitude,
+        longitude: dbV.longitude,
       };
     });
 
     return adaptedDbVenues;
-  }, [store.venues, favoriteVenueIds]);
+  }, [store.venues, store.currentUser.city, favoriteVenueIds]);
 
   const toggleFavoriteVenue = useCallback((venueId: string) => {
     setFavoriteVenueIds((prev) =>
