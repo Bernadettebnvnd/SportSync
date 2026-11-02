@@ -1,8 +1,6 @@
 # SportSync
 **Find Players. Play Together.**
 
-![SportSync MVP](https://sportsync-naga.vercel.app) <!-- Optional: Add a screenshot of the Player Hub here -->
-
 ## The Problem: The court is ready. The players aren't.
 Recreational players and sports enthusiasts often struggle to find enough players to form complete teams. Coordinating across messy social media group chats leads to unanswered messages, last-minute cancellations, and wasted court reservation fees. Players are also hesitant to invite strangers due to skill mismatches and safety concerns.
 
