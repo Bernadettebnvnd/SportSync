@@ -573,6 +573,46 @@ CREATE POLICY "Users can insert reviews" ON public.reviews
         auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id)
     );
 
+-- 20. Notifications Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    user_identifier TEXT,
+    type TEXT NOT NULL DEFAULT 'match',
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    read BOOLEAN NOT NULL DEFAULT FALSE,
+    link_screen TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_identifier ON public.notifications(user_identifier);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.notifications;
+CREATE POLICY "Users can view own notifications" ON public.notifications
+    FOR SELECT USING (
+        auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id) OR
+        user_id IS NULL OR
+        user_identifier IS NOT NULL
+    );
+
+DROP POLICY IF EXISTS "Authenticated users or system can insert notifications" ON public.notifications;
+CREATE POLICY "Authenticated users or system can insert notifications" ON public.notifications
+    FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.notifications;
+CREATE POLICY "Users can update own notifications" ON public.notifications
+    FOR UPDATE USING (
+        auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id) OR
+        user_id IS NULL OR
+        user_identifier IS NOT NULL
+    );
+
 -- 19. Enable Realtime Publications
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.queues;
@@ -591,5 +631,10 @@ END $$;
 
 DO $$ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.payments;
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;

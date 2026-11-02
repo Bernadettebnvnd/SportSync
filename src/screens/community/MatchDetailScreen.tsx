@@ -28,7 +28,7 @@ import { DeleteGameConfirmationDialog } from '@/components/community/DeleteGameC
 interface MatchDetailScreenProps {
   game: CommunityGame | null;
   onBack: () => void;
-  onJoin: () => void;
+  onJoin: () => Promise<void> | void;
   onOpenChat: () => void;
   isHost?: boolean;
   onEditGame?: (updatedData: {
@@ -61,9 +61,9 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const handleJoinClick = () => {
+  const handleJoinClick = async () => {
     setIsJoined(!isJoined);
-    onJoin();
+    await onJoin();
   };
 
   const handleSaveEdits = async (updatedData: any) => {

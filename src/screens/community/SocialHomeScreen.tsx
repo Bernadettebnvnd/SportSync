@@ -53,7 +53,9 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
 }) => {
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
-  const { unreadCount } = useNotifications();
+  const { unreadCount } = useNotifications(
+    userName || user?.id ? { id: user?.id, name: userName } : undefined
+  );
 
   const [activeTab, setActiveTab] = useState<'discover' | 'my_games' | 'hosting'>('discover');
   const [selectedSport, setSelectedSport] = useState<string>('All');

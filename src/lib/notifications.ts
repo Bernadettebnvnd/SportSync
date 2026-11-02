@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 
 export type NotificationType =
@@ -21,11 +21,38 @@ export interface NotificationItem {
   timestamp: number;
   read: boolean;
   linkScreen?: string;
+  recipientId?: string;
+  recipientName?: string;
   meta?: Record<string, any>;
 }
 
 const STORAGE_KEY = 'sportsync_notifications';
+const DELIVERED_KEYS_STORAGE = 'sportsync_sent_notifications';
 const MAX_NOTIFICATIONS = 50;
+
+function getDeliveredNotificationKeys(): Set<string> {
+  const keys = new Set<string>();
+  if (typeof window === 'undefined') return keys;
+  try {
+    const raw = localStorage.getItem(DELIVERED_KEYS_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((k) => typeof k === 'string' && keys.add(k));
+      }
+    }
+  } catch {}
+  return keys;
+}
+
+function recordDeliveredNotificationKey(key: string): void {
+  if (typeof window === 'undefined' || !key) return;
+  try {
+    const existing = getDeliveredNotificationKeys();
+    existing.add(key);
+    localStorage.setItem(DELIVERED_KEYS_STORAGE, JSON.stringify(Array.from(existing).slice(-100)));
+  } catch {}
+}
 
 // Filter out any legacy mock items with fake IDs or teams
 function sanitizeNotifications(list: NotificationItem[]): NotificationItem[] {
@@ -170,16 +197,65 @@ function persistNotifications(items: NotificationItem[]) {
   notifyAll();
 }
 
+export async function persistNotificationToSupabase(item: NotificationItem): Promise<boolean> {
+  const sb = getSupabaseClient();
+  if (!sb || !isSupabaseConfigured) return false;
+  try {
+    const recipientId = item.recipientId && item.recipientId.length === 36 ? item.recipientId : null;
+    const { error } = await sb.from('notifications').insert({
+      user_id: recipientId,
+      user_identifier: item.recipientName || item.recipientId || null,
+      type: item.type,
+      title: item.title,
+      description: item.desc,
+      read: item.read ?? false,
+      link_screen: item.linkScreen || null,
+      metadata: item.meta || {},
+    });
+    if (error) {
+      console.warn('[Notifications] Supabase insert warning (falling back to local):', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[Notifications] Exception saving notification to Supabase:', err);
+    return false;
+  }
+}
+
 export function addNotification(
   input: Omit<NotificationItem, 'id' | 'timestamp' | 'read' | 'time'> & {
     id?: string;
     timestamp?: number;
     time?: string;
     read?: boolean;
+    recipientId?: string;
+    recipientName?: string;
   }
 ): NotificationItem {
   const current = getNotifications();
   const timestamp = input.timestamp || Date.now();
+  const dedupeKey = input.meta?.dedupeKey || input.id;
+
+  // Strict deduplication: check if already exists in memory or delivered keys
+  if (input.id && current.some((n) => n.id === input.id)) {
+    return current.find((n) => n.id === input.id)!;
+  }
+  const metaKey = input.meta?.dedupeKey;
+  if (metaKey && current.some((n) => n.meta?.dedupeKey === metaKey)) {
+    return current.find((n) => n.meta?.dedupeKey === metaKey)!;
+  }
+  if (dedupeKey && getDeliveredNotificationKeys().has(dedupeKey)) {
+    const existing = current.find(
+      (n) => n.id === input.id || (Boolean(metaKey) && n.meta?.dedupeKey === metaKey)
+    );
+    if (existing) return existing;
+  }
+
+  if (dedupeKey) {
+    recordDeliveredNotificationKey(dedupeKey);
+  }
+
   const newNotif: NotificationItem = {
     id: input.id || `notif_${timestamp}_${Math.random().toString(36).slice(2, 8)}`,
     type: input.type,
@@ -189,11 +265,16 @@ export function addNotification(
     time: input.time || formatRelativeTime(timestamp),
     read: input.read ?? false,
     linkScreen: input.linkScreen,
+    recipientId: input.recipientId,
+    recipientName: input.recipientName,
     meta: input.meta,
   };
 
   const updated = [newNotif, ...current].slice(0, MAX_NOTIFICATIONS);
   persistNotifications(updated);
+
+  // Background persist to Supabase if configured
+  persistNotificationToSupabase(newNotif).catch(() => {});
 
   // Trigger optional browser native push if granted
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -230,19 +311,31 @@ export function clearAllNotifications(): void {
   persistNotifications([]);
 }
 
-export function getUnreadCount(): number {
-  return getNotifications().filter((n) => !n.read).length;
+export function getUnreadCount(userFilter?: { id?: string; name?: string }): number {
+  const all = getNotifications();
+  if (!userFilter || (!userFilter.id && !userFilter.name)) {
+    return all.filter((n) => !n.read).length;
+  }
+  const currentName = userFilter.name?.trim().toLowerCase();
+  const currentId = userFilter.id;
+  return all.filter((n) => {
+    if (n.read) return false;
+    if (!n.recipientName && !n.recipientId) return true;
+    if (currentId && n.recipientId === currentId) return true;
+    if (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName) return true;
+    return false;
+  }).length;
 }
 
 /**
- * React Hook for real-time notification subscriptions
+ * React Hook for real-time notification subscriptions with optional user recipient filtering
  */
-export function useNotifications() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => getNotifications());
+export function useNotifications(userFilter?: { id?: string; name?: string }) {
+  const [allNotifications, setAllNotifications] = useState<NotificationItem[]>(() => getNotifications());
 
   const refresh = useCallback(() => {
     cachedNotifications = null;
-    setNotifications(getNotifications());
+    setAllNotifications(getNotifications());
   }, []);
 
   useEffect(() => {
@@ -251,7 +344,7 @@ export function useNotifications() {
 
     // Re-check relative times every 45 seconds so timestamps stay up to date
     const interval = setInterval(() => {
-      setNotifications((prev) =>
+      setAllNotifications((prev) =>
         prev.map((n) => ({
           ...n,
           time: formatRelativeTime(n.timestamp),
@@ -265,10 +358,26 @@ export function useNotifications() {
     };
   }, [refresh]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const notifications = useMemo(() => {
+    if (!userFilter || (!userFilter.id && !userFilter.name)) {
+      return allNotifications;
+    }
+    const currentName = userFilter.name?.trim().toLowerCase();
+    const currentId = userFilter.id;
+    return allNotifications.filter((n: NotificationItem) => {
+      // Broadcast notifications (without recipient) are viewable by all
+      if (!n.recipientName && !n.recipientId) return true;
+      if (currentId && n.recipientId === currentId) return true;
+      if (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName) return true;
+      return false;
+    });
+  }, [allNotifications, userFilter?.id, userFilter?.name]);
+
+  const unreadCount = notifications.filter((n: NotificationItem) => !n.read).length;
 
   return {
     notifications,
+    allNotifications,
     unreadCount,
     addNotification,
     markAsRead,
@@ -284,7 +393,8 @@ if (typeof window !== 'undefined') {
   try {
     const sb = getSupabaseClient();
     if (sb && isSupabaseConfigured) {
-      sb.channel('sportsync-live-notifications')
+      // 1. Listen for new bookings
+      sb.channel('sportsync-live-notifications-bookings')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'bookings' },
@@ -296,6 +406,30 @@ if (typeof window !== 'undefined') {
                 title: 'New Booking Confirmed',
                 desc: `Reservation ${b.booking_reference || ''} is now active.`,
                 linkScreen: 'my-bookings',
+                recipientId: b.user_id,
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      // 2. Listen for new notifications
+      sb.channel('sportsync-live-notifications-table')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications' },
+          (payload: any) => {
+            if (payload.new) {
+              const n = payload.new;
+              addNotification({
+                id: n.id,
+                type: (n.type as NotificationType) || 'match',
+                title: n.title,
+                desc: n.description,
+                linkScreen: n.link_screen,
+                recipientId: n.user_id,
+                recipientName: n.user_identifier,
+                meta: n.metadata,
               });
             }
           }
@@ -306,4 +440,5 @@ if (typeof window !== 'undefined') {
     console.warn('[Notifications] Realtime listener initialization skipped:', err);
   }
 }
+
 

@@ -163,7 +163,7 @@ export interface CommunityGame {
   pricePerPlayer: number;
   notes: string;
   isPublic: boolean;
-  members: Array<{ name: string; avatar: AvatarId }>;
+  members: Array<{ name: string; avatar: AvatarId; id?: string }>;
   hostId?: string;
   coordinates?: [number, number];
   sessionId?: string;

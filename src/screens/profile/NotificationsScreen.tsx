@@ -21,11 +21,15 @@ import { useNotifications, NotificationItem, NotificationType } from '../../lib/
 interface NotificationsScreenProps {
   onBack: () => void;
   onNavigate?: (screenId: string) => void;
+  currentUserId?: string;
+  currentUserName?: string;
 }
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   onBack,
   onNavigate,
+  currentUserId,
+  currentUserName,
 }) => {
   const {
     notifications,
@@ -35,7 +39,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     dismissNotification,
     clearAllNotifications,
     addNotification,
-  } = useNotifications();
+  } = useNotifications(currentUserName || currentUserId ? { id: currentUserId, name: currentUserName } : undefined);
 
   const [filterType, setFilterType] = useState<'all' | 'unread'>('all');
 
@@ -43,13 +47,13 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   startOfToday.setHours(0, 0, 0, 0);
   const todayCutoff = startOfToday.getTime();
 
-  const displayedList = notifications.filter((n) => {
+  const displayedList = notifications.filter((n: NotificationItem) => {
     if (filterType === 'unread') return !n.read;
     return true;
   });
 
-  const todayList = displayedList.filter((n) => (n.timestamp || 0) >= todayCutoff);
-  const earlierList = displayedList.filter((n) => (n.timestamp || 0) < todayCutoff);
+  const todayList = displayedList.filter((n: NotificationItem) => (n.timestamp || 0) >= todayCutoff);
+  const earlierList = displayedList.filter((n: NotificationItem) => (n.timestamp || 0) < todayCutoff);
 
   const getTypeIcon = (type: NotificationType) => {
     switch (type) {
@@ -86,7 +90,25 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
       title: string;
       desc: string;
       linkScreen?: string;
+      recipientName?: string;
+      recipientId?: string;
     }> = [
+        {
+          type: 'match',
+          title: 'Player Joined Your Game',
+          desc: 'John Doe joined your game, Basketball Match.',
+          linkScreen: 'social-home',
+          recipientName: currentUserName,
+          recipientId: currentUserId,
+        },
+        {
+          type: 'match',
+          title: 'Game Deleted',
+          desc: 'The host has deleted Basketball Match, a game you joined.',
+          linkScreen: 'social-home',
+          recipientName: currentUserName,
+          recipientId: currentUserId,
+        },
         {
           type: 'booking',
           title: 'Court Booking Confirmed',
@@ -94,22 +116,10 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
           linkScreen: 'my-bookings',
         },
         {
-          type: 'match',
-          title: 'New Player Joined Your Match',
-          desc: 'Marco joined "Badminton Doubles Fast Rally". 3 of 4 spots now taken.',
-          linkScreen: 'social-home',
-        },
-        {
           type: 'achievement',
           title: 'Playmaker Streak Multiplier Active!',
           desc: '3-week playing streak maintained! Enjoy 1.5x XP bonus on your next game.',
           linkScreen: 'leaderboard',
-        },
-        {
-          type: 'goal',
-          title: 'Live Score Alert: Set Won!',
-          desc: 'Team Manila takes Set 2 (21 - 18) vs Quezon City Club.',
-          linkScreen: 'scores',
         },
       ];
 
@@ -119,6 +129,8 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
       title: pick.title,
       desc: pick.desc,
       linkScreen: pick.linkScreen,
+      recipientName: pick.recipientName,
+      recipientId: pick.recipientId,
     });
   };
 
@@ -215,7 +227,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                 Today
               </span>
               <div className="space-y-2">
-                {todayList.map((item) => (
+                {todayList.map((item: NotificationItem) => (
                   <div
                     key={item.id}
                     onClick={() => handleCardClick(item)}
@@ -277,7 +289,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                 Earlier
               </span>
               <div className="space-y-2">
-                {earlierList.map((item) => (
+                {earlierList.map((item: NotificationItem) => (
                   <div
                     key={item.id}
                     onClick={() => handleCardClick(item)}

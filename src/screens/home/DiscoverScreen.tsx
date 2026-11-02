@@ -142,7 +142,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onRequireAuth,
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
-  const { unreadCount } = useNotifications();
+  const effectiveUserName = user?.name || currentUser.full_name;
+  const effectiveUserId = user?.id || currentUser.id;
+  const { unreadCount } = useNotifications(
+    effectiveUserName || effectiveUserId ? { id: effectiveUserId, name: effectiveUserName } : undefined
+  );
   const [activeSport, setActiveSport] = useState<string>('All');
   const [courtSearchInput, setCourtSearchInput] = useState<string>('');
 

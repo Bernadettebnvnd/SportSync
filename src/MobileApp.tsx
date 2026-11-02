@@ -501,16 +501,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 throw new Error(res.error || 'Failed to delete game.');
               }
             }}
-            onJoin={() => {
+            onJoin={async () => {
               if (!activeTargetGame) return;
-              if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', () => {
-                const result = bridge.joinCommunityGame(activeTargetGame.id);
+              if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', async () => {
+                const result = await bridge.joinCommunityGame(activeTargetGame.id);
                 if (result.game) setSelectedGame(result.game);
-                setToastMessage(result.xpResult.message);
+                setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
               })) return;
-              const result = bridge.joinCommunityGame(activeTargetGame.id);
+              const result = await bridge.joinCommunityGame(activeTargetGame.id);
               if (result.game) setSelectedGame(result.game);
-              setToastMessage(result.xpResult.message);
+              setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
             }}
             onOpenChat={() => {
               if (!requireAuth('Team Chat', 'Sign in to participate in the match team chat.')) return;
@@ -652,6 +652,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             hostedGames={bridge.games.filter((g) => bridge.isGameHost(g))}
             isLightMode={isLightMode}
             onToggleTheme={toggleTheme}
+            onOpenNotifications={() => navigateTo('notifications')}
             onSelectGame={(g) => {
               setSelectedGame(g);
               navigateTo('match-detail');
@@ -693,6 +694,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <NotificationsScreen
             onBack={goBack}
             onNavigate={(screenId) => navigateTo(screenId as ScreenId)}
+            currentUserId={bridge.userProfile.id}
+            currentUserName={bridge.userProfile.name}
           />
         );
       case 'search':

@@ -1447,6 +1447,7 @@ export function useSportSyncBridge() {
   );
 
   // 17. Delete Hosted Community Game and clean up related participation / booking records
+  // 17. Delete Hosted Community Game and clean up related participation / booking records
   const deleteCommunityGame = useCallback(
     async (gameId: string): Promise<{ success: boolean; error?: string }> => {
       const targetGame = games.find((g) => g.id === gameId || (g.sessionId && g.sessionId === gameId));
@@ -1458,11 +1459,109 @@ export function useSportSyncBridge() {
         return { success: false, error: 'Unauthorized: You can only delete games you created.' };
       }
 
+      const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+      // Prevent duplicate processing if deletion request is repeated
+      if (deletedIds.has(targetGame.id) || (targetGame.sessionId && deletedIds.has(targetGame.sessionId))) {
+        return { success: true };
+      }
+
       const sessionIdToDelete = targetGame.sessionId || (targetGame.id.startsWith('session_') || targetGame.id.includes('-') ? targetGame.id : undefined);
       const titleToDelete = targetGame.title;
       const normTitle = titleToDelete.trim().toLowerCase();
+      const supabase = getSupabaseClient();
 
-      // 1. Mark in permanent tombstone storage (both ID and title) to prevent reappearance
+      // 1. Retrieve the list of participants BEFORE deleting the game and related records
+      const participantsMap = new Map<string, { id?: string; name: string }>();
+
+      // Extract participants from game members (excluding host)
+      if (Array.isArray(targetGame.members)) {
+        targetGame.members.forEach((m) => {
+          if (!m || !m.name) return;
+          const isHostMember = Boolean(
+            (targetGame.hostName && m.name.trim().toLowerCase() === targetGame.hostName.trim().toLowerCase()) ||
+            (targetGame.hostId && m.id && m.id === targetGame.hostId)
+          );
+          if (!isHostMember) {
+            participantsMap.set(m.name.trim().toLowerCase(), { id: m.id, name: m.name });
+          }
+        });
+      }
+
+      // Also retrieve participants from Supabase queues if linked to a database session
+      if (supabase && isSupabaseConfigured && sessionIdToDelete) {
+        try {
+          const { data: queueEntries } = await supabase
+            .from('queues')
+            .select('id, user_id, partner_names, user:users(id, full_name, nickname)')
+            .eq('session_id', sessionIdToDelete);
+
+          if (queueEntries) {
+            queueEntries.forEach((qe: any) => {
+              const pName = qe.user?.full_name || qe.user?.nickname || qe.partner_names?.[0];
+              const pId = qe.user?.id || qe.user_id;
+              if (pName) {
+                const isHostQueue = Boolean(
+                  (targetGame.hostName && pName.trim().toLowerCase() === targetGame.hostName.trim().toLowerCase()) ||
+                  (targetGame.hostId && pId && pId === targetGame.hostId)
+                );
+                if (!isHostQueue) {
+                  participantsMap.set(pName.trim().toLowerCase(), { id: pId, name: pName });
+                }
+              }
+            });
+          }
+        } catch (err) {
+          console.warn('[SportSyncBridge] Could not query participants from database before deletion:', err);
+        }
+      }
+
+      const affectedParticipants = Array.from(participantsMap.values());
+
+      // 2. Prepare individual notifications for each affected player who joined
+      const deletionNotifs = affectedParticipants.map((p) => {
+        const dedupeKey = `delete_game_${targetGame.id}_${p.name.trim().toLowerCase()}`;
+        const desc = `The host has deleted ${titleToDelete}, a game you joined.`;
+        return {
+          id: `notif_del_${targetGame.id}_${p.name.replace(/\s+/g, '_')}`,
+          type: 'match' as const,
+          title: 'Game Deleted',
+          desc,
+          linkScreen: 'social-home',
+          recipientName: p.name,
+          recipientId: p.id,
+          meta: {
+            event: 'game_deleted',
+            gameId: targetGame.id,
+            gameTitle: titleToDelete,
+            recipientName: p.name,
+            dedupeKey,
+          },
+        };
+      });
+
+      // 3. Ensure the notification is saved in Supabase BEFORE the game and its related records are deleted
+      if (supabase && isSupabaseConfigured && deletionNotifs.length > 0) {
+        try {
+          await supabase.from('notifications').insert(
+            deletionNotifs.map((n) => ({
+              user_id: n.recipientId && n.recipientId.length === 36 ? n.recipientId : null,
+              user_identifier: n.recipientName,
+              type: n.type,
+              title: n.title,
+              description: n.desc,
+              link_screen: n.linkScreen,
+              metadata: n.meta,
+            }))
+          );
+        } catch (e) {
+          console.warn('[SportSyncBridge] Supabase notification batch insert before deletion notice:', e);
+        }
+      }
+
+      // 4. Deliver notifications immediately to client notification system
+      deletionNotifs.forEach((n) => addNotification(n));
+
+      // 5. Mark in permanent tombstone storage (both ID and title) to prevent reappearance
       markGameDeleted(targetGame.id, titleToDelete, targetGame.sessionId);
       if (sessionIdToDelete) {
         markSessionDeleted(sessionIdToDelete, titleToDelete);
@@ -1470,7 +1569,7 @@ export function useSportSyncBridge() {
         markSessionDeleted(targetGame.id, titleToDelete);
       }
 
-      // 2. Remove from games state immediately
+      // 6. Remove the deleted game from affected players' joined games and dashboards
       setGames((prev) =>
         prev.filter((g) => {
           if (g.id === targetGame.id) return false;
@@ -1480,7 +1579,7 @@ export function useSportSyncBridge() {
         })
       );
 
-      // 3. Remove from localStorage sportsync_community_games
+      // 7. Remove from localStorage sportsync_community_games and participation / bookings
       if (typeof window !== 'undefined') {
         const storedGames = localStorage.getItem('sportsync_community_games');
         if (storedGames) {
@@ -1498,7 +1597,6 @@ export function useSportSyncBridge() {
           } catch {}
         }
 
-        // 4. Clean up related participation / booking records to prevent orphaned / inconsistent data
         const storedBookings = localStorage.getItem('sportsync_my_bookings');
         if (storedBookings) {
           try {
@@ -1517,7 +1615,7 @@ export function useSportSyncBridge() {
         }
       }
 
-      // 5. Clean up database records and store sessions
+      // 8. Clean up database records and store sessions permanently
       try {
         const idForDb = sessionIdToDelete || targetGame.id;
         await store.deleteOpenPlaySession(idForDb, titleToDelete);
@@ -1530,45 +1628,211 @@ export function useSportSyncBridge() {
     [games, isGameHost, store]
   );
 
-  // 18. Join Community Game
+  // 18. Join Community Game with host notification and Supabase persistence
   const joinCommunityGame = useCallback(
-    (gameId: string) => {
-      let joinedGame: CommunityGame | null = null;
+    async (gameId: string): Promise<{
+      success: boolean;
+      game?: CommunityGame;
+      xpResult?: any;
+      alreadyParticipant?: boolean;
+      message?: string;
+      error?: string;
+    }> => {
+      const targetGame = games.find((g) => g.id === gameId);
+      if (!targetGame) {
+        return { success: false, message: 'Game not found.' };
+      }
 
-      setGames((prev) =>
-        prev.map((g) => {
-          if (g.id === gameId) {
-            const alreadyJoined = g.members.some((m) => m.name === userProfile.name);
-            if (alreadyJoined) return g;
-            const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
-            joinedGame = {
-              ...g,
-              spotsJoined: Math.min(g.spotsTotal, g.spotsJoined + 1),
-              members: [...g.members, { name: userProfile.name, avatar: userAvatar }],
-            };
-            return joinedGame;
-          }
-          return g;
-        })
+      const userName = userProfile.name || 'Player';
+
+      // 1. Check if user is already a participant
+      const isAlreadyParticipant = targetGame.members.some(
+        (m) =>
+          (userName && m.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+          (userProfile.id && m.id && m.id === userProfile.id)
       );
+
+      if (isAlreadyParticipant) {
+        // Do not notify the host if the player is already a participant
+        return {
+          success: false,
+          alreadyParticipant: true,
+          message: 'You have already joined this match roster.',
+        };
+      }
+
+      // 2. Check if roster is full
+      if (targetGame.spotsJoined >= targetGame.spotsTotal) {
+        return {
+          success: false,
+          message: 'This game roster is already full.',
+        };
+      }
+
+      // 3. Save the join operation in Supabase before generating host notification
+      const supabase = getSupabaseClient();
+      const sessionIdForDb =
+        targetGame.sessionId ||
+        (targetGame.id.startsWith('session_') || targetGame.id.includes('-') ? targetGame.id : undefined);
+
+      if (supabase && isSupabaseConfigured && sessionIdForDb) {
+        try {
+          let userDbId = userProfile.id;
+          if (!userDbId || userDbId === 'usr_auth' || userDbId.startsWith('usr_')) {
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id) {
+              const { data: pubUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('auth_id', authData.user.id)
+                .maybeSingle();
+              if (pubUser?.id) userDbId = pubUser.id;
+            }
+          }
+
+          if (userDbId) {
+            const { error: queueErr } = await supabase.from('queues').insert({
+              session_id: sessionIdForDb,
+              user_id: userDbId,
+              queue_number: targetGame.spotsJoined + 1,
+              group_size: 1,
+              match_format: 'doubles',
+              status: 'waiting',
+              partner_names: [userName],
+            });
+
+            if (queueErr) {
+              // If duplicate unique constraint: player already joined in DB
+              if (queueErr.code === '23505') {
+                return {
+                  success: false,
+                  alreadyParticipant: true,
+                  message: 'You are already registered for this game.',
+                };
+              }
+              console.warn('[SportSyncBridge] Supabase queue insertion error:', queueErr.message);
+              // Do not notify host if join request fails
+              return {
+                success: false,
+                error: queueErr.message,
+                message: 'Failed to join game roster. Please try again.',
+              };
+            }
+
+            // Update current players count in sessions table
+            await supabase
+              .from('sessions')
+              .update({ current_players_count: targetGame.spotsJoined + 1 })
+              .eq('id', sessionIdForDb);
+          }
+        } catch (dbErr: any) {
+          console.error('[SportSyncBridge] Join operation failed in Supabase:', dbErr);
+          // Do not notify host if join request fails
+          return {
+            success: false,
+            error: dbErr?.message,
+            message: 'Join request failed. Could not save to database.',
+          };
+        }
+      }
+
+      // 4. Update local game state
+      const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
+      const updatedGame: CommunityGame = {
+        ...targetGame,
+        spotsJoined: Math.min(targetGame.spotsTotal, targetGame.spotsJoined + 1),
+        members: [...targetGame.members, { name: userName, avatar: userAvatar, id: userProfile.id }],
+      };
+
+      setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));
+
+      if (typeof window !== 'undefined') {
+        try {
+          const storedGames = localStorage.getItem('sportsync_community_games');
+          if (storedGames) {
+            const parsed = JSON.parse(storedGames);
+            if (Array.isArray(parsed)) {
+              const nextStored = parsed.map((g: any) => (g.id === gameId ? updatedGame : g));
+              localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));
+            }
+          }
+        } catch {}
+      }
+
+      // 5. Notify the Host When a Player Joins Their Game
+      // Example notification: "John Doe joined your game, Basketball Match."
+      const hostName = targetGame.hostName;
+      const hostId = targetGame.hostId;
+      const gameTitle = targetGame.title;
+
+      const isHostSelf = Boolean(
+        (hostName && userName && hostName.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+        (hostId && userProfile.id && hostId === userProfile.id)
+      );
+
+      if (!isHostSelf) {
+        const dedupeKey = `join_${targetGame.id}_${userName.trim().toLowerCase()}`;
+        const hostNotifDesc = `${userName} joined your game, ${gameTitle}.`;
+
+        addNotification({
+          id: `notif_join_${targetGame.id}_${userName.replace(/\s+/g, '_')}`,
+          type: 'match',
+          title: 'Player Joined Your Game',
+          desc: hostNotifDesc,
+          linkScreen: 'social-home',
+          recipientName: hostName,
+          recipientId: hostId,
+          meta: {
+            event: 'player_joined',
+            gameId: targetGame.id,
+            gameTitle,
+            joiningPlayerName: userName,
+            hostName,
+            hostId,
+            dedupeKey,
+          },
+        });
+
+        // Also persist host notification to Supabase if configured
+        if (supabase && isSupabaseConfigured) {
+          try {
+            await supabase.from('notifications').insert({
+              user_id: hostId && hostId.length === 36 ? hostId : null,
+              user_identifier: hostName,
+              type: 'match',
+              title: 'Player Joined Your Game',
+              description: hostNotifDesc,
+              link_screen: 'social-home',
+              metadata: {
+                event: 'player_joined',
+                game_id: targetGame.id,
+                game_title: gameTitle,
+                joining_player_name: userName,
+              },
+            });
+          } catch (e) {
+            console.warn('[SportSyncBridge] Supabase notification insert notice:', e);
+          }
+        }
+      }
+
+      // 6. Notify the joining player
+      addNotification({
+        type: 'match',
+        title: 'Match Roster Confirmed',
+        desc: `You joined "${gameTitle}". Spot reserved!`,
+        linkScreen: 'match-detail',
+      });
 
       const xpResult = awardXp(30, 'joining a game roster', { applyStreakMultiplier: true });
 
-      if (joinedGame) {
-        addNotification({
-          type: 'match',
-          title: 'Match Roster Confirmed',
-          desc: `You joined "${(joinedGame as CommunityGame).title}". Spot reserved!`,
-          linkScreen: 'match-detail',
-        });
-      }
-
       return {
-        game: joinedGame,
+        success: true,
+        game: updatedGame,
         xpResult,
       };
     },
-    [userProfile.name, userProfile.avatarId, awardXp]
+    [games, userProfile.name, userProfile.id, userProfile.avatarId, awardXp]
   );
 
   // 19. Leave Community Game

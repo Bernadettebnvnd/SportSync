@@ -18,12 +18,14 @@ import {
   Loader2,
   Moon,
   Sun,
+  Bell,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
 import { CommunityGame } from '../../mock/types';
+import { useNotifications } from '../../lib/notifications';
 
 interface ProfileScreenProps {
   user?: {
@@ -46,6 +48,7 @@ interface ProfileScreenProps {
   hostedGames?: CommunityGame[];
   isLightMode?: boolean;
   onToggleTheme?: () => void;
+  onOpenNotifications?: () => void;
   onSelectGame?: (game: CommunityGame) => void;
   onOpenSettings: () => void;
   onOpenLeaderboard: () => void;
@@ -64,6 +67,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   hostedGames = [],
   isLightMode = false,
   onToggleTheme,
+  onOpenNotifications,
   onSelectGame,
   onOpenSettings,
   onOpenLeaderboard,
@@ -75,6 +79,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const isGuest = !user?.id || user?.isGuest || user?.name === 'Guest';
   const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
   const username = isGuest ? '@guest' : user?.username || '@player';
+  const { unreadCount } = useNotifications(user?.name || user?.id ? { id: user?.id, name: user?.name } : undefined);
 
   // Local state for instant optimistic updates
   const [localCity, setLocalCity] = React.useState(user?.city || 'Naga City');
@@ -218,6 +223,23 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 <Moon className="w-4 h-4 text-[#0F1612]" />
               ) : (
                 <Sun className="w-4 h-4 text-[#C8FF2E]" />
+              )}
+            </button>
+          )}
+
+          {onOpenNotifications && (
+            <button
+              type="button"
+              onClick={onOpenNotifications}
+              className="relative w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-[#F4F7F0] flex items-center justify-center transition-colors press-scale"
+              aria-label="View notifications"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[9px] flex items-center justify-center shadow-[0_0_8px_#C8FF2E]">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
               )}
             </button>
           )}
