@@ -91,7 +91,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Selected Entities
   const [selectedMatch, setSelectedMatch] = useState<Match>(MATCHES[0]);
   const [selectedVenue, setSelectedVenue] = useState<Venue>(VENUES[0]);
-  const [selectedGame, setSelectedGame] = useState<CommunityGame>(COMMUNITY_GAMES[0]);
+  const [selectedGame, setSelectedGame] = useState<CommunityGame | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<Team>(TEAMS.northgate);
   const [activeBookingDetails, setActiveBookingDetails] = useState<{
     venue: Venue;
@@ -403,18 +403,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
-      case 'match-detail':
+      case 'match-detail': {
+        const activeTargetGame = selectedGame || bridge.games[0];
         return (
           <MatchDetailScreen
-            game={selectedGame}
+            game={activeTargetGame}
             onBack={goBack}
             onJoin={() => {
+              if (!activeTargetGame) return;
               if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', () => {
-                const result = bridge.joinCommunityGame(selectedGame.id);
+                const result = bridge.joinCommunityGame(activeTargetGame.id);
                 if (result.game) setSelectedGame(result.game);
                 setToastMessage(result.xpResult.message);
               })) return;
-              const result = bridge.joinCommunityGame(selectedGame.id);
+              const result = bridge.joinCommunityGame(activeTargetGame.id);
               if (result.game) setSelectedGame(result.game);
               setToastMessage(result.xpResult.message);
             }}
@@ -424,11 +426,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
+      }
       case 'match-chat':
         return <MatchGroupChatScreen onBack={goBack} />;
       case 'post-match':
         return (
           <PostMatchScreen
+            game={selectedGame || bridge.games[0]}
             onBack={goBack}
             onDone={() => navigateTo('home')}
           />

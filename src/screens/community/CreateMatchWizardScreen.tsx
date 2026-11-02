@@ -669,16 +669,18 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         ? '18:00'
         : customTime;
 
-      const formattedSchedule = scheduleMode === 'today'
-        ? `Today (${defaultTodayTime})`
+      const dateLabel = scheduleMode === 'today'
+        ? 'Today'
         : scheduleMode === 'tomorrow'
-        ? `Tomorrow (18:00)`
-        : `${customDate} (${customTime})`;
+        ? 'Tomorrow'
+        : customDate;
+
+      const formattedSchedule = `${dateLabel} • ${matchTime}`;
 
       await onMatchCreated({
         sport,
         title: title.trim(),
-        date: formattedSchedule,
+        date: dateLabel,
         time: matchTime,
         formattedDate: formattedSchedule,
         locationName: locationName.trim(),

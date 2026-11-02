@@ -148,6 +148,115 @@ export function getLevelTitle(level: number): string {
   return 'Living Legend';
 }
 
+/**
+ * Detects mock template games (from earlier London prototypes) so they can be purged.
+ */
+export function isMockGame(game: Partial<CommunityGame> | null | undefined): boolean {
+  if (!game) return true;
+
+  const mockIds = new Set(['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8']);
+  if (game.id && mockIds.has(game.id)) return true;
+
+  const mockTitles = [
+    '5v5: sunset game',
+    'sunday morning league prep',
+    'clay doubles friendly',
+    '3v3 half-court runs',
+    'casual friday night 5v5',
+  ];
+  const titleLower = (game.title || '').toLowerCase().trim();
+  if (mockTitles.some((t) => titleLower.includes(t))) return true;
+
+  const mockLocations = [
+    'the pitchway',
+    'victoria park pitch',
+    'clay court club kensington',
+    'metro hoops shoreditch',
+  ];
+  const locLower = (game.locationName || '').toLowerCase().trim();
+  if (mockLocations.some((l) => locLower.includes(l))) return true;
+
+  return false;
+}
+
+/**
+ * Formats session timestamps cleanly (e.g. "Today", "Active Now", "Tomorrow", "18:00").
+ */
+export function formatSessionDateTime(startTime?: string, status?: string): { date: string; time: string } {
+  if (!startTime) {
+    return { date: 'Today', time: '18:00' };
+  }
+
+  // Already a plain time string
+  if (!startTime.includes('T') && !startTime.includes('-') && startTime.includes(':')) {
+    return { date: 'Today', time: startTime };
+  }
+
+  try {
+    const d = new Date(startTime);
+    if (isNaN(d.getTime())) {
+      return { date: 'Today', time: startTime };
+    }
+
+    const now = new Date();
+    const isToday =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      d.getFullYear() === tomorrow.getFullYear() &&
+      d.getMonth() === tomorrow.getMonth() &&
+      d.getDate() === tomorrow.getDate();
+
+    let dateStr = isToday
+      ? 'Today'
+      : isTomorrow
+      ? 'Tomorrow'
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    if (status === 'active' && !isToday && !isTomorrow) {
+      dateStr = 'Active Now';
+    }
+
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    return { date: dateStr, time: timeStr };
+  } catch {
+    return { date: 'Today', time: startTime };
+  }
+}
+
+/**
+ * Normalizes rotation and match format for compact card badges.
+ */
+export function getShortFormat(rotationFormat?: string, sport?: string): string {
+  if (!rotationFormat) {
+    const sp = (sport || '').toLowerCase();
+    if (sp.includes('badminton') || sp.includes('pickleball') || sp.includes('tennis') || sp.includes('padel')) {
+      return 'Doubles';
+    }
+    if (sp.includes('basket')) return '3v3';
+    return '5v5';
+  }
+  const rf = rotationFormat.toLowerCase();
+  if (rf.includes('doubles')) return 'Doubles';
+  if (rf.includes('singles')) return 'Singles';
+  if (rf.includes('3v3')) return '3v3';
+  if (rf.includes('5v5')) return '5v5';
+  if (rf.includes('7v7')) return '7v7';
+  if (rf.includes('king')) return 'King of Court';
+  if (rf.includes('rally')) return 'Rally Rotation';
+  if (rotationFormat.length > 14) return 'Open Play';
+  return rotationFormat;
+}
+
 export const INITIAL_USER_PROFILE = {
   id: undefined as string | undefined,
   name: 'Guest Player',
@@ -308,14 +417,21 @@ export function useSportSyncBridge() {
     store.currentUser.win_streak,
   ]);
 
-  // 2. Dynamic Community Pickup Games
+  // 2. Dynamic Community Pickup Games (real user-created & database sessions only)
   const [games, setGames] = useState<CommunityGame[]>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sportsync_community_games') || localStorage.getItem('sideline_community_games');
+      localStorage.removeItem('sideline_community_games');
+      const saved = localStorage.getItem('sportsync_community_games');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const cleanGames = parsed.filter((g) => !isMockGame(g));
+            if (cleanGames.length !== parsed.length) {
+              localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
+            }
+            return cleanGames;
+          }
         } catch {
           // ignore
         }
@@ -326,7 +442,8 @@ export function useSportSyncBridge() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_community_games', JSON.stringify(games));
+      const cleanGames = games.filter((g) => !isMockGame(g));
+      localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
     }
   }, [games]);
 
@@ -337,21 +454,24 @@ export function useSportSyncBridge() {
   useEffect(() => {
     if (store.sessions.length > 0) {
       setGames((prev) => {
+        const cleanPrev = prev.filter((g) => !isMockGame(g));
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
-          if (!prev.some((g) => g.id === s.id || g.title === s.title)) {
+          if (!cleanPrev.some((g) => g.id === s.id || g.title === s.title)) {
             const venue = store.venues.find((v) => v.id === s.venue_id);
+            const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
+            const shortFormat = getShortFormat(s.rotation_format, s.sport);
             added.push({
               id: s.id,
               sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
               title: s.title,
-              format: (s.rotation_format || '5v5') as any,
+              format: shortFormat as any,
               skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
-              date: 'Today',
-              time: s.start_time || '18:00',
+              date: formattedDate,
+              time: formattedTime,
               locationName: venue?.name || 'Verified Court Facility',
               distance: '0.9 km away',
-              hostName: 'Facility Host',
+              hostName: venue?.name ? `${venue.name} Host` : 'Facility Host',
               hostAvatar: 'alex',
               spotsTotal: s.max_players || 12,
               spotsJoined: s.current_players_count || 1,
@@ -362,7 +482,7 @@ export function useSportSyncBridge() {
             });
           }
         });
-        return added.length > 0 ? [...added, ...prev] : prev;
+        return added.length > 0 ? [...added, ...cleanPrev] : cleanPrev;
       });
     }
   }, [store.sessions, store.venues]);
@@ -956,12 +1076,14 @@ export function useSportSyncBridge() {
     }));
   }, [userProfile.name, userProfile.username, userProfile.avatarId, userProfile.xp, userProfile.level]);
 
-  // 14. Create Community Game (Persisting to Supabase + State)
+  // 14. Create Community Game
   const createCommunityGame = useCallback(
     async (gameData: {
-      sport: 'Football' | 'Basketball' | 'Tennis' | 'Pickleball' | 'Badminton' | 'Volleyball' | 'Billiards' | 'Darts' | string;
+      sport: string;
       title: string;
       date: string;
+      time?: string;
+      formattedDate?: string;
       locationName: string;
       playersCount: number;
       skillLevel: 'Casual' | 'Competitive' | 'Beginner' | 'Intermediate';
@@ -969,31 +1091,46 @@ export function useSportSyncBridge() {
       notes?: string;
       coordinates?: [number, number];
     }) => {
-      const newId = `cg_${Date.now()}`;
+      const newId = `cg_user_${Date.now()}`;
       const distanceStr = gameData.locationName.toLowerCase().includes('naga')
         ? 'Naga City • 0.5 km away'
-        : '0.8 miles away';
+        : '0.8 km away';
+
+      let displayDate = gameData.date || 'Today';
+      let displayTime = gameData.time || '18:00';
+      if (displayDate.includes('(') && displayDate.includes(')')) {
+        const match = displayDate.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+          displayDate = match[1].trim();
+          if (!gameData.time) displayTime = match[2].trim();
+        }
+      }
+
+      const formatStr = getShortFormat(undefined, gameData.sport) || (gameData.playersCount <= 4 ? 'Doubles' : '5v5');
+      const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
+      const userName = userProfile.name || 'Player';
+
       const newGame: CommunityGame = {
         id: newId,
-        sport: (gameData.sport as any) || 'Football',
+        sport: (gameData.sport as any) || 'Badminton',
         title: gameData.title,
-        format: gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5',
+        format: formatStr as any,
         skillLevel: (gameData.skillLevel as any) || 'Casual',
-        date: gameData.date,
-        time: '19:30',
+        date: displayDate,
+        time: displayTime,
         locationName: gameData.locationName,
         distance: distanceStr,
-        hostName: userProfile.name,
-        hostAvatar: 'alex',
+        hostName: userName,
+        hostAvatar: userAvatar,
         spotsTotal: gameData.playersCount,
         spotsJoined: 1,
         pricePerPlayer: gameData.pricePerPlayer,
         notes: gameData.notes || 'Organized via SportSync Matchmaking',
         isPublic: true,
-        members: [{ name: userProfile.name, avatar: 'alex' }],
+        members: [{ name: userName, avatar: userAvatar }],
       };
 
-      setGames((prev) => [newGame, ...prev]);
+      setGames((prev) => [newGame, ...prev.filter((g) => !isMockGame(g))]);
 
       // Award host XP (+100 XP base × 1.5x = +150 XP)
       awardXp(100, 'hosting a new pickup match', { applyStreakMultiplier: true });
@@ -1017,18 +1154,23 @@ export function useSportSyncBridge() {
             ? 'volleyball'
             : 'pickleball';
 
-        if (store.venues[0]) {
+        const targetVenue =
+          store.venues.find((v) =>
+            v.name.toLowerCase().includes(gameData.locationName.toLowerCase())
+          ) || store.venues[0];
+
+        if (targetVenue) {
           await store.createOpenPlaySession({
-            venueId: store.venues[0].id,
+            venueId: targetVenue.id,
             title: gameData.title,
-            description: gameData.notes || 'SportSync game',
+            description: gameData.notes || 'SportSync community game',
             sport: matchingSport,
-            courtIds: store.venues[0].courts?.map((c) => c.id) || [],
-            startTime: '19:30',
-            endTime: '21:00',
+            courtIds: targetVenue.courts?.map((c) => c.id) || [],
+            startTime: displayTime,
+            endTime: '20:00',
             feeCents: gameData.pricePerPlayer * 100,
             maxPlayers: gameData.playersCount,
-            rotationFormat: 'king_of_the_court',
+            rotationFormat: formatStr,
           });
         }
       } catch (err) {
@@ -1045,7 +1187,7 @@ export function useSportSyncBridge() {
 
       return newGame;
     },
-    [userProfile.name, awardXp, store]
+    [userProfile.name, userProfile.avatarId, awardXp, store]
   );
 
   // 15. Join Community Game
@@ -1058,10 +1200,11 @@ export function useSportSyncBridge() {
           if (g.id === gameId) {
             const alreadyJoined = g.members.some((m) => m.name === userProfile.name);
             if (alreadyJoined) return g;
+            const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
             joinedGame = {
               ...g,
               spotsJoined: Math.min(g.spotsTotal, g.spotsJoined + 1),
-              members: [...g.members, { name: userProfile.name, avatar: 'alex' }],
+              members: [...g.members, { name: userProfile.name, avatar: userAvatar }],
             };
             return joinedGame;
           }
@@ -1085,7 +1228,7 @@ export function useSportSyncBridge() {
         xpResult,
       };
     },
-    [userProfile.name, awardXp]
+    [userProfile.name, userProfile.avatarId, awardXp]
   );
 
   // 16. Leave Community Game

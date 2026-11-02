@@ -5,13 +5,15 @@ import { Button } from '../../design-system/components/Button';
 import { StadiumScene } from '../../illustrations/Scenes';
 import { FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { APP_CONFIG } from '../../config/appConfig';
+import { CommunityGame } from '../../mock/types';
 
 interface PostMatchScreenProps {
   onBack: () => void;
   onDone: () => void;
+  game?: CommunityGame | null;
 }
 
-export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone }) => {
+export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone, game }) => {
   const [rating, setRating] = useState(5);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Great passer', 'Fair play']);
   const [selectedMvp, setSelectedMvp] = useState<string>('marcus');
@@ -60,7 +62,7 @@ export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone
             Match Finished!
           </h1>
           <p className="text-xs text-[#A5B0A6] mt-0.5">
-            5v5: Sunset Game Under Lights • Final Result
+            {game?.title ? `${game.title} • Final Result` : 'Community Match • Final Result'}
           </p>
         </div>
 
