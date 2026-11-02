@@ -7,7 +7,8 @@ import { APP_CONFIG } from './config/appConfig';
 import { Sparkles, Layers, Smartphone, Menu, X } from 'lucide-react';
 
 const StandaloneMobileView: React.FC = () => {
-  const [selectedScreen, setSelectedScreen] = useState<ScreenId>('home');
+  const [selectedScreen, setSelectedScreen] = useState<ScreenId | undefined>(undefined);
+  const [activeScreen, setActiveScreen] = useState<ScreenId>('auth');
   const [showScreenDrawer, setShowScreenDrawer] = useState(false);
 
   const screenOptions: Array<{ id: ScreenId; label: string; group: string }> = [
@@ -101,7 +102,7 @@ const StandaloneMobileView: React.FC = () => {
 
       {/* Center Phone Chassis Canvas */}
       <main className="relative my-auto flex flex-col items-center">
-        <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} />
+        <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} onScreenChange={setActiveScreen} />
       </main>
 
       {/* Screen Jumper Drawer Modal */}
@@ -129,22 +130,26 @@ const StandaloneMobileView: React.FC = () => {
                   <div className="grid grid-cols-2 gap-1.5">
                     {screenOptions
                       .filter((s) => s.group === group)
-                      .map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => {
-                            setSelectedScreen(s.id);
-                            setShowScreenDrawer(false);
-                          }}
-                          className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${
-                            selectedScreen === s.id
-                              ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
-                              : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white hover:border-white/20'
-                          }`}
-                        >
-                          {s.label}
-                        </button>
-                      ))}
+                      .map((s) => {
+                        const isCurrent = (selectedScreen ?? activeScreen) === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            onClick={() => {
+                              setSelectedScreen(s.id);
+                              setActiveScreen(s.id);
+                              setShowScreenDrawer(false);
+                            }}
+                            className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${
+                              isCurrent
+                                ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                                : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white hover:border-white/20'
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
               ))}
@@ -155,7 +160,7 @@ const StandaloneMobileView: React.FC = () => {
 
       {/* Footer Info */}
       <footer className="w-full max-w-5xl py-4 mt-6 text-center text-xs text-[#A5B0A6] flex flex-wrap items-center justify-between border-t border-white/5">
-        <span>Active Screen: <strong className="text-[#C8FF2E]">{selectedScreen}</strong></span>
+        <span>Active Screen: <strong className="text-[#C8FF2E]">{selectedScreen ?? activeScreen}</strong></span>
         <span>Tap any button inside the phone frame to navigate freely</span>
       </footer>
     </div>

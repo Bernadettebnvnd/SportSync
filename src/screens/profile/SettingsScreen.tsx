@@ -7,12 +7,14 @@ interface SettingsScreenProps {
   onBack: () => void;
   isLightMode: boolean;
   onToggleTheme: () => void;
+  onLogout?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onBack,
   isLightMode,
   onToggleTheme,
+  onLogout,
 }) => {
   const [matchNotifications, setMatchNotifications] = useState(true);
   const [soundEffects, setSoundEffects] = useState(true);
@@ -131,12 +133,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <button
             type="button"
             onClick={async () => {
-              if (typeof window !== 'undefined') {
-                localStorage.removeItem('sportsync_user_role');
-                localStorage.removeItem('sportsync_user_email');
-                localStorage.removeItem('matchi_onboarding_completed');
+              if (onLogout) {
+                onLogout();
+              } else {
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('sportsync_user_role');
+                  localStorage.removeItem('sportsync_user_email');
+                  localStorage.removeItem('sportsync_user_profile');
+                  localStorage.removeItem('matchi_onboarding_completed');
+                }
+                onBack();
               }
-              onBack();
             }}
             className="w-full h-12 rounded-2xl bg-[#1C241E] text-[#FF5C5C] hover:bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
           >

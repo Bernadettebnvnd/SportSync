@@ -75,15 +75,47 @@ export type ScreenId =
 interface MobileAppProps {
   initialScreen?: ScreenId;
   inPhoneFrame?: boolean;
+  onScreenChange?: (screen: ScreenId) => void;
 }
 
 export const MobileApp: React.FC<MobileAppProps> = ({
-  initialScreen = 'home',
+  initialScreen,
   inPhoneFrame = true,
+  onScreenChange,
 }) => {
   const bridge = useSportSyncBridge();
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>(initialScreen);
-  const [screenHistory, setScreenHistory] = useState<ScreenId[]>([initialScreen]);
+
+  const isUserAuthenticated = (): boolean => {
+    if (bridge.userProfile.id && !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player') {
+      return true;
+    }
+    if (bridge.store.currentUser.id && bridge.store.currentUser.email) {
+      return true;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.id && !parsed.isGuest && parsed.name !== 'Guest Player') {
+            return true;
+          }
+        }
+        if (localStorage.getItem('sportsync_user_email')) {
+          return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
+
+  const resolveInitialScreen = (): ScreenId => {
+    if (initialScreen) return initialScreen;
+    return isUserAuthenticated() ? 'home' : 'auth';
+  };
+
+  const [currentScreen, setCurrentScreen] = useState<ScreenId>(resolveInitialScreen);
+  const [screenHistory, setScreenHistory] = useState<ScreenId[]>([resolveInitialScreen()]);
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
@@ -108,13 +140,25 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
-  const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('signup');
+  const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('login');
   const [guestPrompt, setGuestPrompt] = useState<{
     isOpen: boolean;
     title?: string;
     message?: string;
     pendingAction?: () => void;
   }>({ isOpen: false });
+
+  // Sync external initialScreen changes (e.g. from developer screen jumper)
+  useEffect(() => {
+    if (initialScreen) {
+      setCurrentScreen(initialScreen);
+      setScreenHistory((prev) => (prev[prev.length - 1] === initialScreen ? prev : [...prev, initialScreen]));
+      if (initialScreen === 'home') setActiveTab('home');
+      else if (initialScreen === 'scores') setActiveTab('scores');
+      else if (initialScreen === 'social-home' || initialScreen === 'venues-list') setActiveTab('play');
+      else if (initialScreen === 'profile') setActiveTab('profile');
+    }
+  }, [initialScreen]);
 
   const requireAuth = (
     title: string,
@@ -138,6 +182,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const navigateTo = (screen: ScreenId) => {
     setScreenHistory((prev) => [...prev, screen]);
     setCurrentScreen(screen);
+    onScreenChange?.(screen);
 
     // Synchronize bottom nav tab if appropriate
     if (screen === 'home') setActiveTab('home');
@@ -153,9 +198,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       const prevScreen = nextHistory[nextHistory.length - 1];
       setScreenHistory(nextHistory);
       setCurrentScreen(prevScreen);
+      onScreenChange?.(prevScreen);
     } else {
-      navigateTo('home');
+      if (isUserAuthenticated()) {
+        navigateTo('home');
+      } else {
+        navigateTo('auth');
+      }
     }
+  };
+
+  const handleLogout = async () => {
+    await bridge.logout();
+    await bridge.store.logoutUser();
+    setAuthInitialMode('login');
+    setCurrentScreen('auth');
+    setScreenHistory(['auth']);
+    onScreenChange?.('auth');
+    setToastMessage('Signed out successfully.');
   };
 
   const handleTabChange = (tab: NavTabId) => {
@@ -219,14 +279,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
-      case 'auth':
+      case 'auth': {
+        const canGoBack = screenHistory.length > 1 && isUserAuthenticated();
         return (
           <AuthScreen
             initialMode={authInitialMode}
+            canGoBack={canGoBack}
             onSuccess={(role, isNewAccount) => {
               if (isNewAccount) {
-                if (typeof window !== 'undefined') {
+                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
+                } else {
+                  navigateTo('personalization');
                 }
               } else if (role === 'facility_owner') {
                 if (typeof window !== 'undefined') {
@@ -242,9 +306,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 }
               }
             }}
-            onBack={goBack}
+            onBack={canGoBack ? goBack : undefined}
           />
         );
+      }
       case 'personalization':
         return (
           <PersonalizationScreen
@@ -592,7 +657,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               navigateTo('settings');
             }}
             onOpenLeaderboard={() => navigateTo('leaderboard')}
-            onLogout={bridge.logout}
+            onLogout={handleLogout}
             onRequireAuth={(title, message) => {
               requireAuth(title || 'Join SportSync', message || 'Create an account or sign in to save your progress.');
             }}
@@ -624,6 +689,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onBack={goBack}
             isLightMode={isLightMode}
             onToggleTheme={toggleTheme}
+            onLogout={handleLogout}
           />
         );
       case 'system-states':

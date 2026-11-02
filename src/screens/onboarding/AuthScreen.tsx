@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
@@ -10,10 +10,16 @@ export type AuthRole = 'player' | 'facility_owner';
 interface AuthScreenProps {
   initialMode?: 'signup' | 'login';
   onSuccess: (role: AuthRole, isNewAccount?: boolean) => void;
-  onBack: () => void;
+  onBack?: () => void;
+  canGoBack?: boolean;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', onSuccess, onBack }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  initialMode = 'login',
+  onSuccess,
+  onBack,
+  canGoBack = false,
+}) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
   const [selectedRole, setSelectedRole] = useState<AuthRole>('player');
@@ -25,6 +31,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPasswordReset, setIsPasswordReset] = useState(false);
+
+  useEffect(() => {
+    setIsSignUp(initialMode === 'signup');
+  }, [initialMode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,15 +93,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
       const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
       const payload = isSignUp
         ? {
-            email: trimmedEmail,
-            password: cleanPassword,
-            fullName: fullName.trim(),
-            role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
-          }
+          email: trimmedEmail,
+          password: cleanPassword,
+          fullName: fullName.trim(),
+          role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
+        }
         : {
-            email: trimmedEmail,
-            password: cleanPassword,
-          };
+          email: trimmedEmail,
+          password: cleanPassword,
+        };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -183,14 +193,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
     <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-5 sm:pt-8 select-none overflow-y-auto no-scrollbar">
       {/* Top Header */}
       <div>
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Go back"
-          className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors mb-6"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
+        {canGoBack && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Go back"
+            className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors mb-6"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
 
         {/* Brand Banner Header */}
         <div className="p-4 rounded-3xl bg-[#0F2A22] border border-white/10 mb-6 flex items-center gap-3">
@@ -202,15 +214,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               {isPasswordReset
                 ? 'Reset your password'
                 : isSignUp
-                ? 'Join SportSync'
-                : 'Welcome back'}
+                  ? 'Create Account'
+                  : 'Welcome back'}
             </h2>
             <p className="text-xs text-[#A5B0A6]">
               {isPasswordReset
                 ? "Enter your email to receive a recovery link"
                 : isSignUp
-                ? 'Find Players. Play Together.'
-                : 'Log in to join games and track scores'}
+                  ? 'Find Players. Play Together.'
+                  : 'Log in to access your Player Hub'}
             </p>
           </div>
         </div>
@@ -229,32 +241,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
           </div>
         )}
 
-        {/* Tab Switch: Sign Up vs Log In */}
+        {/* Tab Switch: Log In vs Create Account */}
         {!isPasswordReset && (
           <div className="flex rounded-2xl bg-[#141A15] p-1 border border-white/5 mb-4">
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(true);
-                setErrorMessage(null);
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
-                isSignUp ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'text-[#A5B0A6]'
-              }`}
-            >
-              Sign Up
-            </button>
             <button
               type="button"
               onClick={() => {
                 setIsSignUp(false);
                 setErrorMessage(null);
               }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
-                !isSignUp ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'text-[#A5B0A6]'
-              }`}
+              className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${!isSignUp ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold shadow-sm' : 'text-[#A5B0A6] hover:text-white'
+                }`}
             >
               Log In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(true);
+                setErrorMessage(null);
+              }}
+              className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${isSignUp ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold shadow-sm' : 'text-[#A5B0A6] hover:text-white'
+                }`}
+            >
+              Create Account
             </button>
           </div>
         )}
@@ -269,11 +279,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               <button
                 type="button"
                 onClick={() => setSelectedRole('player')}
-                className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all press-scale ${
-                  selectedRole === 'player'
-                    ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.15)]'
-                    : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
-                }`}
+                className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all press-scale ${selectedRole === 'player'
+                  ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.15)]'
+                  : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
+                  }`}
               >
                 <div className="flex items-center gap-1.5">
                   <User className={`w-4 h-4 ${selectedRole === 'player' ? 'text-[#C8FF2E]' : 'text-[#A5B0A6]'}`} />
@@ -289,11 +298,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
               <button
                 type="button"
                 onClick={() => setSelectedRole('facility_owner')}
-                className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all press-scale ${
-                  selectedRole === 'facility_owner'
-                    ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.15)]'
-                    : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
-                }`}
+                className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all press-scale ${selectedRole === 'facility_owner'
+                  ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.15)]'
+                  : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
+                  }`}
               >
                 <div className="flex items-center gap-1.5">
                   <Building2 className={`w-4 h-4 ${selectedRole === 'facility_owner' ? 'text-[#C8FF2E]' : 'text-[#A5B0A6]'}`} />
@@ -402,13 +410,59 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup', 
             {isLoading
               ? 'Connecting...'
               : isPasswordReset
-              ? 'Send Reset Link'
-              : isSignUp
-              ? selectedRole === 'facility_owner'
-                ? 'Register Facility & Continue'
-                : 'Continue to Preferences'
-              : 'Enter SportSync'}
+                ? 'Send Reset Link'
+                : isSignUp
+                  ? selectedRole === 'facility_owner'
+                    ? 'Register Facility & Continue'
+                    : 'Create Account'
+                  : 'Log In'}
           </Button>
+
+          {!isPasswordReset && (
+            <div className="text-center pt-2">
+              {isSignUp ? (
+                <p className="text-xs text-[#A5B0A6]">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSignUp(false);
+                      setErrorMessage(null);
+                    }}
+                    className="text-[#C8FF2E] font-semibold hover:underline"
+                  >
+                    Log In
+                  </button>
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-[#A5B0A6]">
+                    Don't have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSignUp(true);
+                        setErrorMessage(null);
+                      }}
+                      className="text-[#C8FF2E] font-semibold hover:underline"
+                    >
+                      Create an account
+                    </button>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('test.player@sportsync.ph');
+                      setPassword('password123');
+                    }}
+                    className="text-[11px] text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors py-1 font-medium inline-block"
+                  >
+                    ⚡ Use Demo Account (test.player@sportsync.ph)
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {isPasswordReset && (
             <button

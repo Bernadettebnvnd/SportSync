@@ -29,7 +29,8 @@ const MobileApp = dynamic(
 );
 
 export default function RootHomePage() {
-  const [selectedScreen, setSelectedScreen] = useState<ScreenId>('home');
+  const [selectedScreen, setSelectedScreen] = useState<ScreenId | undefined>(undefined);
+  const [activeScreen, setActiveScreen] = useState<ScreenId>('auth');
   const [useDeviceChassis, setUseDeviceChassis] = useState(false);
   const [showScreenDrawer, setShowScreenDrawer] = useState(false);
 
@@ -111,11 +112,11 @@ export default function RootHomePage() {
       <main className="w-full flex-1 flex flex-col items-center justify-center">
         {useDeviceChassis ? (
           <div className="py-4 sm:py-8 w-full flex items-center justify-center px-2 sm:px-4">
-            <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} />
+            <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} onScreenChange={setActiveScreen} />
           </div>
         ) : (
           <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl min-h-screen md:min-h-[calc(100vh-57px)] bg-[#0B0F0C] sm:border-x sm:border-white/5 relative flex flex-col shadow-2xl">
-            <MobileApp initialScreen={selectedScreen} inPhoneFrame={false} />
+            <MobileApp initialScreen={selectedScreen} inPhoneFrame={false} onScreenChange={setActiveScreen} />
           </div>
         )}
       </main>
@@ -193,22 +194,27 @@ export default function RootHomePage() {
                     {section.group}
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {section.screens.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedScreen(s.id as ScreenId);
-                          setShowScreenDrawer(false);
-                        }}
-                        className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${selectedScreen === s.id
-                            ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
-                            : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white hover:border-white/20'
+                    {section.screens.map((s) => {
+                      const isCurrent = (selectedScreen ?? activeScreen) === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedScreen(s.id as ScreenId);
+                            setActiveScreen(s.id as ScreenId);
+                            setShowScreenDrawer(false);
+                          }}
+                          className={`p-2.5 rounded-xl text-xs font-semibold text-left border transition-all truncate ${
+                            isCurrent
+                              ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                              : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white hover:border-white/20'
                           }`}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
