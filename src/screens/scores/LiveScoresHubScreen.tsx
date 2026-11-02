@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useMatchiStore } from '../../lib/store';
+import { addNotification } from '../../lib/notifications';
 import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { Button } from '../../design-system/components/Button';
 import {
@@ -140,6 +141,12 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
     setNewVenue('');
     setActiveTab('live');
     showToast('Live match score initialized!');
+    addNotification({
+      type: 'goal',
+      title: `Live Match: ${newMatch.gameTitle}`,
+      desc: `${newMatch.sport} scorekeeper active at ${newMatch.venueName}.`,
+      linkScreen: 'scores',
+    });
   };
 
   const handleUpdateLiveScore = (deltaA: number, deltaB: number) => {
@@ -174,6 +181,15 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
     saveMatches(updated);
     setScoringMatch(null);
     showToast('Match marked final and recorded in My Results!');
+    const finished = matches.find((m) => m.id === matchId);
+    if (finished) {
+      addNotification({
+        type: 'goal',
+        title: `Full Time: ${finished.gameTitle}`,
+        desc: `Final Score: ${finished.teamA.name} ${finished.teamA.score} - ${finished.teamB.score} ${finished.teamB.name}.`,
+        linkScreen: 'scores',
+      });
+    }
   };
 
   return (

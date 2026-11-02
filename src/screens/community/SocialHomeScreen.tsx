@@ -22,6 +22,7 @@ import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { CommunityGame } from '../../mock/types';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { STANDARDIZED_SPORTS } from '../../config/sports';
+import { useNotifications } from '../../lib/notifications';
 
 interface SocialHomeScreenProps {
   games?: CommunityGame[];
@@ -52,6 +53,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
 }) => {
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
+  const { unreadCount } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<'discover' | 'my_games' | 'hosting'>('discover');
   const [selectedSport, setSelectedSport] = useState<string>('All');
@@ -144,9 +146,14 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           <button
             onClick={handleNotificationsClick}
             aria-label="View notifications"
-            className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+            className="relative w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/60 transition-colors press-scale"
           >
             <Bell className="w-4 h-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_#C8FF2E]">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
         </div>
 

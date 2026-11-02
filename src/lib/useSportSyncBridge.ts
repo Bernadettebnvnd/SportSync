@@ -15,6 +15,7 @@ import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
+import { addNotification } from './notifications';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
   const ids = new Set<string>();
@@ -201,6 +202,115 @@ export function getLevelTitle(level: number): string {
   return 'Living Legend';
 }
 
+/**
+ * Detects mock template games (from earlier London prototypes) so they can be purged.
+ */
+export function isMockGame(game: Partial<CommunityGame> | null | undefined): boolean {
+  if (!game) return true;
+
+  const mockIds = new Set(['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8']);
+  if (game.id && mockIds.has(game.id)) return true;
+
+  const mockTitles = [
+    '5v5: sunset game',
+    'sunday morning league prep',
+    'clay doubles friendly',
+    '3v3 half-court runs',
+    'casual friday night 5v5',
+  ];
+  const titleLower = (game.title || '').toLowerCase().trim();
+  if (mockTitles.some((t) => titleLower.includes(t))) return true;
+
+  const mockLocations = [
+    'the pitchway',
+    'victoria park pitch',
+    'clay court club kensington',
+    'metro hoops shoreditch',
+  ];
+  const locLower = (game.locationName || '').toLowerCase().trim();
+  if (mockLocations.some((l) => locLower.includes(l))) return true;
+
+  return false;
+}
+
+/**
+ * Formats session timestamps cleanly (e.g. "Today", "Active Now", "Tomorrow", "18:00").
+ */
+export function formatSessionDateTime(startTime?: string, status?: string): { date: string; time: string } {
+  if (!startTime) {
+    return { date: 'Today', time: '18:00' };
+  }
+
+  // Already a plain time string
+  if (!startTime.includes('T') && !startTime.includes('-') && startTime.includes(':')) {
+    return { date: 'Today', time: startTime };
+  }
+
+  try {
+    const d = new Date(startTime);
+    if (isNaN(d.getTime())) {
+      return { date: 'Today', time: startTime };
+    }
+
+    const now = new Date();
+    const isToday =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow =
+      d.getFullYear() === tomorrow.getFullYear() &&
+      d.getMonth() === tomorrow.getMonth() &&
+      d.getDate() === tomorrow.getDate();
+
+    let dateStr = isToday
+      ? 'Today'
+      : isTomorrow
+      ? 'Tomorrow'
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    if (status === 'active' && !isToday && !isTomorrow) {
+      dateStr = 'Active Now';
+    }
+
+    const timeStr = d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    return { date: dateStr, time: timeStr };
+  } catch {
+    return { date: 'Today', time: startTime };
+  }
+}
+
+/**
+ * Normalizes rotation and match format for compact card badges.
+ */
+export function getShortFormat(rotationFormat?: string, sport?: string): string {
+  if (!rotationFormat) {
+    const sp = (sport || '').toLowerCase();
+    if (sp.includes('badminton') || sp.includes('pickleball') || sp.includes('tennis') || sp.includes('padel')) {
+      return 'Doubles';
+    }
+    if (sp.includes('basket')) return '3v3';
+    return '5v5';
+  }
+  const rf = rotationFormat.toLowerCase();
+  if (rf.includes('doubles')) return 'Doubles';
+  if (rf.includes('singles')) return 'Singles';
+  if (rf.includes('3v3')) return '3v3';
+  if (rf.includes('5v5')) return '5v5';
+  if (rf.includes('7v7')) return '7v7';
+  if (rf.includes('king')) return 'King of Court';
+  if (rf.includes('rally')) return 'Rally Rotation';
+  if (rotationFormat.length > 14) return 'Open Play';
+  return rotationFormat;
+}
+
 export const INITIAL_USER_PROFILE = {
   id: undefined as string | undefined,
   name: 'Guest Player',
@@ -361,7 +471,7 @@ export function useSportSyncBridge() {
     store.currentUser.win_streak,
   ]);
 
-  // 2. Dynamic Community Pickup Games
+  // 2. Dynamic Community Pickup Games (real user-created & database sessions only)
   const [games, setGames] = useState<CommunityGame[]>(() => {
     const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
     const isGameDeleted = (g: CommunityGame) =>
@@ -370,7 +480,8 @@ export function useSportSyncBridge() {
       deletedTitles.has(g.title.trim().toLowerCase());
 
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sportsync_community_games') || localStorage.getItem('sideline_community_games');
+      localStorage.removeItem('sideline_community_games');
+      const saved = localStorage.getItem('sportsync_community_games');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -379,7 +490,7 @@ export function useSportSyncBridge() {
             const seenTitles = new Set<string>();
             const deduped: CommunityGame[] = [];
             parsed.forEach((g: any) => {
-              if (!g || !g.id) return;
+              if (!g || !g.id || isMockGame(g)) return;
               const normTitle = g.title ? g.title.trim().toLowerCase() : '';
               if (!isGameDeleted(g) && !seenIds.has(g.id) && (!normTitle || !seenTitles.has(normTitle))) {
                 seenIds.add(g.id);
@@ -387,6 +498,9 @@ export function useSportSyncBridge() {
                 deduped.push(g);
               }
             });
+            if (deduped.length !== parsed.length) {
+              localStorage.setItem('sportsync_community_games', JSON.stringify(deduped));
+            }
             return deduped;
           }
         } catch {
@@ -399,7 +513,8 @@ export function useSportSyncBridge() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_community_games', JSON.stringify(games));
+      const cleanGames = games.filter((g) => !isMockGame(g));
+      localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
     }
   }, [games]);
 
@@ -411,9 +526,10 @@ export function useSportSyncBridge() {
     if (store.sessions.length > 0) {
       const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
       setGames((prev) => {
-        const seenIds = new Set(prev.map((g) => g.id));
-        const seenSessionIds = new Set(prev.filter((g) => g.sessionId).map((g) => g.sessionId!));
-        const seenTitles = new Set(prev.map((g) => g.title.trim().toLowerCase()));
+        const cleanPrev = prev.filter((g) => !isMockGame(g));
+        const seenIds = new Set(cleanPrev.map((g) => g.id));
+        const seenSessionIds = new Set(cleanPrev.filter((g) => g.sessionId).map((g) => g.sessionId!));
+        const seenTitles = new Set(cleanPrev.map((g) => g.title.trim().toLowerCase()));
 
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
@@ -435,19 +551,22 @@ export function useSportSyncBridge() {
             (userProfile.id && s.host_id === userProfile.id) ||
             (userProfile.name && s.host_id === userProfile.name)
           );
+          const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
+          const shortFormat = getShortFormat(s.rotation_format, s.sport);
+
           added.push({
             id: s.id,
             sessionId: s.id,
             sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
             title: s.title,
-            format: (s.rotation_format || '5v5') as any,
+            format: (shortFormat || s.rotation_format || '5v5') as any,
             skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
-            date: 'Today',
-            time: s.start_time || '18:00',
+            date: formattedDate || 'Today',
+            time: formattedTime || s.start_time || '18:00',
             locationName: venue?.name || 'Verified Court Facility',
             distance: '0.9 km away',
             hostId: isUserHost ? userProfile.id : s.host_id,
-            hostName: isUserHost ? userProfile.name : 'Facility Host',
+            hostName: isUserHost ? userProfile.name : (venue?.name ? `${venue.name} Host` : 'Facility Host'),
             hostAvatar: 'alex',
             spotsTotal: s.max_players || 12,
             spotsJoined: s.current_players_count || 1,
@@ -457,7 +576,7 @@ export function useSportSyncBridge() {
             members: [{ name: isUserHost ? userProfile.name : 'Host', avatar: 'alex' }],
           });
         });
-        return added.length > 0 ? [...added, ...prev] : prev;
+        return added.length > 0 ? [...added, ...cleanPrev] : cleanPrev;
       });
     }
   }, [store.sessions, store.venues, userProfile.id, userProfile.name]);
@@ -752,6 +871,13 @@ export function useSportSyncBridge() {
             rewardReason: reason,
           },
         });
+
+        addNotification({
+          type: 'achievement',
+          title: `Level Up! Reached Level ${newLevel}`,
+          desc: `Congratulations! You unlocked the title "${newTitle}". Keep playing to climb the ranks!`,
+          linkScreen: 'leaderboard',
+        });
       }
 
       const message = leveledUp
@@ -952,6 +1078,13 @@ export function useSportSyncBridge() {
             stakeXp: wonWagers[0].stakeXp,
           },
         });
+
+        addNotification({
+          type: 'wager',
+          title: 'Prediction Wager Won!',
+          desc: `Your call on "${wonWagers[0].matchTitle}" paid out +${totalPayout} Playmaker XP!`,
+          linkScreen: 'scores',
+        });
         return {
           won: true,
           payoutXp: totalPayout,
@@ -997,6 +1130,13 @@ export function useSportSyncBridge() {
             multiplierBonus: xpRes.multiplierBonus,
           },
         });
+
+        addNotification({
+          type: 'achievement',
+          title: `Achievement Claimed: ${item.title}`,
+          desc: `You claimed "${item.title}" (+${xpRes.totalEarned} XP)!`,
+          linkScreen: 'leaderboard',
+        });
         return {
           success: true,
           earnedXp: xpRes.totalEarned,
@@ -1030,12 +1170,14 @@ export function useSportSyncBridge() {
     }));
   }, [userProfile.name, userProfile.username, userProfile.avatarId, userProfile.xp, userProfile.level]);
 
-  // 14. Create Community Game (Persisting to Supabase + State)
+  // 14. Create Community Game
   const createCommunityGame = useCallback(
     async (gameData: {
-      sport: 'Football' | 'Basketball' | 'Tennis' | 'Pickleball' | 'Badminton' | 'Volleyball' | 'Billiards' | 'Darts' | string;
+      sport: string;
       title: string;
       date: string;
+      time?: string;
+      formattedDate?: string;
       locationName: string;
       playersCount: number;
       skillLevel: 'Casual' | 'Competitive' | 'Beginner' | 'Intermediate';
@@ -1045,6 +1187,24 @@ export function useSportSyncBridge() {
     }) => {
       let assignedId = generateUniqueGameId();
       let createdSessionId: string | undefined = undefined;
+
+      const distanceStr = gameData.locationName.toLowerCase().includes('naga')
+        ? 'Naga City • 0.5 km away'
+        : '0.8 km away';
+
+      let displayDate = gameData.date || 'Today';
+      let displayTime = gameData.time || '18:00';
+      if (displayDate.includes('(') && displayDate.includes(')')) {
+        const match = displayDate.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+          displayDate = match[1].trim();
+          if (!gameData.time) displayTime = match[2].trim();
+        }
+      }
+
+      const formatStr = getShortFormat(undefined, gameData.sport) || (gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5');
+      const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
+      const userName = userProfile.name || 'Player';
 
       // Store sync & Supabase session creation
       try {
@@ -1060,18 +1220,23 @@ export function useSportSyncBridge() {
             ? 'volleyball'
             : 'pickleball';
 
-        if (store.venues[0]) {
+        const targetVenue =
+          store.venues.find((v) =>
+            v.name.toLowerCase().includes(gameData.locationName.toLowerCase())
+          ) || store.venues[0];
+
+        if (targetVenue) {
           const createdSession = await store.createOpenPlaySession({
-            venueId: store.venues[0].id,
+            venueId: targetVenue.id,
             title: gameData.title,
-            description: gameData.notes || 'SportSync game',
+            description: gameData.notes || 'SportSync community game',
             sport: matchingSport,
-            courtIds: store.venues[0].courts?.map((c) => c.id) || [],
-            startTime: '19:30',
-            endTime: '21:00',
+            courtIds: targetVenue.courts?.map((c) => c.id) || [],
+            startTime: displayTime,
+            endTime: '20:00',
             feeCents: gameData.pricePerPlayer * 100,
             maxPlayers: gameData.playersCount,
-            rotationFormat: 'king_of_the_court',
+            rotationFormat: formatStr,
             skillLevel: (gameData.skillLevel?.toLowerCase() as SkillLevel) || 'all_levels',
           });
           if (createdSession?.id) {
@@ -1083,40 +1248,39 @@ export function useSportSyncBridge() {
         console.warn('[SportSyncBridge] Global open play session creation fallback handled:', err);
       }
 
-      const distanceStr = gameData.locationName.toLowerCase().includes('naga')
-        ? 'Naga City • 0.5 km away'
-        : '0.8 miles away';
       const newGame: CommunityGame = {
         id: assignedId,
         sessionId: createdSessionId,
-        sport: (gameData.sport as any) || 'Football',
+        sport: (gameData.sport as any) || 'Badminton',
         title: gameData.title,
-        format: gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5',
+        format: formatStr as any,
         skillLevel: (gameData.skillLevel as any) || 'Casual',
-        date: gameData.date,
-        time: '19:30',
+        date: displayDate,
+        time: displayTime,
         locationName: gameData.locationName,
         distance: distanceStr,
         hostId: userProfile.id,
-        hostName: userProfile.name,
-        hostAvatar: 'alex',
+        hostName: userName,
+        hostAvatar: userAvatar,
         spotsTotal: gameData.playersCount,
         spotsJoined: 1,
         pricePerPlayer: gameData.pricePerPlayer,
         notes: gameData.notes || 'Organized via SportSync Matchmaking',
         isPublic: true,
-        members: [{ name: userProfile.name, avatar: 'alex' }],
+        members: [{ name: userName, avatar: userAvatar }],
         coordinates: gameData.coordinates,
       };
 
       setGames((prev) => {
         const normTitle = newGame.title.trim().toLowerCase();
-        const filtered = prev.filter(
-          (g) =>
-            g.id !== newGame.id &&
-            (!newGame.sessionId || g.sessionId !== newGame.sessionId) &&
-            g.title.trim().toLowerCase() !== normTitle
-        );
+        const filtered = prev
+          .filter((g) => !isMockGame(g))
+          .filter(
+            (g) =>
+              g.id !== newGame.id &&
+              (!newGame.sessionId || g.sessionId !== newGame.sessionId) &&
+              g.title.trim().toLowerCase() !== normTitle
+          );
         return [newGame, ...filtered];
       });
 
@@ -1128,9 +1292,17 @@ export function useSportSyncBridge() {
         prev.map((b) => (b.id === 'squad_captain' ? { ...b, progress: 1, unlocked: true } : b))
       );
 
+      // Real-time Notification
+      addNotification({
+        type: 'match',
+        title: `Match Hosted: ${gameData.title}`,
+        desc: `Your ${gameData.sport} game at ${gameData.locationName} is now live and accepting players.`,
+        linkScreen: 'social-home',
+      });
+
       return newGame;
     },
-    [userProfile.id, userProfile.name, awardXp, store]
+    [userProfile.id, userProfile.name, userProfile.avatarId, awardXp, store]
   );
 
   // 15. Check if current user is the host of a game
@@ -1341,10 +1513,11 @@ export function useSportSyncBridge() {
           if (g.id === gameId) {
             const alreadyJoined = g.members.some((m) => m.name === userProfile.name);
             if (alreadyJoined) return g;
+            const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
             joinedGame = {
               ...g,
               spotsJoined: Math.min(g.spotsTotal, g.spotsJoined + 1),
-              members: [...g.members, { name: userProfile.name, avatar: 'alex' }],
+              members: [...g.members, { name: userProfile.name, avatar: userAvatar }],
             };
             return joinedGame;
           }
@@ -1354,12 +1527,21 @@ export function useSportSyncBridge() {
 
       const xpResult = awardXp(30, 'joining a game roster', { applyStreakMultiplier: true });
 
+      if (joinedGame) {
+        addNotification({
+          type: 'match',
+          title: 'Match Roster Confirmed',
+          desc: `You joined "${(joinedGame as CommunityGame).title}". Spot reserved!`,
+          linkScreen: 'match-detail',
+        });
+      }
+
       return {
         game: joinedGame,
         xpResult,
       };
     },
-    [userProfile.name, awardXp]
+    [userProfile.name, userProfile.avatarId, awardXp]
   );
 
   // 19. Leave Community Game
@@ -1382,6 +1564,15 @@ export function useSportSyncBridge() {
           return g;
         })
       );
+
+      if (updatedGame) {
+        addNotification({
+          type: 'match',
+          title: 'Left Match Roster',
+          desc: `You have left the roster. Your spot was reopened for other players.`,
+          linkScreen: 'social-home',
+        });
+      }
 
       return {
         game: updatedGame,
@@ -1414,6 +1605,14 @@ export function useSportSyncBridge() {
       };
 
       setBookings((prev) => [newBooking, ...prev]);
+
+      // Real-time notification for court reservation
+      addNotification({
+        type: 'booking',
+        title: 'Court Booking Confirmed',
+        desc: `${details.venue.name}: ${details.court} reserved for ${details.date} at ${details.slot}.`,
+        linkScreen: 'my-bookings',
+      });
 
       // Award XP (+60 XP base × 1.5x = +90 XP)
       awardXp(60, 'reserving a verified court', { applyStreakMultiplier: true });
@@ -1462,6 +1661,12 @@ export function useSportSyncBridge() {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
     );
+    addNotification({
+      type: 'booking',
+      title: 'Booking Cancelled',
+      desc: 'Your court reservation was cancelled. Full refund issued.',
+      linkScreen: 'my-bookings',
+    });
   }, []);
 
   // 18. Complete Onboarding

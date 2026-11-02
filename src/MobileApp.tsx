@@ -91,7 +91,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Selected Entities
   const [selectedMatch, setSelectedMatch] = useState<Match>(MATCHES[0]);
   const [selectedVenue, setSelectedVenue] = useState<Venue>(VENUES[0]);
-  const [selectedGame, setSelectedGame] = useState<CommunityGame | null>(COMMUNITY_GAMES[0]);
+  const [selectedGame, setSelectedGame] = useState<CommunityGame | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<Team>(TEAMS.northgate);
   const [activeBookingDetails, setActiveBookingDetails] = useState<{
     venue: Venue;
@@ -404,15 +404,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'match-detail': {
-        const isHost = bridge.isGameHost(selectedGame);
+        const activeTargetGame = selectedGame || bridge.games[0] || null;
+        const isHost = bridge.isGameHost(activeTargetGame);
         return (
           <MatchDetailScreen
-            game={selectedGame}
+            game={activeTargetGame}
             onBack={goBack}
             isHost={isHost}
             onEditGame={async (updatedData) => {
-              if (!selectedGame) return;
-              const res = await bridge.updateCommunityGame(selectedGame.id, updatedData);
+              if (!activeTargetGame) return;
+              const res = await bridge.updateCommunityGame(activeTargetGame.id, updatedData);
               if (res.success && res.game) {
                 setSelectedGame(res.game);
                 setToastMessage('Game details updated successfully!');
@@ -422,8 +423,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               }
             }}
             onDeleteGame={async () => {
-              if (!selectedGame) return;
-              const res = await bridge.deleteCommunityGame(selectedGame.id);
+              if (!activeTargetGame) return;
+              const res = await bridge.deleteCommunityGame(activeTargetGame.id);
               if (res.success) {
                 setSelectedGame(null);
                 setToastMessage('Game deleted successfully.');
@@ -434,14 +435,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               }
             }}
             onJoin={() => {
-              if (!selectedGame) return;
+              if (!activeTargetGame) return;
               if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', () => {
-                if (!selectedGame) return;
-                const result = bridge.joinCommunityGame(selectedGame.id);
+                const result = bridge.joinCommunityGame(activeTargetGame.id);
                 if (result.game) setSelectedGame(result.game);
                 setToastMessage(result.xpResult.message);
               })) return;
-              const result = bridge.joinCommunityGame(selectedGame.id);
+              const result = bridge.joinCommunityGame(activeTargetGame.id);
               if (result.game) setSelectedGame(result.game);
               setToastMessage(result.xpResult.message);
             }}
@@ -457,6 +457,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'post-match':
         return (
           <PostMatchScreen
+            game={selectedGame || bridge.games[0]}
             onBack={goBack}
             onDone={() => navigateTo('home')}
           />
@@ -609,7 +610,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'notifications':
-        return <NotificationsScreen onBack={goBack} />;
+        return (
+          <NotificationsScreen
+            onBack={goBack}
+            onNavigate={(screenId) => navigateTo(screenId as ScreenId)}
+          />
+        );
       case 'search':
         return <SearchScreen onBack={goBack} />;
       case 'settings':
