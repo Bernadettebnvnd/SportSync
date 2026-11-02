@@ -12,6 +12,10 @@ import {
   Calendar,
   Activity,
   Crown,
+  Edit2,
+  X,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
@@ -43,6 +47,12 @@ interface ProfileScreenProps {
   onOpenLeaderboard: () => void;
   onLogout?: () => void;
   onRequireAuth?: (title?: string, message?: string) => void;
+  onUpdatePreferences?: (prefs: {
+    city?: string;
+    preferredSports?: string[];
+    skillLevel?: string;
+  }) => Promise<void> | void;
+  onEditPreferences?: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
@@ -53,13 +63,124 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onOpenLeaderboard,
   onLogout,
   onRequireAuth,
+  onUpdatePreferences,
+  onEditPreferences,
 }) => {
   const isGuest = !user?.id || user?.isGuest || user?.name === 'Guest';
   const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
   const username = isGuest ? '@guest' : user?.username || '@player';
-  const userCity = user?.city || 'Metro Manila';
-  const userSports = user?.preferredSports || ['Badminton', 'Basketball', 'Volleyball'];
-  const userSkill = user?.skillLevel || 'Intermediate';
+
+  // Local state for instant optimistic updates
+  const [localCity, setLocalCity] = React.useState(user?.city || 'Naga City');
+  const [localSports, setLocalSports] = React.useState<string[]>(
+    user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
+  );
+  const [localSkill, setLocalSkill] = React.useState(user?.skillLevel || 'Intermediate');
+  const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
+  const [isSavingPrefs, setIsSavingPrefs] = React.useState(false);
+
+  // Edit modal draft state
+  const [draftCity, setDraftCity] = React.useState(user?.city || 'Naga City');
+  const [draftSports, setDraftSports] = React.useState<string[]>(
+    user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
+  );
+  const [draftSkill, setDraftSkill] = React.useState(user?.skillLevel || 'Intermediate');
+
+  React.useEffect(() => {
+    if (user?.city) {
+      setLocalCity(user.city);
+      setDraftCity(user.city);
+    }
+    if (user?.preferredSports && user.preferredSports.length > 0) {
+      setLocalSports(user.preferredSports);
+      setDraftSports(user.preferredSports);
+    }
+    if (user?.skillLevel) {
+      setLocalSkill(user.skillLevel);
+      setDraftSkill(user.skillLevel);
+    }
+  }, [user?.city, user?.preferredSports, user?.skillLevel]);
+
+  const userCity = localCity || 'Naga City';
+  const userSports = localSports.length > 0 ? localSports : ['Football'];
+  const userSkill = localSkill || 'Intermediate';
+
+  const AVAILABLE_SPORTS = [
+    'Football',
+    'Basketball',
+    'Badminton',
+    'Volleyball',
+    'Pickleball',
+    'Tennis',
+    'Billiards',
+    'Darts',
+    'Padel',
+  ];
+
+  const LOCATION_OPTIONS = [
+    'Naga City',
+    'Metro Manila',
+    'BGC, Taguig City',
+    'Makati City',
+    'Pasig & Ortigas',
+    'Quezon City',
+    'Mandaluyong',
+    'Cebu City',
+    'Davao City',
+  ];
+
+  const SKILL_LEVELS = ['Beginner', 'Casual', 'Intermediate', 'Advanced'];
+
+  const toggleDraftSport = (sport: string) => {
+    if (draftSports.includes(sport)) {
+      if (draftSports.length > 1) {
+        setDraftSports(draftSports.filter((s) => s !== sport));
+      }
+    } else {
+      setDraftSports([...draftSports, sport]);
+    }
+  };
+
+  const handleSavePreferences = async () => {
+    setIsSavingPrefs(true);
+    setLocalSports(draftSports);
+    setLocalCity(draftCity);
+    setLocalSkill(draftSkill);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sportsync_user_city', draftCity);
+      localStorage.setItem('sportsync_user_location', draftCity);
+      localStorage.setItem('sportsync_user_sports', JSON.stringify(draftSports.map((s) => s.toLowerCase())));
+      localStorage.setItem('sportsync_user_skill', draftSkill.toLowerCase());
+
+      const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
+      let parsed: any = {};
+      if (saved) {
+        try { parsed = JSON.parse(saved); } catch {}
+      }
+      const updatedProfile = {
+        ...parsed,
+        city: draftCity,
+        preferredSports: draftSports,
+        primarySport: (draftSports[0] || 'football').toLowerCase(),
+        skillLevel: draftSkill,
+        onboardingCompleted: true,
+      };
+      localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
+      localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
+    }
+
+    if (onUpdatePreferences) {
+      await onUpdatePreferences({
+        city: draftCity,
+        preferredSports: draftSports,
+        skillLevel: draftSkill,
+      });
+    }
+
+    setIsSavingPrefs(false);
+    setIsEditModalOpen(false);
+  };
 
   const uniqueHostedGames = React.useMemo(() => {
     const seen = new Set<string>();
@@ -184,9 +305,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             <span className="text-[10px] uppercase font-bold text-[#A5B0A6] tracking-wider block">
               Preferred Sports
             </span>
-            <span className="text-[10px] text-[#A5B0A6]">
-              {userSports.length} active
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[#A5B0A6]">
+                {userSports.length} active
+              </span>
+              <button
+                type="button"
+                onClick={() => onEditPreferences ? onEditPreferences() : setIsEditModalOpen(true)}
+                className="text-[11px] font-bold text-[#C8FF2E] hover:underline flex items-center gap-1 press-scale"
+              >
+                <Edit2 className="w-3 h-3" />
+                <span>Edit</span>
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             {userSports.map((sport) => (
@@ -235,9 +366,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         {/* 6. Location Preferences & Playing Area */}
         <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-1.5">
-          <span className="text-[10px] uppercase font-bold text-[#A5B0A6] tracking-wider block">
-            Home Court Region
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-[#A5B0A6] tracking-wider block">
+              Home Court Region
+            </span>
+            <button
+              type="button"
+              onClick={() => onEditPreferences ? onEditPreferences() : setIsEditModalOpen(true)}
+              className="text-[11px] font-bold text-[#C8FF2E] hover:underline flex items-center gap-1 press-scale"
+            >
+              <Edit2 className="w-3 h-3" />
+              <span>Change</span>
+            </button>
+          </div>
           <div className="flex items-center gap-2 text-xs font-semibold text-[#F4F7F0]">
             <MapPin className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
             <span>{userCity}</span>
@@ -262,6 +403,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
           <button
             type="button"
+            onClick={() => onEditPreferences ? onEditPreferences() : setIsEditModalOpen(true)}
+            className="w-full h-11 rounded-2xl bg-[#141A15] text-[#C8FF2E] hover:bg-[#1C241E] border border-[#C8FF2E]/30 flex items-center justify-center gap-2 text-xs font-bold transition-all press-scale shadow-[0_0_14px_rgba(200,255,46,0.12)]"
+          >
+            <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
+            <span>Edit Playing Preferences (Sports &amp; City)</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onOpenSettings}
             className="w-full h-11 rounded-2xl bg-[#141A15] text-[#F4F7F0] hover:bg-[#1C241E] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
           >
@@ -281,6 +431,142 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           )}
         </div>
       </div>
+
+      {/* Quick Edit Preferences Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-3xl bg-[#141A15] border border-white/10 p-5 space-y-4 max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
+                <h3 className="font-display font-black text-base text-[#F4F7F0]">
+                  Edit Playing Preferences
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 1. Preferred Sports */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                Preferred Sports ({draftSports.length} selected)
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {AVAILABLE_SPORTS.map((sport) => {
+                  const isSelected = draftSports.includes(sport);
+                  return (
+                    <button
+                      key={sport}
+                      type="button"
+                      onClick={() => toggleDraftSport(sport)}
+                      className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
+                        isSelected
+                          ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_10px_rgba(200,255,46,0.2)]'
+                          : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6] hover:text-[#F4F7F0]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <SportIcon sport={sport} size={14} color={isSelected ? '#C8FF2E' : '#A5B0A6'} />
+                        <span className="truncate">{sport}</span>
+                      </div>
+                      {isSelected && <Check className="w-3 h-3 text-[#C8FF2E] shrink-0 ml-1" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Home Court Region / City */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                Home Court Region
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {LOCATION_OPTIONS.map((loc) => {
+                  const isSelected = draftCity === loc;
+                  return (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setDraftCity(loc)}
+                      className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between text-left transition-all ${
+                        isSelected
+                          ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_10px_rgba(200,255,46,0.2)]'
+                          : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6] hover:text-[#F4F7F0]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <MapPin className="w-3 h-3 text-[#C8FF2E] shrink-0" />
+                        <span className="truncate">{loc}</span>
+                      </div>
+                      {isSelected && <Check className="w-3 h-3 text-[#C8FF2E] shrink-0 ml-1" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Skill Level */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                Skill Tier
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {SKILL_LEVELS.map((lvl) => {
+                  const isSelected = draftSkill === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setDraftSkill(lvl)}
+                      className={`p-2 rounded-xl border text-xs font-semibold text-center transition-all ${
+                        isSelected
+                          ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                          : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6]'
+                      }`}
+                    >
+                      {lvl}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="flex-1 h-10 rounded-xl bg-[#1C241E] text-xs font-semibold text-[#A5B0A6] hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPrefs}
+                onClick={handleSavePreferences}
+                className="flex-1 h-10 rounded-xl bg-[#C8FF2E] text-xs font-bold text-[#0B0F0C] hover:bg-[#d4ff52] transition-colors flex items-center justify-center gap-1.5 shadow-[0_0_14px_rgba(200,255,46,0.3)]"
+              >
+                {isSavingPrefs ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Preferences</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

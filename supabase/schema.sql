@@ -14,7 +14,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null;
 END $$;
 
-DO $$ BEGIN
+DO $ BEGIN
     CREATE TYPE sport_type AS ENUM (
         'badminton',
         'pickleball',
@@ -22,10 +22,23 @@ DO $$ BEGIN
         'padel',
         'tennis',
         'volleyball',
+        'football',
+        'billiards',
+        'darts',
+        'other',
         'table_tennis'
     );
 EXCEPTION WHEN duplicate_object THEN null;
-END $$;
+END $;
+
+-- Ensure enum contains newer sports on existing databases
+DO $ BEGIN
+    ALTER TYPE sport_type ADD VALUE IF NOT EXISTS 'football';
+    ALTER TYPE sport_type ADD VALUE IF NOT EXISTS 'billiards';
+    ALTER TYPE sport_type ADD VALUE IF NOT EXISTS 'darts';
+    ALTER TYPE sport_type ADD VALUE IF NOT EXISTS 'other';
+EXCEPTION WHEN OTHERS THEN null;
+END $;
 
 DO $$ BEGIN
     CREATE TYPE match_format AS ENUM ('singles', 'doubles', 'mixed_doubles');

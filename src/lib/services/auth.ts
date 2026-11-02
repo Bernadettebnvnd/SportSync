@@ -19,26 +19,35 @@ export async function getCurrentUser(): Promise<User | null> {
           .or(`auth_id.eq.${authUser.id},email.eq.${authUser.email}`)
           .maybeSingle();
 
+        const meta = authUser.user_metadata || {};
+        const effectiveSports = (meta.preferred_sports && meta.preferred_sports.length > 0)
+          ? meta.preferred_sports
+          : (profile?.preferred_sports || ['football']);
+        const effectiveCity = meta.city || profile?.city || 'Naga City';
+        const effectivePrimarySport = meta.primary_sport || profile?.primary_sport || (effectiveSports[0] || 'football');
+        const effectiveSkill = meta.skill_level || profile?.skill_level || 'intermediate';
+
         if (!profile) {
           return {
             id: authUser.id,
             auth_id: authUser.id,
             email: authUser.email || '',
-            full_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Player',
-            nickname: authUser.email?.split('@')[0] || 'Player',
-            role: (authUser.user_metadata?.role as UserRole) || 'player',
-            primary_sport: 'pickleball',
-            preferred_sports: ['pickleball', 'badminton'],
-            preferred_format: 'doubles',
-            skill_level: 'intermediate',
-            city: authUser.user_metadata?.city || '',
+            full_name: meta.full_name || authUser.email?.split('@')[0] || 'Player',
+            nickname: meta.nickname || authUser.email?.split('@')[0] || 'Player',
+            role: (meta.role as UserRole) || 'player',
+            primary_sport: effectivePrimarySport,
+            preferred_sports: effectiveSports,
+            preferred_format: meta.preferred_format || 'doubles',
+            skill_level: effectiveSkill,
+            city: effectiveCity,
+
             matches_played: 0,
             matches_won: 0,
             win_streak: 0,
             highest_streak: 0,
             email_verified: Boolean(authUser.email_confirmed_at),
-            onboarding_completed: Boolean(authUser.user_metadata?.onboarding_completed === true),
-            has_completed_onboarding: Boolean(authUser.user_metadata?.onboarding_completed === true),
+            onboarding_completed: Boolean(meta.onboarding_completed === true),
+            has_completed_onboarding: Boolean(meta.onboarding_completed === true),
             created_at: authUser.created_at,
           };
         }
@@ -47,14 +56,17 @@ export async function getCurrentUser(): Promise<User | null> {
           ...profile,
           id: profile.auth_id || authUser.id,
           auth_id: profile.auth_id || authUser.id,
-          primary_sport: profile.primary_sport || 'pickleball',
-          preferred_sports: profile.preferred_sports || ['pickleball', 'badminton'],
-          preferred_format: profile.preferred_format || 'doubles',
-          skill_level: profile.skill_level || 'intermediate',
-          city: profile.city || authUser.user_metadata?.city || '',
+          full_name: profile.full_name || meta.full_name || 'Player',
+          nickname: profile.nickname || meta.nickname || 'Player',
+          primary_sport: effectivePrimarySport,
+          preferred_sports: effectiveSports,
+          preferred_format: profile.preferred_format || meta.preferred_format || 'doubles',
+          skill_level: effectiveSkill,
+          city: effectiveCity,
+
           email_verified: Boolean(authUser.email_confirmed_at),
-          onboarding_completed: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
-          has_completed_onboarding: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
+          onboarding_completed: Boolean(profile.onboarding_completed ?? meta.onboarding_completed ?? false),
+          has_completed_onboarding: Boolean(profile.onboarding_completed ?? meta.onboarding_completed ?? false),
         };
       }
     } catch (err) {
@@ -160,14 +172,22 @@ export async function updatePlayerProfile(data: {
     try {
       const { data: authData } = await supabase.auth.getUser();
       if (authData?.user) {
-        await supabase.auth.updateUser({
-          data: {
-            full_name: data.fullName,
-            nickname: data.nickname,
-            city: data.city,
-            onboarding_completed: true,
-          },
-        }).catch(() => {});
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              full_name: data.fullName,
+              nickname: data.nickname,
+              avatar_url: data.avatarUrl,
+              primary_sport: data.primarySport,
+              preferred_sports: data.preferredSports,
+              preferred_format: data.preferredFormat,
+              skill_level: data.skillLevel,
+              city: data.city,
+              onboarding_completed: true,
+            },
+          });
+        } catch {}
+
 
         const { error } = await supabase
           .from('users')

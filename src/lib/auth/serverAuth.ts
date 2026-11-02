@@ -510,45 +510,58 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         .or(`auth_id.eq.${userId},id.eq.${userId}`)
         .maybeSingle();
 
+      const admin = createAdminClient();
+      let authMetadata: any = null;
+      if (admin) {
+        try {
+          const { data: authData } = await admin.auth.admin.getUserById(userId);
+          authMetadata = authData?.user?.user_metadata || null;
+        } catch {}
+      }
+
       if (supaUser) {
+        const primarySport = authMetadata?.primary_sport || supaUser.primary_sport || 'football';
+        const preferredSports = (authMetadata?.preferred_sports && authMetadata.preferred_sports.length > 0)
+          ? authMetadata.preferred_sports
+          : (supaUser.preferred_sports || ['football']);
+        const city = authMetadata?.city || supaUser.city || 'Naga City';
+        const skillLevel = authMetadata?.skill_level || supaUser.skill_level || 'intermediate';
+
         return {
           id: supaUser.auth_id || supaUser.id,
           email: supaUser.email,
-          full_name: supaUser.full_name || supaUser.email.split('@')[0],
-          nickname: supaUser.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
-          avatar_url: supaUser.avatar_url,
+          full_name: authMetadata?.full_name || supaUser.full_name || supaUser.email.split('@')[0],
+          nickname: authMetadata?.nickname || supaUser.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
+          avatar_url: authMetadata?.avatar_url || supaUser.avatar_url,
           role: supaUser.role as UserRole,
-          primary_sport: supaUser.primary_sport || 'pickleball',
-          preferred_sports: supaUser.preferred_sports || ['pickleball', 'badminton'],
-          preferred_format: supaUser.preferred_format || 'doubles',
-          skill_level: supaUser.skill_level || 'intermediate',
-          city: supaUser.city || '',
-          onboarding_completed: Boolean(supaUser.onboarding_completed ?? false),
+          primary_sport: primarySport,
+          preferred_sports: preferredSports,
+          preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || 'doubles',
+          skill_level: skillLevel,
+          city: city,
+          onboarding_completed: Boolean(authMetadata?.onboarding_completed ?? supaUser.onboarding_completed ?? false),
+
           created_at: supaUser.created_at,
         };
       }
 
-      const admin = createAdminClient();
-      if (admin) {
-        const { data: authData } = await admin.auth.admin.getUserById(userId);
-        if (authData?.user) {
-          const u = authData.user;
-          return {
-            id: u.id,
-            email: u.email || '',
-            full_name: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Player',
-            nickname: u.user_metadata?.full_name?.split(' ')[0] || u.email?.split('@')[0] || 'Player',
-            avatar_url: u.user_metadata?.avatar_url,
-            role: (u.user_metadata?.role as UserRole) || 'player',
-            primary_sport: 'pickleball',
-            preferred_sports: ['pickleball', 'badminton'],
-            preferred_format: 'doubles',
-            skill_level: 'intermediate',
-            city: u.user_metadata?.city || '',
-            onboarding_completed: Boolean(u.user_metadata?.onboarding_completed === true),
-            created_at: u.created_at,
-          };
-        }
+      if (authMetadata) {
+        return {
+          id: userId,
+          email: authMetadata.email || '',
+          full_name: authMetadata.full_name || 'Player',
+          nickname: authMetadata.nickname || authMetadata.full_name?.split(' ')[0] || 'Player',
+          avatar_url: authMetadata.avatar_url,
+          role: (authMetadata.role as UserRole) || 'player',
+          primary_sport: authMetadata.primary_sport || 'football',
+          preferred_sports: authMetadata.preferred_sports || ['football'],
+          preferred_format: authMetadata.preferred_format || 'doubles',
+          skill_level: authMetadata.skill_level || 'intermediate',
+          city: authMetadata.city || 'Naga City',
+          onboarding_completed: Boolean(authMetadata.onboarding_completed === true),
+          created_at: new Date().toISOString(),
+        };
+
       }
     }
   } catch (err) {
@@ -647,56 +660,95 @@ export async function serverUpdateUserProfile(
       if (resolvedCity !== undefined) updatePayload.city = resolvedCity;
       if (resolvedSkillLevel) updatePayload.skill_level = resolvedSkillLevel;
 
-      const { data: updatedUser, error } = await db
+      // 1. Update Supabase Auth user_metadata (JSONB, no enum restrictions)
+      const admin = createAdminClient();
+      if (admin) {
+        try {
+          await admin.auth.admin.updateUserById(userId, {
+            user_metadata: {
+              full_name: resolvedFullName,
+              nickname: resolvedNickname,
+              avatar_url: resolvedAvatarUrl,
+              primary_sport: resolvedPrimarySport,
+              preferred_sports: resolvedPreferredSports,
+              preferred_format: resolvedPreferredFormat,
+              city: resolvedCity,
+              skill_level: resolvedSkillLevel,
+              onboarding_completed: resolvedOnboardingCompleted,
+            },
+          });
+        } catch (metaErr) {
+          console.warn('[ServerAuth] user_metadata update notice:', metaErr);
+        }
+      }
+
+      // 2. Update public.users table
+      let { data: updatedUser, error } = await db
         .from('users')
         .update(updatePayload)
         .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
         .select('*')
         .maybeSingle();
 
-      if (!error && updatedUser) {
-        // Also update Supabase auth metadata if admin client is available
-        const admin = createAdminClient();
-        if (admin) {
-          await admin.auth.admin.updateUserById(userId, {
-            user_metadata: {
-              full_name: resolvedFullName,
-              city: resolvedCity,
-              onboarding_completed: resolvedOnboardingCompleted,
-            },
-          }).catch(() => {});
+      // If Postgres rejected update due to enum constraint (e.g. remote DB hasn't run ALTER TYPE for football)
+      if (error) {
+        console.warn('[ServerAuth] public.users direct update warning:', error.message);
+        const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
+        const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
+        const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));
+
+        const fallbackPayload = {
+          ...updatePayload,
+          primary_sport: safePrimary,
+          preferred_sports: safePreferred.length > 0 ? safePreferred : ['pickleball'],
+        };
+
+        const retryRes = await db
+          .from('users')
+          .update(fallbackPayload)
+          .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
+          .select('*')
+          .maybeSingle();
+
+        if (retryRes.data) {
+          updatedUser = retryRes.data;
         }
+      }
+
+      const finalUser = await serverGetUser(userId);
+      if (finalUser) {
+        return {
+          ...finalUser,
+          full_name: resolvedFullName || finalUser.full_name,
+          nickname: resolvedNickname || finalUser.nickname,
+          city: resolvedCity || finalUser.city,
+          primary_sport: resolvedPrimarySport || finalUser.primary_sport,
+          preferred_sports: resolvedPreferredSports || finalUser.preferred_sports,
+          skill_level: resolvedSkillLevel || finalUser.skill_level,
+          onboarding_completed: resolvedOnboardingCompleted,
+        };
+      }
+
+      if (updatedUser) {
 
         return {
           id: updatedUser.auth_id || updatedUser.id,
           email: updatedUser.email,
-          full_name: updatedUser.full_name || updatedUser.email.split('@')[0],
-          nickname: updatedUser.nickname || updatedUser.full_name?.split(' ')[0] || updatedUser.email.split('@')[0],
-          avatar_url: updatedUser.avatar_url,
+          full_name: resolvedFullName || updatedUser.full_name,
+          nickname: resolvedNickname || updatedUser.nickname,
+          avatar_url: resolvedAvatarUrl || updatedUser.avatar_url,
           role: updatedUser.role as UserRole,
-          primary_sport: updatedUser.primary_sport || 'pickleball',
-          preferred_sports: updatedUser.preferred_sports || ['pickleball', 'badminton'],
-          preferred_format: updatedUser.preferred_format || 'doubles',
-          skill_level: updatedUser.skill_level || 'intermediate',
-          city: updatedUser.city || resolvedCity || '',
+          primary_sport: resolvedPrimarySport || updatedUser.primary_sport,
+          preferred_sports: resolvedPreferredSports || updatedUser.preferred_sports,
+          preferred_format: resolvedPreferredFormat || updatedUser.preferred_format,
+          skill_level: resolvedSkillLevel || updatedUser.skill_level,
+          city: resolvedCity || updatedUser.city,
+
           onboarding_completed: Boolean(updatedUser.onboarding_completed),
           created_at: updatedUser.created_at,
         };
       }
 
-      // Also update Supabase auth metadata if admin client is available
-      const admin = createAdminClient();
-      if (admin) {
-        await admin.auth.admin.updateUserById(userId, {
-          user_metadata: {
-            full_name: resolvedFullName,
-            city: resolvedCity,
-            onboarding_completed: resolvedOnboardingCompleted,
-          },
-        }).catch(() => {});
-      }
-
-      return await serverGetUser(userId);
     }
   } catch (err) {
     console.warn('[ServerAuth] Supabase update warning:', err);

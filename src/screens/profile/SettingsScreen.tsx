@@ -8,6 +8,7 @@ interface SettingsScreenProps {
   isLightMode: boolean;
   onToggleTheme: () => void;
   onLogout?: () => void;
+  userCity?: string;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -15,6 +16,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   isLightMode,
   onToggleTheme,
   onLogout,
+  userCity,
 }) => {
   const [matchNotifications, setMatchNotifications] = useState(true);
   const [soundEffects, setSoundEffects] = useState(true);
@@ -109,7 +111,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
           <div className="flex items-center justify-between py-1 border-t border-white/5">
             <span className="text-[#A5B0A6]">Current Location City</span>
-            <span className="font-bold text-[#C8FF2E]">{APP_CONFIG.city}</span>
+            <span className="font-bold text-[#C8FF2E]">{userCity || APP_CONFIG.city}</span>
           </div>
         </div>
 

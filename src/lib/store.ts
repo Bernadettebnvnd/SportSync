@@ -33,6 +33,7 @@ import {
   deleteOpenPlaySession as deleteDbOpenPlaySession,
 } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
+import { getSportDisplayName } from './utils';
 
 export const GUEST_USER: User = {
   id: '',
@@ -122,6 +123,20 @@ async function initializeStore() {
       if (storedName) globalState.currentUser.full_name = storedName;
       const storedNickname = localStorage.getItem('matchi_user_nickname') || localStorage.getItem('sportsync_user_nickname');
       if (storedNickname) globalState.currentUser.nickname = storedNickname;
+
+      const storedCity = localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location');
+      if (storedCity) globalState.currentUser.city = storedCity;
+
+      const storedSportsRaw = localStorage.getItem('sportsync_user_sports');
+      if (storedSportsRaw) {
+        try {
+          const parsed = JSON.parse(storedSportsRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            globalState.currentUser.preferred_sports = parsed;
+            globalState.currentUser.primary_sport = parsed[0];
+          }
+        } catch {}
+      }
     }
 
     const user = await getCurrentUser();
@@ -132,12 +147,30 @@ async function initializeStore() {
       );
       user.onboarding_completed = isUserOnboarded;
       user.has_completed_onboarding = isUserOnboarded;
-      if (user.city) {
-        localStorage.setItem('sportsync_user_city', user.city);
-      } else {
-        const cachedCity = localStorage.getItem('sportsync_user_city');
-        if (cachedCity) user.city = cachedCity;
+
+      const storedCity = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location')) : null;
+      const storedSportsRaw = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_sports') : null;
+      let storedSports: SportType[] | null = null;
+      if (storedSportsRaw) {
+        try { storedSports = JSON.parse(storedSportsRaw); } catch {}
       }
+
+      const hasCustomStoredSports = Boolean(storedSports && storedSports.length > 0);
+      const isDefaultUserSports = !user.preferred_sports || (user.preferred_sports.length === 2 && user.preferred_sports.includes('pickleball') && user.preferred_sports.includes('badminton'));
+
+      const finalSports: SportType[] = (hasCustomStoredSports && isDefaultUserSports)
+        ? (storedSports! as SportType[])
+        : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (['football'] as SportType[]));
+
+      const finalCity = (user.city && user.city !== 'Metro Manila')
+        ? user.city
+        : (storedCity || user.city || 'Naga City');
+
+      user.city = finalCity;
+      user.preferred_sports = finalSports;
+      user.primary_sport = (finalSports[0] || user.primary_sport || 'football') as SportType;
+
+
       globalState.currentUser = user;
       if (typeof window !== 'undefined') {
         if (isUserOnboarded) {
@@ -417,8 +450,15 @@ export function useMatchiStore() {
       city?: string;
       preferredFormat?: MatchFormat;
     }) => {
-      const primarySport = data.preferredSports[0] || 'pickleball';
-      const cleanCity = data.city ? data.city.replace(/\s*\([^)]*\)/g, '').trim() : (globalState.currentUser.city || '');
+      const primarySport = data.preferredSports[0] || 'football';
+      const cleanCity = data.city
+        ? data.city.replace(/\s*\(Pilot Area\)/i, '').trim()
+        : (globalState.currentUser.city || 'Naga City');
+      const formattedSports = data.preferredSports.map(getSportDisplayName);
+      const formattedSkill = data.skillLevel
+        ? (data.skillLevel.charAt(0).toUpperCase() + data.skillLevel.slice(1))
+        : 'Intermediate';
+
 
       if (globalState.currentUser.auth_id || globalState.currentUser.id || globalState.currentUser.email) {
         await updatePlayerProfile({
@@ -436,27 +476,41 @@ export function useMatchiStore() {
         localStorage.removeItem('sportsync_pending_onboarding');
         localStorage.setItem('matchi_onboarding_completed', 'true');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
-        if (data.fullName) localStorage.setItem('matchi_user_name', data.fullName);
-        if (data.nickname) localStorage.setItem('matchi_user_nickname', data.nickname);
-        if (cleanCity) localStorage.setItem('sportsync_user_city', cleanCity);
-
-        // Update sportsync_user_profile in localStorage
-        const savedProfile = localStorage.getItem('sportsync_user_profile');
-        if (savedProfile) {
-          try {
-            const parsed = JSON.parse(savedProfile);
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                ...parsed,
-                name: data.fullName || parsed.name,
-                city: cleanCity || parsed.city || '',
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
-          } catch {}
+        if (data.fullName) {
+          localStorage.setItem('matchi_user_name', data.fullName);
+          localStorage.setItem('sportsync_user_name', data.fullName);
         }
+        if (data.nickname) {
+          localStorage.setItem('matchi_user_nickname', data.nickname);
+          localStorage.setItem('sportsync_user_nickname', data.nickname);
+        }
+        localStorage.setItem('sportsync_user_city', cleanCity);
+        localStorage.setItem('sportsync_user_location', cleanCity);
+        localStorage.setItem('sportsync_user_sports', JSON.stringify(data.preferredSports));
+        localStorage.setItem('sportsync_user_skill', data.skillLevel);
+        localStorage.setItem('sportsync_primary_sport', primarySport);
+
+        // Crucial: Update sportsync_user_profile for useSportSyncBridge & ProfileScreen
+        const existingProfileRaw = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
+        let existingProfile: any = {};
+        if (existingProfileRaw) {
+          try { existingProfile = JSON.parse(existingProfileRaw); } catch {}
+        }
+        const updatedProfile = {
+          ...existingProfile,
+          id: globalState.currentUser.id || existingProfile.id || 'usr_auth',
+          name: data.fullName || existingProfile.name || globalState.currentUser.full_name,
+          username: existingProfile.username || (data.nickname ? `@${data.nickname.toLowerCase()}` : undefined),
+          city: cleanCity,
+          primarySport,
+          preferredSports: formattedSports,
+          skillLevel: formattedSkill,
+          onboardingCompleted: true,
+          isGuest: false,
+        };
+        localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
+        localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
+
       }
 
       globalState = {
@@ -468,7 +522,8 @@ export function useMatchiStore() {
           primary_sport: primarySport,
           preferred_sports: data.preferredSports,
           skill_level: data.skillLevel,
-          city: cleanCity || globalState.currentUser.city,
+          city: cleanCity,
+
           preferred_format: data.preferredFormat || 'doubles',
           onboarding_completed: true,
           has_completed_onboarding: true,

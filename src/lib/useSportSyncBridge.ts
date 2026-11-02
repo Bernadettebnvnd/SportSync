@@ -320,9 +320,9 @@ export const INITIAL_USER_PROFILE = {
   levelTitle: 'Rookie Starter',
   xp: 0,
   xpNextLevel: 1000,
-  city: 'Metro Manila',
-  primarySport: 'pickleball',
-  preferredSports: ['Basketball', 'Pickleball', 'Badminton'],
+  city: 'Naga City',
+  primarySport: 'football',
+  preferredSports: ['Football', 'Basketball', 'Badminton'],
   skillLevel: 'Intermediate',
   onboardingCompleted: false,
   streakWeeks: 0,
@@ -361,8 +361,35 @@ export function useSportSyncBridge() {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
+          const storedCity = localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location');
+          const storedSportsRaw = localStorage.getItem('sportsync_user_sports');
+          let storedSports: string[] | null = null;
+          if (storedSportsRaw) {
+            try {
+              const sp = JSON.parse(storedSportsRaw);
+              if (Array.isArray(sp)) storedSports = sp.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
+            } catch {}
+          }
+          const hasStaleDefaultCity = parsed.city === 'Metro Manila' || !parsed.city;
+          const finalCity = (storedCity && storedCity !== 'Metro Manila')
+            ? storedCity
+            : (store.currentUser.city && store.currentUser.city !== 'Metro Manila' ? store.currentUser.city : (hasStaleDefaultCity ? (storedCity || store.currentUser.city || 'Naga City') : parsed.city));
+
+          const hasStaleDefaultSports = parsed.preferredSports?.length === 2 &&
+            parsed.preferredSports.includes('Pickleball') &&
+            parsed.preferredSports.includes('Badminton');
+
+          const finalSports = (storedSports && storedSports.length > 0 && hasStaleDefaultSports)
+            ? storedSports
+            : (store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0 && hasStaleDefaultSports
+              ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+              : (parsed.preferredSports || storedSports || ['Football']));
+
           return {
             ...parsed,
+            city: finalCity,
+            preferredSports: finalSports,
+            primarySport: finalSports[0]?.toLowerCase() || parsed.primarySport || 'football',
             onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
           };
         } catch {
@@ -1678,25 +1705,41 @@ export function useSportSyncBridge() {
       preferredArea?: string;
       avatarUrl?: string;
     }) => {
-      setUserProfile((prev: SportSyncUserProfile & { streakWeeks?: number; streakMultiplier?: number; predictionsCount?: number; predictionsWon?: number; city?: string }) => ({
+      const cleanCity = prefs.preferredArea
+        ? prefs.preferredArea.replace(/\s*\(Pilot Area\)/i, '').trim()
+        : 'Naga City';
+      const formattedSports = prefs.preferredSports.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
+      const formattedSkill = prefs.skillLevel
+        ? (prefs.skillLevel.charAt(0).toUpperCase() + prefs.skillLevel.slice(1))
+        : 'Intermediate';
+
+      setUserProfile((prev: any) => ({
         ...prev,
         name: prefs.fullName || prev.name,
-        city: prefs.preferredArea || prev.city || 'Metro Area',
+        city: cleanCity,
+        primarySport: (prefs.preferredSports[0] || 'football').toLowerCase(),
+        preferredSports: formattedSports,
+        skillLevel: formattedSkill,
         onboardingCompleted: true,
         isGuest: false,
       }));
 
       const mappedSports: DbSportType[] = prefs.preferredSports.map((s) => {
         const norm = s.toLowerCase();
-        if (norm.includes('tennis')) return 'tennis';
+        if (norm.includes('foot') || norm.includes('soccer')) return 'football';
         if (norm.includes('basket')) return 'basketball';
-        if (norm.includes('padel')) return 'padel';
         if (norm.includes('badminton')) return 'badminton';
         if (norm.includes('volley')) return 'volleyball';
-        return 'pickleball';
+        if (norm.includes('tennis') && !norm.includes('table')) return 'tennis';
+        if (norm.includes('table')) return 'table_tennis';
+        if (norm.includes('padel')) return 'padel';
+        if (norm.includes('billiards') || norm.includes('pool')) return 'billiards';
+        if (norm.includes('darts')) return 'darts';
+        if (norm.includes('pickle')) return 'pickleball';
+        return 'football';
       });
 
-      const primarySport: DbSportType = mappedSports[0] || 'pickleball';
+      const primarySport: DbSportType = mappedSports[0] || 'football';
       const skillLevelMap: Record<string, SkillLevel> = {
         beginner: 'beginner',
         casual: 'intermediate',

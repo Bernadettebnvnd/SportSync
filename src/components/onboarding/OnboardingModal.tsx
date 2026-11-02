@@ -122,13 +122,14 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
     try {
       const finalFullName = name.trim() || currentUser.full_name || 'Player';
       const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
+      const cleanCity = (selectedArea || 'Naga City').replace(/\s*\(Pilot Area\)/i, '').trim();
 
       await completePlayerOnboarding({
         fullName: finalFullName,
         nickname: finalNickname,
         preferredSports: selectedSports,
         preferredFormat,
-        city: selectedArea,
+        city: cleanCity,
         skillLevel,
       });
 

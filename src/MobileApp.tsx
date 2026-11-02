@@ -314,7 +314,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <PersonalizationScreen
             onBack={goBack}
-            initialValues={personalizationDraft}
+            initialValues={personalizationDraft || {
+              displayName: bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : '',
+              selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
+              preferredArea: bridge.userProfile.city || 'Naga City',
+              skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,
+            }}
             onDraftChange={setPersonalizationDraft}
             onComplete={async (prefs) => {
               if (prefs) {
@@ -661,6 +666,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onRequireAuth={(title, message) => {
               requireAuth(title || 'Join SportSync', message || 'Create an account or sign in to save your progress.');
             }}
+            onUpdatePreferences={async (prefs) => {
+              await bridge.completeOnboarding({
+                fullName: bridge.userProfile.name,
+                preferredSports: prefs.preferredSports || bridge.userProfile.preferredSports,
+                skillLevel: prefs.skillLevel || bridge.userProfile.skillLevel,
+                preferredArea: prefs.city || bridge.userProfile.city,
+              });
+              setToastMessage('Preferences updated successfully!');
+            }}
+            onEditPreferences={() => navigateTo('personalization')}
           />
         );
       case 'leaderboard':
@@ -690,6 +705,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             isLightMode={isLightMode}
             onToggleTheme={toggleTheme}
             onLogout={handleLogout}
+            userCity={bridge.userProfile.city}
           />
         );
       case 'system-states':
