@@ -31,7 +31,7 @@ export async function getCurrentUser(): Promise<User | null> {
             preferred_sports: ['pickleball', 'badminton'],
             preferred_format: 'doubles',
             skill_level: 'intermediate',
-            city: 'Metro Manila',
+            city: authUser.user_metadata?.city || '',
             matches_played: 0,
             matches_won: 0,
             win_streak: 0,
@@ -51,7 +51,7 @@ export async function getCurrentUser(): Promise<User | null> {
           preferred_sports: profile.preferred_sports || ['pickleball', 'badminton'],
           preferred_format: profile.preferred_format || 'doubles',
           skill_level: profile.skill_level || 'intermediate',
-          city: profile.city || 'Metro Manila',
+          city: profile.city || authUser.user_metadata?.city || '',
           email_verified: Boolean(authUser.email_confirmed_at),
           onboarding_completed: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
           has_completed_onboarding: Boolean(profile.onboarding_completed ?? authUser.user_metadata?.onboarding_completed ?? false),
@@ -81,7 +81,7 @@ export async function getCurrentUser(): Promise<User | null> {
             preferred_sports: json.user.preferred_sports || ['pickleball', 'badminton'],
             preferred_format: json.user.preferred_format || 'doubles',
             skill_level: json.user.skill_level || 'intermediate',
-            city: json.user.city || 'Metro Manila',
+            city: json.user.city || '',
             matches_played: 0,
             matches_won: 0,
             win_streak: 0,
@@ -160,6 +160,15 @@ export async function updatePlayerProfile(data: {
     try {
       const { data: authData } = await supabase.auth.getUser();
       if (authData?.user) {
+        await supabase.auth.updateUser({
+          data: {
+            full_name: data.fullName,
+            nickname: data.nickname,
+            city: data.city,
+            onboarding_completed: true,
+          },
+        }).catch(() => {});
+
         const { error } = await supabase
           .from('users')
           .update({
@@ -182,6 +191,27 @@ export async function updatePlayerProfile(data: {
       }
     } catch (err) {
       console.warn('Direct client profile update notice:', err);
+    }
+  }
+
+  // Always mirror updated city to local cache for instant persistence across reloads
+  if (typeof window !== 'undefined') {
+    if (data.city) {
+      localStorage.setItem('sportsync_user_city', data.city);
+    }
+    const saved = localStorage.getItem('sportsync_user_profile');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        localStorage.setItem(
+          'sportsync_user_profile',
+          JSON.stringify({
+            ...parsed,
+            name: data.fullName || parsed.name,
+            city: data.city || parsed.city || '',
+          })
+        );
+      } catch {}
     }
   }
 

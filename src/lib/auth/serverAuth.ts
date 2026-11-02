@@ -129,9 +129,11 @@ export async function serverRegister(data: {
   password: string;
   fullName: string;
   role?: string;
+  city?: string;
 }): Promise<{ user: SanitizedUser; token: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
+  const registrationCity = data.city ? data.city.trim() : '';
 
   // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
   if (!isSupabaseConfigured) {
@@ -151,7 +153,7 @@ export async function serverRegister(data: {
       preferred_sports: ['pickleball', 'badminton'],
       preferred_format: 'doubles',
       skill_level: 'intermediate',
-      city: 'Metro Manila',
+      city: registrationCity,
       onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
@@ -186,6 +188,7 @@ export async function serverRegister(data: {
       user_metadata: {
         full_name: data.fullName.trim(),
         role: assignedRole,
+        city: registrationCity || undefined,
         onboarding_completed: false,
       },
     });
@@ -209,6 +212,7 @@ export async function serverRegister(data: {
         data: {
           full_name: data.fullName.trim(),
           role: assignedRole,
+          city: registrationCity || undefined,
           onboarding_completed: false,
         },
       },
@@ -262,7 +266,7 @@ export async function serverRegister(data: {
           preferred_sports: ['pickleball', 'badminton'],
           preferred_format: 'doubles',
           skill_level: 'intermediate',
-          city: 'Metro Manila',
+          city: registrationCity || null,
         });
       }
     } catch (dbErr) {
@@ -280,7 +284,7 @@ export async function serverRegister(data: {
     preferred_sports: ['pickleball', 'badminton'],
     preferred_format: 'doubles',
     skill_level: 'intermediate',
-    city: 'Metro Manila',
+    city: registrationCity,
     onboarding_completed: true,
     created_at: supaCreatedAt,
   };
@@ -450,7 +454,7 @@ export async function serverLogin(data: {
           preferred_sports: ['pickleball', 'badminton'],
           preferred_format: 'doubles',
           skill_level: 'intermediate',
-          city: 'Metro Manila',
+          city: userMeta?.city || '',
           onboarding_completed: true,
         };
         await dbClient.from('users').insert(newProfile);
@@ -472,7 +476,7 @@ export async function serverLogin(data: {
     preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
     preferred_format: dbProfile?.preferred_format || 'doubles',
     skill_level: dbProfile?.skill_level || 'intermediate',
-    city: dbProfile?.city || 'Metro Manila',
+    city: dbProfile?.city || userMeta?.city || '',
     onboarding_completed: true,
     created_at: supaData.user.created_at,
   };
@@ -518,7 +522,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           preferred_sports: supaUser.preferred_sports || ['pickleball', 'badminton'],
           preferred_format: supaUser.preferred_format || 'doubles',
           skill_level: supaUser.skill_level || 'intermediate',
-          city: supaUser.city || 'Metro Manila',
+          city: supaUser.city || '',
           onboarding_completed: Boolean(supaUser.onboarding_completed ?? false),
           created_at: supaUser.created_at,
         };
@@ -540,7 +544,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
             preferred_sports: ['pickleball', 'badminton'],
             preferred_format: 'doubles',
             skill_level: 'intermediate',
-            city: 'Metro Manila',
+            city: u.user_metadata?.city || '',
             onboarding_completed: Boolean(u.user_metadata?.onboarding_completed === true),
             created_at: u.created_at,
           };
@@ -640,7 +644,7 @@ export async function serverUpdateUserProfile(
       if (resolvedPrimarySport) updatePayload.primary_sport = resolvedPrimarySport;
       if (resolvedPreferredSports) updatePayload.preferred_sports = resolvedPreferredSports;
       if (resolvedPreferredFormat) updatePayload.preferred_format = resolvedPreferredFormat;
-      if (resolvedCity) updatePayload.city = resolvedCity;
+      if (resolvedCity !== undefined) updatePayload.city = resolvedCity;
       if (resolvedSkillLevel) updatePayload.skill_level = resolvedSkillLevel;
 
       const { data: updatedUser, error } = await db
@@ -651,6 +655,18 @@ export async function serverUpdateUserProfile(
         .maybeSingle();
 
       if (!error && updatedUser) {
+        // Also update Supabase auth metadata if admin client is available
+        const admin = createAdminClient();
+        if (admin) {
+          await admin.auth.admin.updateUserById(userId, {
+            user_metadata: {
+              full_name: resolvedFullName,
+              city: resolvedCity,
+              onboarding_completed: resolvedOnboardingCompleted,
+            },
+          }).catch(() => {});
+        }
+
         return {
           id: updatedUser.auth_id || updatedUser.id,
           email: updatedUser.email,
@@ -662,7 +678,7 @@ export async function serverUpdateUserProfile(
           preferred_sports: updatedUser.preferred_sports || ['pickleball', 'badminton'],
           preferred_format: updatedUser.preferred_format || 'doubles',
           skill_level: updatedUser.skill_level || 'intermediate',
-          city: updatedUser.city || 'Metro Manila',
+          city: updatedUser.city || resolvedCity || '',
           onboarding_completed: Boolean(updatedUser.onboarding_completed),
           created_at: updatedUser.created_at,
         };
@@ -674,9 +690,10 @@ export async function serverUpdateUserProfile(
         await admin.auth.admin.updateUserById(userId, {
           user_metadata: {
             full_name: resolvedFullName,
+            city: resolvedCity,
             onboarding_completed: resolvedOnboardingCompleted,
           },
-        });
+        }).catch(() => {});
       }
 
       return await serverGetUser(userId);

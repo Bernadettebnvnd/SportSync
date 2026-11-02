@@ -4,7 +4,7 @@ import { serverRegister } from '@/lib/auth/serverAuth';
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { email, password, fullName, role } = body;
+    const { email, password, fullName, role, city } = body;
 
     // 1. Validation
     if (!email || typeof email !== 'string' || !email.trim()) {
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       password: password.trim(),
       fullName: (fullName || '').trim(),
       role: role || 'player',
+      city: typeof city === 'string' ? city.trim() : undefined,
     });
 
     const response = NextResponse.json(
