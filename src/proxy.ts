@@ -5,7 +5,7 @@ import type { NextRequest } from 'next/server';
  * Route protection middleware for SportSync.
  * Prevents unauthorized users from accessing facility management and ops routes.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protect /organizer routes
