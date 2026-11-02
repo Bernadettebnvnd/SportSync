@@ -113,6 +113,12 @@ export function BookingModal({
       return;
     }
 
+    const todayISO = new Date().toISOString().split('T')[0];
+    if (bookingDate < todayISO) {
+      setErrorMsg('Please select a valid date (today or in the future).');
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg('');
 
@@ -378,6 +384,7 @@ export function BookingModal({
                       <label className="text-[10px] font-bold text-[#65756B] block mb-1">Booking Date</label>
                       <input
                         type="date"
+                        min={new Date().toISOString().split('T')[0]}
                         value={bookingDate}
                         onChange={(e) => setBookingDate(e.target.value)}
                         className="w-full text-xs font-bold text-[#1A241E] p-1.5 rounded-xl bg-white border border-[#E8E5DF]"

@@ -194,6 +194,8 @@ interface CreateMatchWizardScreenProps {
     sport: WizardSport;
     title: string;
     date: string;
+    time?: string;
+    formattedDate?: string;
     locationName: string;
     playersCount: number;
     skillLevel: 'Casual' | 'Competitive';
@@ -210,13 +212,26 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 }) => {
   const [step, setStep] = useState(1); // 1 to 4, then 5 = Success
 
+  // Date & Time helpers for valid scheduling
+  const now = new Date();
+  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const tomorrowObj = new Date(now);
+  tomorrowObj.setDate(now.getDate() + 1);
+  const tomorrowISO = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+
+  const currentHour = now.getHours();
+  const currentMin = now.getMinutes();
+  const defaultTodayHour = Math.min(22, Math.max(currentHour + 2, 19));
+  const defaultTodayTime = `${String(defaultTodayHour).padStart(2, '0')}:00`;
+  const isTooLateToday = currentHour >= 21;
+
   // Form states
   const [sport, setSport] = useState<WizardSport>('Basketball');
   const [title, setTitle] = useState('5v5 Sunset Pickup Game');
-  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>('today');
-  const [date, setDate] = useState('Today (19:30)');
-  const [customDate, setCustomDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [customTime, setCustomTime] = useState('18:00');
+  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(isTooLateToday ? 'tomorrow' : 'today');
+  const [date, setDate] = useState(() => isTooLateToday ? `Tomorrow (18:00)` : `Today (${defaultTodayTime})`);
+  const [customDate, setCustomDate] = useState(() => isTooLateToday ? tomorrowISO : todayISO);
+  const [customTime, setCustomTime] = useState(() => isTooLateToday ? '18:00' : defaultTodayTime);
 
   // Location states in Naga City
   const [locationName, setLocationName] = useState('Jesse M. Robredo Coliseum, Triangulo, Naga City');
@@ -442,9 +457,10 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
   // Handle custom date/time change
   const handleCustomScheduleChange = (dStr: string, tStr: string) => {
-    setCustomDate(dStr);
+    const validDate = dStr < todayISO ? todayISO : dStr;
+    setCustomDate(validDate);
     setCustomTime(tStr);
-    setDate(`${dStr} (${tStr})`);
+    setDate(`${validDate} (${tStr})`);
   };
 
   const triggerConfetti = () => {
@@ -470,6 +486,23 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       if (!locationName.trim()) {
         setError('Please specify or pinpoint a pitch or court venue in Naga.');
         return false;
+      }
+      if (scheduleMode === 'today' && isTooLateToday) {
+        setError('It is too late to schedule a game for today. Please choose tomorrow or a custom date.');
+        return false;
+      }
+      if (scheduleMode === 'custom') {
+        if (!customDate || customDate < todayISO) {
+          setError('Please select a valid upcoming date.');
+          return false;
+        }
+        if (customDate === todayISO) {
+          const [th, tm] = customTime.split(':').map(Number);
+          if (th < currentHour || (th === currentHour && tm <= currentMin)) {
+            setError("Please select a future kickoff time for today's match.");
+            return false;
+          }
+        }
       }
     }
     if (currentStep === 3) {
@@ -501,10 +534,24 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     setIsSubmitting(true);
 
     try {
+      const matchTime = scheduleMode === 'today'
+        ? defaultTodayTime
+        : scheduleMode === 'tomorrow'
+        ? '18:00'
+        : customTime;
+
+      const formattedSchedule = scheduleMode === 'today'
+        ? `Today (${defaultTodayTime})`
+        : scheduleMode === 'tomorrow'
+        ? `Tomorrow (18:00)`
+        : `${customDate} (${customTime})`;
+
       await onMatchCreated({
         sport,
         title: title.trim(),
-        date,
+        date: formattedSchedule,
+        time: matchTime,
+        formattedDate: formattedSchedule,
         locationName: locationName.trim(),
         playersCount,
         skillLevel,
@@ -704,18 +751,21 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
+                  disabled={isTooLateToday}
                   onClick={() => {
                     setScheduleMode('today');
-                    setDate('Today (19:30)');
+                    setDate(`Today (${defaultTodayTime})`);
                   }}
                   className={`h-11 rounded-2xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all press-scale ${
-                    scheduleMode === 'today'
+                    isTooLateToday
+                      ? 'bg-[#141A15] border-white/5 text-[#6F7B71] opacity-40 cursor-not-allowed'
+                      : scheduleMode === 'today'
                       ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
                       : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
                   }`}
                 >
                   <Calendar className="w-3.5 h-3.5" />
-                  <span>Today 19:30</span>
+                  <span>Today {defaultTodayTime}</span>
                 </button>
                 <button
                   type="button"
@@ -756,6 +806,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                     <label className="text-[10px] text-[#A5B0A6] block mb-1">Pick Date</label>
                     <input
                       type="date"
+                      min={todayISO}
                       value={customDate}
                       onChange={(e) => handleCustomScheduleChange(e.target.value, customTime)}
                       className="w-full h-10 px-2.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
