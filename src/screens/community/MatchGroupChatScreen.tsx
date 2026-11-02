@@ -38,7 +38,9 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({ onBa
     if (!inputText.trim()) return;
 
     const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `msg_${crypto.randomUUID()}`
+        : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       senderName: 'Alex Rivera',
       avatarId: 'alex',
       text: inputText,

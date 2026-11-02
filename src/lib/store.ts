@@ -24,7 +24,14 @@ import {
 import { supabase, isSupabaseConfigured } from './supabase';
 import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile, saveLocalStoredVenues } from './services/venues';
 import { getPlayerBookings, getFacilityBookings, updateBookingStatus as updateDbBookingStatus } from './services/bookings';
-import { getOpenPlaySessions, getSessionQueues, joinSessionQueue, createOpenPlaySession as createDbOpenPlaySession } from './services/sessions';
+import {
+  getOpenPlaySessions,
+  getSessionQueues,
+  joinSessionQueue,
+  createOpenPlaySession as createDbOpenPlaySession,
+  updateOpenPlaySession as updateDbOpenPlaySession,
+  deleteOpenPlaySession as deleteDbOpenPlaySession,
+} from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
 
 export const GUEST_USER: User = {
@@ -147,9 +154,14 @@ async function initializeStore() {
     globalState.venues = venues;
     globalState.courts = venues.flatMap((v) => v.courts || []);
 
-    // 3. Fetch real sessions (gracefully backed by cache)
+    // 3. Fetch real sessions (gracefully backed by cache & deduplicated)
     const sessions = await getOpenPlaySessions();
-    globalState.sessions = sessions;
+    const seenSessionIds = new Set<string>();
+    globalState.sessions = sessions.filter((s) => {
+      if (!s || !s.id || seenSessionIds.has(s.id)) return false;
+      seenSessionIds.add(s.id);
+      return true;
+    });
 
     // 4. If authenticated, fetch real bookings
     if (user && user.auth_id) {
@@ -543,7 +555,9 @@ export function useMatchiStore() {
         }
       } catch (err) {
         console.warn('Owner onboarding backend creation warning, using local state fallback:', err);
-        const fallbackVenueId = `venue_${Date.now()}`;
+        const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? `venue_${crypto.randomUUID()}`
+          : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const fallbackVenue: Venue = {
           id: fallbackVenueId,
           owner_id: globalState.currentUser.id || 'local_owner',
@@ -722,12 +736,61 @@ export function useMatchiStore() {
         });
 
         if (newSession) {
-          globalState.sessions = [newSession, ...globalState.sessions];
+          const normTitle = newSession.title.trim().toLowerCase();
+          globalState.sessions = [
+            newSession,
+            ...globalState.sessions.filter(
+              (s) => s.id !== newSession.id && s.title.trim().toLowerCase() !== normTitle
+            ),
+          ];
           notify();
           return newSession;
         }
       } catch (err) {
         console.error('Failed to create open play session:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  // Open Play Session Update
+  const updateOpenPlaySession = useCallback(
+    async (sessionId: string, updates: Partial<Session>) => {
+      try {
+        const updated = await updateDbOpenPlaySession(sessionId, updates);
+        globalState.sessions = globalState.sessions.map((s) =>
+          s.id === sessionId ? { ...s, ...updates } : s
+        );
+        notify();
+        return updated;
+      } catch (err) {
+        console.error('Failed to update open play session:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  // Open Play Session Deletion
+  const deleteOpenPlaySession = useCallback(
+    async (sessionId: string, title?: string) => {
+      try {
+        await deleteDbOpenPlaySession(sessionId, title);
+        const normTitle = title?.trim().toLowerCase();
+        globalState = {
+          ...globalState,
+          sessions: globalState.sessions.filter(
+            (s) => s.id !== sessionId && (!normTitle || s.title.trim().toLowerCase() !== normTitle)
+          ),
+          queues: globalState.queues.filter((q) => q.session_id !== sessionId),
+          matches: globalState.matches.filter((m) => m.session_id !== sessionId),
+          payments: globalState.payments.filter((p) => p.session_id !== sessionId),
+        };
+        notify();
+        return true;
+      } catch (err) {
+        console.error('Failed to delete open play session:', err);
         throw err;
       }
     },
@@ -817,6 +880,8 @@ export function useMatchiStore() {
     createBooking,
     updateBookingStatus,
     createOpenPlaySession,
+    updateOpenPlaySession,
+    deleteOpenPlaySession,
     joinQueue,
     fetchSessionQueues,
     assignQueueToCourt,
@@ -874,7 +939,7 @@ export function useMatchiStore() {
     leaveQueue: async (queueId: string) => {
       if (isSupabaseConfigured && supabase) {
         try {
-          await supabase.from('session_queues').delete().eq('id', queueId);
+          await supabase.from('queues').delete().eq('id', queueId);
         } catch (err) {
           console.error('Error leaving queue:', err);
         }

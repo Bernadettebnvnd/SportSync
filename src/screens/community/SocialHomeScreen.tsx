@@ -13,6 +13,8 @@ import {
   MapPin,
   Shield,
   ArrowRight,
+  Crown,
+  Edit3,
 } from 'lucide-react';
 import { StadiumScene } from '../../illustrations/Scenes';
 import { MatchCard } from '../../design-system/components/MatchCard';
@@ -55,15 +57,22 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
   const [selectedSport, setSelectedSport] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter games by tab and sport
+  // Filter games by tab and sport (strictly deduplicated by game.id)
   const filteredGames = useMemo(() => {
+    const seenIds = new Set<string>();
     return games.filter((game) => {
+      if (!game || !game.id || seenIds.has(game.id)) return false;
+
       // Tab filter
       if (activeTab === 'my_games') {
         const isJoined = game.members.some((m) => m.name === userName);
         if (!isJoined) return false;
       } else if (activeTab === 'hosting') {
-        if (game.hostName !== userName) return false;
+        const isHost = Boolean(
+          (game.hostId && user?.id && game.hostId === user.id) ||
+          (game.hostName && userName && game.hostName.trim().toLowerCase() === userName.trim().toLowerCase())
+        );
+        if (!isHost) return false;
       }
 
       // Sport filter
@@ -82,9 +91,10 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
         if (!matchesTitle && !matchesLoc && !matchesSport) return false;
       }
 
+      seenIds.add(game.id);
       return true;
     });
-  }, [games, activeTab, selectedSport, searchQuery, userName]);
+  }, [games, activeTab, selectedSport, searchQuery, userName, user?.id]);
 
   const handleCreateClick = () => {
     if (effectiveIsGuest && onRequireAuth) {
@@ -258,11 +268,28 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           {filteredGames.length > 0 ? (
             <div className="space-y-2.5">
               {filteredGames.map((game) => (
-                <MatchCard
-                  key={game.id}
-                  game={game}
-                  onClick={() => onSelectGame(game)}
-                />
+                <div key={game.id} className="space-y-1">
+                  <MatchCard
+                    game={game}
+                    onClick={() => onSelectGame(game)}
+                  />
+                  {activeTab === 'hosting' && (
+                    <div className="flex items-center justify-between px-3.5 py-1.5 rounded-xl bg-[#141A15] border border-[#C8FF2E]/20 text-[11px]">
+                      <span className="text-[#C8FF2E] font-bold flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5" />
+                        <span>Host Controls</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onSelectGame(game)}
+                        className="text-[#C8FF2E] hover:underline font-bold flex items-center gap-1 transition-all"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>Edit / Delete Game &rarr;</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           ) : (

@@ -164,6 +164,9 @@ export interface CommunityGame {
   notes: string;
   isPublic: boolean;
   members: Array<{ name: string; avatar: AvatarId }>;
+  hostId?: string;
+  coordinates?: [number, number];
+  sessionId?: string;
 }
 
 export interface Friend {

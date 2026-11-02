@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
@@ -113,6 +113,17 @@ export default function OrganizerDashboard() {
        (storedVenueId ? venues.find((v) => v.id === storedVenueId) : null) ||
        (currentUser.email ? venues.find((v) => (v as any).owner_email === currentUser.email) : null))
     : null;
+
+  const facilitySessions = useMemo(() => {
+    if (!primaryVenue) return [];
+    const seen = new Set<string>();
+    return sessions.filter((s) => {
+      if (!s || !s.id || s.venue_id !== primaryVenue.id) return false;
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [sessions, primaryVenue]);
 
   // Auto-prompt facility owner to configure venue before accessing dashboard
   React.useEffect(() => {
@@ -1402,13 +1413,13 @@ export default function OrganizerDashboard() {
           {/* Hosted Games List */}
           <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-4">
             <h3 className="font-bold text-sm text-[#1A241E]">Current Facility Sessions</h3>
-            {sessions.filter((s) => s.venue_id === primaryVenue.id).length === 0 ? (
+            {facilitySessions.length === 0 ? (
               <div className="py-8 text-center text-xs text-[#65756B]">
                 No upcoming facility-hosted games right now. Click &quot;Create Hosted Game&quot; to recruit players.
               </div>
             ) : (
               <div className="space-y-3">
-                {sessions.filter((s) => s.venue_id === primaryVenue.id).map((session) => (
+                {facilitySessions.map((session) => (
                   <div
                     key={session.id}
                     className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-between text-xs"

@@ -91,7 +91,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Selected Entities
   const [selectedMatch, setSelectedMatch] = useState<Match>(MATCHES[0]);
   const [selectedVenue, setSelectedVenue] = useState<Venue>(VENUES[0]);
-  const [selectedGame, setSelectedGame] = useState<CommunityGame>(COMMUNITY_GAMES[0]);
+  const [selectedGame, setSelectedGame] = useState<CommunityGame | null>(COMMUNITY_GAMES[0]);
   const [selectedTeam, setSelectedTeam] = useState<Team>(TEAMS.northgate);
   const [activeBookingDetails, setActiveBookingDetails] = useState<{
     venue: Venue;
@@ -403,13 +403,40 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
-      case 'match-detail':
+      case 'match-detail': {
+        const isHost = bridge.isGameHost(selectedGame);
         return (
           <MatchDetailScreen
             game={selectedGame}
             onBack={goBack}
+            isHost={isHost}
+            onEditGame={async (updatedData) => {
+              if (!selectedGame) return;
+              const res = await bridge.updateCommunityGame(selectedGame.id, updatedData);
+              if (res.success && res.game) {
+                setSelectedGame(res.game);
+                setToastMessage('Game details updated successfully!');
+              } else {
+                setToastMessage(res.error || 'Failed to update game details.');
+                throw new Error(res.error || 'Failed to update game details.');
+              }
+            }}
+            onDeleteGame={async () => {
+              if (!selectedGame) return;
+              const res = await bridge.deleteCommunityGame(selectedGame.id);
+              if (res.success) {
+                setSelectedGame(null);
+                setToastMessage('Game deleted successfully.');
+                goBack();
+              } else {
+                setToastMessage(res.error || 'Failed to delete game.');
+                throw new Error(res.error || 'Failed to delete game.');
+              }
+            }}
             onJoin={() => {
+              if (!selectedGame) return;
               if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', () => {
+                if (!selectedGame) return;
                 const result = bridge.joinCommunityGame(selectedGame.id);
                 if (result.game) setSelectedGame(result.game);
                 setToastMessage(result.xpResult.message);
@@ -424,6 +451,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
+      }
       case 'match-chat':
         return <MatchGroupChatScreen onBack={goBack} />;
       case 'post-match':
@@ -553,6 +581,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <ProfileScreen
             user={bridge.userProfile}
+            hostedGames={bridge.games.filter((g) => bridge.isGameHost(g))}
+            onSelectGame={(g) => {
+              setSelectedGame(g);
+              navigateTo('match-detail');
+            }}
             onOpenSettings={() => {
               if (!requireAuth('Account Settings', 'Sign in to manage your account settings.')) return;
               navigateTo('settings');

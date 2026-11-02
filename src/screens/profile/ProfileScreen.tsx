@@ -11,11 +11,13 @@ import {
   UserCheck,
   Calendar,
   Activity,
+  Crown,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
+import { CommunityGame } from '../../mock/types';
 
 interface ProfileScreenProps {
   user?: {
@@ -35,6 +37,8 @@ interface ProfileScreenProps {
     skillLevel?: string;
     isGuest?: boolean;
   };
+  hostedGames?: CommunityGame[];
+  onSelectGame?: (game: CommunityGame) => void;
   onOpenSettings: () => void;
   onOpenLeaderboard: () => void;
   onLogout?: () => void;
@@ -43,6 +47,8 @@ interface ProfileScreenProps {
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   user,
+  hostedGames = [],
+  onSelectGame,
   onOpenSettings,
   onOpenLeaderboard,
   onLogout,
@@ -54,6 +60,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const userCity = user?.city || 'Metro Manila';
   const userSports = user?.preferredSports || ['Badminton', 'Basketball', 'Volleyball'];
   const userSkill = user?.skillLevel || 'Intermediate';
+
+  const uniqueHostedGames = React.useMemo(() => {
+    const seen = new Set<string>();
+    return hostedGames.filter((hg) => {
+      if (!hg || !hg.id || seen.has(hg.id)) return false;
+      seen.add(hg.id);
+      return true;
+    });
+  }, [hostedGames]);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-32 select-none">
@@ -186,7 +201,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
         </div>
 
-        {/* 5. Location Preferences & Playing Area */}
+        {/* 5. Hosted Games (Host Management Overview) */}
+        {uniqueHostedGames.length > 0 && (
+          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-[#C8FF2E]/30 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-bold text-[#C8FF2E] tracking-wider flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5" />
+                <span>Hosted Games ({uniqueHostedGames.length})</span>
+              </span>
+              <span className="text-[10px] text-[#A5B0A6]">Host Management</span>
+            </div>
+            <div className="space-y-2">
+              {uniqueHostedGames.map((hg) => (
+                <div
+                  key={hg.id}
+                  onClick={() => onSelectGame?.(hg)}
+                  className="p-2.5 rounded-xl bg-[#1C241E] hover:bg-[#253028] border border-white/5 flex items-center justify-between cursor-pointer transition-all press-scale"
+                >
+                  <div className="min-w-0 pr-2">
+                    <span className="font-bold text-xs text-[#F4F7F0] block truncate">{hg.title}</span>
+                    <span className="text-[10px] text-[#A5B0A6] block truncate">
+                      {hg.sport} • {hg.date} • {hg.spotsJoined}/{hg.spotsTotal} spots
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] font-bold border border-[#C8FF2E]/30 shrink-0">
+                    Manage / Delete &rarr;
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 6. Location Preferences & Playing Area */}
         <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-1.5">
           <span className="text-[10px] uppercase font-bold text-[#A5B0A6] tracking-wider block">
             Home Court Region

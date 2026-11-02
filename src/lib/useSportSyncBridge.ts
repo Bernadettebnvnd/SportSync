@@ -14,6 +14,60 @@ import {
 import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
+import { markSessionDeleted } from './services/sessions';
+
+export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
+  const ids = new Set<string>();
+  const titles = new Set<string>();
+  if (typeof window === 'undefined') return { ids, titles };
+  try {
+    const raw = localStorage.getItem('sportsync_deleted_game_ids');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: any) => {
+          if (typeof item === 'string') {
+            ids.add(item);
+            titles.add(item.trim().toLowerCase());
+          } else if (item && typeof item === 'object') {
+            if (item.id) ids.add(item.id);
+            if (item.sessionId) ids.add(item.sessionId);
+            if (item.title) titles.add(item.title.trim().toLowerCase());
+          }
+        });
+      }
+    }
+  } catch {}
+  return { ids, titles };
+}
+
+export function markGameDeleted(gameId: string, gameTitle?: string, sessionId?: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existingRaw = localStorage.getItem('sportsync_deleted_game_ids');
+    const existing: Array<{ id: string; title?: string; sessionId?: string }> = existingRaw ? JSON.parse(existingRaw) : [];
+    const updated = [
+      ...existing.filter((item) => (typeof item === 'string' ? item !== gameId : item.id !== gameId)),
+      { id: gameId, title: gameTitle?.trim().toLowerCase(), sessionId },
+    ];
+    localStorage.setItem('sportsync_deleted_game_ids', JSON.stringify(updated));
+  } catch (err) {
+    console.warn('Failed to mark game as deleted:', err);
+  }
+}
+
+/**
+ * Generate a cryptographically strong, collision-free unique game ID.
+ */
+export function generateUniqueGameId(prefix: string = 'cg'): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 10);
+  const perfNow = typeof performance !== 'undefined' ? Math.floor(performance.now() * 1000) : 0;
+  return `${prefix}_${timestamp}_${perfNow}_${randomSuffix}`;
+}
 
 export interface SportSyncBookingItem {
   id: string;
@@ -309,12 +363,32 @@ export function useSportSyncBridge() {
 
   // 2. Dynamic Community Pickup Games
   const [games, setGames] = useState<CommunityGame[]>(() => {
+    const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+    const isGameDeleted = (g: CommunityGame) =>
+      deletedIds.has(g.id) ||
+      (g.sessionId ? deletedIds.has(g.sessionId) : false) ||
+      deletedTitles.has(g.title.trim().toLowerCase());
+
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sportsync_community_games') || localStorage.getItem('sideline_community_games');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const seenIds = new Set<string>();
+            const seenTitles = new Set<string>();
+            const deduped: CommunityGame[] = [];
+            parsed.forEach((g: any) => {
+              if (!g || !g.id) return;
+              const normTitle = g.title ? g.title.trim().toLowerCase() : '';
+              if (!isGameDeleted(g) && !seenIds.has(g.id) && (!normTitle || !seenTitles.has(normTitle))) {
+                seenIds.add(g.id);
+                if (normTitle) seenTitles.add(normTitle);
+                deduped.push(g);
+              }
+            });
+            return deduped;
+          }
         } catch {
           // ignore
         }
@@ -332,39 +406,61 @@ export function useSportSyncBridge() {
   // Dynamic Matches initialized to empty array (no mock data fallback)
   const [matches, setMatches] = useState<Match[]>([]);
 
-  // Sync store open play sessions into games feed
+  // Sync store open play sessions into games feed (omits deleted / cancelled sessions and strictly prevents duplicates)
   useEffect(() => {
     if (store.sessions.length > 0) {
+      const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
       setGames((prev) => {
+        const seenIds = new Set(prev.map((g) => g.id));
+        const seenSessionIds = new Set(prev.filter((g) => g.sessionId).map((g) => g.sessionId!));
+        const seenTitles = new Set(prev.map((g) => g.title.trim().toLowerCase()));
+
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
-          if (!prev.some((g) => g.id === s.id || g.title === s.title)) {
-            const venue = store.venues.find((v) => v.id === s.venue_id);
-            added.push({
-              id: s.id,
-              sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
-              title: s.title,
-              format: (s.rotation_format || '5v5') as any,
-              skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
-              date: 'Today',
-              time: s.start_time || '18:00',
-              locationName: venue?.name || 'Verified Court Facility',
-              distance: '0.9 km away',
-              hostName: 'Facility Host',
-              hostAvatar: 'alex',
-              spotsTotal: s.max_players || 12,
-              spotsJoined: s.current_players_count || 1,
-              pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
-              notes: s.description || 'Verified SportSync session',
-              isPublic: true,
-              members: [{ name: 'Host', avatar: 'alex' }],
-            });
+          if (!s || !s.id) return;
+          // If session was permanently deleted or cancelled, do NOT re-add to games
+          if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled') {
+            return;
           }
+          const normTitle = s.title.trim().toLowerCase();
+          if (seenIds.has(s.id) || seenSessionIds.has(s.id) || seenTitles.has(normTitle)) {
+            return;
+          }
+          seenIds.add(s.id);
+          seenSessionIds.add(s.id);
+          seenTitles.add(normTitle);
+
+          const venue = store.venues.find((v) => v.id === s.venue_id);
+          const isUserHost = Boolean(
+            (userProfile.id && s.host_id === userProfile.id) ||
+            (userProfile.name && s.host_id === userProfile.name)
+          );
+          added.push({
+            id: s.id,
+            sessionId: s.id,
+            sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
+            title: s.title,
+            format: (s.rotation_format || '5v5') as any,
+            skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
+            date: 'Today',
+            time: s.start_time || '18:00',
+            locationName: venue?.name || 'Verified Court Facility',
+            distance: '0.9 km away',
+            hostId: isUserHost ? userProfile.id : s.host_id,
+            hostName: isUserHost ? userProfile.name : 'Facility Host',
+            hostAvatar: 'alex',
+            spotsTotal: s.max_players || 12,
+            spotsJoined: s.current_players_count || 1,
+            pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
+            notes: s.description || 'Verified SportSync session',
+            isPublic: true,
+            members: [{ name: isUserHost ? userProfile.name : 'Host', avatar: 'alex' }],
+          });
         });
         return added.length > 0 ? [...added, ...prev] : prev;
       });
     }
-  }, [store.sessions, store.venues]);
+  }, [store.sessions, store.venues, userProfile.id, userProfile.name]);
 
   // 3. Dynamic Bookings
   const [bookings, setBookings] = useState<SportSyncBookingItem[]>(() => {
@@ -689,7 +785,7 @@ export function useSportSyncBridge() {
       stakeXp: number;
       odds: number;
     }) => {
-      const wagerId = `wag_${Date.now()}`;
+      const wagerId = generateUniqueGameId('wag');
       const potentialWinXp =
         params.stakeXp === 0
           ? 0
@@ -947,41 +1043,10 @@ export function useSportSyncBridge() {
       notes?: string;
       coordinates?: [number, number];
     }) => {
-      const newId = `cg_${Date.now()}`;
-      const distanceStr = gameData.locationName.toLowerCase().includes('naga')
-        ? 'Naga City • 0.5 km away'
-        : '0.8 miles away';
-      const newGame: CommunityGame = {
-        id: newId,
-        sport: (gameData.sport as any) || 'Football',
-        title: gameData.title,
-        format: gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5',
-        skillLevel: (gameData.skillLevel as any) || 'Casual',
-        date: gameData.date,
-        time: '19:30',
-        locationName: gameData.locationName,
-        distance: distanceStr,
-        hostName: userProfile.name,
-        hostAvatar: 'alex',
-        spotsTotal: gameData.playersCount,
-        spotsJoined: 1,
-        pricePerPlayer: gameData.pricePerPlayer,
-        notes: gameData.notes || 'Organized via SportSync Matchmaking',
-        isPublic: true,
-        members: [{ name: userProfile.name, avatar: 'alex' }],
-      };
+      let assignedId = generateUniqueGameId();
+      let createdSessionId: string | undefined = undefined;
 
-      setGames((prev) => [newGame, ...prev]);
-
-      // Award host XP (+100 XP base × 1.5x = +150 XP)
-      awardXp(100, 'hosting a new pickup match', { applyStreakMultiplier: true });
-
-      // Unlock Squad Captain badge
-      setBadges((prev) =>
-        prev.map((b) => (b.id === 'squad_captain' ? { ...b, progress: 1, unlocked: true } : b))
-      );
-
-      // Store sync
+      // Store sync & Supabase session creation
       try {
         const sportNorm = gameData.sport.toLowerCase();
         const matchingSport: DbSportType =
@@ -996,7 +1061,7 @@ export function useSportSyncBridge() {
             : 'pickleball';
 
         if (store.venues[0]) {
-          await store.createOpenPlaySession({
+          const createdSession = await store.createOpenPlaySession({
             venueId: store.venues[0].id,
             title: gameData.title,
             description: gameData.notes || 'SportSync game',
@@ -1007,18 +1072,266 @@ export function useSportSyncBridge() {
             feeCents: gameData.pricePerPlayer * 100,
             maxPlayers: gameData.playersCount,
             rotationFormat: 'king_of_the_court',
+            skillLevel: (gameData.skillLevel?.toLowerCase() as SkillLevel) || 'all_levels',
           });
+          if (createdSession?.id) {
+            createdSessionId = createdSession.id;
+            assignedId = createdSession.id;
+          }
         }
       } catch (err) {
         console.warn('[SportSyncBridge] Global open play session creation fallback handled:', err);
       }
 
+      const distanceStr = gameData.locationName.toLowerCase().includes('naga')
+        ? 'Naga City • 0.5 km away'
+        : '0.8 miles away';
+      const newGame: CommunityGame = {
+        id: assignedId,
+        sessionId: createdSessionId,
+        sport: (gameData.sport as any) || 'Football',
+        title: gameData.title,
+        format: gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5',
+        skillLevel: (gameData.skillLevel as any) || 'Casual',
+        date: gameData.date,
+        time: '19:30',
+        locationName: gameData.locationName,
+        distance: distanceStr,
+        hostId: userProfile.id,
+        hostName: userProfile.name,
+        hostAvatar: 'alex',
+        spotsTotal: gameData.playersCount,
+        spotsJoined: 1,
+        pricePerPlayer: gameData.pricePerPlayer,
+        notes: gameData.notes || 'Organized via SportSync Matchmaking',
+        isPublic: true,
+        members: [{ name: userProfile.name, avatar: 'alex' }],
+        coordinates: gameData.coordinates,
+      };
+
+      setGames((prev) => {
+        const normTitle = newGame.title.trim().toLowerCase();
+        const filtered = prev.filter(
+          (g) =>
+            g.id !== newGame.id &&
+            (!newGame.sessionId || g.sessionId !== newGame.sessionId) &&
+            g.title.trim().toLowerCase() !== normTitle
+        );
+        return [newGame, ...filtered];
+      });
+
+      // Award host XP (+100 XP base × 1.5x = +150 XP)
+      awardXp(100, 'hosting a new pickup match', { applyStreakMultiplier: true });
+
+      // Unlock Squad Captain badge
+      setBadges((prev) =>
+        prev.map((b) => (b.id === 'squad_captain' ? { ...b, progress: 1, unlocked: true } : b))
+      );
+
       return newGame;
     },
-    [userProfile.name, awardXp, store]
+    [userProfile.id, userProfile.name, awardXp, store]
   );
 
-  // 15. Join Community Game
+  // 15. Check if current user is the host of a game
+  const isGameHost = useCallback(
+    (game?: CommunityGame | null): boolean => {
+      if (!game) return false;
+      const isGuest = userProfile.isGuest || !userProfile.id || userProfile.name === 'Guest Player';
+      if (isGuest && !game.hostId) {
+        return game.hostName === userProfile.name;
+      }
+      if (game.hostId && userProfile.id && game.hostId === userProfile.id) return true;
+      if (
+        userProfile.name &&
+        game.hostName &&
+        game.hostName.trim().toLowerCase() === userProfile.name.trim().toLowerCase()
+      ) {
+        return true;
+      }
+      if (
+        userProfile.username &&
+        game.hostName &&
+        game.hostName.trim().toLowerCase() === userProfile.username.trim().toLowerCase()
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [userProfile.id, userProfile.name, userProfile.username, userProfile.isGuest]
+  );
+
+  // 16. Update Hosted Community Game
+  const updateCommunityGame = useCallback(
+    async (
+      gameId: string,
+      updates: {
+        title?: string;
+        sport?: string;
+        date?: string;
+        time?: string;
+        locationName?: string;
+        skillLevel?: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
+        spotsTotal?: number;
+        pricePerPlayer?: number;
+        notes?: string;
+        coordinates?: [number, number];
+      }
+    ): Promise<{ success: boolean; game?: CommunityGame; error?: string }> => {
+      const targetGame = games.find((g) => g.id === gameId);
+      if (!targetGame) {
+        return { success: false, error: 'Game not found.' };
+      }
+
+      if (!isGameHost(targetGame)) {
+        return { success: false, error: 'Unauthorized: You can only edit games you created.' };
+      }
+
+      const updatedGame: CommunityGame = {
+        ...targetGame,
+        title: updates.title !== undefined ? updates.title : targetGame.title,
+        sport: updates.sport !== undefined ? (updates.sport as any) : targetGame.sport,
+        date: updates.date !== undefined ? updates.date : targetGame.date,
+        time: updates.time !== undefined ? updates.time : targetGame.time,
+        locationName: updates.locationName !== undefined ? updates.locationName : targetGame.locationName,
+        skillLevel: updates.skillLevel !== undefined ? updates.skillLevel : targetGame.skillLevel,
+        spotsTotal: updates.spotsTotal !== undefined ? updates.spotsTotal : targetGame.spotsTotal,
+        pricePerPlayer: updates.pricePerPlayer !== undefined ? updates.pricePerPlayer : targetGame.pricePerPlayer,
+        notes: updates.notes !== undefined ? updates.notes : targetGame.notes,
+        coordinates: updates.coordinates !== undefined ? updates.coordinates : targetGame.coordinates,
+        distance:
+          updates.locationName && updates.locationName.toLowerCase().includes('naga')
+            ? 'Naga City • 0.5 km away'
+            : targetGame.distance,
+      };
+
+      if (updates.spotsTotal !== undefined) {
+        updatedGame.format = updates.spotsTotal <= 4 ? '2v2 Doubles' : '5v5';
+        if (updatedGame.spotsJoined > updatedGame.spotsTotal) {
+          updatedGame.spotsJoined = updatedGame.spotsTotal;
+        }
+      }
+
+      setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));
+
+      // Save to localStorage immediately
+      if (typeof window !== 'undefined') {
+        const storedGames = localStorage.getItem('sportsync_community_games');
+        if (storedGames) {
+          try {
+            const parsed = JSON.parse(storedGames);
+            if (Array.isArray(parsed)) {
+              const nextStored = parsed.map((g: any) => (g.id === gameId ? updatedGame : g));
+              localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));
+            }
+          } catch {}
+        }
+      }
+
+      // Sync to database / sessions
+      try {
+        const idForDb = targetGame.sessionId || gameId;
+        await store.updateOpenPlaySession(idForDb, {
+          title: updatedGame.title,
+          description: updatedGame.notes,
+          max_players: updatedGame.spotsTotal,
+          fee_cents: updatedGame.pricePerPlayer * 100,
+          start_time: updatedGame.time,
+        });
+      } catch (err) {
+        console.warn('[SportSyncBridge] Session update fallback handled:', err);
+      }
+
+      return { success: true, game: updatedGame };
+    },
+    [games, isGameHost, store]
+  );
+
+  // 17. Delete Hosted Community Game and clean up related participation / booking records
+  const deleteCommunityGame = useCallback(
+    async (gameId: string): Promise<{ success: boolean; error?: string }> => {
+      const targetGame = games.find((g) => g.id === gameId || (g.sessionId && g.sessionId === gameId));
+      if (!targetGame) {
+        return { success: false, error: 'Game not found.' };
+      }
+
+      if (!isGameHost(targetGame)) {
+        return { success: false, error: 'Unauthorized: You can only delete games you created.' };
+      }
+
+      const sessionIdToDelete = targetGame.sessionId || (targetGame.id.startsWith('session_') || targetGame.id.includes('-') ? targetGame.id : undefined);
+      const titleToDelete = targetGame.title;
+      const normTitle = titleToDelete.trim().toLowerCase();
+
+      // 1. Mark in permanent tombstone storage (both ID and title) to prevent reappearance
+      markGameDeleted(targetGame.id, titleToDelete, targetGame.sessionId);
+      if (sessionIdToDelete) {
+        markSessionDeleted(sessionIdToDelete, titleToDelete);
+      } else {
+        markSessionDeleted(targetGame.id, titleToDelete);
+      }
+
+      // 2. Remove from games state immediately
+      setGames((prev) =>
+        prev.filter((g) => {
+          if (g.id === targetGame.id) return false;
+          if (targetGame.sessionId && (g.id === targetGame.sessionId || g.sessionId === targetGame.sessionId)) return false;
+          if (g.title.trim().toLowerCase() === normTitle) return false;
+          return true;
+        })
+      );
+
+      // 3. Remove from localStorage sportsync_community_games
+      if (typeof window !== 'undefined') {
+        const storedGames = localStorage.getItem('sportsync_community_games');
+        if (storedGames) {
+          try {
+            const parsed = JSON.parse(storedGames);
+            if (Array.isArray(parsed)) {
+              const nextStored = parsed.filter((g: any) => {
+                if (g.id === targetGame.id) return false;
+                if (targetGame.sessionId && (g.id === targetGame.sessionId || g.sessionId === targetGame.sessionId)) return false;
+                if (g.title && g.title.trim().toLowerCase() === normTitle) return false;
+                return true;
+              });
+              localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));
+            }
+          } catch {}
+        }
+
+        // 4. Clean up related participation / booking records to prevent orphaned / inconsistent data
+        const storedBookings = localStorage.getItem('sportsync_my_bookings');
+        if (storedBookings) {
+          try {
+            const parsedBookings = JSON.parse(storedBookings);
+            if (Array.isArray(parsedBookings)) {
+              const nextBookings = parsedBookings.filter((b: any) => {
+                if (b.gameId === targetGame.id || b.sessionId === targetGame.id) return false;
+                if (targetGame.sessionId && (b.gameId === targetGame.sessionId || b.sessionId === targetGame.sessionId)) return false;
+                if (b.venue?.name === targetGame.locationName && b.date === targetGame.date) return false;
+                return true;
+              });
+              localStorage.setItem('sportsync_my_bookings', JSON.stringify(nextBookings));
+              setBookings(nextBookings);
+            }
+          } catch {}
+        }
+      }
+
+      // 5. Clean up database records and store sessions
+      try {
+        const idForDb = sessionIdToDelete || targetGame.id;
+        await store.deleteOpenPlaySession(idForDb, titleToDelete);
+      } catch (err) {
+        console.warn('[SportSyncBridge] Session deletion fallback handled:', err);
+      }
+
+      return { success: true };
+    },
+    [games, isGameHost, store]
+  );
+
+  // 18. Join Community Game
   const joinCommunityGame = useCallback(
     (gameId: string) => {
       let joinedGame: CommunityGame | null = null;
@@ -1049,7 +1362,7 @@ export function useSportSyncBridge() {
     [userProfile.name, awardXp]
   );
 
-  // 16. Leave Community Game
+  // 19. Leave Community Game
   const leaveCommunityGame = useCallback(
     (gameId: string) => {
       let updatedGame: CommunityGame | null = null;
@@ -1242,6 +1555,9 @@ export function useSportSyncBridge() {
     closeCelebration,
     toggleFavoriteVenue,
     createCommunityGame,
+    updateCommunityGame,
+    deleteCommunityGame,
+    isGameHost,
     joinCommunityGame,
     leaveCommunityGame,
     createReservation,

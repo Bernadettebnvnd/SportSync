@@ -118,7 +118,9 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
     if (!newTitle.trim()) return;
 
     const newMatch: LocalMatchScore = {
-      id: `score_${Date.now()}`,
+      id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `score_${crypto.randomUUID()}`
+        : `score_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       gameTitle: newTitle.trim(),
       sport: newSport,
       venueName: newVenue.trim() || 'Local Court',

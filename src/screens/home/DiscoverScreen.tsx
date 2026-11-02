@@ -116,6 +116,7 @@ interface DiscoverScreenProps {
   user?: {
     id?: string;
     name: string;
+    username?: string;
     avatarId: string;
     level: number;
     isGuest?: boolean;
@@ -209,11 +210,16 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     });
   }, [venues, activeSport, selectedCityFilter, userLocation]);
 
-  // Filter upcoming games by active sport
+  // Filter upcoming games by active sport (strictly deduplicated by game.id)
   const upcomingGames = useMemo(() => {
+    const seenIds = new Set<string>();
     return games.filter((g) => {
-      if (activeSport === 'All') return true;
-      return g.sport.toLowerCase().includes(activeSport.toLowerCase());
+      if (!g || !g.id || seenIds.has(g.id)) return false;
+      if (activeSport !== 'All' && !g.sport.toLowerCase().includes(activeSport.toLowerCase())) {
+        return false;
+      }
+      seenIds.add(g.id);
+      return true;
     });
   }, [games, activeSport]);
 

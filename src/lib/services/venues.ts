@@ -13,6 +13,13 @@ function isValidUuid(id?: string | null): boolean {
   return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
 }
 
+function generateUniqueId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 /**
  * Filter venues locally by sport, city, or search query.
  */
@@ -219,7 +226,7 @@ export async function createVenueWithCourts(
   courtsData: Array<Omit<Court, 'id' | 'venue_id'>>
 ): Promise<{ venue: Venue; courts: Court[] } | null> {
   const supabase = getSupabaseClient();
-  const venueId = `venue_${Date.now()}`;
+  const venueId = generateUniqueId('venue');
 
   // Construct venue record
   const formattedVenue: Venue = {
@@ -354,7 +361,7 @@ export async function createVenueWithCourts(
  */
 export async function createCourt(courtData: Omit<Court, 'id'>): Promise<Court> {
   const supabase = getSupabaseClient();
-  const courtId = `court_${Date.now()}`;
+  const courtId = generateUniqueId('court');
   const localCourt: Court = {
     ...courtData,
     id: courtId,

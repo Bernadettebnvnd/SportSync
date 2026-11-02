@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal, Zap } from 'lucide-react';
 import { SearchBar } from '../../design-system/components/SearchBar';
 import { MatchCard } from '../../design-system/components/MatchCard';
@@ -19,24 +19,32 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
 
-  const filteredGames = games.filter((g) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        g.title.toLowerCase().includes(q) ||
-        g.sport.toLowerCase().includes(q) ||
-        g.locationName.toLowerCase().includes(q);
-      if (!matchesSearch) return false;
-    }
-    if (activeFilter === 'urgent') {
-      const left = g.spotsTotal - g.spotsJoined;
-      return left <= 2 && left > 0;
-    }
-    if (activeFilter === 'today') {
-      return g.date.toLowerCase().includes('today');
-    }
-    return true;
-  });
+  // Memoize and deduplicate games by id to guarantee unique React keys
+  const filteredGames = useMemo(() => {
+    const seenIds = new Set<string>();
+    return games.filter((g) => {
+      if (!g || !g.id || seenIds.has(g.id)) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchesSearch =
+          g.title.toLowerCase().includes(q) ||
+          g.sport.toLowerCase().includes(q) ||
+          g.locationName.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+      }
+      if (activeFilter === 'urgent') {
+        const left = g.spotsTotal - g.spotsJoined;
+        if (!(left <= 2 && left > 0)) return false;
+      }
+      if (activeFilter === 'today') {
+        if (!g.date.toLowerCase().includes('today')) return false;
+      }
+
+      seenIds.add(g.id);
+      return true;
+    });
+  }, [games, searchQuery, activeFilter]);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">

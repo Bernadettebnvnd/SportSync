@@ -162,7 +162,7 @@ function getNearestNagaLandmark(lat: number, lng: number): NagaLandmark | null {
   return null;
 }
 
-async function reverseGeocodeNaga(lat: number, lng: number): Promise<string> {
+export async function reverseGeocodeNaga(lat: number, lng: number): Promise<string> {
   const landmark = getNearestNagaLandmark(lat, lng);
   if (landmark) {
     return landmark.name;

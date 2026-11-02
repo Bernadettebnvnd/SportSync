@@ -1,12 +1,81 @@
 import { Session, QueueEntry, MatchFormat } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
+export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<string> } {
+  const ids = new Set<string>();
+  const titles = new Set<string>();
+  if (typeof window === 'undefined') return { ids, titles };
+  try {
+    const raw = localStorage.getItem('sportsync_deleted_session_ids');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: any) => {
+          if (typeof item === 'string') {
+            ids.add(item);
+            titles.add(item.trim().toLowerCase());
+          } else if (item && typeof item === 'object') {
+            if (item.id) ids.add(item.id);
+            if (item.title) titles.add(item.title.trim().toLowerCase());
+          }
+        });
+      }
+    }
+  } catch {}
+  return { ids, titles };
+}
+
+export function markSessionDeleted(sessionId: string, sessionTitle?: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    const existingRaw = localStorage.getItem('sportsync_deleted_session_ids');
+    const existing: Array<{ id: string; title?: string }> = existingRaw ? JSON.parse(existingRaw) : [];
+    const updated = [
+      ...existing.filter((item) => (typeof item === 'string' ? item !== sessionId : item.id !== sessionId)),
+      { id: sessionId, title: sessionTitle?.trim().toLowerCase() },
+    ];
+    localStorage.setItem('sportsync_deleted_session_ids', JSON.stringify(updated));
+  } catch (err) {
+    console.warn('Failed to mark session as deleted:', err);
+  }
+}
+
+/**
+ * Generate a cryptographically strong, collision-free unique session ID.
+ * Avoids timestamp-only collisions (e.g. session_1793605585154).
+ */
+export function generateUniqueSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `session_${crypto.randomUUID()}`;
+  }
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 10);
+  const perfNow = typeof performance !== 'undefined' ? Math.floor(performance.now() * 1000) : 0;
+  return `session_${timestamp}_${perfNow}_${randomSuffix}`;
+}
+
 function getLocalStoredSessions(): Session[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem('sportsync_user_sessions');
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed: Session[] = JSON.parse(raw);
+    const { ids, titles } = getDeletedSessionTombstones();
+    const seenIds = new Set<string>();
+    const seenTitles = new Set<string>();
+    const deduped: Session[] = [];
+
+    parsed.forEach((s) => {
+      if (!s || !s.id) return;
+      const normTitle = s.title ? s.title.trim().toLowerCase() : '';
+      if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+        seenIds.add(s.id);
+        if (normTitle) seenTitles.add(normTitle);
+        deduped.push(s);
+      }
+    });
+
+    return deduped;
   } catch {
     return [];
   }
@@ -15,8 +84,16 @@ function getLocalStoredSessions(): Session[] {
 function saveLocalStoredSession(session: Session) {
   if (typeof window === 'undefined') return;
   try {
+    const { ids, titles } = getDeletedSessionTombstones();
+    const normTitle = session.title ? session.title.trim().toLowerCase() : '';
+    if (ids.has(session.id) || (normTitle && titles.has(normTitle))) {
+      return; // Do not save previously deleted session
+    }
     const existing = getLocalStoredSessions();
-    const updated = [session, ...existing.filter((s) => s.id !== session.id)];
+    const updated = [
+      session,
+      ...existing.filter((s) => s.id !== session.id && (normTitle ? s.title.trim().toLowerCase() !== normTitle : true)),
+    ];
     localStorage.setItem('sportsync_user_sessions', JSON.stringify(updated));
   } catch (err) {
     console.warn('Failed to save session to localStorage:', err);
@@ -31,9 +108,14 @@ function saveLocalStoredSession(session: Session) {
 export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> {
   const supabase = getSupabaseClient();
   const localSessions = getLocalStoredSessions();
+  const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
+
+  const isSessionNotDeleted = (s: Session) =>
+    !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled';
 
   if (!supabase || !isSupabaseConfigured) {
-    return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
+    const filtered = localSessions.filter(isSessionNotDeleted);
+    return venueId ? filtered.filter((s) => s.venue_id === venueId) : filtered;
   }
 
   try {
@@ -50,14 +132,32 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
 
     if (error) {
       console.warn('[Sessions] Query returned error, using local records:', error.message);
-      return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
+      const filtered = localSessions.filter(isSessionNotDeleted);
+      return venueId ? filtered.filter((s) => s.venue_id === venueId) : filtered;
     }
 
-    const dbSessions = (data as Session[]) || [];
-    const combined = [...dbSessions];
+    const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);
+    const seenIds = new Set<string>();
+    const seenTitles = new Set<string>();
+    const combined: Session[] = [];
+
+    dbSessions.forEach((s) => {
+      if (!s || !s.id) return;
+      const normTitle = s.title ? s.title.trim().toLowerCase() : '';
+      if (!seenIds.has(s.id)) {
+        seenIds.add(s.id);
+        if (normTitle) seenTitles.add(normTitle);
+        combined.push(s);
+      }
+    });
+
     localSessions.forEach((ls) => {
-      if (!combined.some((s) => s.id === ls.id)) {
+      if (!ls || !ls.id) return;
+      const normTitle = ls.title ? ls.title.trim().toLowerCase() : '';
+      if (isSessionNotDeleted(ls) && !seenIds.has(ls.id) && (!normTitle || !seenTitles.has(normTitle))) {
         if (!venueId || ls.venue_id === venueId) {
+          seenIds.add(ls.id);
+          if (normTitle) seenTitles.add(normTitle);
           combined.push(ls);
         }
       }
@@ -66,7 +166,8 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     return combined;
   } catch (err) {
     console.warn('[Sessions] Exception querying sessions:', err);
-    return venueId ? localSessions.filter((s) => s.venue_id === venueId) : localSessions;
+    const filtered = localSessions.filter(isSessionNotDeleted);
+    return venueId ? filtered.filter((s) => s.venue_id === venueId) : filtered;
   }
 }
 
@@ -179,7 +280,7 @@ export async function createOpenPlaySession(
 ): Promise<Session | null> {
   const supabase = getSupabaseClient();
 
-  const localId = `session_${Date.now()}`;
+  const localId = generateUniqueSessionId();
   const localSession: Session = {
     id: localId,
     venue_id: sessionData.venue_id,
@@ -251,3 +352,133 @@ export async function createOpenPlaySession(
   saveLocalStoredSession(created);
   return created;
 }
+
+/**
+ * Update an existing Open Play session in Supabase and localStorage.
+ */
+export async function updateOpenPlaySession(
+  sessionId: string,
+  updates: Partial<Session>
+): Promise<Session | null> {
+  const supabase = getSupabaseClient();
+  const localSessions = getLocalStoredSessions();
+  const target = localSessions.find((s) => s.id === sessionId);
+
+  if (target) {
+    const updated = { ...target, ...updates, updated_at: new Date().toISOString() };
+    saveLocalStoredSession(updated);
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    return target ? ({ ...target, ...updates } as Session) : null;
+  }
+
+  try {
+    const dbUpdates: any = {};
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.description !== undefined) dbUpdates.description = updates.description;
+    if (updates.sport !== undefined) dbUpdates.sport = updates.sport;
+    if (updates.start_time !== undefined) dbUpdates.start_time = updates.start_time;
+    if (updates.end_time !== undefined) dbUpdates.end_time = updates.end_time;
+    if (updates.fee_cents !== undefined) dbUpdates.fee_cents = updates.fee_cents;
+    if (updates.max_players !== undefined) dbUpdates.max_players = updates.max_players;
+    if (updates.skill_level !== undefined) dbUpdates.skill_level = updates.skill_level;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    dbUpdates.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('sessions')
+      .update(dbUpdates)
+      .eq('id', sessionId)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('[Sessions] Update session fallback handled:', error.message);
+      return target ? ({ ...target, ...updates } as Session) : null;
+    }
+
+    if (data) {
+      saveLocalStoredSession(data as Session);
+      return data as Session;
+    }
+  } catch (err) {
+    console.warn('[Sessions] Exception updating session:', err);
+  }
+
+  return target ? ({ ...target, ...updates } as Session) : null;
+}
+
+/**
+ * Permanently delete or cancel an Open Play session and clean up related participation records.
+ */
+export async function deleteOpenPlaySession(
+  sessionId: string,
+  sessionTitle?: string
+): Promise<boolean> {
+  const supabase = getSupabaseClient();
+
+  // 1. Mark in permanent tombstone storage to prevent resurrection
+  markSessionDeleted(sessionId, sessionTitle);
+
+  // 2. Remove from localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const existing = getLocalStoredSessions();
+      const normTitle = sessionTitle?.trim().toLowerCase();
+      const updated = existing.filter((s) => {
+        if (s.id === sessionId) return false;
+        if (normTitle && s.title.trim().toLowerCase() === normTitle) return false;
+        return true;
+      });
+      localStorage.setItem('sportsync_user_sessions', JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Failed to remove session from localStorage:', err);
+    }
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    return true;
+  }
+
+  try {
+    // 3. Clean up related participation / queues records to prevent orphaned data
+    try {
+      await supabase.from('queues').delete().eq('session_id', sessionId);
+    } catch (e) {
+      console.warn('[Sessions] Queues cleanup notice:', e);
+    }
+
+    // 4. Clean up related match records
+    try {
+      await supabase.from('matches').delete().eq('session_id', sessionId);
+    } catch (e) {
+      console.warn('[Sessions] Matches cleanup notice:', e);
+    }
+
+    // 5. Clean up related payment records
+    try {
+      await supabase.from('payments').delete().eq('session_id', sessionId);
+    } catch (e) {
+      console.warn('[Sessions] Payments cleanup notice:', e);
+    }
+
+    // 6. Delete session itself from database by id
+    const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
+    if (error) {
+      console.warn('[Sessions] Supabase delete session error, trying fallback:', error.message);
+      if (sessionTitle) {
+        await supabase.from('sessions').delete().eq('title', sessionTitle);
+      }
+      await supabase.from('sessions').update({ status: 'cancelled' }).eq('id', sessionId);
+    } else if (sessionTitle) {
+      // Also ensure any matching session title is cleaned up
+      await supabase.from('sessions').delete().eq('title', sessionTitle);
+    }
+    return true;
+  } catch (err) {
+    console.warn('[Sessions] Exception deleting session:', err);
+    return true;
+  }
+}
+

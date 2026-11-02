@@ -41,7 +41,10 @@ function generateVoucherCode(): string {
 }
 
 function generateBookingFallbackId(): string {
-  return `bkg_${Date.now()}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `bkg_${crypto.randomUUID()}`;
+  }
+  return `bkg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function BookingModal({
