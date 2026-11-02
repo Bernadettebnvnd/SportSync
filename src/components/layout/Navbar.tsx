@@ -11,8 +11,11 @@ import {
   User as UserIcon,
   Building2,
   Sparkles,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/theme';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { APP_CONFIG } from '@/config/appConfig';
@@ -31,9 +34,15 @@ export function SportSyncLogo({ size = 32 }: { size?: number }) {
 export function Navbar() {
   const pathname = usePathname();
   const { currentUser } = useMatchiStore();
+  const { isLightMode, toggleTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isFacilityView = pathname.startsWith('/organizer');
   const isAuthenticated = Boolean(currentUser.id && currentUser.email);
@@ -110,6 +119,24 @@ export function Navbar() {
 
           {/* Right Side Controls */}
           <div className="flex items-center gap-2">
+            {/* Theme Switcher */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="w-8 h-8 rounded-xl bg-[#1C241E] text-[#A5B0A6] hover:text-[#F4F7F0] flex items-center justify-center transition-colors press-scale border border-white/5"
+              aria-label={mounted && isLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+              title={mounted && isLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+              suppressHydrationWarning
+            >
+              {!mounted ? (
+                <span className="w-3.5 h-3.5 rounded-full bg-white/10" />
+              ) : isLightMode ? (
+                <Moon className="w-3.5 h-3.5 text-[#0F1612]" />
+              ) : (
+                <Sun className="w-3.5 h-3.5 text-[#C8FF2E]" />
+              )}
+            </button>
+
             {isFacilityView ? (
               <Link
                 href="/"

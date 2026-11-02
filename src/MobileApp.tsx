@@ -38,6 +38,7 @@ import { BadgeClaimModal } from './design-system/components/BadgeClaimModal';
 import { WagerWinCelebrationModal } from './design-system/components/WagerWinCelebrationModal';
 import { GuestPromptModal } from './components/auth/GuestPromptModal';
 import { useSportSyncBridge } from './lib/useSportSyncBridge';
+import { useTheme } from './lib/theme';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -76,14 +77,21 @@ interface MobileAppProps {
   initialScreen?: ScreenId;
   inPhoneFrame?: boolean;
   onScreenChange?: (screen: ScreenId) => void;
+  isLightMode?: boolean;
+  onToggleTheme?: () => void;
 }
 
 export const MobileApp: React.FC<MobileAppProps> = ({
   initialScreen,
   inPhoneFrame = true,
   onScreenChange,
+  isLightMode: propIsLightMode,
+  onToggleTheme,
 }) => {
   const bridge = useSportSyncBridge();
+  const themeHook = useTheme();
+  const isLightMode = propIsLightMode !== undefined ? propIsLightMode : themeHook.isLightMode;
+  const toggleTheme = onToggleTheme || themeHook.toggleTheme;
 
   const isUserAuthenticated = (): boolean => {
     if (bridge.userProfile.id && !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player') {
@@ -118,7 +126,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [screenHistory, setScreenHistory] = useState<ScreenId[]>([resolveInitialScreen()]);
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
-  const [isLightMode, setIsLightMode] = useState(false);
 
   // Selected Entities
   const [selectedMatch, setSelectedMatch] = useState<Match>(MATCHES[0]);
@@ -224,16 +231,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     else if (tab === 'play') navigateTo('social-home');
     else if (tab === 'scores') navigateTo('scores');
     else if (tab === 'profile') navigateTo('profile');
-  };
-
-  // Theme toggle
-  const toggleTheme = () => {
-    setIsLightMode(!isLightMode);
-    if (!isLightMode) {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
   };
 
   // Determine whether to show floating bottom nav
@@ -653,6 +650,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <ProfileScreen
             user={bridge.userProfile}
             hostedGames={bridge.games.filter((g) => bridge.isGameHost(g))}
+            isLightMode={isLightMode}
+            onToggleTheme={toggleTheme}
             onSelectGame={(g) => {
               setSelectedGame(g);
               navigateTo('match-detail');

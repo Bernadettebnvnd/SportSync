@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { type ScreenId } from '@/MobileApp';
 import { APP_CONFIG } from '@/config/appConfig';
-import { Sparkles, Layers, Menu, X, Compass, Building2, Smartphone, Monitor } from 'lucide-react';
+import { Sparkles, Layers, Menu, X, Compass, Building2, Smartphone, Monitor, Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/lib/theme';
 import '@/design-system/index.css';
 
 const MobileApp = dynamic(
@@ -33,9 +34,18 @@ export default function RootHomePage() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('auth');
   const [useDeviceChassis, setUseDeviceChassis] = useState(false);
   const [showScreenDrawer, setShowScreenDrawer] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const { isLightMode, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-between select-none">
+    <div
+      suppressHydrationWarning
+      className={`min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-between select-none ${mounted && isLightMode ? 'light' : 'dark'}`}
+    >
       {/* Adaptive Desktop Header (Hidden on small mobile screens to keep edge-to-edge native feel) */}
       <header className="hidden md:block w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-4 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -55,6 +65,32 @@ export default function RootHomePage() {
 
           {/* Quick Route Switches & Portals */}
           <div className="flex items-center gap-2">
+            {/* Theme Toggle (Dark / Light Mode) */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              suppressHydrationWarning
+              className="hidden md:flex h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#F4F7F0] items-center gap-1.5 transition-all press-scale"
+              title={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
+              aria-label={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
+            >
+              {!mounted ? (
+                <>
+                  <span className="w-3.5 h-3.5 rounded-full bg-white/10" />
+                  <span className="hidden lg:inline font-semibold">Theme</span>
+                </>
+              ) : isLightMode ? (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-[#0F1612]" />
+                  <span className="hidden lg:inline font-semibold">Dark</span>
+                </>
+              ) : (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  <span className="hidden lg:inline font-semibold">Light</span>
+                </>
+              )}
+            </button>
             {/* View Mode Toggle: Adaptive View vs Phone Frame */}
             <button
               type="button"
@@ -112,11 +148,23 @@ export default function RootHomePage() {
       <main className="w-full flex-1 flex flex-col items-center justify-center">
         {useDeviceChassis ? (
           <div className="py-4 sm:py-8 w-full flex items-center justify-center px-2 sm:px-4">
-            <MobileApp initialScreen={selectedScreen} inPhoneFrame={true} onScreenChange={setActiveScreen} />
+            <MobileApp
+              initialScreen={selectedScreen}
+              inPhoneFrame={true}
+              onScreenChange={setActiveScreen}
+              isLightMode={isLightMode}
+              onToggleTheme={toggleTheme}
+            />
           </div>
         ) : (
           <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl min-h-screen md:min-h-[calc(100vh-57px)] bg-[#0B0F0C] sm:border-x sm:border-white/5 relative flex flex-col shadow-2xl">
-            <MobileApp initialScreen={selectedScreen} inPhoneFrame={false} onScreenChange={setActiveScreen} />
+            <MobileApp
+              initialScreen={selectedScreen}
+              inPhoneFrame={false}
+              onScreenChange={setActiveScreen}
+              isLightMode={isLightMode}
+              onToggleTheme={toggleTheme}
+            />
           </div>
         )}
       </main>

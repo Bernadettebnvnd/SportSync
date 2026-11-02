@@ -16,6 +16,8 @@ import {
   X,
   Check,
   Loader2,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
@@ -42,6 +44,8 @@ interface ProfileScreenProps {
     isGuest?: boolean;
   };
   hostedGames?: CommunityGame[];
+  isLightMode?: boolean;
+  onToggleTheme?: () => void;
   onSelectGame?: (game: CommunityGame) => void;
   onOpenSettings: () => void;
   onOpenLeaderboard: () => void;
@@ -58,6 +62,8 @@ interface ProfileScreenProps {
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   user,
   hostedGames = [],
+  isLightMode = false,
+  onToggleTheme,
   onSelectGame,
   onOpenSettings,
   onOpenLeaderboard,
@@ -199,13 +205,31 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           Player Profile
         </h1>
 
-        <button
-          onClick={onOpenSettings}
-          className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-          aria-label="Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {onToggleTheme && (
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-[#F4F7F0] flex items-center justify-center transition-colors press-scale"
+              aria-label={isLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+              title={isLightMode ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+            >
+              {isLightMode ? (
+                <Moon className="w-4 h-4 text-[#0F1612]" />
+              ) : (
+                <Sun className="w-4 h-4 text-[#C8FF2E]" />
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={onOpenSettings}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            aria-label="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="px-4 pt-1 space-y-3.5">
@@ -388,7 +412,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </p>
         </div>
 
-        {/* 6. Account Actions & Logout */}
+        {/* 7. Theme Preference Card */}
+        {onToggleTheme && (
+          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#1C241E] flex items-center justify-center text-[#C8FF2E]">
+                {isLightMode ? <Sun className="w-4 h-4 text-[#E29B24]" /> : <Moon className="w-4 h-4 text-[#C8FF2E]" />}
+              </div>
+              <div>
+                <span className="text-xs font-bold text-[#F4F7F0] block leading-tight">
+                  {isLightMode ? 'Light Canvas Active' : 'Dark Floodlight Active'}
+                </span>
+                <span className="text-[10px] text-[#A5B0A6]">
+                  {isLightMode ? 'Clean daylight contrast' : 'Night stadium pitch view'}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onToggleTheme}
+              className={`h-8 px-3 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all press-scale ${
+                isLightMode
+                  ? 'bg-[#1C241E] text-[#0F1612] hover:bg-[#DDE3D9]'
+                  : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26]'
+              }`}
+            >
+              {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+              <span>{isLightMode ? 'Switch to Dark' : 'Switch to Light'}</span>
+            </button>
+          </div>
+        )}
+
+        {/* 8. Account Actions & Logout */}
         <div className="pt-1 space-y-2 pb-4">
           {isGuest && onRequireAuth && (
             <button

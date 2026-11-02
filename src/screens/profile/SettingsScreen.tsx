@@ -42,11 +42,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       <div className="space-y-6">
         {/* 2. Theme Toggle (Dark Default vs Light Mode Variant) */}
-        <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3">
+        <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#1C241E] flex items-center justify-center text-[#C8FF2E]">
-                {isLightMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                {isLightMode ? <Sun className="w-5 h-5 text-[#E29B24]" /> : <Moon className="w-5 h-5 text-[#C8FF2E]" />}
               </div>
               <div>
                 <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
@@ -59,14 +59,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
 
             <button
+              type="button"
               onClick={onToggleTheme}
               className={`h-9 px-3.5 rounded-full font-display font-bold text-xs flex items-center gap-1.5 transition-all press-scale ${
                 isLightMode
-                  ? 'bg-[#0B0F0C] text-[#C8FF2E] border border-[#C8FF2E]'
-                  : 'bg-[#C8FF2E] text-[#0B0F0C]'
+                  ? 'bg-[#1C241E] text-[#0F1612] hover:bg-[#DDE3D9]'
+                  : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26]'
               }`}
             >
+              {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
               <span>{isLightMode ? 'Switch to Dark' : 'Switch to Light'}</span>
+            </button>
+          </div>
+
+          {/* Quick Segmented Switcher */}
+          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+            <button
+              type="button"
+              onClick={() => {
+                if (isLightMode) onToggleTheme();
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all press-scale border ${
+                !isLightMode
+                  ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] shadow-sm'
+                  : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-[#F4F7F0]'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5" />
+              <span>Dark Mode</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!isLightMode) onToggleTheme();
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all press-scale border ${
+                isLightMode
+                  ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] shadow-sm'
+                  : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-[#F4F7F0]'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+              <span>Light Mode</span>
             </button>
           </div>
         </div>
