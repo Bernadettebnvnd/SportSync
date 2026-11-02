@@ -109,7 +109,7 @@ export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone
                       : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
                   }`}
                 >
-                  <UserAvatar id={player.avatarId} size={32} />
+                  <UserAvatar id={player.avatarId} name={player.name} size={32} />
                   <span className="text-xs font-semibold text-[#F4F7F0] mt-1 truncate w-full">
                     {player.name.split(' ')[0]}
                   </span>

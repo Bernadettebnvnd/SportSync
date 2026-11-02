@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
 import { SportType, MatchFormat, SkillLevel } from '@/types';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
+import { getPlayerInitials } from '@/lib/utils';
 import {
   Check,
   ArrowRight,
@@ -46,13 +47,6 @@ const PHILIPPINE_AREAS = [
   'Metro Cebu',
   'Davao City',
   'Baguio City',
-];
-
-const AVATAR_PRESETS = [
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
 ];
 
 const NICKNAME_SUGGESTIONS = [
@@ -108,7 +102,6 @@ export default function OnboardingPage() {
   // =========================================================================
   const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [nickname, setNickname] = useState(currentUser.nickname || '');
-  const [selectedAvatar, setSelectedAvatar] = useState(currentUser.avatar_url || AVATAR_PRESETS[0]);
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
     if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
       return currentUser.preferred_sports;
@@ -252,7 +245,6 @@ export default function OnboardingPage() {
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_pending_onboarding');
-        localStorage.setItem('sportsync_user_avatar', selectedAvatar);
       }
       setHasPendingOnboarding(false);
 
@@ -395,32 +387,25 @@ export default function OnboardingPage() {
             )}
 
             {/* -------------------------------------------------------------------
-                SECTION 1: PLAYER IDENTITY & AVATAR
+                SECTION 1: PLAYER IDENTITY & INITIALS PROFILE ICON
                ------------------------------------------------------------------- */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
                   <UserIcon className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                  1. Player Identity &amp; Avatar <span className="text-[#C8FF2E]">*</span>
+                  1. Player Identity <span className="text-[#C8FF2E]">*</span>
                 </label>
                 <span className="text-[10px] text-[#65756B]">Public to Courts</span>
               </div>
 
-              {/* Avatar Selector Row */}
+              {/* Circular Initials Profile Icon Row */}
               <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="relative shrink-0">
-                    <img
-                      src={selectedAvatar}
-                      alt="Player Avatar"
-                      className="w-14 h-14 rounded-full object-cover ring-2 ring-[#C8FF2E] shadow-[0_0_16px_rgba(200,255,46,0.3)]"
-                    />
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center shadow-sm">
-                      <Sparkles className="w-3 h-3 stroke-[2.5]" />
-                    </div>
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-14 h-14 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-xl flex items-center justify-center shadow-[0_0_16px_rgba(200,255,46,0.3)] shrink-0 select-none">
+                    {getPlayerInitials(fullName)}
                   </div>
                   <div className="min-w-0">
-                    <span className="text-xs font-bold text-[#F4F7F0] block truncate">
+                    <span className="text-sm font-bold text-[#F4F7F0] block truncate">
                       {fullName.trim() || 'Court Player'}
                     </span>
                     <span className="text-[11px] text-[#A5B0A6] block truncate">
@@ -429,23 +414,9 @@ export default function OnboardingPage() {
                   </div>
                 </div>
 
-                {/* Avatar Presets */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {AVATAR_PRESETS.map((url, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setSelectedAvatar(url)}
-                      className={`w-9 h-9 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
-                        selectedAvatar === url
-                          ? 'border-[#C8FF2E] scale-105 shadow-[0_0_10px_rgba(200,255,46,0.4)]'
-                          : 'border-white/10 opacity-60 hover:opacity-100 hover:border-white/30'
-                      }`}
-                    >
-                      <img src={url} alt={`Preset ${i + 1}`} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
+                <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0">
+                  Initials Icon
+                </span>
               </div>
 
               {/* Full Name Input */}

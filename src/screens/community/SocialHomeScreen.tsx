@@ -116,6 +116,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           <div className="flex items-center gap-2.5">
             <UserAvatar
               id={toAvatarId(user?.avatarId)}
+              name={userName || user?.name}
               size={38}
               showBadge={!effectiveIsGuest}
               badgeLevel={user?.level || 1}

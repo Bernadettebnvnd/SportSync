@@ -148,7 +148,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
                     className="p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between cursor-pointer hover:border-white/20"
                   >
                     <div className="flex items-center gap-2.5">
-                      <UserAvatar id={player.avatarId} size={28} />
+                      <UserAvatar id={player.avatarId} name={player.name} size={28} />
                       <div>
                         <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{player.name}</h4>
                         <span className="text-[10px] text-[#A5B0A6]">{player.position}</span>

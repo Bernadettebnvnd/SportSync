@@ -15,6 +15,17 @@ export function formatCurrency(cents: number): string {
   }).format(cents / 100);
 }
 
+/**
+ * Generates player initials (first letter of first and last name, or single letter if only one name).
+ */
+export function getPlayerInitials(name?: string): string {
+  if (!name || !name.trim()) return 'P';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'P';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 export function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();

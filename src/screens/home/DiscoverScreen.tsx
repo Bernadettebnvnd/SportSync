@@ -240,6 +240,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         <div className="flex items-center gap-3">
           <UserAvatar
             id={toAvatarId(user?.avatarId)}
+            name={user?.name || user?.username}
             size={42}
             showBadge={!effectiveIsGuest}
             badgeLevel={user?.level || 1}

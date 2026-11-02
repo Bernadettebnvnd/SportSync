@@ -110,7 +110,7 @@ export const TeamPlayerProfileScreen: React.FC<TeamPlayerProfileScreenProps> = (
         <div className="p-5 rounded-3xl bg-[#141A15] border border-white/5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2.5">
-              <UserAvatar id={starPlayer.avatarId} size={36} />
+              <UserAvatar id={starPlayer.avatarId} name={starPlayer.name} size={36} />
               <div>
                 <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
                   {starPlayer.name}

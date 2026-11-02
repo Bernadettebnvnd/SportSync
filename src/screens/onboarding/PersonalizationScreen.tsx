@@ -6,6 +6,7 @@ import { Button } from '../../design-system/components/Button';
 import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { PRIMARY_SPORTS, PrimarySport } from '../../config/sports';
+import { getPlayerInitials } from '@/lib/utils';
 
 export interface PersonalizationDraftData {
   displayName?: string;
@@ -158,23 +159,18 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
             />
           </div>
 
-          <div>
-            <span className="text-[11px] text-[#A5B0A6] block mb-2">Choose Avatar (Optional)</span>
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              {['alex', 'leo', 'elena', 'martin', 'marcus', 'kai', 'jordan'].map((av) => (
-                <button
-                  key={av}
-                  type="button"
-                  onClick={() => setSelectedAvatar(av)}
-                  className={`relative p-1 rounded-full border-2 transition-all shrink-0 ${
-                    selectedAvatar === av
-                      ? 'border-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.4)]'
-                      : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
-                >
-                  <UserAvatar id={toAvatarId(av)} size={40} />
-                </button>
-              ))}
+          {/* Circular Player Initials Profile Icon */}
+          <div className="flex items-center gap-3 pt-1">
+            <div className="w-12 h-12 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-lg flex items-center justify-center shadow-[0_0_14px_rgba(200,255,46,0.25)] shrink-0 select-none">
+              {getPlayerInitials(displayName)}
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-bold text-[#F4F7F0] block truncate">
+                {displayName.trim() || 'Player'}
+              </span>
+              <span className="text-[10px] text-[#A5B0A6] block truncate">
+                Initials automatically generated from your name
+              </span>
             </div>
           </div>
         </div>

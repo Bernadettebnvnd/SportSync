@@ -81,7 +81,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           {/* Top Row: Avatar + Name on left, XP Progress Ring on right */}
           <div className="flex items-center justify-between gap-3 min-w-0 relative z-10">
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <UserAvatar id={toAvatarId(user?.avatarId)} size={52} />
+              <UserAvatar name={displayName} size={52} />
               <div className="min-w-0 flex-1">
                 <h2 className="font-display font-black text-lg text-[#F4F7F0] truncate leading-snug">
                   {displayName}

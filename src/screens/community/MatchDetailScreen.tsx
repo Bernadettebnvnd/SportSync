@@ -92,7 +92,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
 
           <div className="mt-3 p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <UserAvatar id={game.hostAvatar} size={36} />
+              <UserAvatar id={game.hostAvatar} name={game.hostName} size={36} />
               <div>
                 <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
                   Hosted by

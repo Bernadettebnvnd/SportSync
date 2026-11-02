@@ -24,6 +24,15 @@ import type * as LeafletType from 'leaflet';
 import { Button } from '../../design-system/components/Button';
 import { Stepper, Toggle } from '../../design-system/components/SegmentedControl';
 import { APP_CONFIG } from '../../config/appConfig';
+import { defaultGeocodingProvider } from '../../lib/maps/provider';
+
+export interface LocationSuggestionItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  coordinates: [number, number];
+  isLandmark?: boolean;
+}
 
 export const STANDARDIZED_SPORTS_OPTIONS = [
   { id: 'Basketball', label: 'Basketball', icon: '🏀' },
@@ -237,7 +246,14 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   const [locationName, setLocationName] = useState('Jesse M. Robredo Coliseum, Triangulo, Naga City');
   const [coordinates, setCoordinates] = useState<[number, number]>(NAGA_SPORTS_VENUES[0].coordinates);
   const [selectedVenueId, setSelectedVenueId] = useState<string>(NAGA_SPORTS_VENUES[0].id);
-  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+  const [locationSearchQuery, setLocationSearchQuery] = useState(
+    'Jesse M. Robredo Coliseum, Triangulo, Naga City'
+  );
+  const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestionItem[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
   const [isResolvingLocation, setIsResolvingLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locateNotice, setLocateNotice] = useState<string | null>(null);
@@ -348,9 +364,11 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         const newCoords: [number, number] = [pos.lat, pos.lng];
         setCoordinates(newCoords);
         setSelectedVenueId('');
+        setShowLocationDropdown(false);
         setIsResolvingLocation(true);
         const name = await reverseGeocodeNaga(pos.lat, pos.lng);
         setLocationName(name);
+        setLocationSearchQuery(name);
         setIsResolvingLocation(false);
         setError(null);
       });
@@ -361,10 +379,12 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         marker.setLatLng(e.latlng);
         setCoordinates(newCoords);
         setSelectedVenueId('');
+        setShowLocationDropdown(false);
         map.panTo(e.latlng, { animate: true, duration: 0.4 });
         setIsResolvingLocation(true);
         const name = await reverseGeocodeNaga(e.latlng.lat, e.latlng.lng);
         setLocationName(name);
+        setLocationSearchQuery(name);
         setIsResolvingLocation(false);
         setError(null);
       });
@@ -392,13 +412,122 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   const handleSelectNagaVenue = (venue: NagaLandmark) => {
     setCoordinates(venue.coordinates);
     setLocationName(venue.name);
+    setLocationSearchQuery(venue.name);
     setSelectedVenueId(venue.id);
+    setShowLocationDropdown(false);
     setError(null);
 
     if (mapInstanceRef.current) {
       mapInstanceRef.current.flyTo(venue.coordinates, 16, { duration: 0.8 });
       if (markerRef.current) {
         markerRef.current.setLatLng(venue.coordinates);
+      }
+    }
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowLocationDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Handle location search as player types with Map API integration
+  const handleLocationInputChange = (val: string) => {
+    setLocationSearchQuery(val);
+    setLocationName(val);
+    if (error) setError(null);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (!val || val.trim().length < 2) {
+      setLocationSuggestions([]);
+      setShowLocationDropdown(false);
+      setIsSearchingLocation(false);
+      return;
+    }
+
+    setShowLocationDropdown(true);
+    setIsSearchingLocation(true);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      const q = val.trim().toLowerCase();
+
+      // 1. Local matching for Naga sports facilities & landmarks
+      const localMatches: LocationSuggestionItem[] = NAGA_SPORTS_VENUES
+        .filter(
+          (v) =>
+            v.name.toLowerCase().includes(q) ||
+            v.shortName.toLowerCase().includes(q) ||
+            v.barangay.toLowerCase().includes(q) ||
+            v.sports.some((s) => s.toLowerCase().includes(q))
+        )
+        .map((v) => ({
+          id: v.id,
+          title: v.name,
+          subtitle: `${v.barangay}, Naga City • ${v.sports.slice(0, 2).join(', ')}`,
+          coordinates: v.coordinates,
+          isLandmark: true,
+        }));
+
+      // 2. Query Map API provider (Nominatim / Geocoding API)
+      let apiMatches: LocationSuggestionItem[] = [];
+      try {
+        const geoResults = await defaultGeocodingProvider.search(val);
+        apiMatches = geoResults.map((item) => ({
+          id: item.placeId,
+          title: item.shortName || item.displayName,
+          subtitle: item.displayName,
+          coordinates: [item.latitude, item.longitude] as [number, number],
+          isLandmark: false,
+        }));
+      } catch (err) {
+        console.warn('Map API location search failed:', err);
+      }
+
+      // 3. Deduplicate
+      const combined = [...localMatches];
+      for (const item of apiMatches) {
+        const alreadyExists = combined.some(
+          (c) =>
+            calculateDistance(c.coordinates[0], c.coordinates[1], item.coordinates[0], item.coordinates[1]) < 0.2 ||
+            c.title.toLowerCase() === item.title.toLowerCase()
+        );
+        if (!alreadyExists) {
+          combined.push(item);
+        }
+      }
+
+      setLocationSuggestions(combined.slice(0, 6));
+      setIsSearchingLocation(false);
+    }, 280);
+  };
+
+  // Select location suggestion and accurately fly & pin map
+  const handleSelectSuggestedLocation = (item: LocationSuggestionItem) => {
+    setLocationName(item.title);
+    setLocationSearchQuery(item.title);
+    setCoordinates(item.coordinates);
+    setSelectedVenueId(item.id);
+    setShowLocationDropdown(false);
+    setLocationSuggestions([]);
+    setError(null);
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo(item.coordinates, 16, { duration: 0.8 });
+      if (markerRef.current) {
+        markerRef.current.setLatLng(item.coordinates);
       }
     }
   };
@@ -839,29 +968,85 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 )}
               </div>
 
-              {/* Location Input with MapPin Icon */}
-              <div className="relative mb-2">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#C8FF2E]">
-                  <MapPin className="w-4 h-4" />
+              {/* Location Input with MapPin Icon & Map API Dropdown */}
+              <div ref={searchContainerRef} className="relative mb-2 z-[450]">
+                <div className="relative flex items-center">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#C8FF2E] pointer-events-none">
+                    {isSearchingLocation ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={locationSearchQuery}
+                    onChange={(e) => handleLocationInputChange(e.target.value)}
+                    onFocus={() => {
+                      if (locationSuggestions.length > 0) setShowLocationDropdown(true);
+                    }}
+                    placeholder="Search venue or address (e.g. Robredo Coliseum, Pacol, Naga City)..."
+                    className="w-full h-12 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all truncate"
+                  />
+                  {locationSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocationSearchQuery('');
+                        setLocationName('');
+                        setLocationSuggestions([]);
+                        setShowLocationDropdown(false);
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#65756B] hover:text-white transition-colors cursor-pointer"
+                      title="Clear location search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-                <input
-                  type="text"
-                  value={locationName}
-                  onChange={(e) => {
-                    setLocationName(e.target.value);
-                    if (error) setError(null);
-                  }}
-                  placeholder="e.g. Jesse M. Robredo Coliseum, Naga City"
-                  className="w-full h-12 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all truncate"
-                />
-                {locationName && (
-                  <button
-                    type="button"
-                    onClick={() => setLocationName('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#65756B] hover:text-white"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+
+                {/* Suggestions Dropdown from Map API & Landmarks */}
+                {showLocationDropdown && (locationSuggestions.length > 0 || isSearchingLocation) && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-white/10 bg-[#141A15]/98 backdrop-blur-xl shadow-2xl p-1.5 space-y-1 max-h-60 overflow-y-auto no-scrollbar z-[500]">
+                    {isSearchingLocation && locationSuggestions.length === 0 && (
+                      <div className="p-3 text-xs text-[#A5B0A6] flex items-center justify-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 text-[#C8FF2E] animate-spin" />
+                        <span>Searching Map API...</span>
+                      </div>
+                    )}
+                    {locationSuggestions.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectSuggestedLocation(item)}
+                        className="w-full text-left p-2.5 rounded-xl hover:bg-[#1C241E] flex items-center justify-between gap-2.5 transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-[#0B0F0C] border border-white/5 flex items-center justify-center text-[#C8FF2E] shrink-0 group-hover:border-[#C8FF2E]/40 group-hover:scale-105 transition-all">
+                            <MapPin className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-[#F4F7F0] truncate group-hover:text-[#C8FF2E]">
+                                {item.title}
+                              </span>
+                              {item.isLandmark && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0">
+                                  Venue
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-[#A5B0A6] block truncate">
+                              {item.subtitle}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-[#C8FF2E] font-semibold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Pin to map &rarr;
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
 

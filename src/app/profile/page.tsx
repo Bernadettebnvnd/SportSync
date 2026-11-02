@@ -7,7 +7,7 @@ import { useMatchiStore } from '@/lib/store';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { getSportDisplayName } from '@/lib/utils';
+import { getSportDisplayName, getPlayerInitials } from '@/lib/utils';
 import {
   MapPin,
   Calendar,
@@ -44,11 +44,9 @@ export default function ProfilePage() {
       {/* Player Passport Card */}
       <div className="rounded-3xl border border-white/10 bg-[#141A15] p-5 sm:p-6 shadow-xl">
         <div className="flex items-center gap-4">
-          <img
-            src={currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
-            alt={currentUser.full_name}
-            className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-cover border-2 border-[#C8FF2E]/30 shrink-0"
-          />
+          <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-2xl sm:text-3xl flex items-center justify-center shrink-0 shadow-[0_0_18px_rgba(200,255,46,0.25)] select-none">
+            {getPlayerInitials(currentUser.full_name)}
+          </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">

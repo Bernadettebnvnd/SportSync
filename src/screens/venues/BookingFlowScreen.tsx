@@ -231,7 +231,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
                     }`}
                 >
                   <div className="relative">
-                    <UserAvatar id={f.avatarId} size={30} />
+                    <UserAvatar id={f.avatarId} name={f.name} size={30} />
                     {isInvited && (
                       <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
                         <Check className="w-2 h-2 stroke-[3]" />

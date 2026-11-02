@@ -141,7 +141,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
             {dynamicPlayers[1] && (
               <div className="flex-1 flex flex-col items-center text-center">
                 <div className="relative mb-2">
-                  <UserAvatar id={dynamicPlayers[1].avatar} size={48} />
+                  <UserAvatar id={dynamicPlayers[1].avatar} name={dynamicPlayers[1].name} size={48} />
                   <span className="absolute -top-2 -right-1 w-5 h-5 rounded-full bg-[#FF8FC7] text-[#0B0F0C] flex items-center justify-center font-display font-black text-[10px] shadow-sm">
                     2
                   </span>
@@ -169,7 +169,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
               <div className="flex-1 flex flex-col items-center text-center -translate-y-4">
                 <Crown className="w-6 h-6 text-[#C8FF2E] mb-1 animate-bounce" />
                 <div className="relative mb-2">
-                  <UserAvatar id={dynamicPlayers[0].avatar} size={58} />
+                  <UserAvatar id={dynamicPlayers[0].avatar} name={dynamicPlayers[0].name} size={58} />
                   <span className="absolute -top-2 -right-1 w-6 h-6 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-xs shadow-md">
                     1
                   </span>
@@ -196,7 +196,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
             {dynamicPlayers[2] && (
               <div className="flex-1 flex flex-col items-center text-center">
                 <div className="relative mb-2">
-                  <UserAvatar id={dynamicPlayers[2].avatar} size={48} />
+                  <UserAvatar id={dynamicPlayers[2].avatar} name={dynamicPlayers[2].name} size={48} />
                   <span className="absolute -top-2 -right-1 w-5 h-5 rounded-full bg-[#F4F7F0] text-[#0B0F0C] flex items-center justify-center font-display font-black text-[10px] shadow-sm">
                     3
                   </span>
@@ -238,7 +238,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                   <span className={`font-display font-bold text-xs w-4 ${player.isMe ? 'text-[#C8FF2E]' : 'text-[#A5B0A6]'}`}>
                     #{player.rank}
                   </span>
-                  <UserAvatar id={player.avatar} size={28} />
+                  <UserAvatar id={player.avatar} name={player.name} size={28} />
                   <div>
                     <span className={`font-semibold ${player.isMe ? 'text-[#C8FF2E] font-bold' : 'text-[#F4F7F0]'}`}>
                       {player.name}
