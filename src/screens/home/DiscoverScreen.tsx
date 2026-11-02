@@ -23,6 +23,7 @@ import { SportIcon } from '../../illustrations/SportIcons';
 import { STANDARDIZED_SPORTS } from '../../config/sports';
 import { useTimeGreeting } from '../../lib/useGreeting';
 import { useMatchiStore } from '../../lib/store';
+import { useNotifications } from '../../lib/notifications';
 
 
 export const FEATURED_CITY_FILTERS = [
@@ -116,6 +117,7 @@ interface DiscoverScreenProps {
   user?: {
     id?: string;
     name: string;
+    username?: string;
     avatarId: string;
     level: number;
     isGuest?: boolean;
@@ -140,6 +142,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onRequireAuth,
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
+  const { unreadCount } = useNotifications();
   const [activeSport, setActiveSport] = useState<string>('All');
   const [courtSearchInput, setCourtSearchInput] = useState<string>('');
 
@@ -267,8 +270,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           className="relative w-10 h-10 rounded-full bg-[#1C241E] border border-white/10 flex items-center justify-center hover:bg-[#263028] transition-colors press-scale"
         >
           <Bell className="w-4 h-4 text-[#F4F7F0]" />
-          {!effectiveIsGuest && (
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C8FF2E] shadow-[0_0_8px_#C8FF2E]" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_#C8FF2E]">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
           )}
         </button>
       </header>

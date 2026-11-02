@@ -14,6 +14,7 @@ import {
 import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
+import { addNotification } from './notifications';
 
 export interface SportSyncBookingItem {
   id: string;
@@ -656,6 +657,13 @@ export function useSportSyncBridge() {
             rewardReason: reason,
           },
         });
+
+        addNotification({
+          type: 'achievement',
+          title: `Level Up! Reached Level ${newLevel}`,
+          desc: `Congratulations! You unlocked the title "${newTitle}". Keep playing to climb the ranks!`,
+          linkScreen: 'leaderboard',
+        });
       }
 
       const message = leveledUp
@@ -856,6 +864,13 @@ export function useSportSyncBridge() {
             stakeXp: wonWagers[0].stakeXp,
           },
         });
+
+        addNotification({
+          type: 'wager',
+          title: 'Prediction Wager Won!',
+          desc: `Your call on "${wonWagers[0].matchTitle}" paid out +${totalPayout} Playmaker XP!`,
+          linkScreen: 'scores',
+        });
         return {
           won: true,
           payoutXp: totalPayout,
@@ -900,6 +915,13 @@ export function useSportSyncBridge() {
             earnedXp: xpRes.totalEarned,
             multiplierBonus: xpRes.multiplierBonus,
           },
+        });
+
+        addNotification({
+          type: 'achievement',
+          title: `Achievement Claimed: ${item.title}`,
+          desc: `You claimed "${item.title}" (+${xpRes.totalEarned} XP)!`,
+          linkScreen: 'leaderboard',
         });
         return {
           success: true,
@@ -1013,6 +1035,14 @@ export function useSportSyncBridge() {
         console.warn('[SportSyncBridge] Global open play session creation fallback handled:', err);
       }
 
+      // Real-time Notification
+      addNotification({
+        type: 'match',
+        title: `Match Hosted: ${gameData.title}`,
+        desc: `Your ${gameData.sport} game at ${gameData.locationName} is now live and accepting players.`,
+        linkScreen: 'social-home',
+      });
+
       return newGame;
     },
     [userProfile.name, awardXp, store]
@@ -1040,6 +1070,15 @@ export function useSportSyncBridge() {
       );
 
       const xpResult = awardXp(30, 'joining a game roster', { applyStreakMultiplier: true });
+
+      if (joinedGame) {
+        addNotification({
+          type: 'match',
+          title: 'Match Roster Confirmed',
+          desc: `You joined "${(joinedGame as CommunityGame).title}". Spot reserved!`,
+          linkScreen: 'match-detail',
+        });
+      }
 
       return {
         game: joinedGame,
@@ -1069,6 +1108,15 @@ export function useSportSyncBridge() {
           return g;
         })
       );
+
+      if (updatedGame) {
+        addNotification({
+          type: 'match',
+          title: 'Left Match Roster',
+          desc: `You have left the roster. Your spot was reopened for other players.`,
+          linkScreen: 'social-home',
+        });
+      }
 
       return {
         game: updatedGame,
@@ -1101,6 +1149,14 @@ export function useSportSyncBridge() {
       };
 
       setBookings((prev) => [newBooking, ...prev]);
+
+      // Real-time notification for court reservation
+      addNotification({
+        type: 'booking',
+        title: 'Court Booking Confirmed',
+        desc: `${details.venue.name}: ${details.court} reserved for ${details.date} at ${details.slot}.`,
+        linkScreen: 'my-bookings',
+      });
 
       // Award XP (+60 XP base × 1.5x = +90 XP)
       awardXp(60, 'reserving a verified court', { applyStreakMultiplier: true });
@@ -1149,6 +1205,12 @@ export function useSportSyncBridge() {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
     );
+    addNotification({
+      type: 'booking',
+      title: 'Booking Cancelled',
+      desc: 'Your court reservation was cancelled. Full refund issued.',
+      linkScreen: 'my-bookings',
+    });
   }, []);
 
   // 18. Complete Onboarding

@@ -576,7 +576,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'notifications':
-        return <NotificationsScreen onBack={goBack} />;
+        return (
+          <NotificationsScreen
+            onBack={goBack}
+            onNavigate={(screenId) => navigateTo(screenId as ScreenId)}
+          />
+        );
       case 'search':
         return <SearchScreen onBack={goBack} />;
       case 'settings':
