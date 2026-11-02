@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Award, Zap } from 'lucide-react';
+import { Star } from 'lucide-react';
 
 export const StatTile: React.FC<{
   value: string | number;
@@ -8,26 +8,42 @@ export const StatTile: React.FC<{
   trendPositive?: boolean;
   className?: string;
 }> = ({ value, label, trend, trendPositive = true, className = '' }) => {
+  const isStringValue = typeof value === 'string';
+  const isLongValue = isStringValue && value.length > 5;
+
   return (
     <div
-      className={`rounded-2xl bg-[#1C241E] border border-white/5 p-3.5 flex flex-col justify-between ${className}`}
+      className={`rounded-2xl bg-[#141A15] border border-white/5 p-3 flex flex-col justify-between h-[86px] min-h-[86px] shadow-sm hover:border-white/10 transition-colors ${className}`}
     >
-      <span className="text-[11px] uppercase tracking-wider text-[#A5B0A6] font-medium">
-        {label}
-      </span>
-      <div className="flex items-baseline justify-between mt-1">
-        <span className="font-display font-black text-2xl text-[#F4F7F0] tabular-nums">
-          {value}
+      {/* Top Row: Label and Trend badge */}
+      <div className="flex items-center justify-between gap-1.5 min-w-0">
+        <span className="text-[10px] uppercase font-bold tracking-wider text-[#A5B0A6] truncate">
+          {label}
         </span>
         {trend && (
           <span
-            className={`text-[10px] font-bold ${
-              trendPositive ? 'text-[#3DDC84]' : 'text-[#FF5C5C]'
+            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 truncate max-w-[55%] ${
+              trendPositive
+                ? 'bg-[#3DDC84]/15 text-[#3DDC84] border border-[#3DDC84]/30'
+                : 'bg-white/5 text-[#A5B0A6] border border-white/10'
             }`}
           >
             {trend}
           </span>
         )}
+      </div>
+
+      {/* Main Value */}
+      <div className="flex items-baseline mt-auto">
+        <span
+          className={`font-display font-black text-[#F4F7F0] truncate ${
+            isLongValue
+              ? 'text-sm sm:text-base tracking-tight leading-tight'
+              : 'text-xl sm:text-2xl tabular-nums leading-none'
+          }`}
+        >
+          {value}
+        </span>
       </div>
     </div>
   );
@@ -40,13 +56,13 @@ export const LevelBadge: React.FC<{
 }> = ({ level, title, className = '' }) => {
   return (
     <div
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1C241E] border border-[#C8FF2E]/40 select-none ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 select-none whitespace-nowrap shrink-0 ${className}`}
     >
-      <div className="w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-bold text-[10px]">
+      <div className="w-4 h-4 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-[9px] shrink-0">
         {level}
       </div>
-      <span className="font-display font-semibold text-xs text-[#F4F7F0]">
-        Level {level} <span className="text-[#A5B0A6] font-normal">/ {title}</span>
+      <span className="font-display font-bold text-[11px] text-[#F4F7F0] whitespace-nowrap">
+        Lv.{level} <span className="text-[#A5B0A6] font-normal">• {title}</span>
       </span>
     </div>
   );
@@ -72,9 +88,9 @@ export const XpRing: React.FC<{
   level: number;
   size?: number;
   className?: string;
-}> = ({ currentXp, nextLevelXp, level, size = 96, className = '' }) => {
+}> = ({ currentXp, nextLevelXp, level, size = 64, className = '' }) => {
   const percentage = Math.min(100, Math.round((currentXp / nextLevelXp) * 100));
-  const strokeWidth = 6;
+  const strokeWidth = 5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
@@ -82,17 +98,22 @@ export const XpRing: React.FC<{
   return (
     <div
       style={{ width: size, height: size }}
-      className={`relative inline-flex items-center justify-center select-none ${className}`}
+      className={`relative inline-flex items-center justify-center select-none shrink-0 ${className}`}
     >
-      <svg className="w-full h-full -rotate-90">
+      <svg
+        viewBox={`0 0 ${size} ${size}`}
+        className="w-full h-full -rotate-90 overflow-visible"
+      >
+        {/* Track circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="rgba(255,255,255,0.08)"
+          stroke="rgba(255, 255, 255, 0.15)"
           strokeWidth={strokeWidth}
-          fill="none"
+          fill="rgba(0, 0, 0, 0.3)"
         />
+        {/* Progress circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -103,14 +124,16 @@ export const XpRing: React.FC<{
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
           fill="none"
-          className="transition-all duration-1000 ease-out"
+          className="transition-all duration-700 ease-out"
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="font-display font-black text-base text-[#F4F7F0] tabular-nums leading-none">
+
+      {/* Center Text */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+        <span className="font-display font-black text-xs text-[#F4F7F0] tabular-nums leading-none">
           Lv.{level}
         </span>
-        <span className="text-[10px] text-[#A5B0A6] font-medium mt-0.5">
+        <span className="text-[9px] text-[#A5B0A6] font-bold mt-0.5 leading-none tabular-nums">
           {percentage}%
         </span>
       </div>

@@ -47,7 +47,7 @@ export const PhoneFrame: React.FC<PhoneFrameProps> = ({
         </div>
 
         {/* Inner Phone Viewport Canvas (390 x 844 minus borders) */}
-        <div className="relative flex-1 w-full overflow-y-auto no-scrollbar flex flex-col bg-[#0B0F0C] text-[#F4F7F0]">
+        <div className="relative flex-1 w-full overflow-hidden flex flex-col bg-[#0B0F0C] text-[#F4F7F0]">
           {children}
         </div>
 
