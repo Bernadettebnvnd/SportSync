@@ -3,11 +3,11 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
-import { SportType } from '@/types';
-import { getSportDisplayName } from '@/lib/utils';
+import { SportType, MatchFormat, SkillLevel } from '@/types';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
 import {
   Check,
+  ArrowRight,
   ArrowLeft,
   Building2,
   Navigation,
@@ -15,19 +15,56 @@ import {
   MapPin,
   Loader2,
   User as UserIcon,
-  ChevronRight,
+  Bell,
+  AlertCircle,
+  Sparkles,
+  Trophy,
+  Users,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const AVAILABLE_SPORTS: { id: SportType; label: string; desc: string }[] = [
-  { id: 'pickleball', label: 'Pickleball', desc: 'Fast-paced dinks, kitchen rallies, and open play rotations' },
-  { id: 'badminton', label: 'Badminton', desc: 'BWF rubber courts, agility rallies, and doubles matches' },
-  { id: 'basketball', label: 'Basketball', desc: 'Hardwood covered courts, pickup runs, and 3v3 half-court' },
-  { id: 'tennis', label: 'Tennis', desc: 'Tournament hardcourt and clay court hourly sessions' },
-  { id: 'padel', label: 'Padel', desc: 'Enclosed glass court rebounds and tactical doubles mixers' },
+const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
+  { id: 'basketball', label: 'Basketball', icon: '🏀' },
+  { id: 'badminton', label: 'Badminton', icon: '🏸' },
+  { id: 'volleyball', label: 'Volleyball', icon: '🏐' },
+  { id: 'football' as any, label: 'Football', icon: '⚽' },
+  { id: 'pickleball', label: 'Pickleball', icon: '🏓' },
+  { id: 'tennis', label: 'Tennis', icon: '🎾' },
+  { id: 'billiards' as any, label: 'Billiards', icon: '🎱' },
+  { id: 'darts' as any, label: 'Darts', icon: '🎯' },
+  { id: 'padel', label: 'Padel', icon: '🎾' },
 ];
 
-const QUICK_LOCATIONS = [
+const PHILIPPINE_AREAS = [
+  'Naga City (Pilot Area)',
+  'BGC, Taguig City',
+  'Pasig & Ortigas Center',
+  'Makati City',
+  'Quezon City',
+  'Mandaluyong / San Juan',
+  'Alabang & South Metro',
+  'Metro Cebu',
+  'Davao City',
+  'Baguio City',
+];
+
+const AVATAR_PRESETS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=200&q=80',
+];
+
+const NICKNAME_SUGGESTIONS = [
+  'Ace',
+  'Clutch',
+  'Captain',
+  'The Maestro',
+  'Rookie',
+  'Deadeye',
+];
+
+const FACILITY_LOCATIONS = [
   'Naga City',
   'BGC & Taguig',
   'Makati',
@@ -35,15 +72,6 @@ const QUICK_LOCATIONS = [
   'Quezon City',
   'Cebu City',
   'Davao City',
-];
-
-const PLAYING_STYLES = [
-  { id: 'friends', label: 'With friends', desc: 'Book private courts for your regular group' },
-  { id: 'new_players', label: 'Meet new players', desc: 'Find open games and match with community players' },
-  { id: 'open_play', label: 'Open Play', desc: 'Drop-in paddle queue rotations and quick games' },
-  { id: 'private', label: 'Private games', desc: 'Reserve exclusive court time for practice & coaching' },
-  { id: 'practice', label: 'Practice & drills', desc: 'Solo wall drills, ball machines, and skills refinement' },
-  { id: 'competitive', label: 'Competitive games', desc: 'Track scores, challenge players, and play tournaments' },
 ];
 
 export default function OnboardingPage() {
@@ -74,38 +102,52 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<'player' | 'owner'>(
     currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? 'owner' : 'player'
   );
-  // Step 1: Role, Step 2: Name, Step 3: Sports, Step 4: Location, Step 5: Preferences, Step 6: Confirmation
-  const [step, setStep] = useState<number>(1);
-  const totalSteps = role === 'player' ? 6 : 5;
 
-  // Player fields
+  // =========================================================================
+  // PLAYER STATE (SINGLE-PAGE SETUP MATCHING REFERENCE SCREENSHOT)
+  // =========================================================================
   const [fullName, setFullName] = useState(currentUser.full_name || '');
   const [nickname, setNickname] = useState(currentUser.nickname || '');
-  const [selectedSports, setSelectedSports] = useState<SportType[]>(
-    currentUser.preferred_sports && currentUser.preferred_sports.length > 0
-      ? currentUser.preferred_sports
-      : ['pickleball']
-  );
-  const [selectedArea, setSelectedArea] = useState(currentUser.city || '');
-  const [selectedStyles, setSelectedStyles] = useState<string[]>(['friends', 'open_play']);
+  const [selectedAvatar, setSelectedAvatar] = useState(currentUser.avatar_url || AVATAR_PRESETS[0]);
+  const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
+    if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
+      return currentUser.preferred_sports;
+    }
+    return ['pickleball', 'basketball'];
+  });
+  const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
+  const [selectedArea, setSelectedArea] = useState(currentUser.city || PHILIPPINE_AREAS[0]);
+  const [skillLevel, setSkillLevel] = useState<SkillLevel>(currentUser.skill_level || 'intermediate');
+  const [notifyBookings, setNotifyBookings] = useState(true);
+  const [playerValidationError, setPlayerValidationError] = useState<string | null>(null);
+
+  // Geolocation & Search for Location
   const [isLocating, setIsLocating] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Facility fields
+  // =========================================================================
+  // FACILITY OWNER STATE (PRESERVED STEP-BY-STEP FLOW)
+  // =========================================================================
+  const [ownerStep, setOwnerStep] = useState<number>(2);
+  const totalOwnerSteps = 5;
   const [facilityName, setFacilityName] = useState('');
   const [facilityAddress, setFacilityAddress] = useState('');
-  const [facilityCity, setFacilityCity] = useState(QUICK_LOCATIONS[0]);
+  const [facilityCity, setFacilityCity] = useState(FACILITY_LOCATIONS[0]);
   const [facilitySports, setFacilitySports] = useState<SportType[]>(['pickleball']);
   const [courtCount, setCourtCount] = useState(2);
   const [hourlyRatePhp, setHourlyRatePhp] = useState(500);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const toggleSport = (sport: SportType) => {
+    if (playerValidationError) setPlayerValidationError(null);
     if (selectedSports.includes(sport)) {
       if (selectedSports.length > 1) {
         setSelectedSports(selectedSports.filter((s) => s !== sport));
+      } else {
+        setPlayerValidationError('Please keep at least one favorite sport selected.');
       }
     } else {
       setSelectedSports([...selectedSports, sport]);
@@ -122,11 +164,14 @@ export default function OnboardingPage() {
     }
   };
 
-  const toggleStyle = (id: string) => {
-    if (selectedStyles.includes(id)) {
-      setSelectedStyles(selectedStyles.filter((s) => s !== id));
-    } else {
-      setSelectedStyles([...selectedStyles, id]);
+  const handleNameChange = (val: string) => {
+    setFullName(val);
+    if (playerValidationError) setPlayerValidationError(null);
+    if (!nickname.trim()) {
+      const firstWord = val.trim().split(' ')[0] || '';
+      if (firstWord.length <= 14) {
+        setNickname(firstWord);
+      }
     }
   };
 
@@ -188,32 +233,53 @@ export default function OnboardingPage() {
     }
   };
 
+  // =========================================================================
+  // SUBMISSIONS
+  // =========================================================================
   const handleFinishPlayer = async () => {
+    if (!fullName.trim()) {
+      setPlayerValidationError('Please enter your full player name to continue.');
+      return;
+    }
+    if (selectedSports.length === 0) {
+      setPlayerValidationError('Please select at least one sport category.');
+      return;
+    }
+
+    setPlayerValidationError(null);
     setIsSubmitting(true);
+
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_pending_onboarding');
+        localStorage.setItem('sportsync_user_avatar', selectedAvatar);
       }
       setHasPendingOnboarding(false);
+
+      const finalFullName = fullName.trim() || currentUser.full_name || 'Player';
+      const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
+
       await completePlayerOnboarding({
-        fullName: fullName.trim() || currentUser.full_name || 'Player',
-        nickname: nickname.trim() || fullName.split(' ')[0] || currentUser.nickname || 'Player',
+        fullName: finalFullName,
+        nickname: finalNickname,
         preferredSports: selectedSports,
-        preferredFormat: selectedStyles.includes('private') ? 'singles' : 'doubles',
+        preferredFormat,
         city: selectedArea || 'Metro Manila',
-        skillLevel: 'intermediate',
+        skillLevel,
       });
 
       confetti({
-        particleCount: 70,
-        spread: 60,
+        particleCount: 80,
+        spread: 70,
         origin: { y: 0.6 },
-        colors: ['#2D724E', '#1E4A32', '#C87D43'],
+        colors: ['#C8FF2E', '#3DDC84', '#FFFFFF'],
       });
 
       router.replace('/');
     } catch (err) {
       console.error('Failed to complete onboarding:', err);
+      setPlayerValidationError('Failed to save profile. Please try again.');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -263,45 +329,509 @@ export default function OnboardingPage() {
 
   if (isCompleted) {
     return (
-      <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#2D724E] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-semibold text-[#65756B]">Loading your dashboard...</p>
+          <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-[#A5B0A6]">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
+  // ===========================================================================
+  // 1. PLAYER ONBOARDING: SINGLE-PAGE SETUP (VISUAL REFERENCE THEME)
+  // ===========================================================================
+  if (role === 'player') {
+    return (
+      <div className="min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col justify-center p-3 sm:p-6 md:p-8 select-none">
+        <div className="relative w-full max-w-xl mx-auto rounded-3xl bg-[#0B0F0C] border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col">
+          {/* Top Bar: Role Switcher & Header */}
+          <div className="p-4 sm:p-6 pb-4 border-b border-white/10 bg-[#0B0F0C] shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#C8FF2E] shadow-[0_0_8px_#C8FF2E]" />
+                <span className="font-display font-bold text-xs uppercase tracking-wider text-[#C8FF2E]">
+                  Player Profile Setup
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1C241E] text-[#A5B0A6] border border-white/5">
+                  Single-Page Setup
+                </span>
+              </div>
+
+              {/* Role Switcher to Facility Setup */}
+              <button
+                type="button"
+                onClick={() => setRole('owner')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-white/10 text-[11px] font-semibold text-[#A5B0A6] hover:text-white transition-all cursor-pointer"
+              >
+                <Building2 className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                <span>Facility Partner?</span>
+              </button>
+            </div>
+
+            <div className="mt-3">
+              <h1 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0] tracking-tight">
+                Set up your player profile
+              </h1>
+              <p className="text-xs text-[#A5B0A6] mt-0.5 leading-relaxed">
+                Configure your identity, favorite sports, court format, and local play hub on a single page.
+              </p>
+            </div>
+
+            {/* Lime Accent Divider */}
+            <div className="w-full h-1 rounded-full bg-white/10 mt-3.5 overflow-hidden">
+              <div className="h-full bg-[#C8FF2E] rounded-full w-28 shadow-[0_0_10px_rgba(200,255,46,0.6)]" />
+            </div>
+          </div>
+
+          {/* Scrollable Single-Page Form Body */}
+          <div className="p-4 sm:p-6 space-y-6">
+            {/* Validation Alert */}
+            {playerValidationError && (
+              <div className="p-3.5 rounded-2xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2.5 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#E0533C]" />
+                <span className="leading-tight font-medium">{playerValidationError}</span>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------------------
+                SECTION 1: PLAYER IDENTITY & AVATAR
+               ------------------------------------------------------------------- */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                  <UserIcon className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  1. Player Identity &amp; Avatar <span className="text-[#C8FF2E]">*</span>
+                </label>
+                <span className="text-[10px] text-[#65756B]">Public to Courts</span>
+              </div>
+
+              {/* Avatar Selector Row */}
+              <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative shrink-0">
+                    <img
+                      src={selectedAvatar}
+                      alt="Player Avatar"
+                      className="w-14 h-14 rounded-full object-cover ring-2 ring-[#C8FF2E] shadow-[0_0_16px_rgba(200,255,46,0.3)]"
+                    />
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center shadow-sm">
+                      <Sparkles className="w-3 h-3 stroke-[2.5]" />
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-[#F4F7F0] block truncate">
+                      {fullName.trim() || 'Court Player'}
+                    </span>
+                    <span className="text-[11px] text-[#A5B0A6] block truncate">
+                      &ldquo;{nickname.trim() || 'Moniker'}&rdquo; &bull; {selectedArea}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Avatar Presets */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {AVATAR_PRESETS.map((url, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedAvatar(url)}
+                      className={`w-9 h-9 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
+                        selectedAvatar === url
+                          ? 'border-[#C8FF2E] scale-105 shadow-[0_0_10px_rgba(200,255,46,0.4)]'
+                          : 'border-white/10 opacity-60 hover:opacity-100 hover:border-white/30'
+                      }`}
+                    >
+                      <img src={url} alt={`Preset ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Full Name Input */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider">
+                    Full Name <span className="text-[#C8FF2E]">*</span>
+                  </label>
+                  <span className="text-[10px] text-[#65756B]">Min 2 chars</span>
+                </div>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="e.g. Maria Santos"
+                  className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                />
+              </div>
+
+              {/* Court Moniker Input & Suggestions */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider">
+                    Court Moniker / Nickname
+                  </label>
+                  <span className="text-[10px] text-[#65756B]">Optional alias</span>
+                </div>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="e.g. The Maestro"
+                  className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                />
+
+                {/* Suggestions chips matching screenshot */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {NICKNAME_SUGGESTIONS.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setNickname(tag)}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-[#141A15] border border-white/10 text-[#A5B0A6] hover:text-[#C8FF2E] hover:border-[#C8FF2E]/40 transition-colors cursor-pointer"
+                    >
+                      + {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* -------------------------------------------------------------------
+                SECTION 2: SELECT SPORT CATEGORIES (3-COLUMN CARDS MATCHING REFERENCE)
+               ------------------------------------------------------------------- */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  2. Select Sport Categories <span className="text-[#C8FF2E]">*</span>
+                </label>
+                <span className="text-[10px] font-bold text-[#C8FF2E]">
+                  {selectedSports.length} Selected
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {AVAILABLE_SPORTS.map((sp) => {
+                  const isSelected = selectedSports.includes(sp.id);
+                  return (
+                    <button
+                      key={sp.id}
+                      type="button"
+                      onClick={() => toggleSport(sp.id)}
+                      className={`h-20 sm:h-22 p-2 rounded-2xl border flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                        isSelected
+                          ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_14px_rgba(200,255,46,0.25)]'
+                          : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      <span className="text-2xl leading-none">{sp.icon}</span>
+                      <span className="text-[11px] sm:text-xs font-semibold text-center leading-tight line-clamp-1">
+                        {sp.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* -------------------------------------------------------------------
+                SECTION 3: PLAYING FORMAT & SKILL TIER
+               ------------------------------------------------------------------- */}
+            <div className="space-y-3">
+              {/* 3A: Preferred Format */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                    3. Preferred Match Format
+                  </label>
+                  <span className="text-[10px] text-[#65756B]">Queue Preference</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreferredFormat('doubles')}
+                    className={`p-3 rounded-2xl border flex items-center gap-2.5 transition-all text-left cursor-pointer active:scale-95 ${
+                      preferredFormat === 'doubles'
+                        ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.25)]'
+                        : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                    }`}
+                  >
+                    <span className="text-xl">👥</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold block truncate">Doubles (2v2)</span>
+                      <span className="text-[10px] opacity-70 block truncate">Mixers &amp; rotations</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPreferredFormat('singles')}
+                    className={`p-3 rounded-2xl border flex items-center gap-2.5 transition-all text-left cursor-pointer active:scale-95 ${
+                      preferredFormat === 'singles'
+                        ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_14px_rgba(200,255,46,0.25)]'
+                        : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                    }`}
+                  >
+                    <span className="text-xl">👤</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold block truncate">Singles (1v1)</span>
+                      <span className="text-[10px] opacity-70 block truncate">Solo rallies &amp; ladders</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3B: Experience & Skill Tier */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                    Experience &amp; Skill Tier
+                  </label>
+                  <span className="text-[10px] text-[#65756B]">Fair Matchmaking</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'beginner', label: 'Beginner', desc: 'Learning & Casual' },
+                      { id: 'intermediate', label: 'Intermediate', desc: 'Tactics & Regular' },
+                      { id: 'advanced', label: 'Advanced', desc: 'Competitive' },
+                    ] as const
+                  ).map((lvl) => {
+                    const isSelected = skillLevel === lvl.id;
+                    return (
+                      <button
+                        key={lvl.id}
+                        type="button"
+                        onClick={() => setSkillLevel(lvl.id)}
+                        className={`p-2.5 sm:p-3 rounded-2xl border text-center transition-all cursor-pointer active:scale-95 ${
+                          isSelected
+                            ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_14px_rgba(200,255,46,0.25)]'
+                            : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                        }`}
+                      >
+                        <span className="text-xs font-bold block">{lvl.label}</span>
+                        <span className="text-[10px] opacity-70 block truncate mt-0.5">{lvl.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* -------------------------------------------------------------------
+                SECTION 4: PREFERRED LOCATION / HOME HUB
+               ------------------------------------------------------------------- */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  4. Preferred Location / Home Hub
+                </label>
+                <span className="text-[10px] text-[#C8FF2E] font-medium">Court Discovery</span>
+              </div>
+
+              {/* Action: Use Current Location */}
+              <button
+                type="button"
+                onClick={handleUseCurrentLocation}
+                disabled={isLocating}
+                className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                  selectedArea === 'Current Location' || isLocating
+                    ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.2)]'
+                    : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#0B0F0C] flex items-center justify-center text-[#C8FF2E] shrink-0 border border-white/5">
+                    {isLocating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Navigation className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-[#F4F7F0] block">
+                      {isLocating ? 'Detecting Location...' : 'Use Current GPS Location'}
+                    </span>
+                    <span className="text-[10px] text-[#A5B0A6] block">
+                      {selectedArea || 'Find courts closest to where you are'}
+                    </span>
+                  </div>
+                </div>
+                {selectedArea && !isLocating && (
+                  <Check className="w-4 h-4 text-[#C8FF2E]" />
+                )}
+              </button>
+
+              {/* Search Location Input */}
+              <div className="relative">
+                <div className="relative flex items-center">
+                  <Search className="w-4 h-4 text-[#65756B] absolute left-3.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={locationSearch}
+                    onChange={(e) => handleSearchLocation(e.target.value)}
+                    placeholder="Search city, area, or district..."
+                    className="w-full h-11 pl-10 pr-4 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                  />
+                  {isSearchingLocation && (
+                    <Loader2 className="w-4 h-4 text-[#C8FF2E] animate-spin absolute right-3.5" />
+                  )}
+                </div>
+
+                {locationSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-20 mt-1.5 rounded-2xl border border-white/10 bg-[#1C241E] p-1.5 shadow-xl space-y-1">
+                    {locationSuggestions.map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setSelectedArea(suggestion);
+                          setLocationSearch(suggestion);
+                          setLocationSuggestions([]);
+                        }}
+                        className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#F4F7F0] hover:bg-[#141A15] hover:text-[#C8FF2E] flex items-center gap-2 cursor-pointer transition-colors"
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
+                        <span>{suggestion}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Hub Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {PHILIPPINE_AREAS.map((area) => {
+                  const isSelected = selectedArea === area;
+                  const isPilot = area.includes('Naga City');
+                  return (
+                    <button
+                      key={area}
+                      type="button"
+                      onClick={() => {
+                        setSelectedArea(area);
+                        setLocationSearch(area);
+                      }}
+                      className={`px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer active:scale-95 ${
+                        isSelected
+                          ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)]'
+                          : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
+                        <span className="text-xs truncate">{area}</span>
+                      </div>
+                      {isPilot && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
+                          Pilot Hub
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* -------------------------------------------------------------------
+                SECTION 5: NOTIFICATIONS & REMINDERS
+               ------------------------------------------------------------------- */}
+            <div className="p-3.5 rounded-2xl bg-[#1C241E] border border-white/10 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-[#141A15] text-[#C8FF2E] flex items-center justify-center shrink-0 border border-white/5">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-[#F4F7F0] truncate">
+                    Booking &amp; Game Reminders
+                  </div>
+                  <div className="text-[10px] text-[#A5B0A6] truncate">
+                    Get notified when your turn on court is called or match fills up
+                  </div>
+                </div>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={notifyBookings}
+                onChange={(e) => setNotifyBookings(e.target.checked)}
+                aria-label="Toggle booking reminders"
+                className="w-4 h-4 accent-[#C8FF2E] rounded cursor-pointer shrink-0"
+              />
+            </div>
+
+            {/* -------------------------------------------------------------------
+                STICKY BOTTOM ACTION BUTTON (MATCHING REFERENCE EXACTLY)
+               ------------------------------------------------------------------- */}
+            <div className="pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={handleFinishPlayer}
+                disabled={isSubmitting}
+                className="w-full h-13 sm:h-14 rounded-full bg-[#C8FF2E] hover:bg-[#BCEE26] active:scale-[0.98] text-[#0B0F0C] font-display font-bold text-sm sm:text-base px-6 flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,255,46,0.3)] transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#0B0F0C]" />
+                    <span>Saving Player Profile...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Complete Profile &bull; Start Playing</span>
+                    <ArrowRight className="w-4 h-4 text-[#0B0F0C] stroke-[2.5]" />
+                  </>
+                )}
+              </button>
+
+              <p className="text-[10px] text-[#65756B] text-center">
+                Saves your player identity and preferences to SportSync &bull; Instant court access
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===========================================================================
+  // 2. FACILITY OWNER ONBOARDING: PRESERVED STEP-BY-STEP FLOW
+  // ===========================================================================
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1A241E] flex flex-col justify-between p-4 sm:p-8 max-w-xl mx-auto">
       {/* Top Bar: Back & Progress Indicator */}
       <div className="pt-2 sm:pt-4 space-y-3">
         <div className="flex items-center justify-between">
-          {step > 1 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => s - 1)}
-              className="inline-flex items-center gap-1 text-xs font-bold text-[#65756B] hover:text-[#1A241E] transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back</span>
-            </button>
-          ) : (
-            <span className="text-xs font-bold tracking-tight text-[#65756B]">
-              Step 1 of {totalSteps}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (ownerStep > 2) {
+                setOwnerStep((s) => s - 1);
+              } else {
+                setRole('player');
+              }
+            }}
+            className="inline-flex items-center gap-1 text-xs font-bold text-[#65756B] hover:text-[#1A241E] transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>{ownerStep > 2 ? 'Back' : 'Back to Player Setup'}</span>
+          </button>
 
           <span className="text-xs font-semibold text-[#65756B]">
-            {role === 'player' ? 'Player Profile' : 'Facility Setup'}
+            Facility Setup &bull; Step {ownerStep} of {totalOwnerSteps}
           </span>
         </div>
 
         {/* Step Indicator Bar */}
         <div className="flex items-center gap-1.5">
-          {Array.from({ length: totalSteps }).map((_, i) => {
-            const isCompleted = i + 1 < step;
-            const isCurrent = i + 1 === step;
+          {Array.from({ length: totalOwnerSteps }).map((_, i) => {
+            const isCompleted = i + 1 < ownerStep;
+            const isCurrent = i + 1 === ownerStep;
 
             return (
               <div
@@ -319,631 +849,207 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* Main Conversational Screen Body */}
+      {/* Main Facility Owner Flow Body */}
       <div className="my-auto py-8">
-        {/* =========================================================================
-         * STEP 1: ROLE SELECTION (Clucky Principle: One decision at a time)
-         * ========================================================================= */}
-        {step === 1 && (
+        {/* STEP 2: Facility Name & Address */}
+        {ownerStep === 2 && (
           <div className="space-y-6">
             <div className="space-y-2">
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                How will you use SportSync?
+                Facility details
               </h1>
               <p className="text-xs sm:text-sm text-[#65756B]">
-                Choose how you want to experience the platform.
+                Players look for your sports center on the marketplace.
               </p>
             </div>
 
-            <div className="space-y-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setRole('player');
-                  setStep(2);
-                }}
-                className={`w-full p-5 rounded-3xl border text-left flex items-center justify-between transition-all group ${
-                  role === 'player'
-                    ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
-                    : 'border-[#E8E5DF] bg-white/80 hover:border-[#2D724E]/40'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#EBF4EE] flex items-center justify-center text-[#2D724E] shrink-0">
-                    <UserIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-[#1A241E] group-hover:text-[#2D724E] transition-colors">
-                      I&apos;m a Player
-                    </h3>
-                    <p className="text-xs text-[#65756B] mt-0.5">
-                      Book courts, find open play games, and play more.
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-[#65756B] group-hover:text-[#2D724E] group-hover:translate-x-0.5 transition-all" />
-              </button>
+            <div className="space-y-4 pt-2">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  Facility Name
+                </label>
+                <input
+                  type="text"
+                  value={facilityName}
+                  onChange={(e) => setFacilityName(e.target.value)}
+                  placeholder="e.g. Metro Sports Hub"
+                  autoFocus
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                />
+              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setRole('owner');
-                  setStep(2);
-                }}
-                className={`w-full p-5 rounded-3xl border text-left flex items-center justify-between transition-all group ${
-                  role === 'owner'
-                    ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
-                    : 'border-[#E8E5DF] bg-white/80 hover:border-[#2D724E]/40'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#FBF0E6] flex items-center justify-center text-[#C87D43] shrink-0">
-                    <Building2 className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-[#1A241E] group-hover:text-[#C87D43] transition-colors">
-                      I run a Facility
-                    </h3>
-                    <p className="text-xs text-[#65756B] mt-0.5">
-                      Manage court schedules, accept bookings, and host rotations.
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-[#65756B] group-hover:text-[#C87D43] group-hover:translate-x-0.5 transition-all" />
-              </button>
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  Street Address
+                </label>
+                <input
+                  type="text"
+                  value={facilityAddress}
+                  onChange={(e) => setFacilityAddress(e.target.value)}
+                  placeholder="e.g. 123 Sports Ave"
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  City / Area
+                </label>
+                <select
+                  value={facilityCity}
+                  onChange={(e) => setFacilityCity(e.target.value)}
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                >
+                  {FACILITY_LOCATIONS.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         )}
 
-        {/* =========================================================================
-         * PLAYER FLOW
-         * ========================================================================= */}
-        {role === 'player' && (
-          <>
-            {/* STEP 2: Player Name */}
-            {step === 2 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    What is your name?
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Your name appears on court bookings and game rotation boards.
-                  </p>
-                </div>
+        {/* STEP 3: Featured Sports */}
+        {ownerStep === 3 && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+                Featured sports
+              </h1>
+              <p className="text-xs sm:text-sm text-[#65756B]">
+                Select the sports your facility provides courts for.
+              </p>
+            </div>
 
-                <div className="space-y-4 pt-2">
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => {
-                        setFullName(e.target.value);
-                        if (!nickname) {
-                          setNickname(e.target.value.split(' ')[0] || '');
-                        }
-                      }}
-                      placeholder="e.g. Alex Santos"
-                      autoFocus
-                      className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] placeholder:text-[#65756B]/50 focus:border-[#2D724E] focus:outline-none shadow-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                      Court Nickname
-                    </label>
-                    <input
-                      type="text"
-                      value={nickname}
-                      onChange={(e) => setNickname(e.target.value)}
-                      placeholder="e.g. Alex"
-                      className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] placeholder:text-[#65756B]/50 focus:border-[#2D724E] focus:outline-none shadow-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: Choose Sports (Large Visual Touch Targets) */}
-            {step === 3 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Choose your sports
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Select the sports you play. Your home screen prioritizes these courts.
-                  </p>
-                </div>
-
-                <div className="space-y-2.5 pt-2">
-                  {AVAILABLE_SPORTS.map((sport) => {
-                    const isSelected = selectedSports.includes(sport.id);
-                    return (
-                      <button
-                        key={sport.id}
-                        type="button"
-                        onClick={() => toggleSport(sport.id)}
-                        className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all min-h-[58px] ${
-                          isSelected
-                            ? 'border-[#2D724E] bg-white shadow-sm ring-1 ring-[#2D724E]'
-                            : 'border-[#E8E5DF] bg-white/70 hover:border-[#2D724E]/50'
-                        }`}
-                      >
-                        <div className="min-w-0 pr-3">
-                          <span className="text-sm font-black text-[#1A241E] block">
-                            {sport.label}
-                          </span>
-                          <span className="text-[11px] text-[#65756B] block mt-0.5 leading-snug">
-                            {sport.desc}
-                          </span>
-                        </div>
-                        <div
-                          className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected
-                              ? 'bg-[#2D724E] border-[#2D724E] text-white'
-                              : 'border-[#E8E5DF]'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: Where do you play? (Flexible & Non-restrictive, with Skip) */}
-            {step === 4 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Where do you play?
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Discover nearby courts or skip and search anytime later.
-                  </p>
-                </div>
-
-                <div className="space-y-4 pt-2">
-                  {/* Action 1: Use Current Location */}
+            <div className="space-y-2.5 pt-2">
+              {AVAILABLE_SPORTS.map((sport) => {
+                const isSelected = facilitySports.includes(sport.id);
+                return (
                   <button
+                    key={sport.id}
                     type="button"
-                    onClick={handleUseCurrentLocation}
-                    disabled={isLocating}
-                    className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${
-                      selectedArea === 'Current Location' || isLocating
-                        ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
-                        : 'border-[#E8E5DF] bg-white hover:border-[#2D724E]/50'
+                    onClick={() => toggleFacilitySport(sport.id)}
+                    className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-[#2D724E] bg-white shadow-sm ring-1 ring-[#2D724E]'
+                        : 'border-[#E8E5DF] bg-white/70 hover:border-[#2D724E]/50'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-[#EBF4EE] flex items-center justify-center text-[#2D724E] shrink-0">
-                        {isLocating ? (
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                          <Navigation className="w-5 h-5" />
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-sm font-bold text-[#1A241E] block">
-                          {isLocating ? 'Locating...' : 'Use Current Location'}
-                        </span>
-                        <span className="text-xs text-[#65756B] block">
-                          {selectedArea || 'Find courts nearest to you right now'}
-                        </span>
-                      </div>
+                      <span className="text-2xl">{sport.icon}</span>
+                      <span className="text-sm font-black text-[#1A241E]">{sport.label}</span>
                     </div>
-                    {selectedArea && !isLocating && (
-                      <Check className="w-4 h-4 text-[#2D724E]" />
-                    )}
-                  </button>
-
-                  {/* Action 2: Search for Location */}
-                  <div className="relative">
-                    <div className="relative flex items-center">
-                      <Search className="w-4 h-4 text-[#65756B] absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={locationSearch}
-                        onChange={(e) => handleSearchLocation(e.target.value)}
-                        placeholder="Search for a city, area, or district..."
-                        className="w-full pl-10 pr-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-xs sm:text-sm text-[#1A241E] placeholder:text-[#65756B] focus:border-[#2D724E] focus:outline-none min-h-[48px]"
-                      />
-                      {isSearchingLocation && (
-                        <Loader2 className="w-4 h-4 text-[#2D724E] animate-spin absolute right-3.5" />
-                      )}
-                    </div>
-
-                    {locationSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-20 mt-1.5 rounded-2xl border border-[#E8E5DF] bg-white p-1.5 shadow-lg space-y-1">
-                        {locationSuggestions.map((suggestion, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setSelectedArea(suggestion);
-                              setLocationSearch(suggestion);
-                              setLocationSuggestions([]);
-                            }}
-                            className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#1A241E] hover:bg-[#FAF8F5] flex items-center gap-2"
-                          >
-                            <MapPin className="w-3.5 h-3.5 text-[#2D724E] shrink-0" />
-                            <span>{suggestion}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action 3: Quick Location Chips */}
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                      Popular Areas
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {QUICK_LOCATIONS.map((loc) => {
-                        const isSelected = selectedArea === loc;
-                        return (
-                          <button
-                            key={loc}
-                            type="button"
-                            onClick={() => {
-                              setSelectedArea(loc);
-                              setLocationSearch(loc);
-                            }}
-                            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                              isSelected
-                                ? 'bg-[#2D724E] text-white shadow-xs'
-                                : 'bg-white border border-[#E8E5DF] text-[#65756B] hover:text-[#1A241E]'
-                            }`}
-                          >
-                            {loc}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: Preferences (Multi-select with Skip) */}
-            {step === 5 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    How do you like to play?
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Select any that apply, or skip to start playing immediately.
-                  </p>
-                </div>
-
-                <div className="space-y-2.5 pt-2">
-                  {PLAYING_STYLES.map((style) => {
-                    const isSelected = selectedStyles.includes(style.id);
-                    return (
-                      <button
-                        key={style.id}
-                        type="button"
-                        onClick={() => toggleStyle(style.id)}
-                        className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between transition-all min-h-[56px] ${
-                          isSelected
-                            ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
-                            : 'border-[#E8E5DF] bg-white/80 hover:border-[#2D724E]/50'
-                        }`}
-                      >
-                        <div>
-                          <span className="text-xs sm:text-sm font-black text-[#1A241E] block">
-                            {style.label}
-                          </span>
-                          <span className="text-[11px] text-[#65756B] block mt-0.5">
-                            {style.desc}
-                          </span>
-                        </div>
-                        <div
-                          className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ml-3 ${
-                            isSelected
-                              ? 'bg-[#2D724E] border-[#2D724E] text-white'
-                              : 'border-[#E8E5DF]'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 6: Confirmation */}
-            {step === 6 && (
-              <div className="space-y-6 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
-                  <Check className="w-8 h-8" />
-                </div>
-
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    You&apos;re all set.
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
-                    Your profile is ready. Find nearby courts or join live community
-                    rotations anytime.
-                  </p>
-                </div>
-
-                {/* Summary Chips */}
-                <div className="flex items-center justify-center gap-2 flex-wrap pt-2">
-                  <span className="rounded-xl border border-[#E8E5DF] bg-white px-3 py-1.5 text-xs font-bold text-[#1A241E]">
-                    {selectedArea || 'All Areas'}
-                  </span>
-                  {selectedSports.map((s) => (
-                    <span
-                      key={s}
-                      className="rounded-xl bg-[#2D724E]/10 px-3 py-1.5 text-xs font-bold text-[#2D724E]"
+                    <div
+                      className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
+                        isSelected ? 'bg-[#2D724E] border-[#2D724E] text-white' : 'border-[#E8E5DF]'
+                      }`}
                     >
-                      {getSportDisplayName(s)}
-                    </span>
+                      {isSelected && <Check className="w-3.5 h-3.5" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: Courts & Rates */}
+        {ownerStep === 4 && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+                Court setup &amp; rates
+              </h1>
+              <p className="text-xs sm:text-sm text-[#65756B]">
+                Configure court count and standard hourly rates.
+              </p>
+            </div>
+
+            <div className="space-y-5 pt-2">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
+                  Number of Courts
+                </label>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 4, 6, 8].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setCourtCount(num)}
+                      className={`flex-1 py-3 rounded-xl border text-sm font-black transition-all cursor-pointer ${
+                        courtCount === num
+                          ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
+                          : 'border-[#E8E5DF] bg-white text-[#1A241E]'
+                      }`}
+                    >
+                      {num}
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
+                  Hourly Court Rate (₱)
+                </label>
+                <div className="flex items-center gap-2">
+                  {[350, 450, 500, 600, 800].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setHourlyRatePhp(rate)}
+                      className={`flex-1 py-3 rounded-xl border text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                        hourlyRatePhp === rate
+                          ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
+                          : 'border-[#E8E5DF] bg-white text-[#1A241E]'
+                      }`}
+                    >
+                      ₱{rate}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
-        {/* =========================================================================
-         * FACILITY OWNER FLOW
-         * ========================================================================= */}
-        {role === 'owner' && (
-          <>
-            {/* STEP 2: Facility Name & Address */}
-            {step === 2 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Facility details
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Players look for your sports center on the marketplace.
-                  </p>
-                </div>
+        {/* STEP 5: Facility Ready */}
+        {ownerStep === 5 && (
+          <div className="space-y-6 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
+              <Building2 className="w-8 h-8" />
+            </div>
 
-                <div className="space-y-4 pt-2">
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                      Facility Name
-                    </label>
-                    <input
-                      type="text"
-                      value={facilityName}
-                      onChange={(e) => setFacilityName(e.target.value)}
-                      placeholder="e.g. Metro Sports Hub"
-                      autoFocus
-                      className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                    />
-                  </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+                Your facility is ready.
+              </h1>
+              <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
+                Manage court schedules, view today&apos;s bookings, and host open play sessions from your console.
+              </p>
+            </div>
 
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                      Street Address
-                    </label>
-                    <input
-                      type="text"
-                      value={facilityAddress}
-                      onChange={(e) => setFacilityAddress(e.target.value)}
-                      placeholder="e.g. 123 Sports Ave"
-                      className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                      City / Area
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {QUICK_LOCATIONS.slice(0, 4).map((c: string) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => setFacilityCity(c)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all ${
-                            facilityCity === c
-                              ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E]'
-                              : 'border-[#E8E5DF] bg-white/70'
-                          }`}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3: Sports Hosted */}
-            {step === 3 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    What sports do you host?
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Select all sports that have dedicated courts at your center.
-                  </p>
-                </div>
-
-                <div className="space-y-2.5 pt-2">
-                  {AVAILABLE_SPORTS.map((sport) => {
-                    const isSelected = facilitySports.includes(sport.id);
-                    return (
-                      <button
-                        key={sport.id}
-                        type="button"
-                        onClick={() => toggleFacilitySport(sport.id)}
-                        className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all min-h-[56px] ${
-                          isSelected
-                            ? 'border-[#2D724E] bg-white ring-1 ring-[#2D724E] shadow-sm'
-                            : 'border-[#E8E5DF] bg-white/70 hover:border-[#2D724E]/50'
-                        }`}
-                      >
-                        <span className="text-sm font-bold text-[#1A241E]">{sport.label}</span>
-                        <div
-                          className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected ? 'bg-[#2D724E] border-[#2D724E] text-white' : 'border-[#E8E5DF]'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* STEP 4: Courts & Rates */}
-            {step === 4 && (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Court setup &amp; rates
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B]">
-                    Configure court count and standard hourly rates.
-                  </p>
-                </div>
-
-                <div className="space-y-5 pt-2">
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                      Number of Courts
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {[1, 2, 4, 6, 8].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setCourtCount(num)}
-                          className={`flex-1 py-3 rounded-xl border text-sm font-black transition-all ${
-                            courtCount === num
-                              ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
-                              : 'border-[#E8E5DF] bg-white text-[#1A241E]'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                      Hourly Court Rate (₱)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {[350, 450, 500, 600, 800].map((rate) => (
-                        <button
-                          key={rate}
-                          type="button"
-                          onClick={() => setHourlyRatePhp(rate)}
-                          className={`flex-1 py-3 rounded-xl border text-xs sm:text-sm font-black transition-all ${
-                            hourlyRatePhp === rate
-                              ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
-                              : 'border-[#E8E5DF] bg-white text-[#1A241E]'
-                          }`}
-                        >
-                          ₱{rate}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 5: Facility Ready */}
-            {step === 5 && (
-              <div className="space-y-6 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
-                  <Building2 className="w-8 h-8" />
-                </div>
-
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                    Your facility is ready.
-                  </h1>
-                  <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
-                    Manage court schedules, view today&apos;s bookings, and host open play sessions from your console.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-[#E8E5DF] bg-white p-4 max-w-xs mx-auto text-left space-y-1">
-                  <span className="text-sm font-black text-[#1A241E] block">
-                    {facilityName || 'Metro Sports Hub'}
-                  </span>
-                  <span className="text-xs text-[#65756B] block">
-                    {courtCount} courts &bull; ₱{hourlyRatePhp}/hr
-                  </span>
-                </div>
-              </div>
-            )}
-          </>
+            <div className="rounded-2xl border border-[#E8E5DF] bg-white p-4 max-w-xs mx-auto text-left space-y-1">
+              <span className="text-sm font-black text-[#1A241E] block">
+                {facilityName || 'Metro Sports Hub'}
+              </span>
+              <span className="text-xs text-[#65756B] block">
+                {courtCount} courts &bull; ₱{hourlyRatePhp}/hr
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Bottom Action Area: Action-only labels */}
+      {/* Bottom Action Area: Facility Flow */}
       <div className="pb-4 sm:pb-6">
-        {step === 1 ? null : role === 'player' ? (
-          step === 4 || step === 5 ? (
-            /* Optional Steps provide prominent Skip button */
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setStep((s) => s + 1)}
-                className="flex-1 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white hover:bg-[#FAF8F5] text-[#65756B] text-sm font-bold transition-all active:scale-[0.99] text-center min-h-[50px]"
-              >
-                Skip
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep((s) => s + 1)}
-                className="flex-2 py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
-              >
-                Continue
-              </button>
-            </div>
-          ) : step < totalSteps ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => s + 1)}
-              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
-            >
-              Continue
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleFinishPlayer}
-              className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50"
-            >
-              {isSubmitting ? 'Starting...' : 'Start Playing'}
-            </button>
-          )
-        ) : step < totalSteps ? (
+        {ownerStep < totalOwnerSteps ? (
           <button
             type="button"
-            onClick={() => setStep((s) => s + 1)}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px]"
+            onClick={() => setOwnerStep((s) => s + 1)}
+            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] cursor-pointer"
           >
             Continue
           </button>
@@ -952,7 +1058,7 @@ export default function OnboardingPage() {
             type="button"
             disabled={isSubmitting}
             onClick={handleFinishOwner}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50"
+            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50 cursor-pointer"
           >
             {isSubmitting ? 'Creating...' : 'Open Facility Console'}
           </button>
