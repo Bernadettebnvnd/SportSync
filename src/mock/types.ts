@@ -155,6 +155,7 @@ export interface CommunityGame {
   date: string;
   time: string;
   locationName: string;
+  locationDetails?: string;
   distance: string;
   hostName: string;
   hostAvatar: AvatarId;

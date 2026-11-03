@@ -41,6 +41,7 @@ interface EditGameModalProps {
     date: string;
     time: string;
     locationName: string;
+    locationDetails?: string;
     skillLevel: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
     spotsTotal: number;
     pricePerPlayer: number;
@@ -94,6 +95,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
 
   // Location states
   const [locationName, setLocationName] = useState(game.locationName);
+  const [locationDetails, setLocationDetails] = useState(game.locationDetails || '');
   const [locationSearchQuery, setLocationSearchQuery] = useState(game.locationName);
   const [coordinates, setCoordinates] = useState<[number, number]>(() => {
     if (game.coordinates && Array.isArray(game.coordinates) && game.coordinates.length === 2) {
@@ -142,6 +144,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
         setCustomDate(game.date);
       }
       setLocationName(game.locationName);
+      setLocationDetails(game.locationDetails || '');
       setLocationSearchQuery(game.locationName);
       setSkillLevel(game.skillLevel || 'Casual');
       setSpotsTotal(game.spotsTotal || 10);
@@ -413,6 +416,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
         date: finalDate,
         time,
         locationName: locationName.trim(),
+        locationDetails: locationDetails.trim() || undefined,
         skillLevel,
         spotsTotal,
         pricePerPlayer,
@@ -747,6 +751,21 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
                 <span className="truncate pr-2">📍 {locationName}</span>
                 <span className="text-[#C8FF2E] font-bold shrink-0">Drag pin to reposition</span>
               </div>
+            </div>
+
+            <div className="mt-2.5">
+              <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center justify-between mb-1">
+                <span>Location Details</span>
+                <span className="text-[10px] text-[#A5B0A6] font-normal">Optional</span>
+              </label>
+              <input
+                type="text"
+                value={locationDetails}
+                onChange={(e) => setLocationDetails(e.target.value)}
+                placeholder="Unit, building, landmark, or specific directions..."
+                autoComplete="off"
+                className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
+              />
             </div>
           </div>
 

@@ -278,6 +278,7 @@ export interface Session {
   visibility?: 'Public' | 'Friends' | 'Invite';
   invite_code?: string;
   invited_players?: Array<{ id: string; name: string }>;
+  location_details?: string;
   created_at?: string;
   updated_at?: string;
 }

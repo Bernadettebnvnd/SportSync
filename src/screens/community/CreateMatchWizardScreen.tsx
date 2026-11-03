@@ -214,6 +214,7 @@ interface CreateMatchWizardScreenProps {
     time?: string;
     formattedDate?: string;
     locationName: string;
+    locationDetails?: string;
     playersCount: number;
     skillLevel: 'Casual' | 'Competitive';
     pricePerPlayer: number;
@@ -255,6 +256,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
   // Location states in Naga City
   const [locationName, setLocationName] = useState('');
+  const [locationDetails, setLocationDetails] = useState('');
   const [coordinates, setCoordinates] = useState<[number, number]>(NAGA_SPORTS_VENUES[0].coordinates);
   const [selectedVenueId, setSelectedVenueId] = useState<string>('');
   const [locationSearchQuery, setLocationSearchQuery] = useState(
@@ -308,6 +310,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       date: dateLabel,
       time: matchTime,
       locationName: locationName.trim() || 'Naga City Venue',
+      locationDetails: locationDetails.trim() || undefined,
       distance: 'Naga City • 0.5 km away',
       hostName: 'Organizer',
       hostAvatar: 'alex',
@@ -328,7 +331,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         body: JSON.stringify({ game: draftGame }),
       });
     } catch {}
-  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, skillLevel, locationName, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
+  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, skillLevel, locationName, locationDetails, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
 
   useEffect(() => {
     if (visibility === 'Invite' && (step === 4 || step === 5)) {
@@ -346,7 +349,6 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2500);
     }
-  };
   };
 
   const handleSharePublicMatch = async () => {
@@ -799,6 +801,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         time: matchTime,
         formattedDate: formattedSchedule,
         locationName: locationName.trim(),
+        locationDetails: locationDetails.trim() || undefined,
         playersCount,
         skillLevel,
         pricePerPlayer: splitCost ? pricePerPlayer : 0,
@@ -1325,6 +1328,21 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   </div>
                 )}
               </div>
+
+              <div className="mt-3">
+                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center justify-between mb-1.5">
+                  <span>Location Details</span>
+                  <span className="text-[10px] text-[#A5B0A6] font-normal">Optional</span>
+                </label>
+                <input
+                  type="text"
+                  value={locationDetails}
+                  onChange={(e) => setLocationDetails(e.target.value)}
+                  placeholder="Unit, building, landmark, or specific directions..."
+                  autoComplete="off"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1488,7 +1506,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <div className="text-xs text-[#A5B0A6] space-y-1.5 pt-1 border-t border-white/5">
                 <p className="flex items-center gap-1.5">
                   <span className="text-[#C8FF2E]">📍</span>
-                  <span className="text-[#F4F7F0] font-medium truncate">{locationName}</span>
+                  <span className="text-[#F4F7F0] font-medium truncate">{locationName}{locationDetails ? ` • ${locationDetails}` : ''}</span>
                 </p>
                 <p className="flex items-center gap-1.5">
                   <span className="text-[#C8FF2E]">⏰</span>
@@ -1663,7 +1681,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#A5B0A6]">Location:</span>
-                <span className="text-white truncate max-w-[150px]">{locationName}</span>
+                <span className="text-white truncate max-w-[150px]">{locationName}{locationDetails ? ` (${locationDetails})` : ''}</span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#A5B0A6]">Spots:</span>

@@ -384,9 +384,14 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
               <span className="text-[10px] text-[#A5B0A6] block uppercase tracking-wider">
                 Pitch Venue
               </span>
-              <span className="font-semibold text-[#F4F7F0]">
+              <span className="font-semibold text-[#F4F7F0] block">
                 {game.locationName} {game.distance && `(${game.distance})`}
               </span>
+              {game.locationDetails && (
+                <span className="text-[11px] text-[#A5B0A6] block mt-0.5">
+                  {game.locationDetails}
+                </span>
+              )}
             </div>
           </div>
 

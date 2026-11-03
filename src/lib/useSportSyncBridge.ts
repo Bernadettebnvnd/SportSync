@@ -1239,6 +1239,7 @@ export function useSportSyncBridge() {
       time?: string;
       formattedDate?: string;
       locationName: string;
+      locationDetails?: string;
       playersCount: number;
       skillLevel: 'Casual' | 'Competitive' | 'Beginner' | 'Intermediate';
       pricePerPlayer: number;
@@ -1321,6 +1322,7 @@ export function useSportSyncBridge() {
         date: displayDate,
         time: displayTime,
         locationName: gameData.locationName,
+        locationDetails: gameData.locationDetails,
         distance: distanceStr,
         hostId: userProfile.id,
         hostName: userName,
@@ -1439,6 +1441,7 @@ export function useSportSyncBridge() {
         date?: string;
         time?: string;
         locationName?: string;
+        locationDetails?: string;
         skillLevel?: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
         spotsTotal?: number;
         pricePerPlayer?: number;
@@ -1462,6 +1465,7 @@ export function useSportSyncBridge() {
         date: updates.date !== undefined ? updates.date : targetGame.date,
         time: updates.time !== undefined ? updates.time : targetGame.time,
         locationName: updates.locationName !== undefined ? updates.locationName : targetGame.locationName,
+        locationDetails: updates.locationDetails !== undefined ? updates.locationDetails : targetGame.locationDetails,
         skillLevel: updates.skillLevel !== undefined ? updates.skillLevel : targetGame.skillLevel,
         spotsTotal: updates.spotsTotal !== undefined ? updates.spotsTotal : targetGame.spotsTotal,
         pricePerPlayer: updates.pricePerPlayer !== undefined ? updates.pricePerPlayer : targetGame.pricePerPlayer,

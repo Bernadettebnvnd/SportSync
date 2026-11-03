@@ -414,6 +414,11 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                 <span className="text-[#F4F7F0] font-medium block truncate">
                   {game.locationName}
                 </span>
+                {game.locationDetails && (
+                  <span className="text-[11px] text-[#A5B0A6] block truncate">
+                    {game.locationDetails}
+                  </span>
+                )}
                 <span className="text-[11px] text-[#6F7B71]">
                   {game.distance}
                 </span>
