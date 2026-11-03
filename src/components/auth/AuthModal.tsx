@@ -93,11 +93,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
         setSuccessMsg(
           isFacility
             ? 'Facility account registered! Redirecting to facility setup...'
-            : 'Account registered successfully! Redirecting to setup...'
+            : 'Welcome to SportSync! Opening Player Hub...'
         );
         setTimeout(() => {
           onClose();
-          window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
+          window.location.href = isFacility ? '/onboarding?role=owner' : '/';
         }, 600);
       } else {
         const result = await loginAccount(
@@ -105,15 +105,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           setAuthenticatedUser
         );
         const isOwnerRole = result.user.role === 'venue_owner' || result.user.role === 'organizer';
-        const isOnboarded = Boolean(result.user.onboarding_completed);
-        setSuccessMsg('Signed in successfully! Redirecting...');
+        setSuccessMsg('Signed in successfully! Opening Player Hub...');
         setTimeout(() => {
           onClose();
-          if (!isOnboarded) {
-            window.location.href = isOwnerRole ? '/onboarding?role=owner' : '/onboarding';
-          } else {
-            window.location.href = isOwnerRole ? '/organizer' : '/';
-          }
+          window.location.href = isOwnerRole ? '/organizer' : '/';
         }, 600);
       }
     } catch (err: unknown) {

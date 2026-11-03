@@ -119,10 +119,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       setSuccessMessage(
         isSignUp
-          ? `Account registered successfully! Welcome to SportSync.`
-          : 'Welcome back! Signed in.'
+          ? detectedRole === 'facility_owner'
+            ? 'Facility registered! Setting up facility...'
+            : 'Account created! Entering Player Hub...'
+          : detectedRole === 'facility_owner'
+            ? 'Signed in! Opening Organizer Hub...'
+            : 'Welcome back! Entering Player Hub...'
       );
-      setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
+      setTimeout(() => onSuccess(detectedRole, isSignUp), 700);
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
       if (message === 'Failed to fetch') {
@@ -184,7 +188,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {isPasswordReset
                 ? "Enter your email to receive a recovery link"
                 : isSignUp
-                  ? 'Find Players. Play Together.'
+                  ? 'Create your account to access your Player Hub'
                   : 'Log in to access your Player Hub'}
             </p>
           </div>
@@ -377,8 +381,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 : isSignUp
                   ? selectedRole === 'facility_owner'
                     ? 'Register Facility & Continue'
-                    : 'Create Account'
-                  : 'Log In'}
+                    : 'Create Account & Enter Player Hub'
+                  : 'Log In to Player Hub'}
           </Button>
 
           {!isPasswordReset && (

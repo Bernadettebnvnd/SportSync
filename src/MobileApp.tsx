@@ -295,13 +295,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     window.location.href = '/organizer';
                   }
                 }
-              } else if (isNewAccount) {
-                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                  window.location.href = '/onboarding';
-                } else {
-                  navigateTo('personalization');
-                }
               } else {
+                // Login / Create Account is the onboarding.
+                // Flow proceeds directly to Player Hub once the user is authenticated.
                 if (guestPrompt.pendingAction) {
                   const act = guestPrompt.pendingAction;
                   setGuestPrompt({ isOpen: false });

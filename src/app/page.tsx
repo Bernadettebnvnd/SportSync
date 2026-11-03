@@ -193,15 +193,15 @@ export default function RootHomePage() {
                 {
                   group: 'Onboarding & Auth',
                   screens: [
-                    { id: 'splash', label: '1. Splash Screen' },
-                    { id: 'carousel', label: '2. Value Props' },
-                    { id: 'auth', label: '3. Authentication & Role' },
+                    { id: 'auth', label: '1. Onboarding (Log In / Create Account)' },
+                    { id: 'splash', label: '2. Welcome Splash' },
+                    { id: 'carousel', label: '3. Value Props Carousel' },
                     { id: 'personalization', label: '4. Player Preferences' },
                   ],
                 },
                 {
                   group: 'Discovery & Home',
-                  screens: [{ id: 'home', label: '5. Home / Discover' }],
+                  screens: [{ id: 'home', label: '5. Player Hub / Discover' }],
                 },
                 {
                   group: 'Play & Matchmaking',

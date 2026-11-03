@@ -13,13 +13,13 @@ const StandaloneMobileView: React.FC = () => {
 
   const screenOptions: Array<{ id: ScreenId; label: string; group: string }> = [
     // Onboarding
-    { id: 'splash', label: '1. Splash Screen', group: 'Onboarding' },
-    { id: 'carousel', label: '2. 3-Slide Carousel', group: 'Onboarding' },
-    { id: 'auth', label: '3. Sign In / Auth', group: 'Onboarding' },
-    { id: 'personalization', label: '4. Personalization', group: 'Onboarding' },
+    { id: 'auth', label: '1. Onboarding (Log In / Create Account)', group: 'Onboarding' },
+    { id: 'splash', label: '2. Welcome Splash', group: 'Onboarding' },
+    { id: 'carousel', label: '3. 3-Slide Carousel', group: 'Onboarding' },
+    { id: 'personalization', label: '4. Player Preferences', group: 'Onboarding' },
 
-    // Home
-    { id: 'home', label: '5. Home / Discover', group: 'Home' },
+    // Home / Player Hub
+    { id: 'home', label: '5. Player Hub / Discover', group: 'Home' },
 
     // Live & Scores
     { id: 'scores', label: '6. Scores Hub', group: 'Scores' },

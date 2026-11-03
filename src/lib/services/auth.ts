@@ -435,8 +435,8 @@ export async function registerAccount(
     win_streak: 0,
     highest_streak: 0,
     email_verified: true,
-    onboarding_completed: false,
-    has_completed_onboarding: false,
+    onboarding_completed: true,
+    has_completed_onboarding: true,
     created_at: data.user.created_at || new Date().toISOString(),
   };
 
@@ -447,9 +447,9 @@ export async function registerAccount(
     localStorage.setItem('sportsync_user_email', data.user.email);
     localStorage.setItem('sportsync_user_role', assignedRole);
     localStorage.setItem('sportsync_user_name', data.user.full_name || cleanFullName);
-    localStorage.setItem('sportsync_pending_onboarding', 'true');
-    localStorage.removeItem('matchi_onboarding_completed');
-    localStorage.removeItem('sportsync_onboarding_completed');
+    localStorage.removeItem('sportsync_pending_onboarding');
+    localStorage.setItem('matchi_onboarding_completed', 'true');
+    localStorage.setItem('sportsync_onboarding_completed', 'true');
     localStorage.removeItem('sportsync_user_profile');
     localStorage.removeItem('sportsync_user_city');
     localStorage.removeItem('sportsync_user_sports');
@@ -522,8 +522,8 @@ export async function loginAccount(
     win_streak: data.user.win_streak || 0,
     highest_streak: data.user.highest_streak || 0,
     email_verified: true,
-    onboarding_completed: isOnboarded,
-    has_completed_onboarding: isOnboarded,
+    onboarding_completed: true,
+    has_completed_onboarding: true,
     created_at: data.user.created_at || new Date().toISOString(),
   };
 
@@ -535,15 +535,9 @@ export async function loginAccount(
     localStorage.setItem('sportsync_user_role', assignedRole);
     if (data.user.full_name) localStorage.setItem('sportsync_user_name', data.user.full_name);
 
-    if (isOnboarded) {
-      localStorage.removeItem('sportsync_pending_onboarding');
-      localStorage.setItem('matchi_onboarding_completed', 'true');
-      localStorage.setItem('sportsync_onboarding_completed', 'true');
-    } else {
-      localStorage.setItem('sportsync_pending_onboarding', 'true');
-      localStorage.removeItem('matchi_onboarding_completed');
-      localStorage.removeItem('sportsync_onboarding_completed');
-    }
+    localStorage.removeItem('sportsync_pending_onboarding');
+    localStorage.setItem('matchi_onboarding_completed', 'true');
+    localStorage.setItem('sportsync_onboarding_completed', 'true');
   }
 
   return {
