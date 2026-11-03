@@ -273,6 +273,37 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
   // Roster states
   const [playersCount, setPlayersCount] = useState(10);
+  const [playersCountInput, setPlayersCountInput] = useState('10');
+
+  const handlePlayersCountChange = (val: string) => {
+    const digitsOnly = val.replace(/[^0-9]/g, '');
+    setPlayersCountInput(digitsOnly);
+    if (digitsOnly === '') {
+      setPlayersCount(0);
+      return;
+    }
+    const parsed = parseInt(digitsOnly, 10);
+    setPlayersCount(parsed);
+  };
+
+  const handlePlayersCountBlur = () => {
+    if (!playersCountInput) {
+      setPlayersCount(2);
+      setPlayersCountInput('2');
+      return;
+    }
+    const num = parseInt(playersCountInput, 10);
+    if (isNaN(num) || num < 2) {
+      setPlayersCount(2);
+      setPlayersCountInput('2');
+    } else if (num > 24) {
+      setPlayersCount(24);
+      setPlayersCountInput('24');
+    } else {
+      setPlayersCount(num);
+      setPlayersCountInput(String(num));
+    }
+  };
   const [skillLevel, setSkillLevel] = useState<'Casual' | 'Competitive'>('Casual');
   const [splitCost, setSplitCost] = useState(true);
   const [pricePerPlayer, setPricePerPlayer] = useState(150);
@@ -301,11 +332,12 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       : scheduleMode === 'tomorrow'
       ? 'Tomorrow'
       : customDate;
+    const activeCount = parseInt(playersCountInput, 10) || playersCount;
     const draftGame: CommunityGame = {
       id: 'game_' + inviteCode,
       sport: (sport as any) || 'Basketball',
       title: title.trim() || (sport + ' Match'),
-      format: (playersCount <= 4 ? '2v2 Doubles' : '5v5') as any,
+      format: (activeCount <= 4 ? '2v2 Doubles' : '5v5') as any,
       skillLevel: skillLevel || 'Casual',
       date: dateLabel,
       time: matchTime,
@@ -314,7 +346,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       distance: 'Naga City • 0.5 km away',
       hostName: 'Organizer',
       hostAvatar: 'alex',
-      spotsTotal: playersCount,
+      spotsTotal: activeCount,
       spotsJoined: 1,
       pricePerPlayer: splitCost ? pricePerPlayer : 0,
       notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
@@ -331,7 +363,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         body: JSON.stringify({ game: draftGame }),
       });
     } catch {}
-  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, skillLevel, locationName, locationDetails, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
+  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, playersCountInput, skillLevel, locationName, locationDetails, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
 
   useEffect(() => {
     if (visibility === 'Invite' && (step === 4 || step === 5)) {
@@ -752,7 +784,8 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       }
     }
     if (currentStep === 3) {
-      if (playersCount < 2 || playersCount > 24) {
+      const parsedCount = parseInt(playersCountInput, 10);
+      if (isNaN(parsedCount) || parsedCount < 2 || parsedCount > 24) {
         setError('Player capacity must be between 2 and 24.');
         return false;
       }
@@ -802,7 +835,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         formattedDate: formattedSchedule,
         locationName: locationName.trim(),
         locationDetails: locationDetails.trim() || undefined,
-        playersCount,
+        playersCount: parseInt(playersCountInput, 10) || playersCount,
         skillLevel,
         pricePerPlayer: splitCost ? pricePerPlayer : 0,
         notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
@@ -1369,13 +1402,20 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 </span>
                 <span className="text-xs text-[#A5B0A6]">Min 2, Max 24 players</span>
               </div>
-              <Stepper
-                value={playersCount}
-                onChange={setPlayersCount}
-                min={2}
-                max={24}
-                unit="spots"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={playersCountInput}
+                  onChange={(e) => handlePlayersCountChange(e.target.value)}
+                  onBlur={handlePlayersCountBlur}
+                  placeholder="10"
+                  aria-label="Total Spots"
+                  className="w-20 h-11 px-3 text-center rounded-xl bg-[#1C241E] border border-white/10 text-base font-bold font-mono text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                />
+                <span className="text-xs font-semibold text-[#A5B0A6]">spots</span>
+              </div>
             </div>
 
             {/* Skill Level Selection */}
