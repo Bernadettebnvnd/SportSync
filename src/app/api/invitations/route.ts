@@ -375,6 +375,143 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, game: updatedGame });
     }
 
+    if (action === 'remove_participant') {
+      const participantId = body.participantId as string | undefined;
+      const participantName = (body.participantName as string | undefined || '').trim();
+      const hostId = body.hostId as string | undefined;
+      const hostName = (body.hostName as string | undefined || '').trim().toLowerCase();
+
+      if (!participantId && !participantName) {
+        return NextResponse.json({ success: false, error: 'Participant identification required.' }, { status: 400 });
+      }
+
+      if (dbSession && supabase) {
+        const { data: hostUser } = await supabase
+          .from('users')
+          .select('id, auth_id, full_name')
+          .eq('id', dbSession.host_id)
+          .maybeSingle();
+
+        const isRequesterHost = Boolean(
+          (hostId && dbSession.host_id === hostId) ||
+          (hostId && hostUser?.auth_id && hostUser.auth_id === hostId) ||
+          (hostName && hostUser?.full_name && hostUser.full_name.trim().toLowerCase() === hostName) ||
+          (hostName && game.hostName && game.hostName.trim().toLowerCase() === hostName)
+        );
+
+        if (!isRequesterHost) {
+          return NextResponse.json({ success: false, error: 'Unauthorized: Only the match organizer can remove players.' }, { status: 403 });
+        }
+
+        const isRemovingHost = Boolean(
+          (participantId && dbSession.host_id === participantId) ||
+          (participantId && hostUser?.auth_id && hostUser.auth_id === participantId) ||
+          (participantName && hostUser?.full_name && hostUser.full_name.trim().toLowerCase() === participantName.toLowerCase()) ||
+          (participantName && game.hostName && game.hostName.trim().toLowerCase() === participantName.toLowerCase())
+        );
+        if (isRemovingHost) {
+          return NextResponse.json({ success: false, error: 'Cannot remove the match organizer from the lineup.' }, { status: 400 });
+        }
+
+        let queueIdToDelete: string | null = null;
+        if (participantId) {
+          const { data: qById } = await supabase
+            .from('queues')
+            .select('id')
+            .eq('session_id', dbSession.id)
+            .eq('user_id', participantId)
+            .maybeSingle();
+          if (qById?.id) queueIdToDelete = qById.id;
+        }
+
+        if (!queueIdToDelete && participantName) {
+          const { data: allQueues } = await supabase
+            .from('queues')
+            .select('id, user_id, partner_names, user:users(id, full_name, nickname)')
+            .eq('session_id', dbSession.id);
+
+          const matched = (allQueues || []).find((q: any) => {
+            const uName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]);
+            return uName && uName.trim().toLowerCase() === participantName.toLowerCase();
+          });
+          if (matched?.id) queueIdToDelete = matched.id;
+        }
+
+        if (queueIdToDelete) {
+          await supabase.from('queues').delete().eq('id', queueIdToDelete);
+        }
+
+        const { count: activeQueueCount } = await supabase
+          .from('queues')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const nextSpots = Math.max(1, (activeQueueCount || 0) + 1);
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: nextSpots,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', dbSession.id);
+
+        const updatedMembers = (game.members || []).filter((m) => {
+          if (participantId && m.id && m.id === participantId) return false;
+          if (participantName && m.name && m.name.trim().toLowerCase() === participantName.toLowerCase()) return false;
+          return true;
+        });
+
+        const updatedGame: CommunityGame = {
+          ...game,
+          sessionId: dbSession.id,
+          spotsJoined: nextSpots,
+          members: updatedMembers,
+        };
+
+        if (game.inviteCode) {
+          const inviteKey = game.inviteCode.trim().toUpperCase();
+          diskCache[inviteKey] = updatedGame;
+          memoryStore[inviteKey] = updatedGame;
+        }
+        if (game.id) {
+          const idKey = game.id.trim().toUpperCase();
+          diskCache[idKey] = updatedGame;
+          memoryStore[idKey] = updatedGame;
+        }
+        saveCache(diskCache);
+
+        return NextResponse.json({ success: true, game: updatedGame, spotsJoined: nextSpots });
+      }
+
+      const updatedMembers = (game.members || []).filter((m) => {
+        if (participantId && m.id && m.id === participantId) return false;
+        if (participantName && m.name && m.name.trim().toLowerCase() === participantName.toLowerCase()) return false;
+        return true;
+      });
+
+      const nextSpots = Math.max(1, (game.spotsJoined || 1) - 1);
+      const updatedGame: CommunityGame = {
+        ...game,
+        spotsJoined: nextSpots,
+        members: updatedMembers,
+      };
+
+      if (game.inviteCode) {
+        const inviteKey = game.inviteCode.trim().toUpperCase();
+        diskCache[inviteKey] = updatedGame;
+        memoryStore[inviteKey] = updatedGame;
+      }
+      if (game.id) {
+        const idKey = game.id.trim().toUpperCase();
+        diskCache[idKey] = updatedGame;
+        memoryStore[idKey] = updatedGame;
+      }
+      saveCache(diskCache);
+
+      return NextResponse.json({ success: true, game: updatedGame, spotsJoined: nextSpots });
+    }
+
     if (game.inviteCode) {
       const inviteKey = game.inviteCode.trim().toUpperCase();
       diskCache[inviteKey] = game;

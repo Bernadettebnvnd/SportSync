@@ -15,6 +15,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Lock,
+  UserMinus,
 } from 'lucide-react';
 import { ClayPitchScene } from '../../illustrations/Scenes';
 import { UserAvatar } from '../../illustrations/Avatars';
@@ -48,6 +49,7 @@ interface MatchDetailScreenProps {
   onDeleteGame?: () => Promise<void> | void;
   currentUserName?: string;
   currentUserId?: string;
+  onRemovePlayer?: (player: { id?: string; name: string }) => Promise<void> | void;
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
@@ -58,6 +60,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   isHost = false,
   onEditGame,
   onDeleteGame,
+  onRemovePlayer,
   currentUserName,
   currentUserId,
 }) => {
@@ -65,6 +68,8 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const [isLiked, setIsLiked] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [playerToRemove, setPlayerToRemove] = useState<{ id?: string; name: string } | null>(null);
+  const [isRemovingPlayer, setIsRemovingPlayer] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [enteredInviteCode, setEnteredInviteCode] = useState('');
@@ -412,7 +417,6 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           </div>
         </div>
 
-        {/* 4. Roster Avatar Stack ("8/10 Joined") */}
         <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -423,33 +427,63 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 {game.spotsJoined} of {game.spotsTotal} spots taken
               </span>
             </div>
-            <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
-              {Math.max(0, game.spotsTotal - game.spotsJoined)} spots left
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
+                {Math.max(0, game.spotsTotal - game.spotsJoined)} spots left
+              </span>
+              <button
+                type="button"
+                onClick={handleShareMatch}
+                className="px-3 py-1.5 rounded-xl bg-[#1C241E] hover:bg-[#C8FF2E] hover:text-[#0B0F0C] border border-[#C8FF2E]/30 text-xs font-bold text-[#C8FF2E] transition-all press-scale flex items-center gap-1.5 shrink-0"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Invite</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
-            <div className="flex items-center gap-3">
-              <AvatarStack
-                avatars={game.members.map((m) => m.avatar)}
-                size={34}
-                maxVisible={5}
-              />
-              <span className="text-xs font-semibold text-[#F4F7F0]">
-                {game.members.length > 1
-                  ? `${game.members[0].name} and ${game.members.length - 1} other players`
-                  : '1 squad player ready'}
-              </span>
-            </div>
+          <div className="divide-y divide-white/5 pt-1">
+            {game.members.map((member, idx) => {
+              const isOrganizer = Boolean(
+                idx === 0 ||
+                (game.hostId && member.id && member.id === game.hostId) ||
+                (game.hostName && member.name && member.name.trim().toLowerCase() === game.hostName.trim().toLowerCase())
+              );
+              return (
+                <div key={`${member.id || member.name}-${idx}`} className="py-2.5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <UserAvatar id={member.avatar || 'alex'} name={member.name} size={36} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs text-[#F4F7F0] truncate block">
+                          {member.name}
+                        </span>
+                        {isOrganizer && (
+                          <span className="px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 border border-[#C8FF2E]/30 text-[#C8FF2E] text-[10px] font-bold shrink-0">
+                            Organizer
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#A5B0A6] block truncate">
+                        {isOrganizer ? 'Match Host • Confirmed' : 'Joined Participant • Spot Reserved'}
+                      </span>
+                    </div>
+                  </div>
 
-            <button
-              type="button"
-              onClick={handleShareMatch}
-              className="px-3 py-1.5 rounded-xl bg-[#1C241E] hover:bg-[#C8FF2E] hover:text-[#0B0F0C] border border-[#C8FF2E]/30 text-xs font-bold text-[#C8FF2E] transition-all press-scale flex items-center gap-1.5 shrink-0"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Invite</span>
-            </button>
+                  {isHost && !isOrganizer && (
+                    <button
+                      type="button"
+                      onClick={() => setPlayerToRemove(member)}
+                      className="px-2.5 py-1 rounded-xl bg-[#FF5C5C]/10 hover:bg-[#FF5C5C]/20 text-[#FF5C5C] border border-[#FF5C5C]/20 text-[11px] font-bold transition-all press-scale shrink-0 flex items-center gap-1"
+                      title={`Remove ${member.name}`}
+                    >
+                      <UserMinus className="w-3 h-3" />
+                      <span>Remove</span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -583,6 +617,55 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           onClose={() => setIsDeleteModalOpen(false)}
           onConfirm={handleConfirmDelete}
         />
+      )}
+
+      {playerToRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-3xl bg-[#141A15] border border-white/10 p-6 space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 text-[#FF5C5C] flex items-center justify-center mx-auto">
+              <UserMinus className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="font-display font-bold text-lg text-[#F4F7F0]">
+                Remove Player from Lineup?
+              </h3>
+              <p className="text-xs text-[#A5B0A6] leading-relaxed">
+                Are you sure you want to remove <span className="text-[#F4F7F0] font-semibold">{playerToRemove.name}</span> from the match roster? Their reserved spot will be reopened.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1 font-semibold"
+                onClick={() => setPlayerToRemove(null)}
+                disabled={isRemovingPlayer}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                className="flex-1 font-bold bg-[#FF5C5C] text-white hover:bg-[#FF5C5C]/90"
+                onClick={async () => {
+                  if (!playerToRemove) return;
+                  setIsRemovingPlayer(true);
+                  try {
+                    await onRemovePlayer?.(playerToRemove);
+                    setPlayerToRemove(null);
+                  } catch (e: any) {
+                    setFeedbackMessage({ type: 'error', text: e?.message || 'Failed to remove player.' });
+                  } finally {
+                    setIsRemovingPlayer(false);
+                  }
+                }}
+                isLoading={isRemovingPlayer}
+              >
+                Remove Player
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

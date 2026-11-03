@@ -127,15 +127,21 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         );
         const isMember = g.members?.some((m) => (name && m.name.trim().toLowerCase() === name) || (id && m.id && m.id === id));
         const isInvited = g.invitedPlayers?.some((ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id));
-        let hasUnlockedToken = false;
-        if (typeof window !== 'undefined' && g.inviteCode) {
+        let hasToken = false;
+        if (typeof window !== 'undefined') {
           try {
-            const raw = localStorage.getItem('sportsync_unlocked_invites');
-            const unlocked: string[] = raw ? JSON.parse(raw) : [];
-            hasUnlockedToken = unlocked.includes(g.inviteCode.toUpperCase()) || unlocked.includes(g.id);
+            const rawU = localStorage.getItem('sportsync_unlocked_invites');
+            const unlocked: string[] = rawU ? JSON.parse(rawU) : [];
+            const rawJ = localStorage.getItem('sportsync_joined_games');
+            const joined: string[] = rawJ ? JSON.parse(rawJ) : [];
+            const combined = [...unlocked, ...joined];
+            hasToken =
+              Boolean(g.inviteCode && combined.includes(g.inviteCode.toUpperCase())) ||
+              combined.includes(g.id) ||
+              Boolean(g.sessionId && combined.includes(g.sessionId));
           } catch {}
         }
-        if (!isHost && !isMember && !isInvited && !hasUnlockedToken) return false;
+        if (!isHost && !isMember && !isInvited && !hasToken) return false;
       }
       seenIds.add(g.id);
       return true;

@@ -613,7 +613,10 @@ export function useSportSyncBridge() {
           if (matchSession) {
             const isUserHost = Boolean(
               (userProfile.id && matchSession.host_id === userProfile.id) ||
-              (userProfile.name && matchSession.host_id === userProfile.name)
+              ((matchSession.host as any)?.auth_id && userProfile.id && (matchSession.host as any).auth_id === userProfile.id) ||
+              (matchSession.host?.id && userProfile.id && matchSession.host.id === userProfile.id) ||
+              (userProfile.name && matchSession.host?.full_name && matchSession.host.full_name.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+              (userProfile.name && matchSession.host_id && matchSession.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
             );
             const resolvedHostName = isUserHost
               ? userProfile.name
@@ -706,7 +709,10 @@ export function useSportSyncBridge() {
 
           const isUserHost = Boolean(
             (userProfile.id && s.host_id === userProfile.id) ||
-            (userProfile.name && s.host_id === userProfile.name)
+            ((s.host as any)?.auth_id && userProfile.id && (s.host as any).auth_id === userProfile.id) ||
+            (s.host?.id && userProfile.id && s.host.id === userProfile.id) ||
+            (userProfile.name && s.host?.full_name && s.host.full_name.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+            (userProfile.name && s.host_id && s.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
           );
           const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
           const shortFormat = getShortFormat(s.rotation_format, s.sport);
@@ -2455,6 +2461,82 @@ export function useSportSyncBridge() {
     []
   );
 
+  const removeParticipantFromGame = useCallback(
+    async (
+      gameId: string,
+      participant: { id?: string; name: string }
+    ): Promise<{ success: boolean; game?: CommunityGame; error?: string }> => {
+      const targetGame = games.find((g) => g.id === gameId);
+      if (!targetGame) {
+        return { success: false, error: 'Game not found.' };
+      }
+
+      if (!isGameHost(targetGame)) {
+        return { success: false, error: 'Unauthorized: Only the host can remove players.' };
+      }
+
+      const isHostSelf = Boolean(
+        (participant.id && targetGame.hostId && participant.id === targetGame.hostId) ||
+        (participant.name && targetGame.hostName && participant.name.trim().toLowerCase() === targetGame.hostName.trim().toLowerCase())
+      );
+      if (isHostSelf) {
+        return { success: false, error: 'Cannot remove the host organizer.' };
+      }
+
+      try {
+        const res = await fetch('/api/invitations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'remove_participant',
+            game: targetGame,
+            participantId: participant.id,
+            participantName: participant.name,
+            hostId: userProfile.id,
+            hostName: userProfile.name,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          return { success: false, error: data.error || 'Failed to remove player from database.' };
+        }
+
+        const updatedGame: CommunityGame = data.game || {
+          ...targetGame,
+          spotsJoined: Math.max(1, targetGame.spotsJoined - 1),
+          members: targetGame.members.filter(
+            (m) => (participant.id ? m.id !== participant.id : m.name.trim().toLowerCase() !== participant.name.trim().toLowerCase())
+          ),
+        };
+
+        setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));
+
+        if (typeof window !== 'undefined') {
+          try {
+            const storedGames = localStorage.getItem('sportsync_community_games');
+            if (storedGames) {
+              const parsed = JSON.parse(storedGames);
+              if (Array.isArray(parsed)) {
+                const nextStored = parsed.map((g: any) => (g.id === gameId ? updatedGame : g));
+                localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));
+              }
+            }
+          } catch {}
+
+          try {
+            window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
+          } catch {}
+        }
+
+        return { success: true, game: updatedGame };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to remove player.' };
+      }
+    },
+    [games, isGameHost, userProfile.id, userProfile.name]
+  );
+
   // 19. Leave Community Game
   const leaveCommunityGame = useCallback(
     (gameId: string) => {
@@ -2696,6 +2778,7 @@ export function useSportSyncBridge() {
     deleteCommunityGame,
     isGameHost,
     joinCommunityGame,
+    removeParticipantFromGame,
     leaveCommunityGame,
     addExternalGame,
     acceptGameInvitation,

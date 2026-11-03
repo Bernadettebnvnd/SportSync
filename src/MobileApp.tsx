@@ -209,8 +209,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         setInviteGame(localMatch);
         setIsInviteLoading(false);
         setInviteError(null);
-        setCurrentScreen('invitation-landing');
-        setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+        if (bridge.isGameHost(localMatch)) {
+          setSelectedGame(localMatch);
+          setCurrentScreen('match-detail');
+          setScreenHistory((prev) => (prev[prev.length - 1] === 'match-detail' ? prev : [...prev, 'match-detail']));
+        } else {
+          setCurrentScreen('invitation-landing');
+          setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+        }
         return;
       }
 
@@ -232,6 +238,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             setInviteGame(data.game);
             bridge.addExternalGame(data.game);
             setInviteError(null);
+            if (bridge.isGameHost(data.game)) {
+              setSelectedGame(data.game);
+              setCurrentScreen('match-detail');
+              setScreenHistory((prev) => (prev[prev.length - 1] === 'match-detail' ? prev : [...prev, 'match-detail']));
+              return;
+            }
           } else {
             setInviteError(data.error || 'Invitation not found or expired');
           }
@@ -707,6 +719,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (!requireAuth('Team Chat', 'Sign in to participate in the match team chat.')) return;
               navigateTo('match-chat');
             }}
+            onRemovePlayer={async (player) => {
+              if (!activeTargetGame) return;
+              const res = await bridge.removeParticipantFromGame(activeTargetGame.id, player);
+              if (res.success && res.game) {
+                setSelectedGame(res.game);
+                setToastMessage(`Removed ${player.name} from match lineup.`);
+              } else {
+                setToastMessage(res.error || 'Failed to remove player.');
+                throw new Error(res.error || 'Failed to remove player.');
+              }
+            }}
           />
         );
       }
@@ -755,6 +778,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             currentUserName={bridge.userProfile.name}
             currentUserId={bridge.userProfile.id}
             isAuthenticated={isUserAuthenticated()}
+            isHost={Boolean(targetGame && bridge.isGameHost(targetGame))}
             onAccept={async () => {
               if (!activeInviteCode) return;
               const result = await bridge.acceptGameInvitation(activeInviteCode);

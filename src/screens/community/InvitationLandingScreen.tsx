@@ -14,6 +14,7 @@ import {
   Shield,
   Sparkles,
   Share2,
+  Crown,
 } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { UserAvatar } from '../../illustrations/Avatars';
@@ -37,6 +38,7 @@ interface InvitationLandingScreenProps {
   onClose?: () => void;
   onBack?: () => void;
   onOpenMatch: (game: CommunityGame) => void;
+  isHost?: boolean;
 }
 
 export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = ({
@@ -55,8 +57,16 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   onClose,
   onBack,
   onOpenMatch,
+  isHost: customIsHost,
 }) => {
   const handleClose = onClose || onBack || onGoHome;
+  const isHost = Boolean(
+    customIsHost ||
+    (game && (
+      (currentUserId && game.hostId && game.hostId === currentUserId) ||
+      (currentUserName && game.hostName && game.hostName.trim().toLowerCase() === currentUserName.trim().toLowerCase())
+    ))
+  );
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclined, setIsDeclined] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -86,6 +96,10 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
 
   const handleAcceptClick = async () => {
     setActionError(null);
+    if (isHost && game) {
+      onOpenMatch(game);
+      return;
+    }
     if (!isAuthenticated) {
       onRequireAuth(
         'Sign in to Accept Invitation',
@@ -385,8 +399,17 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             <X className="w-3.5 h-3.5" />
           </button>
           <div className="px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold flex items-center gap-1">
-            <Lock className="w-3 h-3 text-[#C8FF2E]" />
-            <span>Invite Only</span>
+            {isHost ? (
+              <>
+                <Crown className="w-3 h-3 text-[#C8FF2E]" />
+                <span>Host / Organizer</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-3 h-3 text-[#C8FF2E]" />
+                <span>Invite Only</span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -405,7 +428,31 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           </div>
         )}
 
-        {isAlreadyMember && (
+        {isHost && (
+          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-[#C8FF2E]/40 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Crown className="w-5 h-5 text-[#C8FF2E] shrink-0" />
+              <div>
+                <span className="font-display font-bold text-xs text-[#F4F7F0] block">
+                  You are the Match Organizer
+                </span>
+                <span className="text-[10px] text-[#A5B0A6]">
+                  {game.spotsJoined} / {game.spotsTotal} spots filled • {spotsLeft} remaining
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleShare}
+              className="px-2.5 py-1 rounded-xl bg-[#1C241E] border border-[#C8FF2E]/30 text-[10px] font-bold text-[#C8FF2E] flex items-center gap-1 hover:bg-[#C8FF2E] hover:text-[#0B0F0C] transition-all press-scale"
+            >
+              <Share2 className="w-3 h-3" />
+              <span>Share</span>
+            </button>
+          </div>
+        )}
+
+        {isAlreadyMember && !isHost && (
           <div className="p-3.5 rounded-2xl bg-[#141A15] border border-[#C8FF2E]/40 flex items-center gap-2.5">
             <CheckCircle2 className="w-5 h-5 text-[#C8FF2E] shrink-0" />
             <div>
@@ -529,8 +576,67 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           )}
         </div>
 
+        {game.members && game.members.length > 0 && (
+          <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-bold text-sm text-[#F4F7F0]">
+                  Player Lineup
+                </h3>
+                <span className="text-xs text-[#A5B0A6]">
+                  {game.spotsJoined} of {game.spotsTotal} spots taken
+                </span>
+              </div>
+              <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
+                {spotsLeft} spots left
+              </span>
+            </div>
+
+            <div className="divide-y divide-white/5 pt-1">
+              {game.members.map((member, idx) => {
+                const isOrganizer = Boolean(
+                  idx === 0 ||
+                  (game.hostId && member.id && member.id === game.hostId) ||
+                  (game.hostName && member.name && member.name.trim().toLowerCase() === game.hostName.trim().toLowerCase())
+                );
+                return (
+                  <div key={`${member.id || member.name}-${idx}`} className="py-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserAvatar id={member.avatar || 'alex'} name={member.name} size={32} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-[#F4F7F0] truncate block">
+                            {member.name}
+                          </span>
+                          {isOrganizer && (
+                            <span className="px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 border border-[#C8FF2E]/30 text-[#C8FF2E] text-[10px] font-bold shrink-0">
+                              Organizer
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[#A5B0A6] block truncate">
+                          {isOrganizer ? 'Match Host' : 'Confirmed Player'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2.5 pt-2">
-          {isAlreadyMember ? (
+          {isHost ? (
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)] min-h-[48px]"
+              onClick={() => onOpenMatch(game)}
+            >
+              Manage Match &amp; Lineup
+            </Button>
+          ) : isAlreadyMember ? (
             <Button
               variant="primary"
               size="lg"
@@ -572,7 +678,11 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           )}
 
           <p className="text-center text-[10px] text-[#6F7B71] px-4 pt-1">
-            Accepting reserves your roster spot in this private Naga City match.
+            {isHost
+              ? 'You are managing this private match as the organizer.'
+              : isAlreadyMember
+              ? 'You have already confirmed your spot on this roster.'
+              : 'Accepting reserves your roster spot in this private Naga City match.'}
           </p>
         </div>
       </div>
