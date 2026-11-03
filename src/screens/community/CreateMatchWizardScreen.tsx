@@ -274,34 +274,39 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   // Roster states
   const [playersCount, setPlayersCount] = useState(10);
   const [playersCountInput, setPlayersCountInput] = useState('10');
+  const [spotsError, setSpotsError] = useState<string | null>(null);
 
   const handlePlayersCountChange = (val: string) => {
     const digitsOnly = val.replace(/[^0-9]/g, '');
     setPlayersCountInput(digitsOnly);
     if (digitsOnly === '') {
       setPlayersCount(0);
+      setSpotsError('Player capacity must be between 2 and 24.');
       return;
     }
     const parsed = parseInt(digitsOnly, 10);
     setPlayersCount(parsed);
+    if (parsed < 2 || parsed > 24) {
+      setSpotsError('Player capacity must be between 2 and 24.');
+    } else {
+      setSpotsError(null);
+      if (error === 'Player capacity must be between 2 and 24.') {
+        setError(null);
+      }
+    }
   };
 
   const handlePlayersCountBlur = () => {
     if (!playersCountInput) {
-      setPlayersCount(2);
-      setPlayersCountInput('2');
+      setSpotsError('Player capacity must be between 2 and 24.');
       return;
     }
     const num = parseInt(playersCountInput, 10);
-    if (isNaN(num) || num < 2) {
-      setPlayersCount(2);
-      setPlayersCountInput('2');
-    } else if (num > 24) {
-      setPlayersCount(24);
-      setPlayersCountInput('24');
+    if (isNaN(num) || num < 2 || num > 24) {
+      setSpotsError('Player capacity must be between 2 and 24.');
     } else {
+      setSpotsError(null);
       setPlayersCount(num);
-      setPlayersCountInput(String(num));
     }
   };
   const [skillLevel, setSkillLevel] = useState<'Casual' | 'Competitive'>('Casual');
@@ -786,6 +791,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     if (currentStep === 3) {
       const parsedCount = parseInt(playersCountInput, 10);
       if (isNaN(parsedCount) || parsedCount < 2 || parsedCount > 24) {
+        setSpotsError('Player capacity must be between 2 and 24.');
         setError('Player capacity must be between 2 and 24.');
         return false;
       }
@@ -1395,7 +1401,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             </div>
 
             {/* Total Spots Stepper Card (Mobile Aligned) */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between gap-3">
+            <div className={`p-3.5 sm:p-4 rounded-2xl bg-[#141A15] border ${spotsError ? 'border-[#FF5C5C]/50' : 'border-white/5'} flex items-center justify-between gap-3`}>
               <div>
                 <span className="font-display font-bold text-sm text-[#F4F7F0] block">
                   Total Spots
@@ -1412,11 +1418,17 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   onBlur={handlePlayersCountBlur}
                   placeholder="10"
                   aria-label="Total Spots"
-                  className="w-20 h-11 px-3 text-center rounded-xl bg-[#1C241E] border border-white/10 text-base font-bold font-mono text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                  className={`w-20 h-11 px-3 text-center rounded-xl bg-[#1C241E] border ${spotsError ? 'border-[#FF5C5C] text-[#FF5C5C]' : 'border-white/10 text-[#F4F7F0] focus:border-[#C8FF2E]'} text-base font-bold font-mono focus:outline-none transition-all`}
                 />
                 <span className="text-xs font-semibold text-[#A5B0A6]">spots</span>
               </div>
             </div>
+            {spotsError && (
+              <div className="p-2.5 rounded-xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2 -mt-2 animate-in fade-in">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#E0533C]" />
+                <span>{spotsError}</span>
+              </div>
+            )}
 
             {/* Skill Level Selection */}
             <div>
