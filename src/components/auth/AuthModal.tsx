@@ -5,6 +5,7 @@ import confetti from 'canvas-confetti';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useMatchiStore } from '@/lib/store';
 import { SportType } from '@/types';
+import { validateRealEmail } from '@/lib/validation/emailValidator';
 import {
   X,
   Mail,
@@ -58,11 +59,21 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
 
     const trimmedEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
-      setErrorMsg('Please enter a valid email address.');
-      setIsLoading(false);
-      return;
+
+    if (mode === 'signup') {
+      const emailValidation = validateRealEmail(trimmedEmail);
+      if (!emailValidation.isValid) {
+        setErrorMsg(emailValidation.error || 'Please enter a real, valid email address. Fake or temporary accounts are forbidden.');
+        setIsLoading(false);
+        return;
+      }
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+        setErrorMsg('Please enter a valid email address.');
+        setIsLoading(false);
+        return;
+      }
     }
 
     if (!cleanPassword || cleanPassword.length < 6) {

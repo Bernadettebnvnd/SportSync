@@ -99,6 +99,7 @@ export interface User {
   skill_level: SkillLevel;
   phone?: string;
   city: string;
+  availability?: string;
   matches_played: number;
   matches_won: number;
   win_streak: number;

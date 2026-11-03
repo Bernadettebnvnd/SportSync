@@ -16,6 +16,7 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
 import { addNotification } from './notifications';
+import { isGameExpired, isSessionExpired, filterActiveGames } from './utils/gameExpiration';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
   const ids = new Set<string>();
@@ -323,7 +324,8 @@ export const INITIAL_USER_PROFILE = {
   city: 'Naga City',
   primarySport: 'football',
   preferredSports: ['Football', 'Basketball', 'Badminton'],
-  skillLevel: 'Intermediate',
+  skillLevel: 'Beginner',
+  availability: 'Weekday Evenings & Weekends',
   onboardingCompleted: false,
   streakWeeks: 0,
   streakMultiplier: 1.0,
@@ -341,6 +343,17 @@ export const INITIAL_USER_PROFILE = {
 };
 
 export type SportSyncUserProfile = typeof INITIAL_USER_PROFILE;
+
+export function formatSkillTier(rawSkill?: string): string {
+  if (!rawSkill) return 'Beginner';
+  const lower = rawSkill.toLowerCase().trim();
+  if (lower === 'all_levels' || lower === 'all levels') return 'Beginner';
+  if (lower === 'beginner') return 'Beginner';
+  if (lower === 'casual') return 'Casual';
+  if (lower === 'intermediate') return 'Intermediate';
+  if (lower === 'advanced' || lower === 'competitive') return 'Advanced';
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
 
 export function useSportSyncBridge() {
   const store = useMatchiStore();
@@ -387,11 +400,18 @@ export function useSportSyncBridge() {
               ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
               : (parsed.preferredSports || storedSports || ['Football']));
 
+          const storedSkill = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
+          const storedAvailability = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null;
+          const finalSkill = formatSkillTier(storedSkill || parsed.skillLevel || store.currentUser.skill_level);
+          const finalAvailability = parsed.availability || storedAvailability || store.currentUser.availability || 'Weekday Evenings & Weekends';
+
           return {
             ...parsed,
             city: finalCity,
             preferredSports: finalSports,
             primarySport: finalSports[0]?.toLowerCase() || parsed.primarySport || 'football',
+            skillLevel: finalSkill,
+            availability: finalAvailability,
             onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
           };
         } catch {
@@ -419,9 +439,10 @@ export function useSportSyncBridge() {
       preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
         ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
         : ['Football'],
-      skillLevel: store.currentUser.skill_level
-        ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
-        : 'Intermediate',
+      skillLevel: formatSkillTier(
+        (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null) || store.currentUser.skill_level
+      ),
+      availability: (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null) || store.currentUser.availability || 'Weekday Evenings & Weekends',
       onboardingCompleted: completed,
       streakWeeks: store.currentUser.win_streak || 0,
       streakMultiplier: 1.0,
@@ -474,9 +495,10 @@ export function useSportSyncBridge() {
         preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
           ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
           : prev.preferredSports,
-        skillLevel: store.currentUser.skill_level
-          ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
-          : prev.skillLevel,
+        skillLevel: (store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels')
+          ? formatSkillTier(store.currentUser.skill_level)
+          : (prev.skillLevel && prev.skillLevel !== 'All_levels' ? prev.skillLevel : formatSkillTier(typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') || 'Beginner' : 'Beginner')),
+        availability: store.currentUser.availability || prev.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends'),
         onboardingCompleted: Boolean(isCompleted),
         matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
         wins: store.currentUser.matches_won ?? prev.wins,
@@ -521,7 +543,7 @@ export function useSportSyncBridge() {
             const seenTitles = new Set<string>();
             const deduped: CommunityGame[] = [];
             parsed.forEach((g: any) => {
-              if (!g || !g.id || isMockGame(g)) return;
+              if (!g || !g.id || isMockGame(g) || isGameExpired(g)) return;
               const normTitle = g.title ? g.title.trim().toLowerCase() : '';
               if (!isGameDeleted(g) && !seenIds.has(g.id) && (!normTitle || !seenTitles.has(normTitle))) {
                 seenIds.add(g.id);
@@ -544,7 +566,7 @@ export function useSportSyncBridge() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const cleanGames = games.filter((g) => !isMockGame(g));
+      const cleanGames = games.filter((g) => !isMockGame(g) && !isGameExpired(g));
       localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
     }
   }, [games]);
@@ -565,8 +587,8 @@ export function useSportSyncBridge() {
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
           if (!s || !s.id) return;
-          // If session was permanently deleted or cancelled, do NOT re-add to games
-          if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled') {
+          // If session was permanently deleted, cancelled, or expired, do NOT re-add to games
+          if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled' || isSessionExpired(s)) {
             return;
           }
           const normTitle = s.title.trim().toLowerCase();
@@ -2163,15 +2185,15 @@ export function useSportSyncBridge() {
       preferredSports: string[];
       skillLevel: string;
       preferredArea?: string;
+      availability?: string;
       avatarUrl?: string;
     }) => {
       const cleanCity = prefs.preferredArea
         ? prefs.preferredArea.replace(/\s*\(Pilot Area\)/i, '').trim()
         : 'Naga City';
       const formattedSports = prefs.preferredSports.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
-      const formattedSkill = prefs.skillLevel
-        ? (prefs.skillLevel.charAt(0).toUpperCase() + prefs.skillLevel.slice(1))
-        : 'Intermediate';
+      const cleanSkill = formatSkillTier(prefs.skillLevel);
+      const cleanAvailability = prefs.availability || 'Weekday Evenings & Weekends';
 
       setUserProfile((prev: any) => ({
         ...prev,
@@ -2179,7 +2201,8 @@ export function useSportSyncBridge() {
         city: cleanCity,
         primarySport: (prefs.preferredSports[0] || 'football').toLowerCase(),
         preferredSports: formattedSports,
-        skillLevel: formattedSkill,
+        skillLevel: cleanSkill,
+        availability: cleanAvailability,
         onboardingCompleted: true,
         isGuest: false,
       }));
@@ -2205,8 +2228,9 @@ export function useSportSyncBridge() {
         casual: 'intermediate',
         intermediate: 'intermediate',
         competitive: 'advanced',
+        advanced: 'advanced',
       };
-      const mappedSkill: SkillLevel = skillLevelMap[prefs.skillLevel.toLowerCase()] || 'intermediate';
+      const mappedSkill: SkillLevel = skillLevelMap[cleanSkill.toLowerCase()] || 'beginner';
 
       try {
         await updatePlayerProfile({
@@ -2224,6 +2248,8 @@ export function useSportSyncBridge() {
       }
 
       if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_user_skill', cleanSkill.toLowerCase());
+        localStorage.setItem('sportsync_user_availability', cleanAvailability);
         localStorage.setItem('sportsync_onboarding_completed', 'true');
         localStorage.setItem('matchi_onboarding_completed', 'true');
       }
@@ -2236,6 +2262,7 @@ export function useSportSyncBridge() {
           skillLevel: mappedSkill,
           city: prefs.preferredArea || 'Metro Manila',
           preferredFormat: 'doubles',
+          availability: cleanAvailability,
         });
       } catch (e) {
         console.warn('Store completePlayerOnboarding error:', e);
@@ -2249,7 +2276,7 @@ export function useSportSyncBridge() {
   return {
     store,
     userProfile,
-    games,
+    games: filterActiveGames(games, store.sessions),
     matches,
     setMatches,
     bookings,

@@ -32,6 +32,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onGetStarted, onLogI
         <StadiumScene className="w-full h-56" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F0C]/80 via-transparent to-transparent pointer-events-none" />
         <div className="absolute bottom-4 inset-x-4 text-center">
+          <span className="font-display font-black text-xs uppercase tracking-widest text-white/90 block mb-0.5">
+            SportSync
+          </span>
           <p className="font-editorial text-2xl text-[#C8FF2E]">
             "Find Players. Play Together."
           </p>

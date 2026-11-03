@@ -23,8 +23,10 @@ import {
   Users,
   Lock,
   Mail,
+  Clock,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { validateRealEmail } from '@/lib/validation/emailValidator';
 
 const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
   { id: 'basketball', label: 'Basketball', icon: '🏀' },
@@ -155,7 +157,30 @@ function OnboardingContent() {
   });
   const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
   const [selectedArea, setSelectedArea] = useState(currentUser.city || PHILIPPINE_AREAS[0]);
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>(currentUser.skill_level || 'intermediate');
+  const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => {
+    if (currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
+      return currentUser.skill_level;
+    }
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sportsync_user_skill');
+      if (stored && stored !== 'all_levels') return stored as SkillLevel;
+    }
+    return 'beginner';
+  });
+  const AVAILABILITY_OPTIONS = [
+    'Weekday Evenings & Weekends',
+    'Weekday Mornings',
+    'Weekend Afternoons',
+    'Flexible / Anytime',
+  ];
+  const [availability, setAvailability] = useState<string>(() => {
+    if (currentUser.availability) return currentUser.availability;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sportsync_user_availability');
+      if (stored) return stored;
+    }
+    return 'Weekday Evenings & Weekends';
+  });
   const [notifyBookings, setNotifyBookings] = useState(true);
   const [playerValidationError, setPlayerValidationError] = useState<string | null>(null);
 
@@ -350,6 +375,7 @@ function OnboardingContent() {
         preferredFormat,
         city: cleanCity,
         skillLevel,
+        availability,
       });
 
       confetti({
@@ -818,7 +844,44 @@ function OnboardingContent() {
             </div>
 
             {/* -------------------------------------------------------------------
-                SECTION 5: NOTIFICATIONS & REMINDERS
+                SECTION 5: GENERAL AVAILABILITY
+               ------------------------------------------------------------------- */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                  5. General Availability
+                </label>
+                <span className="text-[10px] text-[#C8FF2E] font-medium">Match Scheduling</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {AVAILABILITY_OPTIONS.map((opt) => {
+                  const isSelected = availability === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setAvailability(opt)}
+                      className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer active:scale-95 ${
+                        isSelected
+                          ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)]'
+                          : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Clock className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
+                        <span className="text-xs truncate">{opt}</span>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-[#C8FF2E] shrink-0 ml-1" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* -------------------------------------------------------------------
+                SECTION 6: NOTIFICATIONS & REMINDERS
                ------------------------------------------------------------------- */}
             <div className="p-3.5 rounded-2xl bg-[#1C241E] border border-white/10 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -1225,9 +1288,9 @@ function OnboardingContent() {
                   setOwnerValidationError('Please enter contact / owner name.');
                   return;
                 }
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!ownerEmail.trim() || !emailRegex.test(ownerEmail.trim())) {
-                  setOwnerValidationError('Please enter a valid email address.');
+                const emailValidation = validateRealEmail(ownerEmail);
+                if (!emailValidation.isValid) {
+                  setOwnerValidationError(emailValidation.error || 'Please enter a real, valid email address. Disposable or dummy accounts are forbidden.');
                   return;
                 }
                 if (!ownerPassword || ownerPassword.length < 6) {

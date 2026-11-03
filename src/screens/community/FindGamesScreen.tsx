@@ -3,6 +3,7 @@ import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal, Zap } from 
 import { SearchBar } from '../../design-system/components/SearchBar';
 import { MatchCard } from '../../design-system/components/MatchCard';
 import { CommunityGame } from '../../mock/types';
+import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 interface FindGamesScreenProps {
   games?: CommunityGame[];
@@ -19,11 +20,12 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
 
-  // Memoize and deduplicate games by id to guarantee unique React keys
+  // Memoize and deduplicate games by id to guarantee unique React keys, filtering out finished/expired games
   const filteredGames = useMemo(() => {
     const seenIds = new Set<string>();
     return games.filter((g) => {
       if (!g || !g.id || seenIds.has(g.id)) return false;
+      if (isGameExpired(g)) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();

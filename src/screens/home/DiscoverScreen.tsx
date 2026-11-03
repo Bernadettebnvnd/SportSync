@@ -26,6 +26,7 @@ import { STANDARDIZED_SPORTS } from '../../config/sports';
 import { useTimeGreeting } from '../../lib/useGreeting';
 import { useMatchiStore } from '../../lib/store';
 import { useNotifications } from '../../lib/notifications';
+import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 
 export const FEATURED_CITY_FILTERS = [
@@ -269,11 +270,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     });
   }, [venues, activeSport, selectedCityFilter, userLocation]);
 
-  // Filter upcoming games by active sport (strictly deduplicated by game.id)
+  // Filter upcoming games by active sport and strict expiration (strictly deduplicated by game.id)
   const upcomingGames = useMemo(() => {
     const seenIds = new Set<string>();
     return games.filter((g) => {
       if (!g || !g.id || seenIds.has(g.id)) return false;
+      if (isGameExpired(g)) return false;
       if (activeSport !== 'All' && !g.sport.toLowerCase().includes(activeSport.toLowerCase())) {
         return false;
       }
@@ -361,6 +363,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
       {/* 3. Official SportSync Tagline: Find Players. Play Together. */}
       <div className="px-5 pt-2 pb-1">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-display font-black text-sm uppercase tracking-wider text-[#C8FF2E]">
+            SportSync
+          </span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#C8FF2E]/60" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#A5B0A6]">
+            Play &bull; Connect &bull; Compete
+          </span>
+        </div>
         <h1 className="text-3xl tracking-tight leading-tight text-[#F4F7F0]">
           <span className="font-display font-bold">Find Players. </span>
           <span className="font-editorial text-[#C8FF2E] text-4xl font-normal block sm:inline">

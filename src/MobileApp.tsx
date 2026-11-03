@@ -373,6 +373,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name) ? bridge.userProfile.name : '',
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
               preferredArea: bridge.userProfile.city || 'Naga City',
+              availability: bridge.userProfile.availability || 'Weekday Evenings & Weekends',
               skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,
             }}
             onDraftChange={setPersonalizationDraft}
@@ -383,6 +384,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   preferredSports: prefs.selectedSports,
                   skillLevel: prefs.skillLevel,
                   preferredArea: prefs.preferredArea,
+                  availability: prefs.availability,
                   avatarUrl: prefs.avatarUrl,
                 });
                 setPersonalizationDraft(null);
@@ -782,6 +784,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 preferredSports: prefs.preferredSports || bridge.userProfile.preferredSports,
                 skillLevel: prefs.skillLevel || bridge.userProfile.skillLevel,
                 preferredArea: prefs.city || bridge.userProfile.city,
+                availability: prefs.availability || bridge.userProfile.availability,
               });
               setToastMessage('Preferences updated successfully!');
             }}

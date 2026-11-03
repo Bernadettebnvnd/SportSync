@@ -23,6 +23,7 @@ import { CommunityGame } from '../../mock/types';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { STANDARDIZED_SPORTS } from '../../config/sports';
 import { useNotifications } from '../../lib/notifications';
+import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 interface SocialHomeScreenProps {
   games?: CommunityGame[];
@@ -61,11 +62,12 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
   const [selectedSport, setSelectedSport] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter games by tab and sport (strictly deduplicated by game.id)
+  // Filter games by tab and sport (strictly deduplicated and active/non-expired only)
   const filteredGames = useMemo(() => {
     const seenIds = new Set<string>();
     return games.filter((game) => {
       if (!game || !game.id || seenIds.has(game.id)) return false;
+      if (isGameExpired(game)) return false;
 
       // Tab filter
       if (activeTab === 'my_games') {

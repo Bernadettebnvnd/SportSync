@@ -1,5 +1,6 @@
 import { Session, QueueEntry, MatchFormat } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { isSessionExpired } from '@/lib/utils/gameExpiration';
 
 export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<string> } {
   const ids = new Set<string>();
@@ -68,7 +69,7 @@ function getLocalStoredSessions(): Session[] {
     parsed.forEach((s) => {
       if (!s || !s.id) return;
       const normTitle = s.title ? s.title.trim().toLowerCase() : '';
-      if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+      if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !isSessionExpired(s) && !seenIds.has(s.id)) {
         seenIds.add(s.id);
         if (normTitle) seenTitles.add(normTitle);
         deduped.push(s);
@@ -111,7 +112,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
 
   const isSessionNotDeleted = (s: Session) =>
-    !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled';
+    !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled' && !isSessionExpired(s);
 
   if (!supabase || !isSupabaseConfigured) {
     const filtered = localSessions.filter(isSessionNotDeleted);

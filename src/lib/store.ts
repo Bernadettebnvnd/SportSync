@@ -45,7 +45,8 @@ export const GUEST_USER: User = {
   primary_sport: 'pickleball',
   preferred_sports: ['pickleball', 'badminton'],
   preferred_format: 'doubles',
-  skill_level: 'all_levels',
+  skill_level: 'beginner',
+  availability: 'Weekday Evenings & Weekends',
   city: '',
   onboarding_completed: false,
   has_completed_onboarding: false,
@@ -159,6 +160,18 @@ async function initializeStore() {
           }
         } catch {}
       }
+
+      const storedSkill = localStorage.getItem('sportsync_user_skill');
+      if (storedSkill && storedSkill !== 'all_levels') {
+        globalState.currentUser.skill_level = storedSkill as SkillLevel;
+      } else if (globalState.currentUser.skill_level === 'all_levels') {
+        globalState.currentUser.skill_level = 'beginner';
+      }
+
+      const storedAvailability = localStorage.getItem('sportsync_user_availability');
+      if (storedAvailability) {
+        globalState.currentUser.availability = storedAvailability;
+      }
     }
 
     const user = await getCurrentUser();
@@ -193,6 +206,17 @@ async function initializeStore() {
       user.preferred_sports = finalSports;
       user.primary_sport = (finalSports[0] || user.primary_sport || 'football') as SportType;
 
+      const storedUserSkill = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
+      if (storedUserSkill && storedUserSkill !== 'all_levels') {
+        user.skill_level = storedUserSkill as SkillLevel;
+      } else if (user.skill_level === 'all_levels' || !user.skill_level) {
+        user.skill_level = 'beginner';
+      }
+
+      const storedUserAvail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null;
+      if (storedUserAvail) {
+        user.availability = storedUserAvail;
+      }
 
       globalState.currentUser = user;
       if (typeof window !== 'undefined') {
@@ -474,6 +498,7 @@ export function useMatchiStore() {
       skillLevel: SkillLevel;
       city?: string;
       preferredFormat?: MatchFormat;
+      availability?: string;
     }) => {
       const primarySport = data.preferredSports[0] || 'football';
       const rawCity = data.city || globalState.currentUser.city || 'Naga City';
@@ -481,9 +506,9 @@ export function useMatchiStore() {
         ? 'Naga City'
         : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim() || 'Naga City');
       const formattedSports = data.preferredSports.map(getSportDisplayName);
-      const formattedSkill = data.skillLevel
-        ? (data.skillLevel.charAt(0).toUpperCase() + data.skillLevel.slice(1))
-        : 'Intermediate';
+      const cleanSkill = (data.skillLevel && data.skillLevel !== 'all_levels') ? data.skillLevel : 'beginner';
+      const formattedSkill = cleanSkill.charAt(0).toUpperCase() + cleanSkill.slice(1);
+      const cleanAvailability = data.availability || globalState.currentUser.availability || 'Weekday Evenings & Weekends';
 
 
       if (globalState.currentUser.auth_id || globalState.currentUser.id || globalState.currentUser.email) {
@@ -513,7 +538,8 @@ export function useMatchiStore() {
         localStorage.setItem('sportsync_user_city', cleanCity);
         localStorage.setItem('sportsync_user_location', cleanCity);
         localStorage.setItem('sportsync_user_sports', JSON.stringify(data.preferredSports));
-        localStorage.setItem('sportsync_user_skill', data.skillLevel);
+        localStorage.setItem('sportsync_user_skill', cleanSkill);
+        localStorage.setItem('sportsync_user_availability', cleanAvailability);
         localStorage.setItem('sportsync_primary_sport', primarySport);
 
         // Crucial: Update sportsync_user_profile for useSportSyncBridge & ProfileScreen
@@ -531,6 +557,7 @@ export function useMatchiStore() {
           primarySport,
           preferredSports: formattedSports,
           skillLevel: formattedSkill,
+          availability: cleanAvailability,
           onboardingCompleted: true,
           isGuest: false,
         };
@@ -547,7 +574,8 @@ export function useMatchiStore() {
           nickname: data.nickname || globalState.currentUser.nickname,
           primary_sport: primarySport,
           preferred_sports: data.preferredSports,
-          skill_level: data.skillLevel,
+          skill_level: cleanSkill,
+          availability: cleanAvailability,
           city: cleanCity,
 
           preferred_format: data.preferredFormat || 'doubles',

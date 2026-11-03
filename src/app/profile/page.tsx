@@ -8,6 +8,7 @@ import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { getSportDisplayName, getPlayerInitials } from '@/lib/utils';
+import { formatSkillTier } from '@/lib/useSportSyncBridge';
 import {
   MapPin,
   Calendar,
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   RotateCcw,
   RefreshCw,
+  Clock,
 } from 'lucide-react';
 
 export default function ProfilePage() {
@@ -70,10 +72,14 @@ export default function ProfilePage() {
                 {getSportDisplayName(currentUser.primary_sport)}
               </span>
               <span className="inline-flex items-center rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#A5B0A6] capitalize">
-                {currentUser.skill_level.replace('_', ' ')}
+                {formatSkillTier(currentUser.skill_level)}
               </span>
               <span className="inline-flex items-center rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#A5B0A6] capitalize">
                 {currentUser.preferred_format}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#C8FF2E]">
+                <Clock className="w-3 h-3 text-[#C8FF2E]" />
+                {currentUser.availability || 'Weekday Evenings & Weekends'}
               </span>
             </div>
           </div>

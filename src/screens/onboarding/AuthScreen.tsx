@@ -4,6 +4,7 @@ import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
 import { useMatchiStore } from '../../lib/store';
+import { validateRealEmail } from '@/lib/validation/emailValidator';
 
 export type AuthRole = 'player' | 'facility_owner';
 
@@ -42,14 +43,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    // 1. Client-Side Validation
+    // 1. Client-Side Validation - Real emails required for accounts
     const trimmedEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
-      setErrorMessage('Please enter a valid email address (e.g. player@example.com).');
-      setIsLoading(false);
-      return;
+
+    if (isSignUp) {
+      const emailValidation = validateRealEmail(trimmedEmail);
+      if (!emailValidation.isValid) {
+        setErrorMessage(emailValidation.error || 'Please enter a real, valid email address. Fake or temporary accounts are forbidden.');
+        setIsLoading(false);
+        return;
+      }
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+        setErrorMessage('Please enter a valid email address (e.g. player@example.com).');
+        setIsLoading(false);
+        return;
+      }
     }
 
     // Password reset flow
@@ -227,13 +238,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   ? 'Create Account'
                   : 'Welcome back'}
             </h2>
-            <p className="text-xs text-[#A5B0A6]">
-              {isPasswordReset
-                ? "Enter your email to receive a recovery link"
-                : isSignUp
-                  ? 'Find Players. Play Together.'
-                  : 'Log in to access your Player Hub'}
-            </p>
+            <div className="text-xs text-[#A5B0A6]">
+              {isPasswordReset ? (
+                <span>Enter your email to receive a recovery link</span>
+              ) : isSignUp ? (
+                <div>
+                  <span className="font-display font-black text-[11px] uppercase tracking-wider text-[#C8FF2E] block">
+                    SportSync
+                  </span>
+                  <span>Find Players. Play Together.</span>
+                </div>
+              ) : (
+                <span>Log in to access your Player Hub</span>
+              )}
+            </div>
           </div>
         </div>
 

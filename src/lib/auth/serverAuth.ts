@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { UserRole } from '@/types';
 import { isSupabaseConfigured, createAdminClient, createServerClient } from '@/lib/supabase/server';
+import { validateRealEmail } from '@/lib/validation/emailValidator';
 
 export interface SanitizedUser {
   id: string;
@@ -131,7 +132,11 @@ export async function serverRegister(data: {
   role?: string;
   city?: string;
 }): Promise<{ user: SanitizedUser; token: string }> {
-  const normalizedEmail = data.email.trim().toLowerCase();
+  const emailValidation = validateRealEmail(data.email);
+  if (!emailValidation.isValid) {
+    throw new Error(emailValidation.error || 'Please provide a real, valid email address. Fake or disposable accounts are restricted.');
+  }
+  const normalizedEmail = emailValidation.normalizedEmail || data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
   const registrationCity = data.city ? data.city.trim() : '';
 
