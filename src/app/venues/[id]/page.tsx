@@ -19,12 +19,14 @@ import {
   Users,
   Sparkles,
   Share2,
+  Check,
   CreditCard,
   ShieldCheck,
   Compass,
   AlertCircle,
   Navigation,
 } from 'lucide-react';
+import { copyToClipboard } from '@/lib/shareUtils';
 
 interface VenuePageProps {
   params: Promise<{ id: string }>;
@@ -52,6 +54,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('14:00');
   const [selectedSession, setSelectedSession] = useState<Session | undefined>();
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Date buttons (Today, Tomorrow, +2 days, +3 days)
   const [dateOptions] = useState(() => {
@@ -288,11 +291,30 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
 
               <button
                 type="button"
-                onClick={() => navigator.clipboard?.writeText(window.location.href)}
-                className="rounded-full p-2 text-[#65756B] hover:bg-[#FAF8F5] transition-colors"
-                title="Share Court"
+                onClick={async () => {
+                  const url = typeof window !== 'undefined' ? window.location.href : '';
+                  const success = await copyToClipboard(url);
+                  if (success) {
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2500);
+                  }
+                }}
+                className={`rounded-full p-2 transition-all flex items-center gap-1 text-xs font-semibold ${
+                  copiedLink
+                    ? 'bg-[#2D724E]/15 text-[#2D724E]'
+                    : 'text-[#65756B] hover:bg-[#FAF8F5]'
+                }`}
+                title={copiedLink ? "Venue link copied!" : "Share Court"}
+                aria-label={copiedLink ? "Venue link copied!" : "Share Court"}
               >
-                <Share2 className="w-4 h-4" />
+                {copiedLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-[#2D724E]" />
+                    <span className="text-[11px] text-[#2D724E]">Copied!</span>
+                  </>
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
               </button>
             </div>
 

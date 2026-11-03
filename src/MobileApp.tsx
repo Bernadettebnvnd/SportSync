@@ -40,6 +40,7 @@ import { WagerWinCelebrationModal } from './design-system/components/WagerWinCel
 import { GuestPromptModal } from './components/auth/GuestPromptModal';
 import { useSportSyncBridge } from './lib/useSportSyncBridge';
 import { useTheme } from './lib/theme';
+import { copyToClipboard } from './lib/shareUtils';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -585,8 +586,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       }
-      case 'match-chat':
-        return <MatchGroupChatScreen onBack={goBack} />;
+      case 'match-chat': {
+        const activeChatGame = selectedGame || bridge.games[0] || null;
+        return (
+          <MatchGroupChatScreen
+            game={activeChatGame}
+            currentUserName={bridge.userProfile.name}
+            currentUserId={bridge.userProfile.id}
+            onBack={goBack}
+            onOpenMatchDetail={() => navigateTo('match-detail')}
+            onToast={(msg) => setToastMessage(msg)}
+          />
+        );
+      }
       case 'post-match':
         return (
           <PostMatchScreen
@@ -730,6 +742,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }
             onGoHome={() => navigateTo('home')}
             onViewMyBookings={() => navigateTo('my-bookings')}
+            onToast={(msg) => setToastMessage(msg)}
           />
         );
       case 'my-bookings':
@@ -903,8 +916,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           setIsQuickActionOpen(false);
           navigateTo('find-games');
         }}
-        onInviteFriends={() => {
+        onInviteFriends={async () => {
           setIsQuickActionOpen(false);
+          const inviteUrl = typeof window !== 'undefined'
+            ? `${window.location.origin}/?invite=SPORTSYNC`
+            : 'https://sportsync.ph';
+          await copyToClipboard(inviteUrl);
           setToastMessage('SportSync match link copied to clipboard!');
           setTimeout(() => setToastMessage(null), 3000);
         }}

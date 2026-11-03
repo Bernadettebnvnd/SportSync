@@ -13,11 +13,13 @@ import {
   X,
   Shield,
   Sparkles,
+  Share2,
 } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { CommunityGame } from '../../mock/types';
 import { APP_CONFIG } from '../../config/appConfig';
+import { shareMatch, copyToClipboard } from '../../lib/shareUtils';
 
 interface InvitationLandingScreenProps {
   inviteCode: string;
@@ -53,6 +55,15 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclined, setIsDeclined] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleShare = async () => {
+    if (!game) return;
+    await shareMatch(game, (msg) => {
+      setFeedback(msg);
+      setTimeout(() => setFeedback(null), 3000);
+    });
+  };
 
   const isAlreadyMember = useMemo(() => {
     if (!game || !Array.isArray(game.members)) return false;
@@ -298,13 +309,30 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           </span>
         </div>
 
-        <div className="px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold flex items-center gap-1">
-          <Lock className="w-3 h-3 text-[#C8FF2E]" />
-          <span>Invite Only</span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShare}
+            title="Share invitation"
+            aria-label="Share invitation"
+            className="w-8 h-8 rounded-full bg-[#1C241E] text-[#C8FF2E] hover:bg-[#C8FF2E] hover:text-[#0B0F0C] flex items-center justify-center transition-all press-scale border border-white/10"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+          </button>
+          <div className="px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold flex items-center gap-1">
+            <Lock className="w-3 h-3 text-[#C8FF2E]" />
+            <span>Invite Only</span>
+          </div>
         </div>
       </div>
 
       <div className="p-5 space-y-4">
+        {feedback && (
+          <div className="p-3 rounded-2xl bg-[#141A15] border border-white/10 text-xs font-semibold flex items-center gap-2 shadow-lg animate-in slide-in-from-top-2">
+            <CheckCircle2 className="w-4 h-4 text-[#C8FF2E] shrink-0" />
+            <span className="text-[#F4F7F0]">{feedback}</span>
+          </div>
+        )}
         {actionError && (
           <div className="p-3 rounded-2xl bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 text-[#FF5C5C] text-xs font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />

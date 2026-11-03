@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Moon, Sun, Bell, Globe, Shield, HelpCircle, User, LogOut } from 'lucide-react';
-import { Toggle } from '../../design-system/components/SegmentedControl';
+import React from 'react';
+import { ArrowLeft, Moon, Sun, Globe, Shield, HelpCircle, User, LogOut } from 'lucide-react';
 import { APP_CONFIG } from '../../config/appConfig';
 
 interface SettingsScreenProps {
@@ -18,9 +17,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onLogout,
   userCity,
 }) => {
-  const [matchNotifications, setMatchNotifications] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
-  const [hapticFeedback, setHapticFeedback] = useState(true);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar">
@@ -106,30 +102,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* 3. Notification Preferences */}
-        <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-4">
-          <h4 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
-            Alerts & Audio
-          </h4>
-          <Toggle
-            checked={matchNotifications}
-            onChange={setMatchNotifications}
-            label="Live Match Events"
-            sublabel="Pulsing goal notifications and kickoff whistles"
-          />
-          <Toggle
-            checked={soundEffects}
-            onChange={setSoundEffects}
-            label="Stadium Audio & Alerts"
-            sublabel="Crowd atmosphere & haptic rolls"
-          />
-          <Toggle
-            checked={hapticFeedback}
-            onChange={setHapticFeedback}
-            label="Haptic Button Feedback"
-            sublabel="Subtle tap compression on interactive elements"
-          />
-        </div>
 
         {/* 4. Units & Location Preferences */}
         <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3 text-xs">

@@ -19,6 +19,7 @@ import { Venue } from '../../mock/types';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { SportIcon } from '../../illustrations/SportIcons';
+import { copyToClipboard } from '../../lib/shareUtils';
 
 interface VenueDetailScreenProps {
   venue: Venue;
@@ -34,6 +35,19 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
   const [isFav, setIsFav] = useState(venue?.isFavorite ?? false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<string>(venue?.availableSlots?.[0] || '10:00');
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const handleShareVenue = async () => {
+    if (!venue) return;
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/venues/${venue.id}`
+      : `https://sportsync.ph/venues/${venue.id}`;
+    const copied = await copyToClipboard(url);
+    if (copied) {
+      setFeedback('Court venue link copied to clipboard!');
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  };
 
   if (!venue) {
     return (
@@ -55,7 +69,17 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
   const phoneContact = venue.phone || '0917-888-SYNC';
 
   return (
-    <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-32 select-none min-h-screen">
+    <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-32 select-none min-h-screen relative">
+      {/* Toast Feedback */}
+      {feedback && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[700] w-11/12 max-w-sm p-3.5 rounded-2xl bg-[#141A15] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200">
+          <Check className="w-4 h-4 text-[#C8FF2E] shrink-0 stroke-[3]" />
+          <span className="text-xs font-semibold text-[#F4F7F0] flex-1">
+            {feedback}
+          </span>
+        </div>
+      )}
+
       {/* 1. Photo Carousel with Parallax Feel & Gradient Overlay */}
       <div className="relative w-full h-72 overflow-hidden bg-[#1C241E]">
         <img
@@ -75,15 +99,25 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
             <ArrowLeft className="w-5 h-5" />
           </button>
 
-          <button
-            onClick={() => setIsFav(!isFav)}
-            aria-label={isFav ? 'Remove favorite' : 'Add favorite'}
-            className={`w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center transition-all press-scale ${
-              isFav ? 'bg-[#FF8FC7] text-[#0B0F0C]' : 'bg-black/50 text-white hover:bg-black/70'
-            }`}
-          >
-            <Heart className="w-5 h-5" fill={isFav ? '#0B0F0C' : 'none'} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShareVenue}
+              aria-label="Share venue"
+              title="Share venue"
+              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md text-[#C8FF2E] flex items-center justify-center hover:bg-black/70 transition-all press-scale"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsFav(!isFav)}
+              aria-label={isFav ? 'Remove favorite' : 'Add favorite'}
+              className={`w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center transition-all press-scale ${
+                isFav ? 'bg-[#FF8FC7] text-[#0B0F0C]' : 'bg-black/50 text-white hover:bg-black/70'
+              }`}
+            >
+              <Heart className="w-5 h-5" fill={isFav ? '#0B0F0C' : 'none'} />
+            </button>
+          </div>
         </div>
 
         {/* Photo Carousel Pagination Dots */}

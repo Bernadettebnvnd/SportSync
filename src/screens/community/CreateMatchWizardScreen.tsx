@@ -32,6 +32,7 @@ import { Stepper, Toggle } from '../../design-system/components/SegmentedControl
 import { DateStrip, generateUpcomingDates } from '../../design-system/components/DateStrip';
 import { APP_CONFIG } from '../../config/appConfig';
 import { defaultGeocodingProvider } from '../../lib/maps/provider';
+import { copyToClipboard, shareMatch } from '../../lib/shareUtils';
 
 export interface LocationSuggestionItem {
   id: string;
@@ -278,6 +279,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   const [inviteCode] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
   const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([]);
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [copiedPublicShare, setCopiedPublicShare] = useState(false);
 
   const toggleInvitedFriend = (friendId: string) => {
     setInvitedFriendIds((prev) =>
@@ -285,15 +287,31 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     );
   };
 
-  const handleCopyInviteLink = () => {
+  const handleCopyInviteLink = async () => {
     const url = typeof window !== 'undefined'
       ? `${window.location.origin}/?invite=${inviteCode}`
       : `https://sportsync.ph/?invite=${inviteCode}`;
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(url);
+    const success = await copyToClipboard(url);
+    if (success) {
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2500);
     }
+  };
+
+  const handleSharePublicMatch = async () => {
+    await shareMatch(
+      {
+        id: inviteCode,
+        title,
+        sport,
+        locationName,
+        inviteCode,
+      },
+      () => {
+        setCopiedPublicShare(true);
+        setTimeout(() => setCopiedPublicShare(false), 2500);
+      }
+    );
   };
 
   // Async submission & validation state
@@ -1614,18 +1632,12 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 <Button
                   variant="social"
                   size="sm"
-                  leftIcon={<Share2 className="w-4 h-4" />}
+                  leftIcon={copiedPublicShare ? <Check className="w-4 h-4 stroke-[2.5]" /> : <Share2 className="w-4 h-4" />}
                   className="w-full text-xs font-bold mt-2"
-                onClick={() => {
-                  if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                    navigator.clipboard.writeText(
-                      `Join my ${sport} pickup game: ${title} at ${locationName}! (SportSync Naga City)`
-                    );
-                  }
-                }}
-              >
-                Share Match Invite
-              </Button>
+                  onClick={handleSharePublicMatch}
+                >
+                  {copiedPublicShare ? 'Match Link Copied!' : 'Share Match Invite'}
+                </Button>
               )}
             </div>
 

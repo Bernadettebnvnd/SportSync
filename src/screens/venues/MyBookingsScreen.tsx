@@ -27,13 +27,28 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [sheetBooking, setSheetBooking] = useState<{ id: string; venueName: string } | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const showFeedback = (msg: string) => {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 3000);
+  };
 
   const upcomingList = (bookings || []).filter((b) => b.status !== 'cancelled');
   const pastList: any[] = [];
   const list = activeTab === 'upcoming' ? upcomingList : pastList;
 
   return (
-    <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar">
+    <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar relative">
+      {/* Toast Feedback */}
+      {feedback && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[700] w-11/12 max-w-sm p-3.5 rounded-2xl bg-[#141A15] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200">
+          <span className="text-xs font-semibold text-[#C8FF2E] flex-1">
+            {feedback}
+          </span>
+        </div>
+      )}
+
       {/* 1. Header */}
       <div className="flex items-center justify-between mb-4">
         <button
@@ -161,7 +176,7 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
             variant="secondary"
             className="w-full text-xs font-semibold"
             onClick={() => {
-              alert('Reschedule calendar opened');
+              showFeedback('Reschedule calendar requested for ' + sheetBooking?.venueName);
               setSheetBooking(null);
             }}
           >
