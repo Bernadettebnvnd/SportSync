@@ -431,20 +431,19 @@ export async function serverLogin(data: {
         .maybeSingle();
       dbProfile = profile;
 
-      // If found by email but auth_id is not yet linked or onboarding_completed is false, update now
-      if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id || !dbProfile.onboarding_completed)) {
+      // If found by email but auth_id is not yet linked, link it now WITHOUT altering onboarding status
+      if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
         await dbClient
           .from('users')
           .update({
             auth_id: supaData.user.id,
-            onboarding_completed: true,
             updated_at: new Date().toISOString(),
           })
           .eq('id', dbProfile.id);
         dbProfile.auth_id = supaData.user.id;
-        dbProfile.onboarding_completed = true;
       } else if (!dbProfile) {
-        // Auto-provision public.users row if missing
+        // Auto-provision public.users row if missing, respecting user metadata or defaulting to false
+        const initialOnboardingCompleted = Boolean(userMeta?.onboarding_completed === true);
         const newProfile = {
           auth_id: supaData.user.id,
           email: normalizedEmail,
@@ -455,7 +454,7 @@ export async function serverLogin(data: {
           preferred_format: 'doubles',
           skill_level: 'intermediate',
           city: userMeta?.city || '',
-          onboarding_completed: true,
+          onboarding_completed: initialOnboardingCompleted,
         };
         await dbClient.from('users').insert(newProfile);
         dbProfile = newProfile;
@@ -464,6 +463,13 @@ export async function serverLogin(data: {
       console.warn('[ServerAuth] Error loading profile from Supabase:', dbErr);
     }
   }
+
+  // Respect actual persisted onboarding completion from public.users or user_metadata
+  const resolvedOnboardingCompleted = Boolean(
+    dbProfile?.onboarding_completed !== undefined && dbProfile?.onboarding_completed !== null
+      ? dbProfile.onboarding_completed
+      : userMeta?.onboarding_completed ?? false
+  );
 
   const sanitized: SanitizedUser = {
     id: supaData.user.id,
@@ -477,7 +483,7 @@ export async function serverLogin(data: {
     preferred_format: dbProfile?.preferred_format || 'doubles',
     skill_level: dbProfile?.skill_level || 'intermediate',
     city: dbProfile?.city || userMeta?.city || '',
-    onboarding_completed: true,
+    onboarding_completed: resolvedOnboardingCompleted,
     created_at: supaData.user.created_at,
   };
 
@@ -539,7 +545,11 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || 'doubles',
           skill_level: skillLevel,
           city: city,
-          onboarding_completed: Boolean(authMetadata?.onboarding_completed ?? supaUser.onboarding_completed ?? false),
+          onboarding_completed: Boolean(
+            supaUser.onboarding_completed !== undefined && supaUser.onboarding_completed !== null
+              ? supaUser.onboarding_completed
+              : authMetadata?.onboarding_completed ?? false
+          ),
 
           created_at: supaUser.created_at,
         };
@@ -600,7 +610,7 @@ export async function serverUpdateUserProfile(
   const resolvedPreferredFormat = data.preferredFormat || data.preferred_format;
   const resolvedCity = data.city;
   const resolvedSkillLevel = data.skillLevel || data.skill_level;
-  const resolvedOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed ?? true;
+  const rawOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed;
 
   if (!isSupabaseConfigured) {
     for (const [email, record] of localDevUsers.entries()) {
@@ -615,7 +625,7 @@ export async function serverUpdateUserProfile(
           preferred_format: resolvedPreferredFormat || record.user.preferred_format,
           city: resolvedCity || record.user.city,
           skill_level: resolvedSkillLevel || record.user.skill_level,
-          onboarding_completed: resolvedOnboardingCompleted,
+          onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : record.user.onboarding_completed,
         };
         localDevUsers.set(email, { ...record, user: updated });
         return updated;
@@ -634,7 +644,7 @@ export async function serverUpdateUserProfile(
       preferred_format: resolvedPreferredFormat || 'doubles',
       skill_level: resolvedSkillLevel || 'intermediate',
       city: resolvedCity || 'Metro Manila',
-      onboarding_completed: resolvedOnboardingCompleted,
+      onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : false,
       created_at: new Date().toISOString(),
     };
     localDevUsers.set(dummyUser.email, {
@@ -648,9 +658,9 @@ export async function serverUpdateUserProfile(
     const db = createAdminClient() || createServerClient();
     if (db) {
       const updatePayload: Record<string, any> = {
-        onboarding_completed: resolvedOnboardingCompleted,
         updated_at: new Date().toISOString(),
       };
+      if (rawOnboardingCompleted !== undefined) updatePayload.onboarding_completed = rawOnboardingCompleted;
       if (resolvedFullName) updatePayload.full_name = resolvedFullName;
       if (resolvedNickname) updatePayload.nickname = resolvedNickname;
       if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
@@ -664,19 +674,22 @@ export async function serverUpdateUserProfile(
       const admin = createAdminClient();
       if (admin) {
         try {
-          await admin.auth.admin.updateUserById(userId, {
-            user_metadata: {
-              full_name: resolvedFullName,
-              nickname: resolvedNickname,
-              avatar_url: resolvedAvatarUrl,
-              primary_sport: resolvedPrimarySport,
-              preferred_sports: resolvedPreferredSports,
-              preferred_format: resolvedPreferredFormat,
-              city: resolvedCity,
-              skill_level: resolvedSkillLevel,
-              onboarding_completed: resolvedOnboardingCompleted,
-            },
-          });
+          const metaUpdate: Record<string, any> = {};
+          if (resolvedFullName !== undefined) metaUpdate.full_name = resolvedFullName;
+          if (resolvedNickname !== undefined) metaUpdate.nickname = resolvedNickname;
+          if (resolvedAvatarUrl !== undefined) metaUpdate.avatar_url = resolvedAvatarUrl;
+          if (resolvedPrimarySport !== undefined) metaUpdate.primary_sport = resolvedPrimarySport;
+          if (resolvedPreferredSports !== undefined) metaUpdate.preferred_sports = resolvedPreferredSports;
+          if (resolvedPreferredFormat !== undefined) metaUpdate.preferred_format = resolvedPreferredFormat;
+          if (resolvedCity !== undefined) metaUpdate.city = resolvedCity;
+          if (resolvedSkillLevel !== undefined) metaUpdate.skill_level = resolvedSkillLevel;
+          if (rawOnboardingCompleted !== undefined) metaUpdate.onboarding_completed = rawOnboardingCompleted;
+
+          if (Object.keys(metaUpdate).length > 0) {
+            await admin.auth.admin.updateUserById(userId, {
+              user_metadata: metaUpdate,
+            });
+          }
         } catch (metaErr) {
           console.warn('[ServerAuth] user_metadata update notice:', metaErr);
         }
@@ -725,7 +738,7 @@ export async function serverUpdateUserProfile(
           primary_sport: resolvedPrimarySport || finalUser.primary_sport,
           preferred_sports: resolvedPreferredSports || finalUser.preferred_sports,
           skill_level: resolvedSkillLevel || finalUser.skill_level,
-          onboarding_completed: resolvedOnboardingCompleted,
+          onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : finalUser.onboarding_completed,
         };
       }
 
