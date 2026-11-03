@@ -146,7 +146,7 @@ function OnboardingContent() {
     }
   }, [currentUser.full_name]);
 
-  const [nickname, setNickname] = useState(currentUser.nickname || '');
+  const [nickname, setNickname] = useState(currentUser.nickname && currentUser.nickname !== 'Guest' ? currentUser.nickname : '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
     if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
       return currentUser.preferred_sports;
@@ -176,7 +176,7 @@ function OnboardingContent() {
     return '';
   });
   const [ownerPassword, setOwnerPassword] = useState('');
-  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '0917-888-0000');
+  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '');
   const [ownerStep, setOwnerStep] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const hasEmail = Boolean(currentUser.email || localStorage.getItem('sportsync_user_email'));
@@ -228,12 +228,6 @@ function OnboardingContent() {
   const handleNameChange = (val: string) => {
     setFullName(val);
     if (playerValidationError) setPlayerValidationError(null);
-    if (!nickname.trim()) {
-      const firstWord = val.trim().split(' ')[0] || '';
-      if (firstWord.length <= 14) {
-        setNickname(firstWord);
-      }
-    }
   };
 
   const handleUseCurrentLocation = () => {
@@ -404,10 +398,10 @@ function OnboardingContent() {
       await completeOwnerOnboarding({
         ownerName: resolvedOwnerName,
         ownerEmail: resolvedOwnerEmail,
-        ownerPhone: ownerPhone.trim() || '0917-000-0000',
-        facilityName: facilityName.trim() || 'Premier Sports Center',
+        ownerPhone: ownerPhone.trim(),
+        facilityName: facilityName.trim(),
         description: 'Quality dedicated sports facility with tournament-standard courts.',
-        address: facilityAddress.trim() || 'Sports Center Ave',
+        address: facilityAddress.trim(),
         city: facilityCity,
         featuredSports: facilitySports,
         courts: generatedCourts,
@@ -543,6 +537,7 @@ function OnboardingContent() {
                   value={fullName}
                   onChange={(e) => handleNameChange(e.target.value)}
                   placeholder="e.g. Maria Santos"
+                  autoComplete="off"
                   className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
                 />
               </div>
@@ -560,6 +555,7 @@ function OnboardingContent() {
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder="e.g. The Maestro"
+                  autoComplete="off"
                   className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
                 />
 
@@ -1035,6 +1031,7 @@ function OnboardingContent() {
                     if (ownerValidationError) setOwnerValidationError(null);
                   }}
                   placeholder="e.g. Metro Sports Hub"
+                  autoComplete="off"
                   autoFocus
                   className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
                 />
@@ -1052,6 +1049,7 @@ function OnboardingContent() {
                     if (ownerValidationError) setOwnerValidationError(null);
                   }}
                   placeholder="e.g. 123 Sports Ave"
+                  autoComplete="off"
                   className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
                 />
               </div>
@@ -1284,6 +1282,10 @@ function OnboardingContent() {
               if (ownerStep === 2) {
                 if (!facilityName.trim()) {
                   setOwnerValidationError('Please enter your sports facility name.');
+                  return;
+                }
+                if (!facilityAddress.trim()) {
+                  setOwnerValidationError('Please enter your facility street address.');
                   return;
                 }
                 setOwnerValidationError(null);

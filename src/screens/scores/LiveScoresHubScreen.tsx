@@ -85,8 +85,8 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newSport, setNewSport] = useState<PrimarySport>('Basketball');
   const [newVenue, setNewVenue] = useState('');
-  const [newTeamA, setNewTeamA] = useState('Team A');
-  const [newTeamB, setNewTeamB] = useState('Team B');
+  const [newTeamA, setNewTeamA] = useState('');
+  const [newTeamB, setNewTeamB] = useState('');
 
   const saveMatches = (updated: LocalMatchScore[]) => {
     setMatches(updated);
@@ -116,7 +116,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
       return;
     }
 
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim() || !newVenue.trim() || !newTeamA.trim() || !newTeamB.trim()) return;
 
     const newMatch: LocalMatchScore = {
       id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -124,21 +124,21 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
         : `score_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       gameTitle: newTitle.trim(),
       sport: newSport,
-      venueName: newVenue.trim() || 'Local Court',
+      venueName: newVenue.trim(),
       date: 'Today',
       status: 'live',
       isHost: true,
       isAttendee: true,
       checkedIn: true,
-      teamA: { name: newTeamA.trim() || 'Team A', score: 0 },
-      teamB: { name: newTeamB.trim() || 'Team B', score: 0 },
+      teamA: { name: newTeamA.trim(), score: 0 },
+      teamB: { name: newTeamB.trim(), score: 0 },
       currentPeriod: '1st Half',
     };
 
     const updated = [newMatch, ...matches];
     saveMatches(updated);
     setNewTitle('');
-    setNewVenue('');
+    setNewVenue(''); setNewTeamA(''); setNewTeamB('');
     setActiveTab('live');
     showToast('Live match score initialized!');
     addNotification({
@@ -412,7 +412,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
                 type="text"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="e.g. 5v5 Friendly Run or Championship Match"
+                placeholder="e.g. 5v5 Friendly Run or Championship Match" autoComplete="off"
                 required
                 className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
               />
@@ -444,7 +444,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
                   type="text"
                   value={newVenue}
                   onChange={(e) => setNewVenue(e.target.value)}
-                  placeholder="e.g. Court 1 or The Arena"
+                  placeholder="e.g. Court 1 or The Arena" required autoComplete="off"
                   className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
                 />
               </div>
@@ -459,7 +459,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
                   type="text"
                   value={newTeamA}
                   onChange={(e) => setNewTeamA(e.target.value)}
-                  placeholder="Team A"
+                  placeholder="e.g. Team A" required autoComplete="off"
                   className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
                 />
               </div>
@@ -472,7 +472,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
                   type="text"
                   value={newTeamB}
                   onChange={(e) => setNewTeamB(e.target.value)}
-                  placeholder="Team B"
+                  placeholder="e.g. Team B" required autoComplete="off"
                   className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
                 />
               </div>

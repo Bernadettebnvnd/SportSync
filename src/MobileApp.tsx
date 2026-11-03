@@ -316,7 +316,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <PersonalizationScreen
             onBack={goBack}
             initialValues={personalizationDraft || {
-              displayName: bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : '',
+              displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name) ? bridge.userProfile.name : '',
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
               preferredArea: bridge.userProfile.city || 'Naga City',
               skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,

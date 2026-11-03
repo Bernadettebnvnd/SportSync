@@ -64,25 +64,32 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  const [ownerName, setOwnerName] = useState(
-    currentUser.full_name ||
-    (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') : '') ||
-    ''
-  );
+  const initialStoredName =
+    typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') || '' : '';
+  const resolvedInitialOwnerName =
+    currentUser.full_name && !['Guest', 'Guest Player'].includes(currentUser.full_name)
+      ? currentUser.full_name
+      : initialStoredName && !['Guest', 'Guest Player'].includes(initialStoredName)
+      ? initialStoredName
+      : '';
+
+  const [ownerName, setOwnerName] = useState(resolvedInitialOwnerName);
   const [ownerEmail, setOwnerEmail] = useState(
     currentUser.email ||
     (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') ||
     ''
   );
-  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '0917-888-0000');
+  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '');
 
   useEffect(() => {
-    if (currentUser.full_name && !ownerName) setOwnerName(currentUser.full_name);
+    if (currentUser.full_name && !['Guest', 'Guest Player'].includes(currentUser.full_name) && !ownerName) {
+      setOwnerName(currentUser.full_name);
+    }
     if (currentUser.email && !ownerEmail) setOwnerEmail(currentUser.email);
     if (typeof window !== 'undefined') {
       if (!ownerName) {
         const storedName = localStorage.getItem('sportsync_user_name');
-        if (storedName) setOwnerName(storedName);
+        if (storedName && !['Guest', 'Guest Player'].includes(storedName)) setOwnerName(storedName);
       }
       if (!ownerEmail) {
         const storedEmail = localStorage.getItem('sportsync_user_email');
@@ -94,22 +101,16 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
   const [facilityName, setFacilityName] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
-  const [city, setCity] = useState(currentUser.city || 'Metro Manila');
+  const [city, setCity] = useState(currentUser.city || '');
 
   const [selectedSports, setSelectedSports] = useState<SportType[]>(['pickleball', 'badminton']);
 
   const [courts, setCourts] = useState<NewCourtInput[]>([
     {
-      name: 'Court 1 (Tournament)',
+      name: '',
       sport: 'pickleball',
       hourlyRateCents: 50000,
-      floorType: 'Cushioned Acrylic Surface',
-    },
-    {
-      name: 'Court 2 (Standard)',
-      sport: 'badminton',
-      hourlyRateCents: 45000,
-      floorType: 'Yonex BWF Taraflex Rubber',
+      floorType: '',
     },
   ]);
 
@@ -131,15 +132,14 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
   };
 
   const handleAddCourt = () => {
-    const newIndex = courts.length + 1;
     const defaultSport = selectedSports[0] || 'pickleball';
     setCourts([
       ...courts,
       {
-        name: `Court ${newIndex}`,
+        name: '',
         sport: defaultSport,
         hourlyRateCents: 45000,
-        floorType: 'Tournament Standard Surface',
+        floorType: '',
       },
     ]);
   };
@@ -167,17 +167,19 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
     try {
       await completeOwnerOnboarding({
-        ownerName: ownerName.trim() || 'Facility Partner',
-        ownerEmail: ownerEmail.trim() || 'owner@facility.ph',
+        ownerName: ownerName.trim(),
+        ownerEmail: ownerEmail.trim(),
         ownerPhone: ownerPhone.trim(),
-        facilityName: facilityName.trim() || 'Metro Sports Hub',
-        description:
-          description.trim() ||
-          'Premier multi-sport training center with tournament standard courts and amenities.',
-        address: address.trim() || '123 Sports Blvd, Metro Manila',
-        city: city.trim() || 'Taguig City',
+        facilityName: facilityName.trim(),
+        description: description.trim(),
+        address: address.trim(),
+        city: city.trim(),
         featuredSports: selectedSports,
-        courts,
+        courts: courts.map((c) => ({
+          ...c,
+          name: c.name.trim(),
+          floorType: c.floorType.trim(),
+        })),
         inventorySource,
       });
 
@@ -277,6 +279,11 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
         {/* Form Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+          {submitError && step < 4 && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700">
+              {submitError}
+            </div>
+          )}
           {/* STEP 1: Owner Contact */}
           {step === 1 && (
             <div className="space-y-3.5">
@@ -375,12 +382,9 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                   </div>
                   <div>
                     <label className="text-[11px] font-black text-black block mb-1">Hours</label>
-                    <input
-                      type="text"
-                      defaultValue="06:00 AM - 11:00 PM"
-                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] text-xs font-semibold text-black bg-[#FAF8F5]"
-                      readOnly
-                    />
+                    <div className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] text-xs font-semibold text-black bg-[#FAF8F5] flex items-center">
+                      06:00 AM - 11:00 PM
+                    </div>
                   </div>
                 </div>
 
@@ -604,7 +608,22 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
           {step < 4 ? (
             <button
               type="button"
-              onClick={() => setStep((s) => (s + 1) as 1 | 2 | 3 | 4)}
+              onClick={() => {
+                if (step === 1 && (!ownerName.trim() || !ownerEmail.trim())) {
+                  setSubmitError('Please enter your name and business email.');
+                  return;
+                }
+                if (step === 2 && (!facilityName.trim() || !address.trim() || !city.trim())) {
+                  setSubmitError('Please enter facility name, address, and city.');
+                  return;
+                }
+                if (step === 3 && courts.some((c) => !c.name.trim())) {
+                  setSubmitError('Please enter a name for each court.');
+                  return;
+                }
+                setSubmitError(null);
+                setStep((s) => (s + 1) as 1 | 2 | 3 | 4);
+              }}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 min-h-[44px] rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
             >
               <span>Continue</span>

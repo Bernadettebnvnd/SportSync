@@ -80,7 +80,7 @@ export default function OrganizerDashboard() {
   const [newCourtName, setNewCourtName] = useState('');
   const [newCourtSport, setNewCourtSport] = useState<SportType>('basketball');
   const [newCourtRate, setNewCourtRate] = useState('600');
-  const [newCourtSurface, setNewCourtSurface] = useState('Hard Court');
+  const [newCourtSurface, setNewCourtSurface] = useState('');
   const [courtStatusMap, setCourtStatusMap] = useState<Record<string, boolean>>({});
 
   // Hosted Games state
@@ -88,7 +88,7 @@ export default function OrganizerDashboard() {
   const [newGameTitle, setNewGameTitle] = useState('');
   const [newGameCourtId, setNewGameCourtId] = useState('');
   const [newGameSport, setNewGameSport] = useState<SportType>('basketball');
-  const [newGameTime, setNewGameTime] = useState('18:00 - 20:00');
+  const [newGameTime, setNewGameTime] = useState('');
   const [newGamePlayers, setNewGamePlayers] = useState('10');
   const [newGameFee, setNewGameFee] = useState('350');
   const [newGameRotation, setNewGameRotation] = useState('Open Pickup Rotation');
@@ -149,7 +149,7 @@ export default function OrganizerDashboard() {
   const [editDescription, setEditDescription] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editCity, setEditCity] = useState('');
-  const [editHours, setEditHours] = useState('06:00 AM - 11:00 PM');
+  const [editHours, setEditHours] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editSports, setEditSports] = useState<SportType[]>([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -159,13 +159,13 @@ export default function OrganizerDashboard() {
     setEditFacilityName(primaryVenue.name);
     setEditDescription(primaryVenue.description || '');
     setEditAddress(primaryVenue.address || '');
-    setEditCity(primaryVenue.city || 'Metro Manila');
+    setEditCity(primaryVenue.city || '');
     setEditHours(
       primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
-        ? Object.values(primaryVenue.operating_hours)[0] || '06:00 AM - 11:00 PM'
-        : '06:00 AM - 11:00 PM'
+        ? Object.values(primaryVenue.operating_hours)[0] || ''
+        : ''
     );
-    setEditPhone((primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000');
+    setEditPhone((primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '');
     setEditSports(primaryVenue.featured_sports || ['pickleball']);
     setIsEditProfileOpen(true);
   };
@@ -350,6 +350,7 @@ export default function OrganizerDashboard() {
       });
       setIsAddCourtOpen(false);
       setNewCourtName('');
+      setNewCourtSurface('');
       setMonetizeSuccessMessage(`Court "${created.name}" registered and published to player search!`);
       setTimeout(() => setMonetizeSuccessMessage(null), 4000);
     } catch (err) {
@@ -376,6 +377,7 @@ export default function OrganizerDashboard() {
     });
     setIsCreateGameOpen(false);
     setNewGameTitle('');
+    setNewGameTime('');
     setMonetizeSuccessMessage(`Hosted game "${newGameTitle.trim()}" published to player discovery feed!`);
     setTimeout(() => setMonetizeSuccessMessage(null), 4000);
   };

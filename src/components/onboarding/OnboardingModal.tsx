@@ -63,8 +63,8 @@ const NICKNAME_SUGGESTIONS = [
 export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModalProps) {
   const { currentUser, completePlayerOnboarding } = useMatchiStore();
 
-  const [name, setName] = useState(currentUser.full_name || '');
-  const [nickname, setNickname] = useState(currentUser.nickname || '');
+  const [name, setName] = useState(currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.full_name !== 'Guest' ? currentUser.full_name : '');
+  const [nickname, setNickname] = useState(currentUser.nickname && currentUser.nickname !== 'Guest' ? currentUser.nickname : '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
     if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
       return currentUser.preferred_sports;
@@ -98,12 +98,6 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
   const handleNameChange = (val: string) => {
     setName(val);
     if (validationError) setValidationError(null);
-    if (!nickname.trim()) {
-      const firstWord = val.trim().split(' ')[0] || '';
-      if (firstWord.length <= 14) {
-        setNickname(firstWord);
-      }
-    }
   };
 
   const handleFinish = async () => {
@@ -265,7 +259,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
                 type="text"
                 value={name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="e.g. Maria Santos"
+                placeholder="e.g. Maria Santos" autoComplete="off"
                 className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
               />
             </div>
@@ -282,7 +276,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
-                placeholder="e.g. The Maestro"
+                placeholder="e.g. The Maestro" autoComplete="off"
                 className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
               />
 

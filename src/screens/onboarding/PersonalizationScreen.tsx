@@ -154,7 +154,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your Display Name (e.g. Alex Rivera)"
+              placeholder="Your Display Name (e.g. Alex Rivera)" autoComplete="off"
               className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
             />
           </div>
@@ -226,7 +226,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
                 type="text"
                 value={customSportInput}
                 onChange={(e) => setCustomSportInput(e.target.value)}
-                placeholder="e.g. Table Tennis, Futsal, Squash, Padel..."
+                placeholder="e.g. Table Tennis, Futsal, Squash, Padel..." autoComplete="off"
                 className="w-full h-10 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
               />
             </div>

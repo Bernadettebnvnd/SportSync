@@ -236,18 +236,18 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
   // Form states
   const [sport, setSport] = useState<WizardSport>('Basketball');
-  const [title, setTitle] = useState('5v5 Sunset Pickup Game');
+  const [title, setTitle] = useState('');
   const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(isTooLateToday ? 'tomorrow' : 'today');
   const [date, setDate] = useState(() => isTooLateToday ? `Tomorrow (18:00)` : `Today (${defaultTodayTime})`);
   const [customDate, setCustomDate] = useState(() => isTooLateToday ? tomorrowISO : todayISO);
   const [customTime, setCustomTime] = useState(() => isTooLateToday ? '18:00' : defaultTodayTime);
 
   // Location states in Naga City
-  const [locationName, setLocationName] = useState('Jesse M. Robredo Coliseum, Triangulo, Naga City');
+  const [locationName, setLocationName] = useState('');
   const [coordinates, setCoordinates] = useState<[number, number]>(NAGA_SPORTS_VENUES[0].coordinates);
-  const [selectedVenueId, setSelectedVenueId] = useState<string>(NAGA_SPORTS_VENUES[0].id);
+  const [selectedVenueId, setSelectedVenueId] = useState<string>('');
   const [locationSearchQuery, setLocationSearchQuery] = useState(
-    'Jesse M. Robredo Coliseum, Triangulo, Naga City'
+    ''
   );
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestionItem[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
@@ -825,7 +825,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   setTitle(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="e.g. 5v5 Sunset Pickup Game"
+                placeholder="e.g. 5v5 Sunset Pickup Game" autoComplete="off"
                 className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
               />
 
@@ -987,7 +987,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                     onFocus={() => {
                       if (locationSuggestions.length > 0) setShowLocationDropdown(true);
                     }}
-                    placeholder="Search venue or address (e.g. Robredo Coliseum, Pacol, Naga City)..."
+                    placeholder="Search venue or address (e.g. Robredo Coliseum, Pacol, Naga City)..." autoComplete="off"
                     className="w-full h-12 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all truncate"
                   />
                   {locationSearchQuery && (
