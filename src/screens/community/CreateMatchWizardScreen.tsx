@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { FRIENDS } from '../../mock/mockData';
 import { UserAvatar } from '../../illustrations/Avatars';
-import { AvatarId } from '../../mock/types';
+import { AvatarId, CommunityGame } from '../../mock/types';
 import type * as LeafletType from 'leaflet';
 import { Button } from '../../design-system/components/Button';
 import { Stepper, Toggle } from '../../design-system/components/SegmentedControl';
@@ -287,15 +287,66 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     );
   };
 
+  const persistDraftInvitation = useCallback(async () => {
+    if (visibility !== 'Invite' || !inviteCode || typeof window === 'undefined') return;
+    const matchTime = scheduleMode === 'today'
+      ? defaultTodayTime
+      : scheduleMode === 'tomorrow'
+      ? '18:00'
+      : customTime;
+    const dateLabel = scheduleMode === 'today'
+      ? 'Today'
+      : scheduleMode === 'tomorrow'
+      ? 'Tomorrow'
+      : customDate;
+    const draftGame: CommunityGame = {
+      id: 'game_' + inviteCode,
+      sport: (sport as any) || 'Basketball',
+      title: title.trim() || (sport + ' Match'),
+      format: (playersCount <= 4 ? '2v2 Doubles' : '5v5') as any,
+      skillLevel: skillLevel || 'Casual',
+      date: dateLabel,
+      time: matchTime,
+      locationName: locationName.trim() || 'Naga City Venue',
+      distance: 'Naga City • 0.5 km away',
+      hostName: 'Organizer',
+      hostAvatar: 'alex',
+      spotsTotal: playersCount,
+      spotsJoined: 1,
+      pricePerPlayer: splitCost ? pricePerPlayer : 0,
+      notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
+      coordinates,
+      isPublic: false,
+      visibility: 'Invite',
+      inviteCode,
+      members: [{ name: 'Organizer', avatar: 'alex' }],
+    };
+    try {
+      await fetch('/api/invitations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game: draftGame }),
+      });
+    } catch {}
+  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, skillLevel, locationName, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
+
+  useEffect(() => {
+    if (visibility === 'Invite' && (step === 4 || step === 5)) {
+      persistDraftInvitation();
+    }
+  }, [visibility, step, persistDraftInvitation]);
+
   const handleCopyInviteLink = async () => {
     const url = typeof window !== 'undefined'
       ? `${window.location.origin}/?invite=${inviteCode}`
       : `https://sportsync.ph/?invite=${inviteCode}`;
+    await persistDraftInvitation();
     const success = await copyToClipboard(url);
     if (success) {
       setCopiedInvite(true);
       setTimeout(() => setCopiedInvite(false), 2500);
     }
+  };
   };
 
   const handleSharePublicMatch = async () => {
@@ -751,7 +802,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         playersCount,
         skillLevel,
         pricePerPlayer: splitCost ? pricePerPlayer : 0,
-        notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : undefined,
+        notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
         coordinates,
         visibility,
         inviteCode: visibility === 'Invite' ? inviteCode : undefined,

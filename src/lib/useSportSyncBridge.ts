@@ -1292,7 +1292,7 @@ export function useSportSyncBridge() {
           const createdSession = await store.createOpenPlaySession({
             venueId: targetVenue.id,
             title: gameData.title,
-            description: gameData.notes || 'SportSync community game',
+            description: `${gameData.notes || 'SportSync community game'}${gameData.inviteCode ? ` [INVITE:${gameData.inviteCode.toUpperCase()}]` : ''}`,
             sport: matchingSport,
             courtIds: targetVenue.courts?.map((c) => c.id) || [],
             startTime: displayTime,
@@ -1352,11 +1352,11 @@ export function useSportSyncBridge() {
 
       if (typeof window !== 'undefined' && newGame.inviteCode) {
         try {
-          fetch('/api/invitations', {
+          await fetch('/api/invitations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ game: newGame }),
-          }).catch(() => {});
+          });
         } catch {}
       }
 
@@ -1508,6 +1508,16 @@ export function useSportSyncBridge() {
         });
       } catch (err) {
         console.warn('[SportSyncBridge] Session update fallback handled:', err);
+      }
+
+      if (typeof window !== 'undefined' && updatedGame.inviteCode) {
+        try {
+          await fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: updatedGame }),
+          });
+        } catch {}
       }
 
       return { success: true, game: updatedGame };
@@ -1876,11 +1886,11 @@ export function useSportSyncBridge() {
 
       if (typeof window !== 'undefined' && (targetGame.inviteCode || targetGame.visibility === 'Invite')) {
         try {
-          fetch('/api/invitations', {
+          await fetch('/api/invitations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ game: updatedGame }),
-          }).catch(() => {});
+          });
         } catch {}
       }
 

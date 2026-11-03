@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BottomNav, NavTabId } from './design-system/components/BottomNav';
 import { QuickActionSheet } from './design-system/components/QuickActionSheet';
 import { Toast } from './design-system/components/SearchBar';
@@ -122,6 +122,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const resolveInitialScreen = (): ScreenId => {
     if (initialScreen) return initialScreen;
+    if (typeof window !== 'undefined') {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.get('invite') || searchParams.get('code') || searchParams.get('match')) {
+          return 'invitation-landing';
+        }
+      } catch {}
+    }
     return isUserAuthenticated() ? 'home' : 'auth';
   };
 
@@ -150,9 +158,26 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
-  const [activeInviteCode, setActiveInviteCode] = useState<string | null>(null);
+  const [activeInviteCode, setActiveInviteCode] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const code = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
+        return code ? code.trim().toUpperCase() : null;
+      } catch {}
+    }
+    return null;
+  });
   const [inviteGame, setInviteGame] = useState<CommunityGame | null>(null);
-  const [isInviteLoading, setIsInviteLoading] = useState(false);
+  const [isInviteLoading, setIsInviteLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        return Boolean(searchParams.get('invite') || searchParams.get('code') || searchParams.get('match'));
+      } catch {}
+    }
+    return false;
+  });
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('login');
   const [guestPrompt, setGuestPrompt] = useState<{
@@ -162,52 +187,61 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     pendingAction?: () => void;
   }>({ isOpen: false });
 
-  // Sync external initialScreen changes (e.g. from developer screen jumper)
+  const resolvedCodeRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const searchParams = new URLSearchParams(window.location.search);
       const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
-      if (inviteParam) {
-        const cleanCode = inviteParam.trim().toUpperCase();
-        setActiveInviteCode(cleanCode);
+      if (!inviteParam) return;
 
-        const localMatch = bridge.games.find(
-          (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
-        );
+      const cleanCode = inviteParam.trim().toUpperCase();
+      setActiveInviteCode(cleanCode);
 
-        if (localMatch) {
-          setInviteGame(localMatch);
+      const localMatch = bridge.games.find(
+        (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || (g.id && g.id.toUpperCase() === cleanCode)
+      );
+
+      if (localMatch) {
+        setInviteGame(localMatch);
+        setIsInviteLoading(false);
+        setInviteError(null);
+        setCurrentScreen('invitation-landing');
+        setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+        return;
+      }
+
+      if (resolvedCodeRef.current === cleanCode && inviteGame) {
+        return;
+      }
+
+      resolvedCodeRef.current = cleanCode;
+      setIsInviteLoading(true);
+      setInviteError(null);
+
+      fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error('Invitation not found or expired');
+          return res.json();
+        })
+        .then((data) => {
+          if (data.success && data.game) {
+            setInviteGame(data.game);
+            bridge.addExternalGame(data.game);
+            setInviteError(null);
+          } else {
+            setInviteError(data.error || 'Invitation not found or expired');
+          }
+        })
+        .catch((err) => {
+          setInviteError(err?.message || 'Invitation not found or expired');
+        })
+        .finally(() => {
+          setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
           setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
-          return;
-        }
-
-        setIsInviteLoading(true);
-        fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`)
-          .then((res) => {
-            if (!res.ok) throw new Error('Invitation not found or expired');
-            return res.json();
-          })
-          .then((data) => {
-            if (data.success && data.game) {
-              setInviteGame(data.game);
-              bridge.addExternalGame(data.game);
-              setCurrentScreen('invitation-landing');
-              setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
-            } else {
-              setInviteError(data.error || 'Invitation not found');
-              setCurrentScreen('invitation-landing');
-            }
-          })
-          .catch((err) => {
-            setInviteError(err?.message || 'Invitation not found or expired');
-            setCurrentScreen('invitation-landing');
-          })
-          .finally(() => {
-            setIsInviteLoading(false);
-          });
-      }
+        });
     } catch {}
   }, [bridge.games]);
 
