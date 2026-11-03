@@ -110,6 +110,10 @@ CREATE TABLE IF NOT EXISTS public.users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Schema compatibility statements for existing databases
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS preferred_format TEXT DEFAULT 'standard';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- 5. Venues / Facilities Table
 CREATE TABLE IF NOT EXISTS public.venues (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

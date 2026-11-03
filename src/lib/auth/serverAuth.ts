@@ -270,7 +270,6 @@ export async function serverRegister(data: {
             auth_id: supaUserId,
             full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
             role: assignedRole,
-            onboarding_completed: false,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingUser.id);
@@ -283,10 +282,8 @@ export async function serverRegister(data: {
           email: normalizedEmail,
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
           role: assignedRole,
-          onboarding_completed: false,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
-          preferred_format: 'doubles',
           skill_level: 'intermediate',
           city: registrationCity || null,
         });
@@ -502,7 +499,6 @@ export async function serverLogin(data: {
         dbProfile.auth_id = supaData.user.id;
       } else if (!dbProfile) {
         // Auto-provision public.users row if missing, respecting user metadata or defaulting to false
-        const initialOnboardingCompleted = Boolean(userMeta?.onboarding_completed === true);
         const newProfile = {
           auth_id: supaData.user.id,
           email: normalizedEmail,
@@ -510,10 +506,8 @@ export async function serverLogin(data: {
           role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
-          preferred_format: 'doubles',
           skill_level: 'intermediate',
           city: userMeta?.city || '',
-          onboarding_completed: initialOnboardingCompleted,
         };
         await dbClient.from('users').insert(newProfile);
         dbProfile = newProfile;
@@ -771,9 +765,15 @@ export async function serverUpdateUserProfile(
         .select('*')
         .maybeSingle();
 
-      // If Postgres rejected update due to enum constraint (e.g. remote DB hasn't run ALTER TYPE for football)
+      // If Postgres rejected update due to column schema cache or enum constraint
       if (error) {
         console.warn('[ServerAuth] public.users direct update warning:', error.message);
+        if (error.message?.includes('preferred_format')) {
+          delete updatePayload.preferred_format;
+        }
+        if (error.message?.includes('onboarding_completed')) {
+          delete updatePayload.onboarding_completed;
+        }
         const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
         const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
         const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));

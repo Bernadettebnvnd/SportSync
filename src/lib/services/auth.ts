@@ -189,20 +189,20 @@ export async function updatePlayerProfile(data: {
         } catch {}
 
 
+        const profileUpdatePayload: any = {
+          full_name: data.fullName,
+          nickname: data.nickname,
+          avatar_url: data.avatarUrl,
+          primary_sport: data.primarySport,
+          preferred_sports: data.preferredSports,
+          skill_level: data.skillLevel,
+          city: data.city,
+          updated_at: new Date().toISOString(),
+        };
+
         const { error } = await supabase
           .from('users')
-          .update({
-            full_name: data.fullName,
-            nickname: data.nickname,
-            avatar_url: data.avatarUrl,
-            primary_sport: data.primarySport,
-            preferred_sports: data.preferredSports,
-            preferred_format: data.preferredFormat,
-            skill_level: data.skillLevel,
-            city: data.city,
-            onboarding_completed: true,
-            updated_at: new Date().toISOString(),
-          })
+          .update(profileUpdatePayload)
           .or(`auth_id.eq.${authData.user.id},email.eq.${authData.user.email}`);
 
         if (!error) {
