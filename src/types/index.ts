@@ -274,6 +274,9 @@ export interface Session {
   current_players_count: number;
   rotation_format: string;
   status: 'upcoming' | 'active' | 'completed' | 'cancelled';
+  visibility?: 'Public' | 'Friends' | 'Invite';
+  invite_code?: string;
+  invited_players?: Array<{ id: string; name: string }>;
   created_at?: string;
   updated_at?: string;
 }

@@ -277,10 +277,29 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       if (activeSport !== 'All' && !g.sport.toLowerCase().includes(activeSport.toLowerCase())) {
         return false;
       }
+      if (g.visibility === 'Invite') {
+        const name = (effectiveUserName || '').trim().toLowerCase();
+        const id = effectiveUserId;
+        const isHost = Boolean(
+          (g.hostName && name && g.hostName.trim().toLowerCase() === name) ||
+          (g.hostId && id && g.hostId === id)
+        );
+        const isMember = g.members?.some((m) => (name && m.name.trim().toLowerCase() === name) || (id && m.id && m.id === id));
+        const isInvited = g.invitedPlayers?.some((ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id));
+        let hasUnlockedToken = false;
+        if (typeof window !== 'undefined' && g.inviteCode) {
+          try {
+            const raw = localStorage.getItem('sportsync_unlocked_invites');
+            const unlocked: string[] = raw ? JSON.parse(raw) : [];
+            hasUnlockedToken = unlocked.includes(g.inviteCode.toUpperCase()) || unlocked.includes(g.id);
+          } catch {}
+        }
+        if (!isHost && !isMember && !isInvited && !hasUnlockedToken) return false;
+      }
       seenIds.add(g.id);
       return true;
     });
-  }, [games, activeSport]);
+  }, [games, activeSport, effectiveUserName, effectiveUserId]);
 
   const handleSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();

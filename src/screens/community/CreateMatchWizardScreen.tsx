@@ -19,7 +19,13 @@ import {
   Sparkles,
   Shield,
   Loader2,
+  Copy,
+  Lock,
+  Link as LinkIcon,
 } from 'lucide-react';
+import { FRIENDS } from '../../mock/mockData';
+import { UserAvatar } from '../../illustrations/Avatars';
+import { AvatarId } from '../../mock/types';
 import type * as LeafletType from 'leaflet';
 import { Button } from '../../design-system/components/Button';
 import { Stepper, Toggle } from '../../design-system/components/SegmentedControl';
@@ -212,6 +218,9 @@ interface CreateMatchWizardScreenProps {
     pricePerPlayer: number;
     notes?: string;
     coordinates?: [number, number];
+    visibility?: 'Public' | 'Friends' | 'Invite';
+    inviteCode?: string;
+    invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
   }) => Promise<any> | void;
 }
 
@@ -266,6 +275,26 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   const [pricePerPlayer, setPricePerPlayer] = useState(150);
   const [bringBootsNote, setBringBootsNote] = useState(true);
   const [visibility, setVisibility] = useState<'Public' | 'Friends' | 'Invite'>('Public');
+  const [inviteCode] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
+  const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([]);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+
+  const toggleInvitedFriend = (friendId: string) => {
+    setInvitedFriendIds((prev) =>
+      prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]
+    );
+  };
+
+  const handleCopyInviteLink = () => {
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/?invite=${inviteCode}`
+      : `https://sportsync.ph/?invite=${inviteCode}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2500);
+    }
+  };
 
   // Async submission & validation state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -706,6 +735,16 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         pricePerPlayer: splitCost ? pricePerPlayer : 0,
         notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : undefined,
         coordinates,
+        visibility,
+        inviteCode: visibility === 'Invite' ? inviteCode : undefined,
+        invitedPlayers:
+          visibility === 'Invite'
+            ? FRIENDS.filter((f) => invitedFriendIds.includes(f.id)).map((f) => ({
+                id: f.id,
+                name: f.name,
+                avatarId: f.avatarId,
+              }))
+            : undefined,
       });
 
       setStep(5);
@@ -1400,6 +1439,16 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                     Coords: {coordinates[0].toFixed(4)}°N, {coordinates[1].toFixed(4)}°E (Naga City)
                   </span>
                 </p>
+                <p className="flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
+                  <span className="text-xs text-[#F4F7F0] font-medium">
+                    {visibility === 'Invite'
+                      ? 'Invite Only (Hidden from public feed)'
+                      : visibility === 'Friends'
+                      ? 'Friends Only'
+                      : 'Public Feed'}
+                  </span>
+                </p>
               </div>
             </div>
 
@@ -1429,6 +1478,91 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 })}
               </div>
             </div>
+
+            {visibility === 'Invite' && (
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-[#C8FF2E]/30 space-y-3.5">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 flex items-center justify-center shrink-0 text-[#C8FF2E] mt-0.5">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="font-display font-bold text-xs text-[#F4F7F0] block">
+                      Invite-Only Access
+                    </span>
+                    <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5">
+                      Only players with your private invite link or invited friends can view and join this match. It will not be shown on the public discovery feed.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                    Shareable Invitation Link
+                  </span>
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#0B0F0C] border border-white/10">
+                    <LinkIcon className="w-4 h-4 text-[#C8FF2E] shrink-0 ml-1" />
+                    <span className="text-xs font-mono text-[#F4F7F0] truncate flex-1 select-all">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/?invite=${inviteCode}` : `https://sportsync.ph/?invite=${inviteCode}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyInviteLink}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all press-scale flex items-center gap-1.5 shrink-0 ${copiedInvite ? 'bg-[#3DDC84] text-[#0B0F0C]' : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#d4ff52]'}`}
+                    >
+                      {copiedInvite ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Link</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider">
+                      Invite Friends Directly
+                    </span>
+                    {invitedFriendIds.length > 0 && (
+                      <span className="text-[10px] font-bold text-[#C8FF2E] font-mono">
+                        {invitedFriendIds.length} selected
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                    {FRIENDS.slice(0, 5).map((f) => {
+                      const isInvited = invitedFriendIds.includes(f.id);
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => toggleInvitedFriend(f.id)}
+                          className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all press-scale ${isInvited ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]' : 'bg-[#0B0F0C] border-white/5 text-[#A5B0A6]'}`}
+                        >
+                          <div className="relative">
+                            <UserAvatar id={f.avatarId} name={f.name} size={32} />
+                            {isInvited && (
+                              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
+                                <Check className="w-2 h-2 stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] mt-1 truncate max-w-[54px] font-medium">
+                            {f.name.split(' ')[0]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1466,11 +1600,22 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 <span className="text-[#A5B0A6]">Spots:</span>
                 <span className="text-white font-mono">{playersCount} capacity</span>
               </div>
-              <Button
-                variant="social"
-                size="sm"
-                leftIcon={<Share2 className="w-4 h-4" />}
-                className="w-full text-xs font-bold mt-2"
+              {visibility === 'Invite' ? (
+                <Button
+                  variant="social"
+                  size="sm"
+                  leftIcon={copiedInvite ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  className="w-full text-xs font-bold mt-2"
+                  onClick={handleCopyInviteLink}
+                >
+                  {copiedInvite ? 'Invite Link Copied!' : 'Copy Private Invite Link'}
+                </Button>
+              ) : (
+                <Button
+                  variant="social"
+                  size="sm"
+                  leftIcon={<Share2 className="w-4 h-4" />}
+                  className="w-full text-xs font-bold mt-2"
                 onClick={() => {
                   if (typeof navigator !== 'undefined' && navigator.clipboard) {
                     navigator.clipboard.writeText(
@@ -1481,6 +1626,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               >
                 Share Match Invite
               </Button>
+              )}
             </div>
 
             <div className="pt-2">
@@ -1514,7 +1660,9 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             {isSubmitting
               ? 'Saving & Publishing...'
               : step === 4
-              ? 'Publish Match to Naga Feed'
+              ? visibility === 'Invite'
+                ? 'Publish Invite-Only Match'
+                : 'Publish Match to Naga Feed'
               : 'Next Step'}
           </Button>
         </div>

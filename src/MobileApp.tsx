@@ -157,6 +157,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // Sync external initialScreen changes (e.g. from developer screen jumper)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const inviteParam = searchParams.get('invite') || searchParams.get('match');
+      if (inviteParam) {
+        const cleanCode = inviteParam.trim().toUpperCase();
+        const raw = localStorage.getItem('sportsync_unlocked_invites');
+        const list = raw ? JSON.parse(raw) : [];
+        if (!list.includes(cleanCode)) {
+          list.push(cleanCode);
+          localStorage.setItem('sportsync_unlocked_invites', JSON.stringify(list));
+        }
+        const matchingGame = bridge.games.find(
+          (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
+        );
+        if (matchingGame) {
+          setSelectedGame(matchingGame);
+          navigateTo('match-detail');
+        }
+      }
+    } catch {}
+  }, [bridge.games]);
+
+  useEffect(() => {
     if (initialScreen) {
       setCurrentScreen(initialScreen);
       setScreenHistory((prev) => (prev[prev.length - 1] === initialScreen ? prev : [...prev, initialScreen]));
@@ -455,7 +479,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onMatchCreated={async (gameData) => {
               const newGame = await bridge.createCommunityGame(gameData);
               setSelectedGame(newGame);
-              setToastMessage('Match published to feed! +100 Playmaker XP');
+              setToastMessage(
+                gameData.visibility === 'Invite'
+                  ? 'Invite-only match created! Share link with invitees.'
+                  : 'Match published to feed! +100 Playmaker XP'
+              );
               return newGame;
             }}
             onFinish={() => {

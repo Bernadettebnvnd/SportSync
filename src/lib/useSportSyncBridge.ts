@@ -1222,6 +1222,9 @@ export function useSportSyncBridge() {
       pricePerPlayer: number;
       notes?: string;
       coordinates?: [number, number];
+      visibility?: 'Public' | 'Friends' | 'Invite';
+      inviteCode?: string;
+      invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
     }) => {
       let assignedId = generateUniqueGameId();
       let createdSessionId: string | undefined = undefined;
@@ -1304,7 +1307,10 @@ export function useSportSyncBridge() {
         spotsJoined: 1,
         pricePerPlayer: gameData.pricePerPlayer,
         notes: gameData.notes || 'Organized via SportSync Matchmaking',
-        isPublic: true,
+        isPublic: gameData.visibility ? gameData.visibility !== 'Invite' : true,
+        visibility: gameData.visibility || 'Public',
+        inviteCode: gameData.inviteCode,
+        invitedPlayers: gameData.invitedPlayers || [],
         members: [{ name: userName, avatar: userAvatar, id: userProfile.id }],
         coordinates: gameData.coordinates,
       };
@@ -1321,6 +1327,26 @@ export function useSportSyncBridge() {
           );
         return [newGame, ...filtered];
       });
+
+      if (typeof window !== 'undefined' && gameData.inviteCode) {
+        try {
+          const existing = localStorage.getItem('sportsync_unlocked_invites');
+          const list = existing ? JSON.parse(existing) : [];
+          if (!list.includes(gameData.inviteCode.toUpperCase())) {
+            list.push(gameData.inviteCode.toUpperCase());
+            localStorage.setItem('sportsync_unlocked_invites', JSON.stringify(list));
+          }
+        } catch {}
+      }
+
+      if (gameData.invitedPlayers && gameData.invitedPlayers.length > 0) {
+        addNotification({
+          type: 'match',
+          title: `Invitations Sent (${gameData.invitedPlayers.length})`,
+          desc: `Invited ${gameData.invitedPlayers.map((p) => p.name).join(', ')} to your match: ${gameData.title}.`,
+          linkScreen: 'social-home',
+        });
+      }
 
       // Award host XP (+100 XP base × 1.5x = +150 XP)
       awardXp(100, 'hosting a new pickup match', { applyStreakMultiplier: true });
@@ -1655,6 +1681,37 @@ export function useSportSyncBridge() {
       }
 
       const userName = userProfile.name || 'Player';
+
+      if (targetGame.visibility === 'Invite' || !targetGame.isPublic) {
+        const isHost = Boolean(
+          (targetGame.hostName && userName && targetGame.hostName.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+          (targetGame.hostId && userProfile.id && targetGame.hostId === userProfile.id)
+        );
+        const isDirectlyInvited = Boolean(
+          targetGame.invitedPlayers?.some(
+            (ip) =>
+              (ip.name && userName && ip.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+              (ip.id && userProfile.id && ip.id === userProfile.id)
+          )
+        );
+        let hasUnlockedToken = false;
+        if (typeof window !== 'undefined' && targetGame.inviteCode) {
+          try {
+            const raw = localStorage.getItem('sportsync_unlocked_invites');
+            const unlockedList: string[] = raw ? JSON.parse(raw) : [];
+            hasUnlockedToken =
+              unlockedList.includes(targetGame.inviteCode.toUpperCase()) ||
+              unlockedList.includes(targetGame.id);
+          } catch {}
+        }
+
+        if (!isHost && !isDirectlyInvited && !hasUnlockedToken) {
+          return {
+            success: false,
+            message: 'This is an invite-only match. A valid invitation or invite link is required to join.',
+          };
+        }
+      }
 
       // 1. Check if user is already a participant
       const isAlreadyParticipant = targetGame.members.some(
