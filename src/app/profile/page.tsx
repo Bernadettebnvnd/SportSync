@@ -7,7 +7,7 @@ import { useMatchiStore } from '@/lib/store';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { getSportDisplayName, getPlayerInitials, formatSkillLevel } from '@/lib/utils';
+import { getSportDisplayName, getPlayerInitials } from '@/lib/utils';
 import {
   MapPin,
   Calendar,
@@ -69,8 +69,8 @@ export default function ProfilePage() {
               <span className="inline-flex items-center rounded-lg bg-[#C8FF2E]/10 border border-[#C8FF2E]/25 px-2.5 py-0.5 text-[11px] font-semibold text-[#C8FF2E]">
                 {getSportDisplayName(currentUser.primary_sport)}
               </span>
-              <span className="inline-flex items-center rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#A5B0A6]">
-                {formatSkillLevel(currentUser.skill_level)}
+              <span className="inline-flex items-center rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#A5B0A6] capitalize">
+                {currentUser.skill_level.replace('_', ' ')}
               </span>
               <span className="inline-flex items-center rounded-lg bg-white/5 border border-white/10 px-2.5 py-0.5 text-[11px] font-medium text-[#A5B0A6] capitalize">
                 {currentUser.preferred_format}

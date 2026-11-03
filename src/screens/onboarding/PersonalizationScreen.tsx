@@ -73,12 +73,12 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   ];
 
   const locationOptions = [
+    'Naga City',
     'Metro Manila',
     'Taguig / BGC',
-    'Pasig / Ortigas',
     'Makati',
+    'Pasig / Ortigas',
     'Quezon City',
-    'Naga City',
     'Mandaluyong',
     'Cebu City',
     'Davao City',

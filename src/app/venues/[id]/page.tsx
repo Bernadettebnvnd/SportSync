@@ -46,8 +46,6 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
   // Slots availability state (courtId -> slots)
   const [availabilityMap, setAvailabilityMap] = useState<Record<string, CourtAvailabilitySlot[]>>({});
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
-  const [availabilityRetryTrigger, setAvailabilityRetryTrigger] = useState(0);
 
   // Booking modal trigger states
   const [selectedCourt, setSelectedCourt] = useState<Court | undefined>();
@@ -111,14 +109,13 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
     };
   }, [id]);
 
-  // Compute availability slots whenever venue, selectedDate, courts change, or retry triggered
+  // Compute availability slots whenever venue, selectedDate, or courts change
   useEffect(() => {
     if (!venue || !venue.courts || venue.courts.length === 0) return;
 
     let isMounted = true;
     async function loadAvailability() {
       setIsLoadingSlots(true);
-      setAvailabilityError(null);
       const newMap: Record<string, CourtAvailabilitySlot[]> = {};
 
       try {
@@ -135,12 +132,8 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
         if (isMounted) {
           setAvailabilityMap(newMap);
         }
-      } catch (err: unknown) {
+      } catch (err) {
         console.error('Failed to load court availability:', err);
-        if (isMounted) {
-          const msg = err instanceof Error ? err.message : 'Unable to verify real-time court availability.';
-          setAvailabilityError(msg);
-        }
       } finally {
         if (isMounted) {
           setIsLoadingSlots(false);
@@ -152,7 +145,7 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
     return () => {
       isMounted = false;
     };
-  }, [venue, selectedDate, availabilityRetryTrigger]);
+  }, [venue, selectedDate]);
 
   // Handle loading state
   if (isLoadingVenue) {
@@ -448,28 +441,6 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
           </div>
         )}
 
-        {/* Availability Error Banner */}
-        {availabilityError && (
-          <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-700 animate-in fade-in">
-            <div className="flex items-center gap-2.5">
-              <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-              <div>
-                <span className="font-bold text-xs sm:text-sm block text-red-900">
-                  Court Availability Verification Notice
-                </span>
-                <p className="text-xs text-red-700 mt-0.5">{availabilityError}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAvailabilityRetryTrigger((prev) => prev + 1)}
-              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-colors self-start sm:self-auto shrink-0 shadow-xs"
-            >
-              Retry Check
-            </button>
-          </div>
-        )}
-
         {/* Playing Areas & Real Slots */}
         {courts.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-[#E8E5DF] bg-[#FAF8F5] p-8 text-center text-xs text-[#65756B]">
@@ -517,10 +488,6 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
                     {isLoadingSlots ? (
                       <div className="flex items-center gap-2 text-xs text-[#65756B] py-2">
                         <span>Checking real-time slot availability...</span>
-                      </div>
-                    ) : availabilityError ? (
-                      <div className="text-xs text-red-600 py-2 font-medium">
-                        Live slot availability currently unverified. Click &quot;Retry Check&quot; above.
                       </div>
                     ) : courtSlots.length === 0 ? (
                       <div className="text-xs text-[#65756B] py-2">

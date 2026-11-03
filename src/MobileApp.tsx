@@ -119,7 +119,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const resolveInitialScreen = (): ScreenId => {
     if (initialScreen) return initialScreen;
-    return 'home';
+    return isUserAuthenticated() ? 'home' : 'auth';
   };
 
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(resolveInitialScreen);
@@ -277,15 +277,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'auth': {
-        const canGoBack = screenHistory.length > 1;
+        const canGoBack = screenHistory.length > 1 && isUserAuthenticated();
         return (
           <AuthScreen
             initialMode={authInitialMode}
             canGoBack={canGoBack}
-            onContinueAsGuest={() => {
-              bridge.setAsGuest();
-              navigateTo('home');
-            }}
             onSuccess={(role, isNewAccount) => {
               if (role === 'facility_owner') {
                 if (typeof window !== 'undefined') {
@@ -295,9 +291,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     window.location.href = '/organizer';
                   }
                 }
+              } else if (isNewAccount) {
+                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                  window.location.href = '/onboarding';
+                } else {
+                  navigateTo('personalization');
+                }
               } else {
-                // Login / Create Account is the onboarding.
-                // Flow proceeds directly to Player Hub once the user is authenticated.
                 if (guestPrompt.pendingAction) {
                   const act = guestPrompt.pendingAction;
                   setGuestPrompt({ isOpen: false });
@@ -318,7 +318,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             initialValues={personalizationDraft || {
               displayName: bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : '',
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
-              preferredArea: (bridge.userProfile.city && bridge.userProfile.city !== 'Current Location') ? bridge.userProfile.city : 'Metro Manila',
+              preferredArea: bridge.userProfile.city || 'Naga City',
               skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,
             }}
             onDraftChange={setPersonalizationDraft}

@@ -93,11 +93,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
         setSuccessMsg(
           isFacility
             ? 'Facility account registered! Redirecting to facility setup...'
-            : 'Welcome to SportSync! Opening Player Hub...'
+            : 'Account registered successfully! Redirecting to setup...'
         );
         setTimeout(() => {
           onClose();
-          window.location.href = isFacility ? '/onboarding?role=owner' : '/';
+          window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
         }, 600);
       } else {
         const result = await loginAccount(
@@ -105,10 +105,15 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           setAuthenticatedUser
         );
         const isOwnerRole = result.user.role === 'venue_owner' || result.user.role === 'organizer';
-        setSuccessMsg('Signed in successfully! Opening Player Hub...');
+        const isOnboarded = Boolean(result.user.onboarding_completed);
+        setSuccessMsg('Signed in successfully! Redirecting...');
         setTimeout(() => {
           onClose();
-          window.location.href = isOwnerRole ? '/organizer' : '/';
+          if (!isOnboarded) {
+            window.location.href = isOwnerRole ? '/onboarding?role=owner' : '/onboarding';
+          } else {
+            window.location.href = isOwnerRole ? '/organizer' : '/';
+          }
         }, 600);
       }
     } catch (err: unknown) {
@@ -461,21 +466,6 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                     <span>&bull;</span>
                     <span className="text-[10px]">Persistent Session</span>
                   </div>
-
-                  {mode === 'signin' && (
-                    <div className="text-center pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmail('test.player@sportsync.ph');
-                          setPassword('password123');
-                        }}
-                        className="text-[11px] text-[#65756B] hover:text-[#2D724E] font-medium transition-colors py-1"
-                      >
-                        ⚡ Use Demo Account (test.player@sportsync.ph)
-                      </button>
-                    </div>
-                  )}
                 </form>
               )}
             </>

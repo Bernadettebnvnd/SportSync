@@ -184,16 +184,7 @@ export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
       return localVenue;
     }
 
-    const venue = data as Venue;
-    if (!venue.payment_info) {
-      venue.payment_info = {
-        accepts_cash: true,
-        gcash_name: venue.name,
-        gcash_number: '0917-888-8773',
-      };
-    }
-
-    return venue;
+    return data as Venue;
   } catch {
     return localVenue;
   }

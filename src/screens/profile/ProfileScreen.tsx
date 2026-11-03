@@ -26,7 +26,6 @@ import { SportIcon } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
 import { CommunityGame } from '../../mock/types';
 import { useNotifications } from '../../lib/notifications';
-import { formatSkillLevel } from '../../lib/utils';
 
 interface ProfileScreenProps {
   user?: {
@@ -115,9 +114,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   }, [user?.city, user?.preferredSports, user?.skillLevel]);
 
-  const userCity = localCity && localCity !== 'Current Location' ? localCity : 'Metro Manila';
+  const userCity = localCity && localCity !== 'Current Location' ? localCity : 'Naga City';
   const userSports = localSports.length > 0 ? localSports : ['Football'];
-  const userSkill = formatSkillLevel(localSkill) || 'Intermediate';
+  const userSkill = localSkill || 'Intermediate';
 
   const AVAILABLE_SPORTS = [
     'Football',
@@ -342,9 +341,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               trend={isGuest ? 'Sign in' : 'Progress'}
             />
             <StatTile
-              value={isGuest ? 'Casual' : (userSkill.includes('All Levels') ? 'Casual' : userSkill)}
+              value={userSkill}
               label="Skill Tier"
-              trend={isGuest ? 'Open Play' : 'Verified'}
+              trend="Verified"
             />
           </div>
         </div>

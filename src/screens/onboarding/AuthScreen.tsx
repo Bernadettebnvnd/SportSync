@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff, Compass } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
@@ -13,7 +13,6 @@ interface AuthScreenProps {
   onSuccess: (role: AuthRole, isNewAccount?: boolean) => void;
   onBack?: () => void;
   canGoBack?: boolean;
-  onContinueAsGuest?: () => void;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -21,7 +20,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onSuccess,
   onBack,
   canGoBack = false,
-  onContinueAsGuest,
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
@@ -119,14 +117,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       setSuccessMessage(
         isSignUp
-          ? detectedRole === 'facility_owner'
-            ? 'Facility registered! Setting up facility...'
-            : 'Account created! Entering Player Hub...'
-          : detectedRole === 'facility_owner'
-            ? 'Signed in! Opening Organizer Hub...'
-            : 'Welcome back! Entering Player Hub...'
+          ? `Account registered successfully! Welcome to SportSync.`
+          : 'Welcome back! Signed in.'
       );
-      setTimeout(() => onSuccess(detectedRole, isSignUp), 700);
+      setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
       if (message === 'Failed to fetch') {
@@ -142,34 +136,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-5 sm:pt-8 select-none overflow-y-auto no-scrollbar">
       {/* Top Header */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          {canGoBack && onBack ? (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Go back"
-              className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          ) : (
-            <div />
-          )}
+        {canGoBack && onBack && (
           <button
             type="button"
-            onClick={() => {
-              if (onContinueAsGuest) {
-                onContinueAsGuest();
-              } else if (typeof window !== 'undefined') {
-                window.location.href = '/explore';
-              }
-            }}
-            className="px-3 py-1.5 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#C8FF2E] flex items-center gap-1.5 transition-all shadow-xs"
+            onClick={onBack}
+            aria-label="Go back"
+            className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors mb-6"
           >
-            <Compass className="w-3.5 h-3.5 text-[#C8FF2E]" />
-            <span>Explore as Guest</span>
+            <ArrowLeft className="w-5 h-5" />
           </button>
-        </div>
+        )}
 
         {/* Brand Banner Header */}
         <div className="p-4 rounded-3xl bg-[#0F2A22] border border-white/10 mb-6 flex items-center gap-3">
@@ -188,7 +164,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               {isPasswordReset
                 ? "Enter your email to receive a recovery link"
                 : isSignUp
-                  ? 'Create your account to access your Player Hub'
+                  ? 'Find Players. Play Together.'
                   : 'Log in to access your Player Hub'}
             </p>
           </div>
@@ -381,8 +357,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 : isSignUp
                   ? selectedRole === 'facility_owner'
                     ? 'Register Facility & Continue'
-                    : 'Create Account & Enter Player Hub'
-                  : 'Log In to Player Hub'}
+                    : 'Create Account'
+                  : 'Log In'}
           </Button>
 
           {!isPasswordReset && (
@@ -428,31 +404,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   </button>
                 </div>
               )}
-
-              {/* Guest Exploration Action */}
-              <div className="pt-3 border-t border-white/10 flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onContinueAsGuest) {
-                      onContinueAsGuest();
-                    } else if (typeof window !== 'undefined') {
-                      window.location.href = '/explore';
-                    }
-                  }}
-                  className="w-full py-2.5 px-4 rounded-xl border border-white/15 hover:border-[#C8FF2E]/50 bg-[#141A15] hover:bg-[#1C241E] text-xs font-bold text-[#F4F7F0] flex items-center justify-center gap-2 transition-all shadow-xs"
-                >
-                  <Compass className="w-4 h-4 text-[#C8FF2E]" />
-                  <span>Browse Venues & Games as Guest</span>
-                </button>
-                <a
-                  href="/explore"
-                  className="text-[11px] text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors inline-flex items-center gap-1"
-                >
-                  <span>Or explore facility directory at /explore</span>
-                  <ArrowRight className="w-3 h-3" />
-                </a>
-              </div>
             </div>
           )}
 

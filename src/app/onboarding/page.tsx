@@ -93,15 +93,11 @@ function OnboardingContent() {
   );
 
   React.useEffect(() => {
-    if (!isFacilityUrl) {
-      router.replace('/');
-      return;
-    }
     if (isCompleted) {
       const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
       router.replace(target);
     }
-  }, [isCompleted, isFacilityUrl, currentUser.role, router]);
+  }, [isCompleted, currentUser.role, router]);
 
   // Role: player or facility owner
   const [role, setRole] = useState<'player' | 'owner'>(() => {

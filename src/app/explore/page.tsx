@@ -76,25 +76,6 @@ function ExploreContent() {
     });
   }, [venues, searchQuery, selectedSport]);
 
-  // Synchronize map discoveries strictly with the user's active search query and sport filter
-  const filteredDiscovered = useMemo(() => {
-    return discoveredCourts.filter((facility) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesName = facility.name.toLowerCase().includes(q);
-        const matchesCity = (facility.city || '').toLowerCase().includes(q);
-        const matchesAddress = facility.address.toLowerCase().includes(q);
-        if (!matchesName && !matchesCity && !matchesAddress) return false;
-      }
-
-      if (selectedSport !== 'all') {
-        if (facility.sport !== selectedSport) return false;
-      }
-
-      return true;
-    });
-  }, [discoveredCourts, searchQuery, selectedSport]);
-
   const handleLocateOnMap = (venue: Venue) => {
     setSelectedVenueId(venue.id);
     setSelectedDiscoveredId(undefined);
@@ -117,11 +98,7 @@ function ExploreContent() {
           <p className="text-xs sm:text-sm text-[#A5B0A6]">
             {isLoading
               ? 'Checking real-time court availability...'
-              : filteredVenues.length > 0
-                ? `${filteredVenues.length} sports center${filteredVenues.length === 1 ? '' : 's'} ready for booking across the Philippines`
-                : filteredDiscovered.length > 0
-                  ? `0 partner centers ready for booking • ${filteredDiscovered.length} public map facilities found`
-                  : `0 sports centers ready for booking matching your search`}
+              : `${filteredVenues.length} sports centers ready for booking across the Philippines`}
           </p>
         </div>
       </div>
@@ -147,54 +124,32 @@ function ExploreContent() {
         </div>
       ) : viewMode === 'map' ? (
         <div className="space-y-4">
-          {filteredVenues.length === 0 && filteredDiscovered.length === 0 && !isDiscovering ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-[#141A15] p-8 sm:p-14 text-center">
-              <EmptyState
-                icon={<Compass className="w-6 h-6 text-[#C8FF2E]" />}
-                title="No facilities found matching your filters"
-                description={
-                  searchQuery
-                    ? `No partner sports centers or map facilities match "${searchQuery}". Try clearing search or choosing another sport.`
-                    : 'Try selecting a different sport or clearing your search filters.'
-                }
-                action={{
-                  label: 'Reset Search & Filters',
-                  onClick: handleResetFilters,
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              <VenueMap
-                venues={filteredVenues}
-                discoveredFacilities={filteredDiscovered}
-                selectedVenueId={selectedVenueId}
-                selectedDiscoveredId={selectedDiscoveredId}
-                onSelectVenue={(v) => {
-                  setSelectedVenueId(v.id);
-                  setSelectedDiscoveredId(undefined);
-                }}
-                onSelectDiscovered={(d) => {
-                  setSelectedDiscoveredId(d.id);
-                  setSelectedVenueId(undefined);
-                }}
-              />
+          <VenueMap
+            venues={filteredVenues}
+            discoveredFacilities={discoveredCourts}
+            selectedVenueId={selectedVenueId}
+            selectedDiscoveredId={selectedDiscoveredId}
+            onSelectVenue={(v) => {
+              setSelectedVenueId(v.id);
+              setSelectedDiscoveredId(undefined);
+            }}
+            onSelectDiscovered={(d) => {
+              setSelectedDiscoveredId(d.id);
+              setSelectedVenueId(undefined);
+            }}
+          />
 
-              {/* Quick summary below map */}
-              <div className="flex items-center justify-between flex-wrap gap-2 text-xs text-[#A5B0A6] px-1">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#C8FF2E]" />
-                  <strong className="text-[#F4F7F0]">{filteredVenues.length}</strong> available on SportSync (Instant Booking)
-                </span>
-                {filteredDiscovered.length > 0 && (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400" />
-                    <strong className="text-[#F4F7F0]">{filteredDiscovered.length}</strong> community map facilities (OpenStreetMap)
-                  </span>
-                )}
-              </div>
-            </>
-          )}
+          {/* Quick summary below map */}
+          <div className="flex items-center justify-between text-xs text-[#A5B0A6] px-1">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#C8FF2E]" />
+              <strong className="text-[#F4F7F0]">{filteredVenues.length}</strong> available on SportSync
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400" />
+              <strong className="text-[#F4F7F0]">{discoveredCourts.length}</strong> discovered on map
+            </span>
+          </div>
 
           {filteredVenues.length > 0 && (
             <div className="space-y-3 pt-2">

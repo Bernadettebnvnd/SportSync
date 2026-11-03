@@ -16,7 +16,6 @@ import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted, isMockSession } from './services/sessions';
 import { addNotification } from './notifications';
-import { formatSkillLevel } from './utils';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
   const ids = new Set<string>();
@@ -459,14 +458,16 @@ export function useSportSyncBridge() {
       levelTitle: getLevelTitle(1),
       xp: 0,
       xpNextLevel: 1000,
-      city: (store.currentUser.city && store.currentUser.city !== 'Current Location')
+      city: (store.currentUser.city && store.currentUser.city !== 'Current Location' && store.currentUser.city !== 'Metro Manila')
         ? store.currentUser.city
-        : 'Metro Manila',
+        : 'Naga City',
       primarySport: store.currentUser.primary_sport || 'football',
       preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
         ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
         : ['Football'],
-      skillLevel: formatSkillLevel(store.currentUser.skill_level),
+      skillLevel: store.currentUser.skill_level
+        ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
+        : 'Intermediate',
       onboardingCompleted: completed,
       streakWeeks: store.currentUser.win_streak || 0,
       streakMultiplier: 1.0,
@@ -519,7 +520,9 @@ export function useSportSyncBridge() {
         preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
           ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
           : prev.preferredSports,
-        skillLevel: formatSkillLevel(store.currentUser.skill_level) || prev.skillLevel,
+        skillLevel: store.currentUser.skill_level
+          ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
+          : prev.skillLevel,
         onboardingCompleted: Boolean(isCompleted),
         matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
         wins: store.currentUser.matches_won ?? prev.wins,

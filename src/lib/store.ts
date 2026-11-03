@@ -145,9 +145,9 @@ async function initializeStore() {
       if (storedCity && storedCity !== 'Current Location') {
         globalState.currentUser.city = storedCity;
       } else if (storedCity === 'Current Location') {
-        globalState.currentUser.city = 'Taguig / BGC';
-        localStorage.setItem('sportsync_user_city', 'Taguig / BGC');
-        localStorage.setItem('sportsync_user_location', 'Taguig / BGC');
+        globalState.currentUser.city = 'Naga City';
+        localStorage.setItem('sportsync_user_city', 'Naga City');
+        localStorage.setItem('sportsync_user_location', 'Naga City');
       }
 
       const storedSportsRaw = localStorage.getItem('sportsync_user_sports');

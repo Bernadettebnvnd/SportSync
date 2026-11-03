@@ -102,18 +102,6 @@ export function getPaymentMethodName(method: PaymentMethod): string {
   }
 }
 
-export function formatSkillLevel(skill?: string | null): string {
-  if (!skill) return 'Skill level not set';
-  const clean = skill.toLowerCase().replace(/_/g, ' ').trim();
-  if (clean === 'all levels' || clean === 'all_levels') return 'Casual (All Levels)';
-  if (clean === 'beginner') return 'Beginner';
-  if (clean === 'casual' || clean === 'novice') return 'Casual';
-  if (clean === 'intermediate') return 'Intermediate';
-  if (clean === 'advanced') return 'Advanced';
-  if (clean === 'competitive' || clean === 'pro') return 'Competitive';
-  return clean.charAt(0).toUpperCase() + clean.slice(1);
-}
-
 /**
  * Configurable Platform Fee Calculation
  * Example:

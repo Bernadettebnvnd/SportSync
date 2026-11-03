@@ -239,13 +239,7 @@ export function BookingModal({
     }
   };
 
-  const paymentInfo = venue?.payment_info || {
-    accepts_cash: true,
-    accepts_gcash: true,
-    accepts_maya: true,
-    gcash_name: venue?.name || 'SportSync Partner',
-    gcash_number: '0917-888-8773',
-  };
+  const paymentInfo = venue.payment_info;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
@@ -554,17 +548,17 @@ export function BookingModal({
                 <div className="flex items-center justify-between rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5">
                   <div>
                     <span className="text-[10px] text-[#65756B] block">
-                      {selectedMethod.toUpperCase()} Account ({paymentInfo?.gcash_name || venue?.name || 'SportSync Partner'})
+                      {selectedMethod.toUpperCase()} Account ({paymentInfo.gcash_name || venue.name})
                     </span>
                     <span className="font-mono text-xs sm:text-sm font-bold text-[#1A241E]">
-                      {paymentInfo?.gcash_number || '0917-888-8773'}
+                      {paymentInfo.gcash_number || '0917-888-8773'}
                     </span>
                   </div>
 
                   <button
                     type="button"
                     onClick={() =>
-                      handleCopy(paymentInfo?.gcash_number || '09178888773', selectedMethod)
+                      handleCopy(paymentInfo.gcash_number || '09178888773', selectedMethod)
                     }
                     className="flex items-center gap-1 text-xs font-semibold text-[#2D724E] min-h-[36px] px-2"
                   >
@@ -582,7 +576,7 @@ export function BookingModal({
                   </button>
                 </div>
 
-                {paymentInfo?.gcash_qr_url && (
+                {paymentInfo.gcash_qr_url && (
                   <div className="flex items-center gap-3 pt-1">
                     <img
                       src={paymentInfo.gcash_qr_url}

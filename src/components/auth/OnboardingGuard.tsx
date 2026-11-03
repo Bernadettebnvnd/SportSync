@@ -38,16 +38,13 @@ export function OnboardingGuard() {
 
     const isOnboardingPath = pathname === '/onboarding';
 
-    // The login/create account screen is the onboarding.
-    // For players, proceed directly to Player Hub (/); facility owners can setup facility.
-    if (isOnboardingPath) {
+    // If user has already completed onboarding or is already registered, never let them see /onboarding
+    if (isOnboarded && isOnboardingPath) {
       const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
       const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || storedRole === 'venue_owner' || storedRole === 'facility_owner';
-      const isFacilityOwnerUrl = typeof window !== 'undefined' && window.location.search.includes('role=owner');
-      if (!isFacilityOwnerUrl || !isOwner) {
-        router.replace('/');
-        return;
-      }
+      const target = isOwner ? '/organizer' : '/';
+      router.replace(target);
+      return;
     }
   }, [
     pathname,
