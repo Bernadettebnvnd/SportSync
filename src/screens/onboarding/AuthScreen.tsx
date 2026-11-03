@@ -118,6 +118,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       // Update store user state with real authenticated session
       if (data.user) {
         const isNewUser = isSignUp;
+        const isFacility = selectedRole === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
+        const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
+
         setAuthenticatedUser({
           id: data.user.id,
           auth_id: data.user.id,
@@ -125,9 +128,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           full_name: data.user.full_name,
           nickname: data.user.nickname,
           avatar_url: data.user.avatar_url,
-          role: data.user.role,
-          primary_sport: data.user.primary_sport || 'pickleball',
-          preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
+          role: assignedRole,
+          primary_sport: data.user.primary_sport || (isFacility ? 'pickleball' : 'football'),
+          preferred_sports: data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football']),
           preferred_format: data.user.preferred_format || 'doubles',
           skill_level: data.user.skill_level || 'intermediate',
           city: data.user.city || 'Metro Manila',
@@ -136,8 +139,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         });
 
         if (typeof window !== 'undefined') {
+          localStorage.setItem('sportsync_user_id', data.user.id);
           localStorage.setItem('sportsync_user_email', data.user.email);
-          localStorage.setItem('sportsync_user_role', data.user.role);
+          localStorage.setItem('sportsync_user_role', assignedRole);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
           if (isNewUser) {
             localStorage.setItem('sportsync_pending_onboarding', 'true');

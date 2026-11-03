@@ -108,11 +108,22 @@ export default function OrganizerDashboard() {
       ? localStorage.getItem(`sportsync_venue_id_${currentUser.id}`)
       : null;
 
-  const primaryVenue = currentUser.id
-    ? (venues.find((v) => v.owner_id === currentUser.id || v.owner_id === currentUser.auth_id) ||
-       (storedVenueId ? venues.find((v) => v.id === storedVenueId) : null) ||
-       (currentUser.email ? venues.find((v) => (v as any).owner_email === currentUser.email) : null))
-    : null;
+  const fallbackVenueId =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('sportsync_facility_venue_id')
+      : null;
+
+  const storedOwnerEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
+  const targetEmail = currentUser.email || storedOwnerEmail;
+
+  const primaryVenue =
+    (currentUser.id
+      ? venues.find((v) => v.owner_id === currentUser.id || v.owner_id === currentUser.auth_id)
+      : null) ||
+    (storedVenueId ? venues.find((v) => v.id === storedVenueId) : null) ||
+    (fallbackVenueId ? venues.find((v) => v.id === fallbackVenueId) : null) ||
+    (targetEmail ? venues.find((v) => (v as any).owner_email === targetEmail) : null) ||
+    null;
 
   const facilitySessions = useMemo(() => {
     if (!primaryVenue) return [];

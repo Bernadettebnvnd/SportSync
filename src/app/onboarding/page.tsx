@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
 import { SportType, MatchFormat, SkillLevel } from '@/types';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
@@ -21,6 +21,8 @@ import {
   Sparkles,
   Trophy,
   Users,
+  Lock,
+  Mail,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -68,9 +70,13 @@ const FACILITY_LOCATIONS = [
   'Davao City',
 ];
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter();
-  const { currentUser, completePlayerOnboarding, completeOwnerOnboarding } = useMatchiStore();
+  const searchParams = useSearchParams();
+  const { currentUser, setAuthenticatedUser, completePlayerOnboarding, completeOwnerOnboarding } = useMatchiStore();
+
+  const urlRole = searchParams.get('role');
+  const isFacilityUrl = urlRole === 'owner' || urlRole === 'facility_owner' || urlRole === 'facility' || urlRole === 'venue_owner';
 
   const [hasPendingOnboarding, setHasPendingOnboarding] = useState<boolean>(() => {
     return typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
@@ -93,14 +99,53 @@ export default function OnboardingPage() {
   }, [isCompleted, currentUser.role, router]);
 
   // Role: player or facility owner
-  const [role, setRole] = useState<'player' | 'owner'>(
-    currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? 'owner' : 'player'
-  );
+  const [role, setRole] = useState<'player' | 'owner'>(() => {
+    if (isFacilityUrl) return 'owner';
+    if (typeof window !== 'undefined') {
+      const storedRole = localStorage.getItem('sportsync_user_role') || localStorage.getItem('matchi_user_role');
+      if (storedRole === 'venue_owner' || storedRole === 'facility_owner' || storedRole === 'organizer') {
+        return 'owner';
+      }
+    }
+    return currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || (currentUser.role as string) === 'facility_owner'
+      ? 'owner'
+      : 'player';
+  });
+
+  React.useEffect(() => {
+    if (isFacilityUrl) {
+      setRole('owner');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const storedRole = localStorage.getItem('sportsync_user_role') || localStorage.getItem('matchi_user_role');
+      if (storedRole === 'venue_owner' || storedRole === 'facility_owner' || storedRole === 'organizer') {
+        setRole('owner');
+        return;
+      }
+    }
+    if (currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || (currentUser.role as string) === 'facility_owner') {
+      setRole('owner');
+    }
+  }, [isFacilityUrl, currentUser.role]);
 
   // =========================================================================
   // PLAYER STATE (SINGLE-PAGE SETUP MATCHING REFERENCE SCREENSHOT)
   // =========================================================================
-  const [fullName, setFullName] = useState(currentUser.full_name || '');
+  const [fullName, setFullName] = useState(() => {
+    if (currentUser.full_name && currentUser.full_name !== 'Guest Player') return currentUser.full_name;
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sportsync_user_name') || localStorage.getItem('matchi_user_name') || '';
+    }
+    return '';
+  });
+
+  React.useEffect(() => {
+    if (currentUser.full_name && currentUser.full_name !== 'Guest Player') {
+      setFullName((prev) => prev || currentUser.full_name);
+    }
+  }, [currentUser.full_name]);
+
   const [nickname, setNickname] = useState(currentUser.nickname || '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
     if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
@@ -123,7 +168,22 @@ export default function OnboardingPage() {
   // =========================================================================
   // FACILITY OWNER STATE (PRESERVED STEP-BY-STEP FLOW)
   // =========================================================================
-  const [ownerStep, setOwnerStep] = useState<number>(2);
+  const [ownerEmail, setOwnerEmail] = useState(() => {
+    if (currentUser.email) return currentUser.email;
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sportsync_user_email') || '';
+    }
+    return '';
+  });
+  const [ownerPassword, setOwnerPassword] = useState('');
+  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '0917-888-0000');
+  const [ownerStep, setOwnerStep] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const hasEmail = Boolean(currentUser.email || localStorage.getItem('sportsync_user_email'));
+      if (hasEmail) return 2;
+    }
+    return currentUser.email ? 2 : 1;
+  });
   const totalOwnerSteps = 5;
   const [facilityName, setFacilityName] = useState('');
   const [facilityAddress, setFacilityAddress] = useState('');
@@ -131,6 +191,14 @@ export default function OnboardingPage() {
   const [facilitySports, setFacilitySports] = useState<SportType[]>(['pickleball']);
   const [courtCount, setCourtCount] = useState(2);
   const [hourlyRatePhp, setHourlyRatePhp] = useState(500);
+  const [ownerValidationError, setOwnerValidationError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (currentUser.email && ownerStep === 1) {
+      setOwnerStep(2);
+      setOwnerEmail(currentUser.email);
+    }
+  }, [currentUser.email, ownerStep]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -308,6 +376,7 @@ export default function OnboardingPage() {
 
   const handleFinishOwner = async () => {
     setIsSubmitting(true);
+    setOwnerValidationError(null);
     try {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_pending_onboarding');
@@ -320,10 +389,22 @@ export default function OnboardingPage() {
         floorType: 'Tournament Standard Surface',
       }));
 
+      const resolvedOwnerEmail =
+        ownerEmail.trim() ||
+        currentUser.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') ||
+        'partner@facility.ph';
+
+      const resolvedOwnerName =
+        fullName.trim() ||
+        (currentUser.full_name && currentUser.full_name !== 'Guest Player' ? currentUser.full_name : '') ||
+        (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') : '') ||
+        'Facility Partner';
+
       await completeOwnerOnboarding({
-        ownerName: fullName.trim() || currentUser.full_name || 'Facility Partner',
-        ownerEmail: currentUser.email || 'partner@facility.ph',
-        ownerPhone: '0917-000-0000',
+        ownerName: resolvedOwnerName,
+        ownerEmail: resolvedOwnerEmail,
+        ownerPhone: ownerPhone.trim() || '0917-000-0000',
         facilityName: facilityName.trim() || 'Premier Sports Center',
         description: 'Quality dedicated sports facility with tournament-standard courts.',
         address: facilityAddress.trim() || 'Sports Center Ave',
@@ -813,19 +894,31 @@ export default function OnboardingPage() {
             onClick={() => {
               if (ownerStep > 2) {
                 setOwnerStep((s) => s - 1);
+              } else if (ownerStep === 2 && !currentUser.email && (!ownerEmail || !ownerEmail.trim())) {
+                setOwnerStep(1);
               } else {
-                setRole('player');
+                router.push('/');
               }
             }}
             className="inline-flex items-center gap-1 text-xs font-bold text-[#65756B] hover:text-[#1A241E] transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>{ownerStep > 2 ? 'Back' : 'Back to Player Setup'}</span>
+            <span>{ownerStep > 1 ? 'Back' : 'Home'}</span>
           </button>
 
-          <span className="text-xs font-semibold text-[#65756B]">
-            Facility Setup &bull; Step {ownerStep} of {totalOwnerSteps}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-[#65756B]">
+              Facility Setup &bull; Step {ownerStep} of {totalOwnerSteps}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRole('player')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-[#F2EFE9] border border-[#E8E5DF] text-[11px] font-semibold text-[#65756B] hover:text-[#1A241E] transition-all cursor-pointer shadow-2xs"
+            >
+              <UserIcon className="w-3.5 h-3.5 text-[#2D724E]" />
+              <span>Player Setup?</span>
+            </button>
+          </div>
         </div>
 
         {/* Step Indicator Bar */}
@@ -852,6 +945,71 @@ export default function OnboardingPage() {
 
       {/* Main Facility Owner Flow Body */}
       <div className="my-auto py-8">
+        {/* STEP 1: Facility Account Setup */}
+        {ownerStep === 1 && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
+                Facility account setup
+              </h1>
+              <p className="text-xs sm:text-sm text-[#65756B]">
+                Enter contact and credentials for managing your sports facility portal.
+              </p>
+            </div>
+
+            <div className="space-y-4 pt-2">
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  Contact / Owner Name
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (ownerValidationError) setOwnerValidationError(null);
+                  }}
+                  placeholder="e.g. Alex Morgan"
+                  autoFocus
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={ownerEmail}
+                  onChange={(e) => {
+                    setOwnerEmail(e.target.value);
+                    if (ownerValidationError) setOwnerValidationError(null);
+                  }}
+                  placeholder="owner@facility.ph"
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={ownerPassword}
+                  onChange={(e) => {
+                    setOwnerPassword(e.target.value);
+                    if (ownerValidationError) setOwnerValidationError(null);
+                  }}
+                  placeholder="Min. 6 characters"
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* STEP 2: Facility Name & Address */}
         {ownerStep === 2 && (
           <div className="space-y-6">
@@ -872,7 +1030,10 @@ export default function OnboardingPage() {
                 <input
                   type="text"
                   value={facilityName}
-                  onChange={(e) => setFacilityName(e.target.value)}
+                  onChange={(e) => {
+                    setFacilityName(e.target.value);
+                    if (ownerValidationError) setOwnerValidationError(null);
+                  }}
                   placeholder="e.g. Metro Sports Hub"
                   autoFocus
                   className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
@@ -886,7 +1047,10 @@ export default function OnboardingPage() {
                 <input
                   type="text"
                   value={facilityAddress}
-                  onChange={(e) => setFacilityAddress(e.target.value)}
+                  onChange={(e) => {
+                    setFacilityAddress(e.target.value);
+                    if (ownerValidationError) setOwnerValidationError(null);
+                  }}
                   placeholder="e.g. 123 Sports Ave"
                   className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
                 />
@@ -1045,14 +1209,107 @@ export default function OnboardingPage() {
       </div>
 
       {/* Bottom Action Area: Facility Flow */}
-      <div className="pb-4 sm:pb-6">
+      <div className="pb-4 sm:pb-6 space-y-2.5">
+        {ownerValidationError && (
+          <div className="p-3.5 rounded-2xl bg-[#E0533C]/10 border border-[#E0533C]/30 text-[#A82B17] text-xs flex items-center gap-2.5 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#E0533C]" />
+            <span className="font-semibold">{ownerValidationError}</span>
+          </div>
+        )}
+
         {ownerStep < totalOwnerSteps ? (
           <button
             type="button"
-            onClick={() => setOwnerStep((s) => s + 1)}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] cursor-pointer"
+            disabled={isSubmitting}
+            onClick={async () => {
+              if (ownerStep === 1) {
+                if (!fullName.trim()) {
+                  setOwnerValidationError('Please enter contact / owner name.');
+                  return;
+                }
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!ownerEmail.trim() || !emailRegex.test(ownerEmail.trim())) {
+                  setOwnerValidationError('Please enter a valid email address.');
+                  return;
+                }
+                if (!ownerPassword || ownerPassword.length < 6) {
+                  setOwnerValidationError('Password must be at least 6 characters long.');
+                  return;
+                }
+                setIsSubmitting(true);
+                setOwnerValidationError(null);
+                try {
+                  const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      fullName: fullName.trim(),
+                      email: ownerEmail.trim().toLowerCase(),
+                      password: ownerPassword.trim(),
+                      role: 'facility_owner',
+                    }),
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    throw new Error(data.error || 'Registration failed.');
+                  }
+                  if (data.user) {
+                    setAuthenticatedUser({
+                      id: data.user.id,
+                      auth_id: data.user.id,
+                      email: data.user.email,
+                      full_name: data.user.full_name,
+                      nickname: data.user.nickname,
+                      role: 'venue_owner',
+                      onboarding_completed: false,
+                      has_completed_onboarding: false,
+                    });
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('sportsync_user_id', data.user.id);
+                      localStorage.setItem('sportsync_user_email', data.user.email);
+                      localStorage.setItem('sportsync_user_role', 'venue_owner');
+                      localStorage.setItem('sportsync_user_name', data.user.full_name);
+                      localStorage.setItem('sportsync_pending_onboarding', 'true');
+                    }
+                  }
+                  setOwnerStep(2);
+                } catch (err) {
+                  setOwnerValidationError(err instanceof Error ? err.message : 'Registration failed.');
+                } finally {
+                  setIsSubmitting(false);
+                }
+                return;
+              }
+
+              if (ownerStep === 2) {
+                if (!facilityName.trim()) {
+                  setOwnerValidationError('Please enter your sports facility name.');
+                  return;
+                }
+                setOwnerValidationError(null);
+                setOwnerStep(3);
+                return;
+              }
+
+              if (ownerStep === 3) {
+                if (facilitySports.length === 0) {
+                  setOwnerValidationError('Please select at least one sport your facility provides.');
+                  return;
+                }
+                setOwnerValidationError(null);
+                setOwnerStep(4);
+                return;
+              }
+
+              if (ownerStep === 4) {
+                setOwnerValidationError(null);
+                setOwnerStep(5);
+                return;
+              }
+            }}
+            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] cursor-pointer disabled:opacity-50"
           >
-            Continue
+            {isSubmitting ? 'Registering Account...' : 'Continue'}
           </button>
         ) : (
           <button
@@ -1061,10 +1318,27 @@ export default function OnboardingPage() {
             onClick={handleFinishOwner}
             className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50 cursor-pointer"
           >
-            {isSubmitting ? 'Creating...' : 'Open Facility Console'}
+            {isSubmitting ? 'Creating Facility...' : 'Open Facility Console'}
           </button>
         )}
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-semibold text-[#A5B0A6]">Loading setup...</p>
+          </div>
+        </div>
+      }
+    >
+      <OnboardingContent />
+    </Suspense>
   );
 }

@@ -104,8 +104,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       }
 
       if (data.user) {
+        const isFacility = role === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
+        const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
+
         if (mode === 'signup') {
-          // NEW ACCOUNT: Must see onboarding (Step 1 of 6)!
+          // NEW ACCOUNT: Must see onboarding!
           setAuthenticatedUser({
             id: data.user.id,
             auth_id: data.user.id,
@@ -113,9 +116,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             full_name: data.user.full_name || fullName.trim(),
             nickname: data.user.nickname || fullName.trim().split(' ')[0],
             avatar_url: data.user.avatar_url,
-            role: data.user.role || (role === 'facility_owner' ? 'venue_owner' : 'player'),
-            primary_sport: 'pickleball',
-            preferred_sports: ['pickleball', 'badminton'],
+            role: assignedRole,
+            primary_sport: isFacility ? 'pickleball' : 'football',
+            preferred_sports: isFacility ? ['pickleball', 'badminton'] : ['football'],
             preferred_format: 'doubles',
             skill_level: 'intermediate',
             city: data.user.city || 'Metro Manila',
@@ -125,22 +128,27 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
 
           if (typeof window !== 'undefined') {
             localStorage.removeItem('sportsync_pending_onboarding');
+            localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
-            localStorage.setItem('sportsync_user_role', data.user.role || (role === 'facility_owner' ? 'venue_owner' : 'player'));
+            localStorage.setItem('sportsync_user_role', assignedRole);
             localStorage.setItem('sportsync_user_name', data.user.full_name || fullName.trim());
             localStorage.setItem('sportsync_pending_onboarding', 'true');
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
           }
 
-          setSuccessMsg('Account registered successfully! Redirecting to setup...');
+          setSuccessMsg(
+            isFacility
+              ? 'Facility account registered! Redirecting to facility setup...'
+              : 'Account registered successfully! Redirecting to setup...'
+          );
           setTimeout(() => {
             onClose();
-            window.location.href = '/onboarding';
+            window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
           }, 600);
         } else {
           // EXISTING / ALREADY REGISTERED USER: Must NOT show onboarding!
-          const isOwnerRole = data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
+          const isOwnerRole = isFacility || data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
           setAuthenticatedUser({
             id: data.user.id,
             auth_id: data.user.id,
@@ -148,7 +156,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             full_name: data.user.full_name,
             nickname: data.user.nickname,
             avatar_url: data.user.avatar_url,
-            role: data.user.role,
+            role: isOwnerRole ? 'venue_owner' : (data.user.role || 'player'),
             primary_sport: data.user.primary_sport || 'pickleball',
             preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
             preferred_format: data.user.preferred_format || 'doubles',
@@ -160,8 +168,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
 
           if (typeof window !== 'undefined') {
             localStorage.removeItem('sportsync_pending_onboarding');
+            localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
-            localStorage.setItem('sportsync_user_role', data.user.role);
+            localStorage.setItem('sportsync_user_role', isOwnerRole ? 'venue_owner' : (data.user.role || 'player'));
             localStorage.setItem('sportsync_user_name', data.user.full_name);
             localStorage.setItem('matchi_onboarding_completed', 'true');
             localStorage.setItem('sportsync_onboarding_completed', 'true');

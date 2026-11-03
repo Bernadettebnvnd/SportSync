@@ -283,15 +283,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             initialMode={authInitialMode}
             canGoBack={canGoBack}
             onSuccess={(role, isNewAccount) => {
-              if (isNewAccount) {
+              if (role === 'facility_owner') {
+                if (typeof window !== 'undefined') {
+                  if (isNewAccount) {
+                    window.location.href = '/onboarding?role=owner';
+                  } else {
+                    window.location.href = '/organizer';
+                  }
+                }
+              } else if (isNewAccount) {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
                 } else {
                   navigateTo('personalization');
-                }
-              } else if (role === 'facility_owner') {
-                if (typeof window !== 'undefined') {
-                  window.location.href = '/organizer';
                 }
               } else {
                 if (guestPrompt.pendingAction) {

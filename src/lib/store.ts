@@ -119,6 +119,22 @@ async function initializeStore() {
         globalState.currentUser.onboarding_completed = false;
         globalState.currentUser.has_completed_onboarding = false;
       }
+      const storedId = localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id');
+      if (storedId) {
+        globalState.currentUser.id = storedId;
+        globalState.currentUser.auth_id = storedId;
+      }
+      if (storedEmail) {
+        globalState.currentUser.email = storedEmail;
+      }
+      const storedRole = localStorage.getItem('sportsync_user_role') || localStorage.getItem('matchi_user_role');
+      if (storedRole) {
+        const resolvedRole = (storedRole === 'facility_owner' ? 'venue_owner' : storedRole) as UserRole;
+        globalState.currentUser.role = resolvedRole;
+        if (resolvedRole === 'venue_owner' || resolvedRole === 'organizer') {
+          globalState.currentUser.active_mode = 'manage';
+        }
+      }
       const storedName = localStorage.getItem('matchi_user_name') || localStorage.getItem('sportsync_user_name');
       if (storedName) globalState.currentUser.full_name = storedName;
       const storedNickname = localStorage.getItem('matchi_user_nickname') || localStorage.getItem('sportsync_user_nickname');
@@ -409,7 +425,9 @@ export function useMatchiStore() {
         localStorage.removeItem('matchi_onboarding_completed');
         localStorage.removeItem('sportsync_onboarding_completed');
       }
+      if (user.id) localStorage.setItem('sportsync_user_id', user.id);
       if (user.email) localStorage.setItem('sportsync_user_email', user.email);
+      if (user.role) localStorage.setItem('sportsync_user_role', user.role);
       if (user.full_name) {
         localStorage.setItem('sportsync_user_name', user.full_name);
         localStorage.setItem('matchi_user_name', user.full_name);
@@ -586,8 +604,10 @@ export function useMatchiStore() {
       }[];
       inventorySource: FacilityInventorySource;
     }) => {
+      const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_id') : null;
       try {
-        const ownerId = globalState.currentUser.id || globalState.currentUser.auth_id || 'owner_pending';
+        const ownerId = globalState.currentUser.id || globalState.currentUser.auth_id || storedOwnerId || 'owner_pending';
+        const ownerEmail = data.ownerEmail || globalState.currentUser.email || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') || '';
         const result = await createVenueWithCourts(
           {
             owner_id: ownerId,
@@ -650,9 +670,10 @@ export function useMatchiStore() {
         const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? `venue_${crypto.randomUUID()}`
           : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const fallbackOwnerId = globalState.currentUser.id || globalState.currentUser.auth_id || storedOwnerId || 'local_owner';
         const fallbackVenue: Venue = {
           id: fallbackVenueId,
-          owner_id: globalState.currentUser.id || 'local_owner',
+          owner_id: fallbackOwnerId,
           name: data.facilityName,
           slug: data.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           description: data.description,
@@ -693,11 +714,15 @@ export function useMatchiStore() {
         fallbackVenue.courts = fallbackCourts;
         saveLocalStoredVenues(fallbackVenue);
         if (typeof window !== 'undefined') {
+          localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_user_role', 'venue_owner');
           localStorage.setItem('sportsync_facility_venue_id', fallbackVenueId);
           if (globalState.currentUser.id) {
             localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, fallbackVenueId);
+          }
+          if (storedOwnerId) {
+            localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, fallbackVenueId);
           }
         }
         globalState.venues = [fallbackVenue, ...globalState.venues.filter((v) => v.id !== fallbackVenueId)];

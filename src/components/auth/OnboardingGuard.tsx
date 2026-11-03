@@ -40,7 +40,9 @@ export function OnboardingGuard() {
 
     // If user has already completed onboarding or is already registered, never let them see /onboarding
     if (isOnboarded && isOnboardingPath) {
-      const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
+      const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
+      const isOwner = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || storedRole === 'venue_owner' || storedRole === 'facility_owner';
+      const target = isOwner ? '/organizer' : '/';
       router.replace(target);
       return;
     }

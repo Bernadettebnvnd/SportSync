@@ -49,6 +49,17 @@ export function Navbar() {
   const isOnboarded = Boolean(currentUser.onboarding_completed || currentUser.has_completed_onboarding);
   const isOwnerOrAdmin = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const authParam = searchParams.get('auth');
+      if (authParam === 'signin' || authParam === 'signup') {
+        setAuthModalMode(authParam);
+        setIsAuthModalOpen(true);
+      }
+    }
+  }, [pathname]);
+
   return (
     <>
       <header className="sticky top-0 z-40 w-full border-b border-white/5 bg-[#0B0F0C]/95 backdrop-blur-md">

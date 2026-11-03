@@ -285,7 +285,7 @@ export async function serverRegister(data: {
     preferred_format: 'doubles',
     skill_level: 'intermediate',
     city: registrationCity,
-    onboarding_completed: true,
+    onboarding_completed: false,
     created_at: supaCreatedAt,
   };
 

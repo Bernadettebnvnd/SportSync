@@ -64,14 +64,32 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
-  const [ownerName, setOwnerName] = useState(currentUser.full_name || '');
-  const [ownerEmail, setOwnerEmail] = useState(currentUser.email || '');
+  const [ownerName, setOwnerName] = useState(
+    currentUser.full_name ||
+    (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') : '') ||
+    ''
+  );
+  const [ownerEmail, setOwnerEmail] = useState(
+    currentUser.email ||
+    (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') ||
+    ''
+  );
   const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '0917-888-0000');
 
   useEffect(() => {
     if (currentUser.full_name && !ownerName) setOwnerName(currentUser.full_name);
     if (currentUser.email && !ownerEmail) setOwnerEmail(currentUser.email);
-  }, [currentUser.full_name, currentUser.email]);
+    if (typeof window !== 'undefined') {
+      if (!ownerName) {
+        const storedName = localStorage.getItem('sportsync_user_name');
+        if (storedName) setOwnerName(storedName);
+      }
+      if (!ownerEmail) {
+        const storedEmail = localStorage.getItem('sportsync_user_email');
+        if (storedEmail) setOwnerEmail(storedEmail);
+      }
+    }
+  }, [currentUser.full_name, currentUser.email, ownerName, ownerEmail]);
 
   const [facilityName, setFacilityName] = useState('');
   const [description, setDescription] = useState('');
