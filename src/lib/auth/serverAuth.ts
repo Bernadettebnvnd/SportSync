@@ -253,14 +253,18 @@ export async function serverRegister(data: {
   const dbClient = admin || serverClient;
   if (dbClient) {
     try {
-      const { data: existingUser } = await dbClient
+      const { data: existingUser, error: findError } = await dbClient
         .from('users')
         .select('id')
         .eq('email', normalizedEmail)
         .maybeSingle();
 
+      if (findError) {
+        throw new Error(`Failed to query user profile: ${findError.message}`);
+      }
+
       if (existingUser) {
-        await dbClient
+        const { error: updateError } = await dbClient
           .from('users')
           .update({
             auth_id: supaUserId,
@@ -270,8 +274,11 @@ export async function serverRegister(data: {
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingUser.id);
+        if (updateError) {
+          throw new Error(`Failed to update public user profile: ${updateError.message}`);
+        }
       } else {
-        await dbClient.from('users').insert({
+        const { error: insertError } = await dbClient.from('users').insert({
           auth_id: supaUserId,
           email: normalizedEmail,
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
@@ -283,9 +290,20 @@ export async function serverRegister(data: {
           skill_level: 'intermediate',
           city: registrationCity || null,
         });
+        if (insertError) {
+          throw new Error(`Failed to create public user profile: ${insertError.message}`);
+        }
       }
     } catch (dbErr) {
-      console.warn('[ServerAuth] public.users upsert warning:', dbErr);
+      console.error('[ServerAuth] public.users profile persistence failed:', dbErr);
+      if (admin && supaUserId) {
+        try {
+          await admin.auth.admin.deleteUser(supaUserId);
+        } catch (cleanupErr) {
+          console.warn('[ServerAuth] Failed to clean up auth user after profile error:', cleanupErr);
+        }
+      }
+      throw new Error(dbErr instanceof Error ? dbErr.message : 'Failed to save public user profile.');
     }
   }
 

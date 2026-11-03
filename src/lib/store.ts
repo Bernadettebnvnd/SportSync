@@ -666,7 +666,11 @@ export function useMatchiStore() {
           return result.venue;
         }
       } catch (err) {
-        console.warn('Owner onboarding backend creation warning, using local state fallback:', err);
+        if (isSupabaseConfigured) {
+          console.error('Owner onboarding database creation failed:', err);
+          throw err;
+        }
+        console.warn('Owner onboarding backend creation warning, using local state fallback for offline MVP:', err);
         const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? `venue_${crypto.randomUUID()}`
           : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

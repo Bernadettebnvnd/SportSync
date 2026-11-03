@@ -345,3 +345,210 @@ export async function syncSupabaseClientSession(
 
   return false;
 }
+
+export interface RegisterAccountParams {
+  email: string;
+  password: string;
+  fullName: string;
+  role: 'facility_owner' | 'player' | 'venue_owner';
+  city?: string;
+}
+
+export interface AuthAccountResult {
+  user: User;
+  token: string;
+  session?: any;
+}
+
+/**
+ * Unified registration helper used across AuthModal, AuthScreen, and /onboarding.
+ * Performs validation, server registration, session synchronization with browser Supabase,
+ * state persistence in local storage, and store user hydration.
+ */
+export async function registerAccount(
+  params: RegisterAccountParams,
+  setAuthenticatedUser: (user: Partial<User>) => void
+): Promise<AuthAccountResult> {
+  const trimmedEmail = (params.email || '').trim().toLowerCase();
+  const cleanPassword = (params.password || '').trim();
+  const cleanFullName = (params.fullName || '').trim();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (!cleanPassword || cleanPassword.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+
+  if (!cleanFullName) {
+    throw new Error(
+      params.role === 'facility_owner' || params.role === 'venue_owner'
+        ? 'Please enter contact / owner name.'
+        : 'Please enter your full name.'
+    );
+  }
+
+  const isFacility = params.role === 'facility_owner' || params.role === 'venue_owner';
+  const roleForApi = isFacility ? 'facility_owner' : 'player';
+  const assignedRole: UserRole = isFacility ? 'venue_owner' : 'player';
+
+  const res = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: trimmedEmail,
+      password: cleanPassword,
+      fullName: cleanFullName,
+      role: roleForApi,
+      city: params.city?.trim() || undefined,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Registration failed.');
+  }
+
+  // Synchronize browser Supabase client session so database operations run with a valid Supabase user
+  await syncSupabaseClientSession(data.session, {
+    email: trimmedEmail,
+    password: cleanPassword,
+  });
+
+  const registeredUser: User = {
+    id: data.user.id,
+    auth_id: data.user.id,
+    email: data.user.email,
+    full_name: data.user.full_name || cleanFullName,
+    nickname: data.user.nickname || cleanFullName.split(' ')[0],
+    avatar_url: data.user.avatar_url,
+    role: assignedRole,
+    primary_sport: data.user.primary_sport || (isFacility ? 'pickleball' : 'football'),
+    preferred_sports: data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football']),
+    preferred_format: (data.user.preferred_format as MatchFormat) || 'doubles',
+    skill_level: (data.user.skill_level as SkillLevel) || 'intermediate',
+    city: data.user.city || params.city || 'Metro Manila',
+    matches_played: 0,
+    matches_won: 0,
+    win_streak: 0,
+    highest_streak: 0,
+    email_verified: true,
+    onboarding_completed: false,
+    has_completed_onboarding: false,
+    created_at: data.user.created_at || new Date().toISOString(),
+  };
+
+  setAuthenticatedUser(registeredUser);
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sportsync_user_id', data.user.id);
+    localStorage.setItem('sportsync_user_email', data.user.email);
+    localStorage.setItem('sportsync_user_role', assignedRole);
+    localStorage.setItem('sportsync_user_name', data.user.full_name || cleanFullName);
+    localStorage.setItem('sportsync_pending_onboarding', 'true');
+    localStorage.removeItem('matchi_onboarding_completed');
+    localStorage.removeItem('sportsync_onboarding_completed');
+    localStorage.removeItem('sportsync_user_profile');
+    localStorage.removeItem('sportsync_user_city');
+    localStorage.removeItem('sportsync_user_sports');
+  }
+
+  return {
+    user: registeredUser,
+    token: data.token,
+    session: data.session,
+  };
+}
+
+/**
+ * Unified login helper used across AuthModal and AuthScreen.
+ */
+export async function loginAccount(
+  params: { email: string; password: string },
+  setAuthenticatedUser: (user: Partial<User>) => void
+): Promise<AuthAccountResult> {
+  const trimmedEmail = (params.email || '').trim().toLowerCase();
+  const cleanPassword = (params.password || '').trim();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (!cleanPassword || cleanPassword.length < 6) {
+    throw new Error('Password must be at least 6 characters long.');
+  }
+
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: trimmedEmail,
+      password: cleanPassword,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || 'Login failed. Please check credentials.');
+  }
+
+  await syncSupabaseClientSession(data.session, {
+    email: trimmedEmail,
+    password: cleanPassword,
+  });
+
+  const isFacility = data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
+  const assignedRole: UserRole = isFacility ? 'venue_owner' : (data.user.role || 'player');
+  const isOnboarded = Boolean(data.user.onboarding_completed);
+
+  const loggedInUser: User = {
+    id: data.user.id,
+    auth_id: data.user.id,
+    email: data.user.email,
+    full_name: data.user.full_name,
+    nickname: data.user.nickname,
+    avatar_url: data.user.avatar_url,
+    role: assignedRole,
+    primary_sport: data.user.primary_sport || 'pickleball',
+    preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
+    preferred_format: (data.user.preferred_format as MatchFormat) || 'doubles',
+    skill_level: (data.user.skill_level as SkillLevel) || 'intermediate',
+    city: data.user.city || 'Metro Manila',
+    matches_played: data.user.matches_played || 0,
+    matches_won: data.user.matches_won || 0,
+    win_streak: data.user.win_streak || 0,
+    highest_streak: data.user.highest_streak || 0,
+    email_verified: true,
+    onboarding_completed: isOnboarded,
+    has_completed_onboarding: isOnboarded,
+    created_at: data.user.created_at || new Date().toISOString(),
+  };
+
+  setAuthenticatedUser(loggedInUser);
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('sportsync_user_id', data.user.id);
+    localStorage.setItem('sportsync_user_email', data.user.email);
+    localStorage.setItem('sportsync_user_role', assignedRole);
+    if (data.user.full_name) localStorage.setItem('sportsync_user_name', data.user.full_name);
+
+    if (isOnboarded) {
+      localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.setItem('matchi_onboarding_completed', 'true');
+      localStorage.setItem('sportsync_onboarding_completed', 'true');
+    } else {
+      localStorage.setItem('sportsync_pending_onboarding', 'true');
+      localStorage.removeItem('matchi_onboarding_completed');
+      localStorage.removeItem('sportsync_onboarding_completed');
+    }
+  }
+
+  return {
+    user: loggedInUser,
+    token: data.token,
+    session: data.session,
+  };
+}

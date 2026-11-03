@@ -3,7 +3,7 @@ import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertC
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
-import { syncSupabaseClientSession } from '../../lib/services/auth';
+import { registerAccount, loginAccount } from '../../lib/services/auth';
 import { useMatchiStore } from '../../lib/store';
 
 export type AuthRole = 'player' | 'facility_owner';
@@ -89,102 +89,31 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
-    // 2. Perform Real Authentication Request via Backend API
+    // 2. Perform Real Authentication Request via Unified Auth Service
     try {
-      const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
-      const payload = isSignUp
-        ? {
-          email: trimmedEmail,
-          password: cleanPassword,
-          fullName: fullName.trim(),
-          role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
-        }
-        : {
-          email: trimmedEmail,
-          password: cleanPassword,
-        };
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || (isSignUp ? 'Registration failed.' : 'Login failed. Please check credentials.'));
+      let result;
+      if (isSignUp) {
+        result = await registerAccount(
+          {
+            email: trimmedEmail,
+            password: cleanPassword,
+            fullName: fullName.trim(),
+            role: selectedRole === 'facility_owner' ? 'facility_owner' : 'player',
+          },
+          setAuthenticatedUser
+        );
+      } else {
+        result = await loginAccount(
+          { email: trimmedEmail, password: cleanPassword },
+          setAuthenticatedUser
+        );
       }
 
-      // Synchronize browser Supabase client with the authenticated user session
-      await syncSupabaseClientSession(data.session, { email: trimmedEmail, password: cleanPassword });
-
-      // Update store user state with real authenticated session
-      if (data.user) {
-        const isNewUser = isSignUp;
-        const isFacility = selectedRole === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
-        const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
-
-        setAuthenticatedUser({
-          id: data.user.id,
-          auth_id: data.user.id,
-          email: data.user.email,
-          full_name: data.user.full_name,
-          nickname: data.user.nickname,
-          avatar_url: data.user.avatar_url,
-          role: assignedRole,
-          primary_sport: data.user.primary_sport || (isFacility ? 'pickleball' : 'football'),
-          preferred_sports: data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football']),
-          preferred_format: data.user.preferred_format || 'doubles',
-          skill_level: data.user.skill_level || 'intermediate',
-          city: data.user.city || 'Metro Manila',
-          onboarding_completed: !isNewUser,
-          has_completed_onboarding: !isNewUser,
-        });
-
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('sportsync_user_id', data.user.id);
-          localStorage.setItem('sportsync_user_email', data.user.email);
-          localStorage.setItem('sportsync_user_role', assignedRole);
-          localStorage.setItem('sportsync_user_name', data.user.full_name);
-          if (isNewUser) {
-            localStorage.setItem('sportsync_pending_onboarding', 'true');
-            localStorage.removeItem('matchi_onboarding_completed');
-            localStorage.removeItem('sportsync_onboarding_completed');
-            localStorage.removeItem('sportsync_user_profile');
-            localStorage.removeItem('sportsync_user_city');
-            localStorage.removeItem('sportsync_user_sports');
-          } else {
-            localStorage.removeItem('sportsync_pending_onboarding');
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-            const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
-              ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
-              : ['Football'];
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                id: data.user.id,
-                name: data.user.full_name,
-                username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-                role: data.user.role,
-                city: data.user.city || 'Naga City',
-                primarySport: data.user.primary_sport || 'football',
-                preferredSports: userSports,
-                skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
-          }
-        }
-      }
-
-      const userRole = data.user?.role;
-      const detectedRole: AuthRole =
-        userRole === 'venue_owner' || userRole === 'organizer' || selectedRole === 'facility_owner'
-          ? 'facility_owner'
-          : 'player';
+      const isFacility =
+        result.user.role === 'venue_owner' ||
+        result.user.role === 'organizer' ||
+        selectedRole === 'facility_owner';
+      const detectedRole: AuthRole = isFacility ? 'facility_owner' : 'player';
 
       setSuccessMessage(
         isSignUp

@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
-import { syncSupabaseClientSession } from '@/lib/services/auth';
+import { registerAccount } from '@/lib/services/auth';
 import { SportType, MatchFormat, SkillLevel } from '@/types';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
 import { getPlayerInitials } from '@/lib/utils';
@@ -338,11 +338,6 @@ function OnboardingContent() {
     setIsSubmitting(true);
 
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_pending_onboarding');
-      }
-      setHasPendingOnboarding(false);
-
       const finalFullName = fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
       const rawCity = selectedArea || 'Naga City';
@@ -358,6 +353,12 @@ function OnboardingContent() {
         city: cleanCity,
         skillLevel,
       });
+
+      // Clear pending state only after durable save completes
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      }
+      setHasPendingOnboarding(false);
 
       confetti({
         particleCount: 80,
@@ -379,10 +380,6 @@ function OnboardingContent() {
     setIsSubmitting(true);
     setOwnerValidationError(null);
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_pending_onboarding');
-      }
-      setHasPendingOnboarding(false);
       const generatedCourts = Array.from({ length: courtCount }).map((_, idx) => ({
         name: `Court ${idx + 1}`,
         sport: facilitySports[idx % facilitySports.length],
@@ -415,6 +412,12 @@ function OnboardingContent() {
         inventorySource: 'manual',
       });
 
+      // Clear pending state only after all required saves succeed
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      }
+      setHasPendingOnboarding(false);
+
       confetti({
         particleCount: 80,
         spread: 70,
@@ -424,8 +427,11 @@ function OnboardingContent() {
 
       router.replace('/organizer');
     } catch (err) {
-      console.warn('Facility setup warning:', err);
-      router.replace('/organizer');
+      console.error('Facility setup error:', err);
+      const msg = err instanceof Error ? err.message : 'Facility setup failed. Please check your details and try again.';
+      setOwnerValidationError(msg);
+      // DO NOT clear pending onboarding state!
+      // DO NOT redirect to /organizer on setup errors!
     } finally {
       setIsSubmitting(false);
     }
@@ -1224,60 +1230,19 @@ function OnboardingContent() {
             disabled={isSubmitting}
             onClick={async () => {
               if (ownerStep === 1) {
-                if (!fullName.trim()) {
-                  setOwnerValidationError('Please enter contact / owner name.');
-                  return;
-                }
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!ownerEmail.trim() || !emailRegex.test(ownerEmail.trim())) {
-                  setOwnerValidationError('Please enter a valid email address.');
-                  return;
-                }
-                if (!ownerPassword || ownerPassword.length < 6) {
-                  setOwnerValidationError('Password must be at least 6 characters long.');
-                  return;
-                }
                 setIsSubmitting(true);
                 setOwnerValidationError(null);
                 try {
-                  const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                  await registerAccount(
+                    {
                       fullName: fullName.trim(),
                       email: ownerEmail.trim().toLowerCase(),
                       password: ownerPassword.trim(),
                       role: 'facility_owner',
-                    }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (!res.ok) {
-                    throw new Error(data.error || 'Registration failed.');
-                  }
-                  // Establish browser Supabase session so subsequent facility & court creation runs with a valid Supabase user
-                  await syncSupabaseClientSession(data.session, {
-                    email: ownerEmail.trim().toLowerCase(),
-                    password: ownerPassword.trim(),
-                  });
-                  if (data.user) {
-                    setAuthenticatedUser({
-                      id: data.user.id,
-                      auth_id: data.user.id,
-                      email: data.user.email,
-                      full_name: data.user.full_name,
-                      nickname: data.user.nickname,
-                      role: 'venue_owner',
-                      onboarding_completed: false,
-                      has_completed_onboarding: false,
-                    });
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('sportsync_user_id', data.user.id);
-                      localStorage.setItem('sportsync_user_email', data.user.email);
-                      localStorage.setItem('sportsync_user_role', 'venue_owner');
-                      localStorage.setItem('sportsync_user_name', data.user.full_name);
-                      localStorage.setItem('sportsync_pending_onboarding', 'true');
-                    }
-                  }
+                      city: facilityCity,
+                    },
+                    setAuthenticatedUser
+                  );
                   setOwnerStep(2);
                 } catch (err) {
                   setOwnerValidationError(err instanceof Error ? err.message : 'Registration failed.');

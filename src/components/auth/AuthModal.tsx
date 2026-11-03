@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { syncSupabaseClientSession } from '@/lib/services/auth';
+import { registerAccount, loginAccount } from '@/lib/services/auth';
 import { useMatchiStore } from '@/lib/store';
 import { SportType } from '@/types';
 import {
@@ -79,133 +79,42 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
     }
 
     try {
-      const endpoint = mode === 'signup' ? '/api/auth/register' : '/api/auth/login';
-      const payload = mode === 'signup'
-        ? {
+      if (mode === 'signup') {
+        const result = await registerAccount(
+          {
             email: trimmedEmail,
             password: cleanPassword,
             fullName: fullName.trim(),
             role: role === 'facility_owner' ? 'facility_owner' : 'player',
+          },
+          setAuthenticatedUser
+        );
+        const isFacility = result.user.role === 'venue_owner';
+        setSuccessMsg(
+          isFacility
+            ? 'Facility account registered! Redirecting to facility setup...'
+            : 'Account registered successfully! Redirecting to setup...'
+        );
+        setTimeout(() => {
+          onClose();
+          window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
+        }, 600);
+      } else {
+        const result = await loginAccount(
+          { email: trimmedEmail, password: cleanPassword },
+          setAuthenticatedUser
+        );
+        const isOwnerRole = result.user.role === 'venue_owner' || result.user.role === 'organizer';
+        const isOnboarded = Boolean(result.user.onboarding_completed);
+        setSuccessMsg('Signed in successfully! Redirecting...');
+        setTimeout(() => {
+          onClose();
+          if (!isOnboarded) {
+            window.location.href = isOwnerRole ? '/onboarding?role=owner' : '/onboarding';
+          } else {
+            window.location.href = isOwnerRole ? '/organizer' : '/';
           }
-        : {
-            email: trimmedEmail,
-            password: cleanPassword,
-          };
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        throw new Error(data.error || (mode === 'signup' ? 'Registration failed.' : 'Login failed. Please check credentials.'));
-      }
-
-      // Synchronize browser Supabase client with the authenticated user session
-      await syncSupabaseClientSession(data.session, { email: trimmedEmail, password: cleanPassword });
-
-      if (data.user) {
-        const isFacility = role === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
-        const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
-
-        if (mode === 'signup') {
-          // NEW ACCOUNT: Must see onboarding!
-          setAuthenticatedUser({
-            id: data.user.id,
-            auth_id: data.user.id,
-            email: data.user.email,
-            full_name: data.user.full_name || fullName.trim(),
-            nickname: data.user.nickname || fullName.trim().split(' ')[0],
-            avatar_url: data.user.avatar_url,
-            role: assignedRole,
-            primary_sport: isFacility ? 'pickleball' : 'football',
-            preferred_sports: isFacility ? ['pickleball', 'badminton'] : ['football'],
-            preferred_format: 'doubles',
-            skill_level: 'intermediate',
-            city: data.user.city || 'Metro Manila',
-            onboarding_completed: false,
-            has_completed_onboarding: false,
-          });
-
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('sportsync_pending_onboarding');
-            localStorage.setItem('sportsync_user_id', data.user.id);
-            localStorage.setItem('sportsync_user_email', data.user.email);
-            localStorage.setItem('sportsync_user_role', assignedRole);
-            localStorage.setItem('sportsync_user_name', data.user.full_name || fullName.trim());
-            localStorage.setItem('sportsync_pending_onboarding', 'true');
-            localStorage.removeItem('matchi_onboarding_completed');
-            localStorage.removeItem('sportsync_onboarding_completed');
-          }
-
-          setSuccessMsg(
-            isFacility
-              ? 'Facility account registered! Redirecting to facility setup...'
-              : 'Account registered successfully! Redirecting to setup...'
-          );
-          setTimeout(() => {
-            onClose();
-            window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
-          }, 600);
-        } else {
-          // EXISTING / ALREADY REGISTERED USER: Must NOT show onboarding!
-          const isOwnerRole = isFacility || data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
-          setAuthenticatedUser({
-            id: data.user.id,
-            auth_id: data.user.id,
-            email: data.user.email,
-            full_name: data.user.full_name,
-            nickname: data.user.nickname,
-            avatar_url: data.user.avatar_url,
-            role: isOwnerRole ? 'venue_owner' : (data.user.role || 'player'),
-            primary_sport: data.user.primary_sport || 'pickleball',
-            preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
-            preferred_format: data.user.preferred_format || 'doubles',
-            skill_level: data.user.skill_level || 'intermediate',
-            city: data.user.city || 'Metro Manila',
-            onboarding_completed: true,
-            has_completed_onboarding: true,
-          });
-
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('sportsync_pending_onboarding');
-            localStorage.setItem('sportsync_user_id', data.user.id);
-            localStorage.setItem('sportsync_user_email', data.user.email);
-            localStorage.setItem('sportsync_user_role', isOwnerRole ? 'venue_owner' : (data.user.role || 'player'));
-            localStorage.setItem('sportsync_user_name', data.user.full_name);
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-            const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
-              ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
-              : ['Football'];
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                id: data.user.id,
-                name: data.user.full_name,
-                username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-                role: data.user.role,
-                city: data.user.city || 'Naga City',
-                primarySport: data.user.primary_sport || 'football',
-                preferredSports: userSports,
-                skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
-          }
-
-          setSuccessMsg('Welcome back! Signed in.');
-          setTimeout(() => {
-            onClose();
-            if (isOwnerRole) {
-              window.location.href = '/organizer';
-            }
-          }, 600);
-        }
+        }, 600);
       }
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed';
