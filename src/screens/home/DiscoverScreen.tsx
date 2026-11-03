@@ -13,6 +13,8 @@ import {
   Calendar,
   Users,
   Plus,
+  Navigation,
+  Loader2,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { VenueCard } from '../../design-system/components/VenueCard';
@@ -64,14 +66,20 @@ function isVenueInCity(venue: Venue, cityKey: string): boolean {
 }
 
 function isVenueNearLocation(venue: Venue, locationStr: string): boolean {
-  const locLower = (locationStr || '').toLowerCase().trim();
+  let locLower = (locationStr || '').toLowerCase().trim();
   const vCity = (venue.city || '').toLowerCase();
   const vAddr = (venue.address || '').toLowerCase();
 
-  // If user is from Naga City or Camarines Sur:
-  if (locLower.includes('naga') || locLower.includes('camarines') || locLower.includes('bicol')) {
-    // Only venues in Naga City or Camarines Sur are near!
-    // Manila (Pasig, Taguig, Makati, QC) and Cebu are > 250km away, so they are far and shouldn't appear
+  // If user location is unspecified, 'current location', or in Naga City / Camarines Sur / Bicol:
+  // Naga City is the active pilot hub for SportSync, so courts in Naga City are the near courts.
+  if (
+    !locLower ||
+    locLower === 'current location' ||
+    locLower.includes('current') ||
+    locLower.includes('naga') ||
+    locLower.includes('camarines') ||
+    locLower.includes('bicol')
+  ) {
     return vCity.includes('naga') || vAddr.includes('naga') || vAddr.includes('camarines');
   }
 
@@ -154,30 +162,75 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [userLocation, setUserLocation] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('sportsync_user_location');
-      if (stored) return stored;
+      if (stored && stored !== 'Current Location') return stored;
     }
-    return currentUser.city || user?.city || 'Naga City';
+    const candidate = currentUser.city || user?.city;
+    if (candidate && candidate !== 'Current Location') return candidate;
+    return 'Naga City';
   });
 
   // Featured Courts City Filter ('near' = near user location, 'all' = All Cities, or specific city)
   const [selectedCityFilter, setSelectedCityFilter] = useState<string>('near');
   const [showLocationPicker, setShowLocationPicker] = useState<boolean>(false);
+  const [isDetectingGps, setIsDetectingGps] = useState<boolean>(false);
 
   React.useEffect(() => {
-    if (currentUser.city && currentUser.city !== userLocation) {
-      setUserLocation(currentUser.city);
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sportsync_user_location');
+      if (stored === 'Current Location') {
+        localStorage.setItem('sportsync_user_location', 'Naga City');
+        localStorage.setItem('sportsync_user_city', 'Naga City');
+      }
     }
-  }, [currentUser.city]);
+    const candidate = currentUser.city || user?.city;
+    if (candidate && candidate !== 'Current Location' && candidate !== userLocation) {
+      setUserLocation(candidate);
+    }
+  }, [currentUser.city, user?.city, userLocation]);
 
   const handleSelectLocation = (newLoc: string) => {
-    setUserLocation(newLoc);
+    const safeLoc = !newLoc || newLoc === 'Current Location' ? 'Naga City' : newLoc;
+    setUserLocation(safeLoc);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_user_location', newLoc);
+      localStorage.setItem('sportsync_user_location', safeLoc);
+      localStorage.setItem('sportsync_user_city', safeLoc);
     }
     if (currentUser.id) {
-      setAuthenticatedUser({ city: newLoc });
+      setAuthenticatedUser({ city: safeLoc });
     }
     setShowLocationPicker(false);
+  };
+
+  const handleDetectGpsLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      handleSelectLocation('Naga City');
+      return;
+    }
+    setIsDetectingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsDetectingGps(false);
+        const { latitude, longitude } = pos.coords;
+        if (latitude >= 13.0 && latitude <= 14.2 && longitude >= 122.5 && longitude <= 124.0) {
+          handleSelectLocation('Naga City');
+          return;
+        }
+        if (latitude >= 14.3 && latitude <= 14.8 && longitude >= 120.8 && longitude <= 121.2) {
+          handleSelectLocation('Taguig / BGC');
+          return;
+        }
+        if (latitude >= 10.1 && latitude <= 10.6 && longitude >= 123.7 && longitude <= 124.1) {
+          handleSelectLocation('Cebu City');
+          return;
+        }
+        handleSelectLocation('Naga City');
+      },
+      () => {
+        setIsDetectingGps(false);
+        handleSelectLocation('Naga City');
+      },
+      { timeout: 6000 }
+    );
   };
 
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
@@ -365,7 +418,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             <div className="flex items-center gap-1.5 mt-0.5">
               <p className="text-[11px] text-[#A5B0A6]">
                 {selectedCityFilter === 'near'
-                  ? `Near ${userLocation.split(',')[0]} • Live verified availability`
+                  ? `Near ${userLocation && userLocation !== 'Current Location' ? userLocation : 'Naga City'} • Live verified availability`
                   : selectedCityFilter === 'all'
                   ? 'All registered courts across the Philippines'
                   : `Courts in ${FEATURED_CITY_FILTERS.find((c) => c.value === selectedCityFilter)?.label || selectedCityFilter}`}
@@ -386,7 +439,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onClick={() =>
               onNavigateToVenues({
                 sport: activeSport !== 'All' ? activeSport : undefined,
-                city: selectedCityFilter === 'near' ? (userLocation.toLowerCase().includes('naga') ? 'naga' : 'all') : selectedCityFilter,
+                city: selectedCityFilter === 'near'
+                  ? (userLocation.toLowerCase().includes('naga') || userLocation === 'Current Location' ? 'naga' : 'all')
+                  : selectedCityFilter,
               })
             }
             className="text-xs text-[#C8FF2E] font-bold flex items-center gap-0.5 hover:underline press-scale shrink-0"
@@ -411,8 +466,21 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               </button>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleDetectGpsLocation}
+                disabled={isDetectingGps}
+                className="h-7 px-3 rounded-full text-xs font-semibold bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/30 hover:border-[#C8FF2E] flex items-center gap-1 transition-all press-scale"
+              >
+                {isDetectingGps ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Navigation className="w-3 h-3" />
+                )}
+                <span>{isDetectingGps ? 'Detecting...' : 'Use Current GPS'}</span>
+              </button>
               {AVAILABLE_USER_LOCATIONS.map((loc) => {
-                const isCurrent = userLocation.toLowerCase().includes(loc.toLowerCase());
+                const isCurrent = (userLocation === 'Current Location' ? 'naga' : userLocation.toLowerCase()).includes(loc.toLowerCase());
                 return (
                   <button
                     key={loc}
@@ -449,7 +517,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 {c.value === 'near' && <MapPin className="w-3 h-3 text-current" />}
                 <span>
                   {c.value === 'near'
-                    ? `Near You (${userLocation.split(',')[0].replace(' City', '')})`
+                    ? `Near You (${(userLocation === 'Current Location' || !userLocation ? 'Naga' : userLocation).split(',')[0].replace(' City', '')})`
                     : c.label}
                 </span>
               </button>
@@ -476,7 +544,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
             <div className="space-y-1">
               <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
-                No {activeSport !== 'All' ? activeSport : ''} courts found near {userLocation.split(',')[0]}
+                No {activeSport !== 'All' ? activeSport : ''} courts found near {(userLocation === 'Current Location' || !userLocation ? 'Naga City' : userLocation).split(',')[0]}
               </h4>
               <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
                 Courts in Manila, Cebu, and other cities can be viewed in &quot;All Cities&quot;.

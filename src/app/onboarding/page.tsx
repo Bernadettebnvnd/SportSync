@@ -170,7 +170,7 @@ export default function OnboardingPage() {
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setSelectedArea('Current Location');
+      setSelectedArea('Naga City (Pilot Area)');
       return;
     }
     setIsLocating(true);
@@ -179,6 +179,24 @@ export default function OnboardingPage() {
         try {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
+
+          // Quick bounding box check for active Philippine hubs
+          // Bicol / Naga City area: lat ~13.0 to 14.2, lon ~122.5 to 124.0
+          if (lat >= 13.0 && lat <= 14.2 && lon >= 122.5 && lon <= 124.0) {
+            setSelectedArea('Naga City (Pilot Area)');
+            return;
+          }
+          // Metro Manila area: lat ~14.3 to 14.8, lon ~120.8 to 121.2
+          if (lat >= 14.3 && lat <= 14.8 && lon >= 120.8 && lon <= 121.2) {
+            setSelectedArea('BGC, Taguig City');
+            return;
+          }
+          // Metro Cebu area: lat ~10.1 to 10.6, lon ~123.7 to 124.1
+          if (lat >= 10.1 && lat <= 10.6 && lon >= 123.7 && lon <= 124.1) {
+            setSelectedArea('Metro Cebu');
+            return;
+          }
+
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`
           );
@@ -189,21 +207,29 @@ export default function OnboardingPage() {
               data.address?.town ||
               data.address?.municipality ||
               data.address?.suburb ||
-              data.address?.county ||
-              'Current Location';
-            setSelectedArea(city);
+              data.address?.county;
+            if (city) {
+              const lower = city.toLowerCase();
+              if (lower.includes('naga') || lower.includes('camarines') || lower.includes('bicol')) {
+                setSelectedArea('Naga City (Pilot Area)');
+              } else {
+                setSelectedArea(city);
+              }
+            } else {
+              setSelectedArea('Naga City (Pilot Area)');
+            }
           } else {
-            setSelectedArea('Current Location');
+            setSelectedArea('Naga City (Pilot Area)');
           }
         } catch {
-          setSelectedArea('Current Location');
+          setSelectedArea('Naga City (Pilot Area)');
         } finally {
           setIsLocating(false);
         }
       },
       () => {
         setIsLocating(false);
-        setSelectedArea('Current Location');
+        setSelectedArea('Naga City (Pilot Area)');
       },
       { timeout: 6000 }
     );
@@ -250,7 +276,10 @@ export default function OnboardingPage() {
 
       const finalFullName = fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
-      const cleanCity = (selectedArea || 'Naga City').replace(/\s*\(Pilot Area\)/i, '').trim();
+      const rawCity = selectedArea || 'Naga City';
+      const cleanCity = rawCity === 'Current Location'
+        ? 'Naga City'
+        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim() || 'Naga City');
 
       await completePlayerOnboarding({
         fullName: finalFullName,
@@ -613,7 +642,7 @@ export default function OnboardingPage() {
                 onClick={handleUseCurrentLocation}
                 disabled={isLocating}
                 className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                  selectedArea === 'Current Location' || isLocating
+                  selectedArea.includes('Naga City') || selectedArea === 'Current Location' || isLocating
                     ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.2)]'
                     : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
                 }`}

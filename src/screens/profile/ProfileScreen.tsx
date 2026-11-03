@@ -82,7 +82,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const { unreadCount } = useNotifications(user?.name || user?.id ? { id: user?.id, name: user?.name } : undefined);
 
   // Local state for instant optimistic updates
-  const [localCity, setLocalCity] = React.useState(user?.city || 'Naga City');
+  const initialCity = user?.city && user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';
+  const [localCity, setLocalCity] = React.useState(initialCity);
   const [localSports, setLocalSports] = React.useState<string[]>(
     user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
   );
@@ -91,7 +92,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [isSavingPrefs, setIsSavingPrefs] = React.useState(false);
 
   // Edit modal draft state
-  const [draftCity, setDraftCity] = React.useState(user?.city || 'Naga City');
+  const [draftCity, setDraftCity] = React.useState(initialCity);
   const [draftSports, setDraftSports] = React.useState<string[]>(
     user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
   );
@@ -99,8 +100,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   React.useEffect(() => {
     if (user?.city) {
-      setLocalCity(user.city);
-      setDraftCity(user.city);
+      const clean = user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';
+      setLocalCity(clean);
+      setDraftCity(clean);
     }
     if (user?.preferredSports && user.preferredSports.length > 0) {
       setLocalSports(user.preferredSports);
@@ -112,7 +114,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     }
   }, [user?.city, user?.preferredSports, user?.skillLevel]);
 
-  const userCity = localCity || 'Naga City';
+  const userCity = localCity && localCity !== 'Current Location' ? localCity : 'Naga City';
   const userSports = localSports.length > 0 ? localSports : ['Football'];
   const userSkill = localSkill || 'Intermediate';
 
@@ -154,13 +156,14 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const handleSavePreferences = async () => {
     setIsSavingPrefs(true);
+    const safeCity = draftCity && draftCity !== 'Current Location' ? draftCity : 'Naga City';
     setLocalSports(draftSports);
-    setLocalCity(draftCity);
+    setLocalCity(safeCity);
     setLocalSkill(draftSkill);
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_user_city', draftCity);
-      localStorage.setItem('sportsync_user_location', draftCity);
+      localStorage.setItem('sportsync_user_city', safeCity);
+      localStorage.setItem('sportsync_user_location', safeCity);
       localStorage.setItem('sportsync_user_sports', JSON.stringify(draftSports.map((s) => s.toLowerCase())));
       localStorage.setItem('sportsync_user_skill', draftSkill.toLowerCase());
 
@@ -171,7 +174,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
       const updatedProfile = {
         ...parsed,
-        city: draftCity,
+        city: safeCity,
         preferredSports: draftSports,
         primarySport: (draftSports[0] || 'football').toLowerCase(),
         skillLevel: draftSkill,

@@ -370,10 +370,12 @@ export function useSportSyncBridge() {
               if (Array.isArray(sp)) storedSports = sp.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
             } catch {}
           }
-          const hasStaleDefaultCity = parsed.city === 'Metro Manila' || !parsed.city;
-          const finalCity = (storedCity && storedCity !== 'Metro Manila')
-            ? storedCity
-            : (store.currentUser.city && store.currentUser.city !== 'Metro Manila' ? store.currentUser.city : (hasStaleDefaultCity ? (storedCity || store.currentUser.city || 'Naga City') : parsed.city));
+          const hasStaleDefaultCity = parsed.city === 'Metro Manila' || parsed.city === 'Current Location' || !parsed.city;
+          const cleanStoredCity = storedCity && storedCity !== 'Metro Manila' && storedCity !== 'Current Location' ? storedCity : null;
+          const cleanUserCity = store.currentUser.city && store.currentUser.city !== 'Metro Manila' && store.currentUser.city !== 'Current Location' ? store.currentUser.city : null;
+          const finalCity = cleanStoredCity
+            ? cleanStoredCity
+            : (cleanUserCity ? cleanUserCity : (hasStaleDefaultCity ? (cleanStoredCity || cleanUserCity || 'Naga City') : parsed.city));
 
           const hasStaleDefaultSports = parsed.preferredSports?.length === 2 &&
             parsed.preferredSports.includes('Pickleball') &&
@@ -410,11 +412,13 @@ export function useSportSyncBridge() {
       levelTitle: getLevelTitle(1),
       xp: 0,
       xpNextLevel: 1000,
-      city: store.currentUser.city || 'Metro Manila',
-      primarySport: store.currentUser.primary_sport || 'pickleball',
+      city: (store.currentUser.city && store.currentUser.city !== 'Current Location' && store.currentUser.city !== 'Metro Manila')
+        ? store.currentUser.city
+        : 'Naga City',
+      primarySport: store.currentUser.primary_sport || 'football',
       preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
         ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-        : ['Basketball', 'Pickleball', 'Badminton'],
+        : ['Football'],
       skillLevel: store.currentUser.skill_level
         ? store.currentUser.skill_level.charAt(0).toUpperCase() + store.currentUser.skill_level.slice(1)
         : 'Intermediate',
@@ -749,7 +753,14 @@ export function useSportSyncBridge() {
       const vAddrLower = (dbV.address || '').toLowerCase();
 
       let computedDistance = 1.6;
-      if (userCityLower.includes('naga') || userCityLower.includes('camarines')) {
+      if (
+        !userCityLower ||
+        userCityLower === 'current location' ||
+        userCityLower.includes('current') ||
+        userCityLower.includes('naga') ||
+        userCityLower.includes('camarines') ||
+        userCityLower.includes('bicol')
+      ) {
         if (vCityLower.includes('naga') || vAddrLower.includes('naga')) {
           computedDistance = dbV.name.toLowerCase().includes('metro naga') ? 1.2 : 0.8;
         } else if (vCityLower.includes('cebu')) {

@@ -125,7 +125,13 @@ async function initializeStore() {
       if (storedNickname) globalState.currentUser.nickname = storedNickname;
 
       const storedCity = localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location');
-      if (storedCity) globalState.currentUser.city = storedCity;
+      if (storedCity && storedCity !== 'Current Location') {
+        globalState.currentUser.city = storedCity;
+      } else if (storedCity === 'Current Location') {
+        globalState.currentUser.city = 'Naga City';
+        localStorage.setItem('sportsync_user_city', 'Naga City');
+        localStorage.setItem('sportsync_user_location', 'Naga City');
+      }
 
       const storedSportsRaw = localStorage.getItem('sportsync_user_sports');
       if (storedSportsRaw) {
@@ -162,9 +168,10 @@ async function initializeStore() {
         ? (storedSports! as SportType[])
         : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (['football'] as SportType[]));
 
-      const finalCity = (user.city && user.city !== 'Metro Manila')
+      const safeStoredCity = storedCity && storedCity !== 'Current Location' ? storedCity : null;
+      const finalCity = (user.city && user.city !== 'Metro Manila' && user.city !== 'Current Location')
         ? user.city
-        : (storedCity || user.city || 'Naga City');
+        : (safeStoredCity || (user.city && user.city !== 'Current Location' ? user.city : 'Naga City'));
 
       user.city = finalCity;
       user.preferred_sports = finalSports;
@@ -451,9 +458,10 @@ export function useMatchiStore() {
       preferredFormat?: MatchFormat;
     }) => {
       const primarySport = data.preferredSports[0] || 'football';
-      const cleanCity = data.city
-        ? data.city.replace(/\s*\(Pilot Area\)/i, '').trim()
-        : (globalState.currentUser.city || 'Naga City');
+      const rawCity = data.city || globalState.currentUser.city || 'Naga City';
+      const cleanCity = rawCity === 'Current Location'
+        ? 'Naga City'
+        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim() || 'Naga City');
       const formattedSports = data.preferredSports.map(getSportDisplayName);
       const formattedSkill = data.skillLevel
         ? (data.skillLevel.charAt(0).toUpperCase() + data.skillLevel.slice(1))
