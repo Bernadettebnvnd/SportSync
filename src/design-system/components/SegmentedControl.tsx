@@ -27,6 +27,8 @@ export const SegmentedControl = <T extends string>({
         return (
           <button
             key={opt.id}
+            type="button"
+            aria-pressed={isSelected}
             onClick={() => onChange(opt.id)}
             className={`flex-1 py-2 px-3 rounded-xl font-display text-xs font-semibold transition-all duration-150 press-scale flex items-center justify-center gap-1.5 ${
               isSelected
@@ -106,14 +108,16 @@ export const Stepper: React.FC<{
   max?: number;
   step?: number;
   unit?: string;
+  prefix?: string;
+  ariaLabel?: string;
   className?: string;
-}> = ({ value, onChange, min = 1, max = 22, step = 1, unit = '', className = '' }) => {
+}> = ({ value, onChange, min = 1, max = 22, step = 1, unit = '', prefix = '', ariaLabel = 'value', className = '' }) => {
   const handleDecrement = () => {
-    if (value - step >= min) onChange(value - step);
+    if (value > min) onChange(Math.max(min, value - step));
   };
 
   const handleIncrement = () => {
-    if (value + step <= max) onChange(value + step);
+    if (value < max) onChange(Math.min(max, value + step));
   };
 
   return (
@@ -122,20 +126,22 @@ export const Stepper: React.FC<{
     >
       <button
         type="button"
+        aria-label={`Decrease ${ariaLabel}`}
         onClick={handleDecrement}
         disabled={value <= min}
         className="w-9 h-9 rounded-xl bg-[#263028] text-[#F4F7F0] hover:bg-[#323e34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all"
       >
         -
       </button>
-      <div className="min-w-[48px] text-center">
+      <div className="min-w-[56px] px-1 text-center">
         <span className="font-display font-bold text-base text-[#F4F7F0] tabular-nums">
-          {value}
+          {prefix}{value}
         </span>
         {unit && <span className="text-xs text-[#A5B0A6] ml-1">{unit}</span>}
       </div>
       <button
         type="button"
+        aria-label={`Increase ${ariaLabel}`}
         onClick={handleIncrement}
         disabled={value >= max}
         className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all"

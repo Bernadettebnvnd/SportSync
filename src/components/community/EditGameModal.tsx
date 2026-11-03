@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { CommunityGame, SportType } from '@/mock/types';
 import { APP_CONFIG } from '@/config/appConfig';
+import { Stepper } from '@/design-system/components/SegmentedControl';
+import { DateStrip, generateUpcomingDates } from '@/design-system/components/DateStrip';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
 import {
   STANDARDIZED_SPORTS_OPTIONS,
@@ -72,7 +74,23 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
   const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(initialScheduleMode);
   const [date, setDate] = useState(game.date);
   const [time, setTime] = useState(game.time || '18:00');
-  const [customDate, setCustomDate] = useState(todayISO);
+  const [customDate, setCustomDate] = useState(() => (/^\d{4}-\d{2}-\d{2}$/.test(game.date) ? game.date : todayISO));
+
+  const adjustEditDateByDays = (deltaDays: number) => {
+    const parts = (customDate || todayISO).split('-').map(Number);
+    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date();
+    d.setDate(d.getDate() + deltaDays);
+    const nextISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setCustomDate(nextISO < todayISO ? todayISO : nextISO);
+  };
+
+  const adjustEditTimeByMinutes = (deltaMins: number) => {
+    const [rawH, rawM] = (time || '18:00').split(':').map(Number);
+    const h = Number.isFinite(rawH) ? rawH : 18;
+    const m = Number.isFinite(rawM) ? rawM : 0;
+    const clamped = Math.max(0, Math.min(23 * 60 + 45, h * 60 + m + deltaMins));
+    setTime(`${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`);
+  };
 
   // Location states
   const [locationName, setLocationName] = useState(game.locationName);
@@ -120,6 +138,9 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
       setSport(game.sport);
       setDate(game.date);
       setTime(game.time || '18:00');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(game.date)) {
+        setCustomDate(game.date);
+      }
       setLocationName(game.locationName);
       setLocationSearchQuery(game.locationName);
       setSkillLevel(game.skillLevel || 'Casual');
@@ -554,27 +575,85 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-3 p-3 rounded-2xl bg-[#141A15] border border-white/10">
               {scheduleMode === 'custom' && (
-                <div>
-                  <label className="text-[10px] text-[#A5B0A6] block mb-1">Pick Date</label>
-                  <input
-                    type="date"
-                    min={todayISO}
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full h-11 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                <div className="space-y-1.5 pb-2.5 border-b border-white/5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Pick Date</span>
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label="Previous day"
+                        disabled={customDate <= todayISO}
+                        onClick={() => adjustEditDateByDays(-1)}
+                        className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
+                      >
+                        -1d
+                      </button>
+                      <span className="text-xs font-mono font-bold text-[#C8FF2E] px-1">{customDate}</span>
+                      <button
+                        type="button"
+                        aria-label="Next day"
+                        onClick={() => adjustEditDateByDays(1)}
+                        className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] hover:border-[#C8FF2E]"
+                      >
+                        +1d
+                      </button>
+                    </div>
+                  </div>
+                  <DateStrip
+                    dates={generateUpcomingDates(14)}
+                    selectedId={customDate}
+                    onSelect={(iso) => setCustomDate(iso)}
+                    showCalendarPicker={false}
                   />
                 </div>
               )}
-              <div className={scheduleMode === 'custom' ? '' : 'col-span-2'}>
-                <label className="text-[10px] text-[#A5B0A6] block mb-1">Kickoff Time</label>
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-full h-11 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
-                />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Kickoff Time</span>
+                  <div className="inline-flex items-center bg-[#1C241E] border border-white/10 rounded-xl p-0.5 gap-1.5">
+                    <button
+                      type="button"
+                      aria-label="Earlier kickoff time"
+                      disabled={time <= '00:00'}
+                      onClick={() => adjustEditTimeByMinutes(-15)}
+                      className="w-7 h-7 rounded-lg bg-[#263028] text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
+                    >
+                      -
+                    </button>
+                    <span className="font-mono text-xs font-bold text-[#C8FF2E] px-1.5 tabular-nums">{time}</span>
+                    <button
+                      type="button"
+                      aria-label="Later kickoff time"
+                      disabled={time >= '23:45'}
+                      onClick={() => adjustEditTimeByMinutes(15)}
+                      className="w-7 h-7 rounded-lg bg-[#C8FF2E] text-xs font-bold text-[#0B0F0C] disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {['07:00', '09:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'].map((slot) => {
+                    const activeSlot = time === slot;
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        aria-pressed={activeSlot}
+                        onClick={() => setTime(slot)}
+                        className={`py-1.5 rounded-xl text-xs font-mono font-semibold border transition-all press-scale ${
+                          activeSlot
+                            ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                            : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:border-white/20 hover:text-white'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -672,46 +751,71 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
           </div>
 
           {/* Section 5: Available Slots & Skill Level */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Available Slots */}
-            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-              <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-                Total Roster Slots
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
+            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                  Total Roster Slots
+                </label>
+                <span className="text-[10px] text-[#6F7B71]">
+                  {game.spotsJoined} joined
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Stepper
+                  value={spotsTotal}
+                  onChange={setSpotsTotal}
                   min={Math.max(2, game.spotsJoined || 1)}
                   max={30}
-                  value={spotsTotal}
-                  onChange={(e) => setSpotsTotal(Math.max(2, parseInt(e.target.value) || 2))}
-                  className="w-full h-11 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-sm font-bold text-[#C8FF2E] focus:outline-none focus:border-[#C8FF2E]"
+                  step={1}
+                  unit="spots"
+                  ariaLabel="total roster slots"
+                  className="w-full justify-between"
                 />
               </div>
-              <span className="text-[10px] text-[#6F7B71] block">
-                {game.spotsJoined} players registered
-              </span>
             </div>
 
             {/* Price Per Player */}
-            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-              <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-                Cost Share ({APP_CONFIG.currency})
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={5000}
-                  step={10}
-                  value={pricePerPlayer}
-                  onChange={(e) => setPricePerPlayer(Math.max(0, parseInt(e.target.value) || 0))}
-                  className="w-full h-11 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-sm font-bold text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
-                />
+            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                  Cost Share ({APP_CONFIG.currency})
+                </label>
+                <span className="text-[10px] text-[#6F7B71]">
+                  {pricePerPlayer === 0 ? 'Free game' : 'Per player'}
+                </span>
               </div>
-              <span className="text-[10px] text-[#6F7B71] block">
-                {pricePerPlayer === 0 ? 'Free pickup game' : 'Per player share'}
-              </span>
+              <Stepper
+                value={pricePerPlayer}
+                onChange={setPricePerPlayer}
+                min={0}
+                max={5000}
+                step={10}
+                prefix={APP_CONFIG.currency}
+                ariaLabel="cost share per player"
+                className="w-full justify-between"
+              />
+              <div className="grid grid-cols-5 gap-1">
+                {[0, 100, 150, 200, 300].map((preset) => {
+                  const activeFee = pricePerPlayer === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      aria-pressed={activeFee}
+                      onClick={() => setPricePerPlayer(preset)}
+                      className={`py-1 rounded-lg text-[10px] font-mono font-semibold border transition-all ${
+                        activeFee
+                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
+                      }`}
+                    >
+                      {preset === 0 ? 'Free' : `${APP_CONFIG.currency}${preset}`}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

@@ -491,30 +491,67 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            value={court.floorType}
-                            onChange={(e) => handleUpdateCourt(idx, 'floorType', e.target.value)}
-                            placeholder="Floor Surface (e.g. BWF Taraflex)"
-                            className="w-full px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
-                          />
+                      <div className="space-y-2">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-bold uppercase text-[#65756B]">Floor Surface</span>
+                            <span className="text-xs font-bold text-[#2D724E]">{court.floorType || 'Select'}</span>
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {['Cushioned Acrylic', 'BWF Taraflex Rubber', 'Hard Court', 'Wood Parquet', 'Synthetic Turf'].map((surf) => (
+                              <button
+                                key={surf}
+                                type="button"
+                                aria-pressed={court.floorType === surf}
+                                onClick={() => handleUpdateCourt(idx, 'floorType', surf)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                                  court.floorType === surf
+                                    ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                                    : 'bg-white text-black border-[#E8E5DF] hover:border-[#2D724E]'
+                                }`}
+                              >
+                                {surf}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="w-32">
-                          <div className="relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-black">
-                              ₱
-                            </span>
-                            <input
-                              type="number"
-                              value={court.hourlyRateCents / 100}
-                              onChange={(e) =>
-                                handleUpdateCourt(idx, 'hourlyRateCents', Number(e.target.value) * 100)
-                              }
-                              placeholder="Rate/hr"
-                              className="w-full pl-6 pr-2.5 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-black text-black text-right focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
-                            />
+                        <div className="pt-1 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase text-[#65756B]">Hourly Rate</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="inline-flex items-center gap-1 bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-lg">
+                              <button
+                                type="button"
+                                aria-label="Decrease court hourly rate"
+                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', Math.max(10000, court.hourlyRateCents - 5000))}
+                                className="w-6 h-6 rounded bg-[#FAF8F5] text-xs font-bold text-black flex items-center justify-center"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono text-xs font-bold text-[#2D724E] px-1">₱{court.hourlyRateCents / 100}/hr</span>
+                              <button
+                                type="button"
+                                aria-label="Increase court hourly rate"
+                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', court.hourlyRateCents + 5000)}
+                                className="w-6 h-6 rounded bg-[#2D724E] text-xs font-bold text-white flex items-center justify-center"
+                              >
+                                +
+                              </button>
+                            </div>
+                            {[350, 450, 500, 600, 800].map((rateVal) => (
+                              <button
+                                key={rateVal}
+                                type="button"
+                                aria-pressed={court.hourlyRateCents === rateVal * 100}
+                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', rateVal * 100)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-semibold border transition-all ${
+                                  court.hourlyRateCents === rateVal * 100
+                                    ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold'
+                                    : 'bg-white text-black border-[#E8E5DF] hover:border-[#2D724E]'
+                                }`}
+                              >
+                                ₱{rateVal}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       </div>

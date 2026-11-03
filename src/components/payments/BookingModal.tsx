@@ -382,25 +382,56 @@ export function BookingModal({
                     </span>
                     <span className="text-[#2D724E] font-medium">Included ({formatCurrency(feeCalculation.platformFeeCents)})</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#E8E5DF]/60">
-                    <div>
-                      <label className="text-[10px] font-bold text-[#65756B] block mb-1">Booking Date</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={bookingDate}
-                        onChange={(e) => setBookingDate(e.target.value)}
-                        className="w-full text-xs font-bold text-[#1A241E] p-1.5 rounded-xl bg-white border border-[#E8E5DF]"
-                      />
+                  <div className="space-y-2 pt-1 border-t border-[#E8E5DF]/60">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-[#65756B]">Booking Schedule:</span>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label="Previous day"
+                          disabled={bookingDate <= new Date().toISOString().split('T')[0]}
+                          onClick={() => {
+                            const d = new Date(bookingDate);
+                            d.setDate(d.getDate() - 1);
+                            const next = d.toISOString().split('T')[0];
+                            const todayStr = new Date().toISOString().split('T')[0];
+                            setBookingDate(next < todayStr ? todayStr : next);
+                          }}
+                          className="h-6 px-2 rounded-lg bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#1A241E] disabled:opacity-30"
+                        >
+                          -1d
+                        </button>
+                        <span className="font-mono text-xs font-bold text-[#2D724E]">{bookingDate} • {bookingTime}</span>
+                        <button
+                          type="button"
+                          aria-label="Next day"
+                          onClick={() => {
+                            const d = new Date(bookingDate);
+                            d.setDate(d.getDate() + 1);
+                            setBookingDate(d.toISOString().split('T')[0]);
+                          }}
+                          className="h-6 px-2 rounded-lg bg-white border border-[#E8E5DF] text-[11px] font-bold text-[#1A241E] hover:border-[#2D724E]"
+                        >
+                          +1d
+                        </button>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#65756B] block mb-1">Start Time</label>
-                      <input
-                        type="time"
-                        value={bookingTime}
-                        onChange={(e) => setBookingTime(e.target.value)}
-                        className="w-full text-xs font-bold text-[#1A241E] p-1.5 rounded-xl bg-white border border-[#E8E5DF]"
-                      />
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+                      {['08:00', '10:00', '14:00', '16:00', '18:00', '20:00'].map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          aria-pressed={bookingTime === slot}
+                          onClick={() => setBookingTime(slot)}
+                          className={`py-1.5 rounded-xl text-xs font-mono font-semibold border transition-all ${
+                            bookingTime === slot
+                              ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                              : 'bg-white text-[#65756B] border-[#E8E5DF] hover:border-[#2D724E]'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>

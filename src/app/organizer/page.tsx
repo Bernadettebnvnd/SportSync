@@ -1381,27 +1381,70 @@ export default function OrganizerDashboard() {
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#1A241E]">Time Schedule</label>
-                  <input
-                    type="text"
-                    value={newGameTime}
-                    onChange={(e) => setNewGameTime(e.target.value)}
-                    placeholder="18:00 - 20:00"
-                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
-                  />
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1A241E]">Time Schedule</label>
+                    <span className="text-xs font-mono font-bold text-[#2D724E]">{newGameTime || 'Select Time'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {['06:00 - 08:00', '08:00 - 10:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00'].map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        aria-pressed={newGameTime === slot}
+                        onClick={() => setNewGameTime(slot)}
+                        className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold border transition-all ${
+                          newGameTime === slot
+                            ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                            : 'bg-white text-[#65756B] border-[#E8E5DF] hover:border-[#2D724E]'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#1A241E]">Player Fee (₱)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={newGameFee}
-                    onChange={(e) => setNewGameFee(e.target.value)}
-                    placeholder="350"
-                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
-                  />
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1A241E]">Player Fee</label>
+                    <div className="inline-flex items-center gap-1.5 bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        aria-label="Decrease player fee"
+                        onClick={() => setNewGameFee((prev) => String(Math.max(0, (Number(prev) || 0) - 50)))}
+                        className="w-6 h-6 rounded bg-[#FAF8F5] text-xs font-bold text-[#1A241E] flex items-center justify-center"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono text-xs font-bold text-[#2D724E]">₱{newGameFee || '0'}</span>
+                      <button
+                        type="button"
+                        aria-label="Increase player fee"
+                        onClick={() => setNewGameFee((prev) => String((Number(prev) || 0) + 50))}
+                        className="w-6 h-6 rounded bg-[#2D724E] text-xs font-bold text-white flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {['0', '150', '250', '350', '500'].map((fee) => (
+                      <button
+                        key={fee}
+                        type="button"
+                        aria-pressed={newGameFee === fee}
+                        onClick={() => setNewGameFee(fee)}
+                        className={`px-3 py-1 rounded-xl text-xs font-mono font-semibold border transition-all ${
+                          newGameFee === fee
+                            ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                            : 'bg-white text-[#65756B] border-[#E8E5DF] hover:border-[#2D724E]'
+                        }`}
+                      >
+                        {fee === '0' ? 'Free' : `₱${fee}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-2">
@@ -1528,28 +1571,70 @@ export default function OrganizerDashboard() {
                   </select>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#1A241E]">Hourly Rate (₱)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={newCourtRate}
-                    onChange={(e) => setNewCourtRate(e.target.value)}
-                    placeholder="600"
-                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
-                  />
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1A241E]">Hourly Court Rate</label>
+                    <div className="inline-flex items-center gap-1.5 bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        aria-label="Decrease hourly rate"
+                        onClick={() => setNewCourtRate((prev) => String(Math.max(100, (Number(prev) || 600) - 50)))}
+                        className="w-6 h-6 rounded bg-[#FAF8F5] text-xs font-bold text-[#1A241E] flex items-center justify-center"
+                      >
+                        -
+                      </button>
+                      <span className="font-mono text-xs font-bold text-[#2D724E]">₱{newCourtRate || '600'}/hr</span>
+                      <button
+                        type="button"
+                        aria-label="Increase hourly rate"
+                        onClick={() => setNewCourtRate((prev) => String((Number(prev) || 600) + 50))}
+                        className="w-6 h-6 rounded bg-[#2D724E] text-xs font-bold text-white flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {['350', '450', '600', '800', '1000'].map((rate) => (
+                      <button
+                        key={rate}
+                        type="button"
+                        aria-pressed={newCourtRate === rate}
+                        onClick={() => setNewCourtRate(rate)}
+                        className={`px-3 py-1 rounded-xl text-xs font-mono font-semibold border transition-all ${
+                          newCourtRate === rate
+                            ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                            : 'bg-white text-[#65756B] border-[#E8E5DF] hover:border-[#2D724E]'
+                        }`}
+                      >
+                        ₱{rate}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#1A241E]">Playing Surface</label>
-                  <input
-                    type="text"
-                    value={newCourtSurface}
-                    onChange={(e) => setNewCourtSurface(e.target.value)}
-                    placeholder="Hard Court, Taraflex, Wood"
-                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] text-xs focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
-                  />
+                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1A241E]">Playing Surface</label>
+                    <span className="text-xs font-semibold text-[#2D724E]">{newCourtSurface || 'Select Surface'}</span>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {['Hard Court', 'BWF Taraflex Rubber', 'Wood Parquet', 'Cushioned Acrylic', 'Synthetic Turf'].map((surf) => (
+                      <button
+                        key={surf}
+                        type="button"
+                        aria-pressed={newCourtSurface === surf}
+                        onClick={() => setNewCourtSurface(surf)}
+                        className={`px-3 py-1 rounded-xl text-xs font-semibold border transition-all ${
+                          newCourtSurface === surf
+                            ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
+                            : 'bg-white text-[#65756B] border-[#E8E5DF] hover:border-[#2D724E]'
+                        }`}
+                      >
+                        {surf}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-2">
