@@ -3,6 +3,10 @@ import { calculateBookingFees, generateBookingReference } from '@/lib/utils';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, serverGetUser } from '@/lib/auth/serverAuth';
 
+function isValidUuid(id?: string | null): boolean {
+  return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+}
+
 function resolveUserFromRequest(request: Request): { userId: string; email?: string } | null {
   // 1. Check Bearer token in Authorization header
   const authHeader = request.headers.get('Authorization');
@@ -44,10 +48,10 @@ export async function GET(request: Request) {
           .order('booking_date', { ascending: false })
           .order('start_time', { ascending: false });
 
-        if (venueId) {
+        if (venueId && isValidUuid(venueId)) {
           query = query.eq('venue_id', venueId);
         }
-        if (courtId) {
+        if (courtId && isValidUuid(courtId)) {
           query = query.eq('court_id', courtId);
         }
         if (bookingDate) {
@@ -181,8 +185,13 @@ export async function POST(request: Request) {
 
     let createdBooking: any = null;
 
-    // 5. Database Insertion if Supabase is active
-    if (isSupabaseConfigured) {
+    // 5. Database Insertion if Supabase is active and IDs are valid UUIDs
+    if (
+      isSupabaseConfigured &&
+      isValidUuid(courtId) &&
+      isValidUuid(venueId) &&
+      isValidUuid(publicUser.id)
+    ) {
       try {
         const dbClient = createAdminClient() || createServerClient();
         if (dbClient) {

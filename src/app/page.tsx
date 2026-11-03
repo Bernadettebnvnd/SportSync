@@ -31,7 +31,7 @@ const MobileApp = dynamic(
 
 export default function RootHomePage() {
   const [selectedScreen, setSelectedScreen] = useState<ScreenId | undefined>(undefined);
-  const [activeScreen, setActiveScreen] = useState<ScreenId>('auth');
+  const [activeScreen, setActiveScreen] = useState<ScreenId>('home');
   const [useDeviceChassis, setUseDeviceChassis] = useState(false);
   const [showScreenDrawer, setShowScreenDrawer] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -46,31 +46,31 @@ export default function RootHomePage() {
       suppressHydrationWarning
       className={`min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-between select-none ${mounted && isLightMode ? 'light' : 'dark'}`}
     >
-      {/* Adaptive Desktop Header (Hidden on small mobile screens to keep edge-to-edge native feel) */}
-      <header className="hidden md:block w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-4 sm:px-6 py-2.5">
+      {/* Adaptive Header with quick links for Players & Facility Partners */}
+      <header className="w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-3 sm:px-6 py-2 sm:py-2.5">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-base shadow-[0_0_16px_rgba(200,255,46,0.3)]">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-sm sm:text-base shadow-[0_0_16px_rgba(200,255,46,0.3)]">
               {APP_CONFIG.appName.slice(0, 2)}
             </div>
             <div>
-              <h1 className="font-display font-black text-lg text-[#F4F7F0] leading-none">
+              <h1 className="font-display font-black text-base sm:text-lg text-[#F4F7F0] leading-none">
                 {APP_CONFIG.appName}
               </h1>
-              <span className="text-[10px] text-[#A5B0A6]">
+              <span className="hidden sm:inline text-[10px] text-[#A5B0A6]">
                 {APP_CONFIG.tagline}
               </span>
             </div>
           </div>
 
           {/* Quick Route Switches & Portals */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Theme Toggle (Dark / Light Mode) */}
             <button
               type="button"
               onClick={toggleTheme}
               suppressHydrationWarning
-              className="hidden md:flex h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#F4F7F0] items-center gap-1.5 transition-all press-scale"
+              className="hidden sm:flex h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#F4F7F0] items-center gap-1.5 transition-all press-scale"
               title={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
               aria-label={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
             >
@@ -111,30 +111,31 @@ export default function RootHomePage() {
               )}
             </button>
 
+            {/* Direct Guest Player Explore Link */}
+            <Link
+              href="/explore"
+              className="h-8 sm:h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E]/30 text-xs text-[#A5B0A6] hover:text-[#C8FF2E] flex items-center gap-1.5 transition-all"
+              title="Browse Facilities as Guest"
+            >
+              <Compass className="w-3.5 h-3.5 text-[#C8FF2E]" />
+              <span>Explore</span>
+            </Link>
+
             {/* Facility Portal Link */}
             <Link
               href="/organizer"
-              className="h-9 px-3.5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-[#C8FF2E]/30 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1.5 transition-all shadow-sm"
+              className="h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-[#C8FF2E]/30 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1.5 transition-all shadow-sm"
               title="Facility Owner Portal"
             >
               <Building2 className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Facility Portal</span>
             </Link>
 
-            <Link
-              href="/explore"
-              className="h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white flex items-center gap-1.5 transition-all"
-              title="Browse Facilities"
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Venues</span>
-            </Link>
-
             {/* Screen Jumper for QA / Navigation */}
             <button
               type="button"
               onClick={() => setShowScreenDrawer(!showScreenDrawer)}
-              className="h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white flex items-center gap-1.5 transition-all"
+              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white flex items-center gap-1.5 transition-all"
               title="Quick Screen Navigator"
             >
               <Menu className="w-4 h-4 text-[#C8FF2E]" />

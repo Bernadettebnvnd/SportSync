@@ -119,7 +119,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const resolveInitialScreen = (): ScreenId => {
     if (initialScreen) return initialScreen;
-    return isUserAuthenticated() ? 'home' : 'auth';
+    return 'home';
   };
 
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(resolveInitialScreen);
@@ -277,11 +277,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'auth': {
-        const canGoBack = screenHistory.length > 1 && isUserAuthenticated();
+        const canGoBack = screenHistory.length > 1;
         return (
           <AuthScreen
             initialMode={authInitialMode}
             canGoBack={canGoBack}
+            onContinueAsGuest={() => {
+              bridge.setAsGuest();
+              navigateTo('home');
+            }}
             onSuccess={(role, isNewAccount) => {
               if (role === 'facility_owner') {
                 if (typeof window !== 'undefined') {

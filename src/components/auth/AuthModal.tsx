@@ -466,6 +466,21 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                     <span>&bull;</span>
                     <span className="text-[10px]">Persistent Session</span>
                   </div>
+
+                  {mode === 'signin' && (
+                    <div className="text-center pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmail('test.player@sportsync.ph');
+                          setPassword('password123');
+                        }}
+                        className="text-[11px] text-[#65756B] hover:text-[#2D724E] font-medium transition-colors py-1"
+                      >
+                        ⚡ Use Demo Account (test.player@sportsync.ph)
+                      </button>
+                    </div>
+                  )}
                 </form>
               )}
             </>

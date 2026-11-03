@@ -1,6 +1,42 @@
 import { Booking, BookingStatus, CourtAvailabilitySlot, SportType } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
+function isValidUuid(id?: string | null): boolean {
+  return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+}
+
+function getLocalBookedHours(courtId: string, bookingDate: string): Set<string> {
+  const localSet = new Set<string>();
+  if (typeof window === 'undefined') return localSet;
+  try {
+    const raw = localStorage.getItem('sportsync_my_bookings') || localStorage.getItem('sideline_my_bookings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const b of parsed) {
+          if (
+            b.court_id === courtId &&
+            b.booking_date === bookingDate &&
+            b.status !== 'cancelled'
+          ) {
+            let startStr = b.start_time || '';
+            if (startStr.includes('T')) {
+              const d = new Date(startStr);
+              startStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+            } else if (startStr.length >= 5) {
+              startStr = startStr.substring(0, 5);
+            }
+            if (startStr) localSet.add(startStr);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Bookings] Error reading local bookings:', e);
+  }
+  return localSet;
+}
+
 /**
  * Compute hourly court slot availability by querying confirmed/pending bookings
  * and court blocks in Supabase for a specific court and calendar date.
@@ -23,14 +59,17 @@ export async function getCourtDailyAvailability(
     candidateSlots.push(`${String(h).padStart(2, '0')}:00`);
   }
 
-  if (!supabase || !isSupabaseConfigured) {
-    // If not configured, slots cannot be booked; return empty or unblocked slots
+  const bookedHoursSet = getLocalBookedHours(courtId, bookingDate);
+
+  // If courtId is not a UUID (e.g. demo mock court like court_test_01),
+  // do not query PostgreSQL UUID column which causes Postgres 22P02 error.
+  if (!isValidUuid(courtId) || !supabase || !isSupabaseConfigured) {
     return candidateSlots.map((time) => {
       const nextHour = parseInt(time.split(':')[0], 10) + 1;
       return {
         time,
         endTime: `${String(nextHour).padStart(2, '0')}:00`,
-        isAvailable: true,
+        isAvailable: !bookedHoursSet.has(time),
         courtId,
         courtName,
         hourlyRateCents,
@@ -39,51 +78,46 @@ export async function getCourtDailyAvailability(
     });
   }
 
-  try {
-    // Query active bookings on this court for the requested date
-    const { data: bookedSlots, error } = await supabase
-      .from('bookings')
-      .select('start_time, end_time, status')
-      .eq('court_id', courtId)
-      .eq('booking_date', bookingDate)
-      .neq('status', 'cancelled');
+  // Real Database Query for valid UUID court
+  const { data: bookedSlots, error } = await supabase
+    .from('bookings')
+    .select('start_time, end_time, status')
+    .eq('court_id', courtId)
+    .eq('booking_date', bookingDate)
+    .neq('status', 'cancelled');
 
-    if (error) {
-      console.error('Error querying court availability:', error);
-    }
+  if (error) {
+    console.error('Database error querying court availability:', error.message);
+    throw new Error(`Database error querying court availability: ${error.message}`);
+  }
 
-    const bookedHoursSet = new Set<string>();
-    if (bookedSlots) {
-      for (const b of bookedSlots) {
-        // b.start_time can be stored as "14:00" or ISO string
-        let startStr = b.start_time;
-        if (startStr.includes('T')) {
-          const d = new Date(startStr);
-          startStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
-        } else if (startStr.length >= 5) {
-          startStr = startStr.substring(0, 5);
-        }
-        bookedHoursSet.add(startStr);
+  if (bookedSlots) {
+    for (const b of bookedSlots) {
+      // b.start_time can be stored as "14:00" or ISO string
+      let startStr = b.start_time;
+      if (startStr.includes('T')) {
+        const d = new Date(startStr);
+        startStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+      } else if (startStr.length >= 5) {
+        startStr = startStr.substring(0, 5);
       }
+      bookedHoursSet.add(startStr);
     }
-
-    return candidateSlots.map((time) => {
-      const nextHour = parseInt(time.split(':')[0], 10) + 1;
-      const isAvailable = !bookedHoursSet.has(time);
-      return {
-        time,
-        endTime: `${String(nextHour).padStart(2, '0')}:00`,
-        isAvailable,
-        courtId,
-        courtName,
-        hourlyRateCents,
-        sport,
-      };
-    });
-  } catch (err) {
-    console.error('Failed to get court availability:', err);
-    return [];
   }
+
+  return candidateSlots.map((time) => {
+    const nextHour = parseInt(time.split(':')[0], 10) + 1;
+    const isAvailable = !bookedHoursSet.has(time);
+    return {
+      time,
+      endTime: `${String(nextHour).padStart(2, '0')}:00`,
+      isAvailable,
+      courtId,
+      courtName,
+      hourlyRateCents,
+      sport,
+    };
+  });
 }
 
 /**
