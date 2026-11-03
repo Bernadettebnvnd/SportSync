@@ -606,6 +606,38 @@ export function useSportSyncBridge() {
         const seenSessionIds = new Set(cleanPrev.filter((g) => g.sessionId).map((g) => g.sessionId!));
         const seenTitles = new Set(cleanPrev.map((g) => g.title.trim().toLowerCase()));
 
+        const updatedExisting = cleanPrev.map((g) => {
+          const matchSession = store.sessions.find(
+            (s) => s && (s.id === g.id || s.id === g.sessionId || (s.title && s.title.trim().toLowerCase() === g.title.trim().toLowerCase()))
+          );
+          if (matchSession) {
+            const isUserHost = Boolean(
+              (userProfile.id && matchSession.host_id === userProfile.id) ||
+              (userProfile.name && matchSession.host_id === userProfile.name)
+            );
+            const resolvedHostName = isUserHost
+              ? userProfile.name
+              : (matchSession.host?.full_name || matchSession.host?.nickname || g.hostName || 'Match Organizer');
+            const resolvedHostAvatar = (matchSession.host?.avatar_url as any) || g.hostAvatar || 'alex';
+            const spotsJoined = Math.min(
+              g.spotsTotal,
+              Math.max(g.spotsJoined, matchSession.current_players_count || 1, g.members?.length || 1)
+            );
+            const updatedMembers = (g.members && g.members.length > 0)
+              ? g.members.map((m, idx) => idx === 0 ? { ...m, name: resolvedHostName, avatar: resolvedHostAvatar } : m)
+              : [{ id: matchSession.host_id || g.hostId || 'organizer', name: resolvedHostName, avatar: resolvedHostAvatar }];
+            return {
+              ...g,
+              hostName: resolvedHostName,
+              hostAvatar: resolvedHostAvatar,
+              hostId: matchSession.host_id || g.hostId,
+              spotsJoined,
+              members: updatedMembers,
+            };
+          }
+          return g;
+        });
+
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
           if (!s || !s.id) return;
@@ -613,7 +645,6 @@ export function useSportSyncBridge() {
           if (isMockGame({ id: s.id, sessionId: s.id, title: s.title, locationName: venue?.name })) {
             return;
           }
-          // If session was permanently deleted, cancelled, or expired, do NOT re-add to games
           if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled' || isSessionExpired(s)) {
             return;
           }
@@ -631,6 +662,10 @@ export function useSportSyncBridge() {
           );
           const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
           const shortFormat = getShortFormat(s.rotation_format, s.sport);
+          const resolvedHostName = isUserHost
+            ? userProfile.name
+            : (s.host?.full_name || s.host?.nickname || (venue?.name ? `${venue.name} Host` : 'Match Organizer'));
+          const resolvedHostAvatar = (s.host?.avatar_url as any) || 'alex';
 
           added.push({
             id: s.id,
@@ -642,22 +677,220 @@ export function useSportSyncBridge() {
             date: formattedDate || 'Today',
             time: formattedTime || s.start_time || '18:00',
             locationName: venue?.name || 'Verified Court Facility',
+            locationDetails: s.location_details,
             distance: '0.9 km away',
             hostId: isUserHost ? userProfile.id : s.host_id,
-            hostName: isUserHost ? userProfile.name : (venue?.name ? `${venue.name} Host` : 'Facility Host'),
-            hostAvatar: 'alex',
+            hostName: resolvedHostName,
+            hostAvatar: resolvedHostAvatar,
             spotsTotal: s.max_players || 12,
             spotsJoined: s.current_players_count || 1,
             pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
             notes: s.description || 'Verified SportSync session',
-            isPublic: true,
-            members: [{ name: isUserHost ? userProfile.name : 'Host', avatar: 'alex' }],
+            isPublic: s.visibility ? s.visibility !== 'Invite' : true,
+            visibility: (s.visibility as any) || 'Public',
+            inviteCode: s.invite_code,
+            members: [{ id: isUserHost ? userProfile.id : s.host_id, name: resolvedHostName, avatar: resolvedHostAvatar }],
           });
         });
-        return added.length > 0 ? [...added, ...cleanPrev] : cleanPrev;
+        return added.length > 0 ? [...added, ...updatedExisting] : updatedExisting;
       });
     }
   }, [store.sessions, store.venues, userProfile.id, userProfile.name]);
+
+  const syncSessionRoster = useCallback(
+    async (sessionIdOrCode: string) => {
+      if (!sessionIdOrCode) return;
+      const cleanKey = sessionIdOrCode.trim();
+
+      try {
+        const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanKey)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.game) {
+            const remoteGame = data.game as CommunityGame;
+            setGames((prev) =>
+              prev.map((g) => {
+                const isMatch =
+                  g.id === remoteGame.id ||
+                  (remoteGame.sessionId && (g.sessionId === remoteGame.sessionId || g.id === remoteGame.sessionId)) ||
+                  (remoteGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === remoteGame.inviteCode.toUpperCase());
+                if (!isMatch) return g;
+
+                const combinedMembersMap = new Map<string, { id?: string; name: string; avatar: any }>();
+                (g.members || []).forEach((m) => combinedMembersMap.set(m.id || m.name, m));
+                (remoteGame.members || []).forEach((m) => combinedMembersMap.set(m.id || m.name, m));
+                const combinedMembers = Array.from(combinedMembersMap.values());
+                const updatedSpots = Math.max(g.spotsJoined, remoteGame.spotsJoined, combinedMembers.length);
+
+                return {
+                  ...g,
+                  hostName: remoteGame.hostName || g.hostName,
+                  hostAvatar: remoteGame.hostAvatar || g.hostAvatar,
+                  hostId: remoteGame.hostId || g.hostId,
+                  spotsJoined: Math.min(g.spotsTotal, updatedSpots),
+                  members: combinedMembers,
+                };
+              })
+            );
+            return;
+          }
+        }
+      } catch {}
+
+      const supabase = getSupabaseClient();
+      if (supabase && isSupabaseConfigured) {
+        try {
+          const { data: dbSession } = await supabase
+            .from('sessions')
+            .select('*, venue:venues(*), host:users(*)')
+            .or(`id.eq.${cleanKey},invite_code.eq.${cleanKey}`)
+            .maybeSingle();
+
+          if (dbSession) {
+            const { data: queueData } = await supabase
+              .from('queues')
+              .select('*, user:users(*)')
+              .eq('session_id', dbSession.id)
+              .neq('status', 'cancelled');
+
+            const queueMembers = (queueData || []).map((q: any) => ({
+              id: q.user_id,
+              name: q.user?.full_name || q.user?.nickname || q.partner_names?.[0] || 'Player',
+              avatar: (q.user?.avatar_url as any) || 'alex',
+            }));
+
+            const isUserHost = Boolean(
+              (userProfile.id && dbSession.host_id === userProfile.id) ||
+              (userProfile.name && dbSession.host_id === userProfile.name)
+            );
+            const resolvedHostName = isUserHost
+              ? userProfile.name
+              : (dbSession.host?.full_name || dbSession.host?.nickname || 'Match Organizer');
+            const resolvedHostAvatar = (dbSession.host?.avatar_url as any) || userProfile.avatarId || 'alex';
+
+            setGames((prev) =>
+              prev.map((g) => {
+                const isMatch =
+                  g.id === dbSession.id ||
+                  g.sessionId === dbSession.id ||
+                  (dbSession.invite_code && g.inviteCode && g.inviteCode.toUpperCase() === dbSession.invite_code.toUpperCase());
+                if (!isMatch) return g;
+
+                const membersMap = new Map<string, { id?: string; name: string; avatar: any }>();
+                membersMap.set(dbSession.host_id || 'organizer', {
+                  id: dbSession.host_id || 'organizer',
+                  name: resolvedHostName,
+                  avatar: resolvedHostAvatar,
+                });
+                (g.members || []).forEach((m) => membersMap.set(m.id || m.name, m));
+                queueMembers.forEach((m: any) => membersMap.set(m.id || m.name, m));
+                const allMembers = Array.from(membersMap.values());
+                const spotsJoined = Math.min(
+                  g.spotsTotal,
+                  Math.max(dbSession.current_players_count || 1, allMembers.length, g.spotsJoined)
+                );
+
+                return {
+                  ...g,
+                  hostName: resolvedHostName,
+                  hostAvatar: resolvedHostAvatar,
+                  hostId: dbSession.host_id || g.hostId,
+                  spotsJoined,
+                  members: allMembers,
+                };
+              })
+            );
+          }
+        } catch {}
+      }
+    },
+    [userProfile.name, userProfile.avatarId, userProfile.id]
+  );
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    let channel: any = null;
+
+    if (supabase && isSupabaseConfigured) {
+      try {
+        channel = supabase
+          .channel('sportsync-live-match-rosters')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'queues' },
+            (payload: any) => {
+              const sId = payload?.new?.session_id || payload?.old?.session_id;
+              if (sId) syncSessionRoster(sId);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'sessions' },
+            (payload: any) => {
+              const sId = payload?.new?.id || payload?.old?.id;
+              if (sId) syncSessionRoster(sId);
+            }
+          )
+          .subscribe();
+      } catch {}
+    }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'sportsync_community_games' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setGames(parsed);
+          }
+        } catch {}
+      }
+    };
+
+    const handleCustomRoster = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.game) {
+        setGames((prev) =>
+          prev.map((g) => {
+            if (
+              g.id === detail.game.id ||
+              (detail.game.sessionId && (g.sessionId === detail.game.sessionId || g.id === detail.game.sessionId)) ||
+              (detail.game.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === detail.game.inviteCode.toUpperCase())
+            ) {
+              return detail.game;
+            }
+            return g;
+          })
+        );
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', handleStorage);
+      window.addEventListener('sportsync:roster-updated', handleCustomRoster);
+    }
+
+    const interval = setInterval(() => {
+      games.forEach((g) => {
+        const targetKey = g.inviteCode || g.sessionId || (g.id && g.id.includes('-') ? g.id : undefined);
+        if (targetKey) {
+          syncSessionRoster(targetKey);
+        }
+      });
+    }, 3500);
+
+    return () => {
+      if (channel && supabase) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', handleStorage);
+        window.removeEventListener('sportsync:roster-updated', handleCustomRoster);
+      }
+      clearInterval(interval);
+    };
+  }, [games, syncSessionRoster]);
 
   // 3. Dynamic Bookings
   const [bookings, setBookings] = useState<SportSyncBookingItem[]>(() => {
@@ -1309,6 +1542,10 @@ export function useSportSyncBridge() {
             maxPlayers: gameData.playersCount,
             rotationFormat: formatStr,
             skillLevel: (gameData.skillLevel?.toLowerCase() as SkillLevel) || 'all_levels',
+            hostId: userProfile.id,
+            visibility: gameData.visibility,
+            inviteCode: gameData.inviteCode,
+            locationDetails: gameData.locationDetails,
           });
           if (createdSession?.id) {
             createdSessionId = createdSession.id;
@@ -1826,11 +2063,21 @@ export function useSportSyncBridge() {
             }
           }
 
+          if (!userDbId || userDbId.startsWith('usr_')) {
+            const { data: anyUser } = await supabase
+              .from('users')
+              .select('id')
+              .limit(1)
+              .maybeSingle();
+            if (anyUser?.id) userDbId = anyUser.id;
+          }
+
           if (userDbId) {
+            const nextSpots = targetGame.spotsJoined + 1;
             const { error: queueErr } = await supabase.from('queues').insert({
               session_id: sessionIdForDb,
               user_id: userDbId,
-              queue_number: targetGame.spotsJoined + 1,
+              queue_number: nextSpots,
               group_size: 1,
               match_format: 'doubles',
               status: 'waiting',
@@ -1838,7 +2085,6 @@ export function useSportSyncBridge() {
             });
 
             if (queueErr) {
-              // If duplicate unique constraint: player already joined in DB
               if (queueErr.code === '23505') {
                 return {
                   success: false,
@@ -1847,7 +2093,6 @@ export function useSportSyncBridge() {
                 };
               }
               console.warn('[SportSyncBridge] Supabase queue insertion error:', queueErr.message);
-              // Do not notify host if join request fails
               return {
                 success: false,
                 error: queueErr.message,
@@ -1855,10 +2100,9 @@ export function useSportSyncBridge() {
               };
             }
 
-            // Update current players count in sessions table
             await supabase
               .from('sessions')
-              .update({ current_players_count: targetGame.spotsJoined + 1 })
+              .update({ current_players_count: nextSpots, updated_at: new Date().toISOString() })
               .eq('id', sessionIdForDb);
           }
         } catch (dbErr: any) {
@@ -1895,13 +2139,16 @@ export function useSportSyncBridge() {
         } catch {}
       }
 
-      if (typeof window !== 'undefined' && (targetGame.inviteCode || targetGame.visibility === 'Invite')) {
+      if (typeof window !== 'undefined') {
         try {
           await fetch('/api/invitations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ game: updatedGame }),
           });
+        } catch {}
+        try {
+          window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
         } catch {}
       }
 
@@ -2319,6 +2566,7 @@ export function useSportSyncBridge() {
     addExternalGame,
     acceptGameInvitation,
     declineGameInvitation,
+    syncSessionRoster,
     createReservation,
     cancelReservation,
     completeOnboarding,

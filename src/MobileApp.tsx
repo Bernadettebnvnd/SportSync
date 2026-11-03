@@ -256,6 +256,25 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
   }, [initialScreen]);
 
+  useEffect(() => {
+    if (selectedGame) {
+      const match = bridge.games.find(
+        (g) =>
+          g.id === selectedGame.id ||
+          (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
+          (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
+      );
+      if (
+        match &&
+        (match.spotsJoined !== selectedGame.spotsJoined ||
+          match.members.length !== selectedGame.members.length ||
+          match.hostName !== selectedGame.hostName)
+      ) {
+        setSelectedGame(match);
+      }
+    }
+  }, [bridge.games, selectedGame]);
+
   const requireAuth = (
     title: string,
     message: string,
@@ -542,6 +561,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'create-match':
         return (
           <CreateMatchWizardScreen
+            currentUserName={bridge.userProfile.name}
+            currentUserAvatar={bridge.userProfile.avatarId}
+            currentUserId={bridge.userProfile.id}
             onClose={goBack}
             onMatchCreated={async (gameData) => {
               const newGame = await bridge.createCommunityGame(gameData);
@@ -570,7 +592,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'match-detail': {
-        const activeTargetGame = selectedGame || bridge.games[0] || null;
+        const activeTargetGame =
+          (selectedGame
+            ? bridge.games.find(
+                (g) =>
+                  g.id === selectedGame.id ||
+                  (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
+                  (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
+              ) || selectedGame
+            : bridge.games[0]) || null;
         const isHost = bridge.isGameHost(activeTargetGame);
         return (
           <MatchDetailScreen
@@ -621,7 +651,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         );
       }
       case 'match-chat': {
-        const activeChatGame = selectedGame || bridge.games[0] || null;
+        const activeChatGame =
+          (selectedGame
+            ? bridge.games.find(
+                (g) =>
+                  g.id === selectedGame.id ||
+                  (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
+                  (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
+              ) || selectedGame
+            : bridge.games[0]) || null;
         return (
           <MatchGroupChatScreen
             game={activeChatGame}

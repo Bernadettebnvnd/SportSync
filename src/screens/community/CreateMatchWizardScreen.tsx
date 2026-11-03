@@ -205,6 +205,9 @@ export async function reverseGeocodeNaga(lat: number, lng: number): Promise<stri
 }
 
 interface CreateMatchWizardScreenProps {
+  currentUserName?: string;
+  currentUserAvatar?: AvatarId;
+  currentUserId?: string;
   onClose: () => void;
   onFinish?: () => void;
   onMatchCreated: (gameData: {
@@ -227,6 +230,9 @@ interface CreateMatchWizardScreenProps {
 }
 
 export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = ({
+  currentUserName,
+  currentUserAvatar,
+  currentUserId,
   onClose,
   onFinish,
   onMatchCreated,
@@ -338,6 +344,9 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       ? 'Tomorrow'
       : customDate;
     const activeCount = parseInt(playersCountInput, 10) || playersCount;
+    const resolvedHostName = currentUserName?.trim() || 'Match Organizer';
+    const resolvedHostAvatar = currentUserAvatar || 'alex';
+    const resolvedHostId = currentUserId || 'organizer';
     const draftGame: CommunityGame = {
       id: 'game_' + inviteCode,
       sport: (sport as any) || 'Basketball',
@@ -349,8 +358,9 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       locationName: locationName.trim() || 'Naga City Venue',
       locationDetails: locationDetails.trim() || undefined,
       distance: 'Naga City • 0.5 km away',
-      hostName: 'Organizer',
-      hostAvatar: 'alex',
+      hostId: resolvedHostId,
+      hostName: resolvedHostName,
+      hostAvatar: resolvedHostAvatar,
       spotsTotal: activeCount,
       spotsJoined: 1,
       pricePerPlayer: splitCost ? pricePerPlayer : 0,
@@ -359,7 +369,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       isPublic: false,
       visibility: 'Invite',
       inviteCode,
-      members: [{ name: 'Organizer', avatar: 'alex' }],
+      members: [{ id: resolvedHostId, name: resolvedHostName, avatar: resolvedHostAvatar }],
     };
     try {
       await fetch('/api/invitations', {

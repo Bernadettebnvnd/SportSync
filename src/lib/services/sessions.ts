@@ -166,7 +166,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   try {
     let query = supabase
       .from('sessions')
-      .select('*, venue:venues(*)')
+      .select('*, venue:venues(*), host:users(*)')
       .in('status', ['active', 'upcoming']);
 
     if (venueId) {
@@ -369,7 +369,7 @@ export async function createOpenPlaySession(
     .from('sessions')
     .insert({
       venue_id: sessionData.venue_id,
-      host_id: publicUser?.id,
+      host_id: publicUser?.id || sessionData.host_id,
       title: sessionData.title,
       description: sessionData.description,
       sport: sessionData.sport,
@@ -384,8 +384,11 @@ export async function createOpenPlaySession(
       current_players_count: 0,
       rotation_format: sessionData.rotation_format,
       status: 'active',
+      visibility: sessionData.visibility || 'Public',
+      invite_code: sessionData.invite_code,
+      location_details: sessionData.location_details,
     })
-    .select()
+    .select('*, venue:venues(*), host:users(*)')
     .single();
 
   if (error) {
@@ -435,7 +438,7 @@ export async function updateOpenPlaySession(
       .from('sessions')
       .update(dbUpdates)
       .eq('id', sessionId)
-      .select()
+      .select('*, venue:venues(*), host:users(*)')
       .single();
 
     if (error) {

@@ -66,59 +66,137 @@ export async function GET(req: NextRequest) {
     return matchInvite || matchId;
   });
 
-  if (matched) {
-    return NextResponse.json({ success: true, game: matched });
-  }
-
   const supabase = getServerSupabaseClient();
   if (supabase) {
     try {
       const { data: byCode } = await supabase
         .from('sessions')
-        .select('*')
+        .select('*, venue:venues(*), host:users(*)')
         .eq('invite_code', code)
         .limit(1);
 
       let dbSession = byCode && byCode[0];
 
+      if (!dbSession && matched?.sessionId) {
+        const { data: bySessionId } = await supabase
+          .from('sessions')
+          .select('*, venue:venues(*), host:users(*)')
+          .eq('id', matched.sessionId)
+          .limit(1);
+        dbSession = bySessionId && bySessionId[0];
+      }
+
       if (!dbSession) {
         const { data: byDesc } = await supabase
           .from('sessions')
-          .select('*')
+          .select('*, venue:venues(*), host:users(*)')
           .ilike('description', `%[INVITE:${code}]%`)
           .limit(1);
         dbSession = byDesc && byDesc[0];
       }
 
       if (dbSession) {
+        let hostUser = dbSession.host;
+        if (!hostUser && dbSession.host_id) {
+          const { data: u } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', dbSession.host_id)
+            .maybeSingle();
+          if (u) hostUser = u;
+        }
+
+        const hostName =
+          hostUser?.full_name ||
+          hostUser?.nickname ||
+          matched?.hostName ||
+          'Match Organizer';
+        const hostAvatar = (hostUser?.avatar_url as any) || matched?.hostAvatar || 'alex';
+
+        const { data: queueData } = await supabase
+          .from('queues')
+          .select('*, user:users(*)')
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const queueMembers = (queueData || []).map((q: any) => ({
+          id: q.user_id,
+          name: q.user?.full_name || q.user?.nickname || q.partner_names?.[0] || 'Player',
+          avatar: (q.user?.avatar_url as any) || 'alex',
+        }));
+
+        const hostMember = {
+          id: dbSession.host_id || matched?.hostId || 'organizer',
+          name: hostName,
+          avatar: hostAvatar,
+        };
+
+        const membersMap = new Map<string, { id?: string; name: string; avatar: any }>();
+        membersMap.set(hostMember.id || hostMember.name, hostMember);
+
+        queueMembers.forEach((m: any) => {
+          const key = m.id || m.name;
+          if (!membersMap.has(key)) {
+            membersMap.set(key, m);
+          }
+        });
+
+        if (matched?.members && Array.isArray(matched.members)) {
+          matched.members.forEach((m) => {
+            const key = m.id || m.name;
+            if (!membersMap.has(key)) {
+              membersMap.set(key, m);
+            }
+          });
+        }
+
+        const allMembers = Array.from(membersMap.values());
+        const totalSpots = dbSession.max_players || matched?.spotsTotal || 10;
+        const joinedCount = Math.min(
+          totalSpots,
+          Math.max(dbSession.current_players_count || 1, allMembers.length, matched?.spotsJoined || 1)
+        );
+
         const mappedGame: CommunityGame = {
           id: dbSession.id,
           sessionId: dbSession.id,
-          sport: (dbSession.sport ? dbSession.sport.charAt(0).toUpperCase() + dbSession.sport.slice(1) : 'Pickleball') as any,
-          title: dbSession.title,
-          format: (dbSession.rotation_format || '5v5') as any,
+          sport: (dbSession.sport ? dbSession.sport.charAt(0).toUpperCase() + dbSession.sport.slice(1) : matched?.sport || 'Pickleball') as any,
+          title: dbSession.title || matched?.title || 'Community Match',
+          format: (dbSession.rotation_format || matched?.format || '5v5') as any,
           skillLevel: dbSession.skill_level === 'all_levels' ? 'Casual' : 'Competitive',
-          date: 'Upcoming',
-          time: dbSession.start_time || '18:00',
-          locationName: 'Verified Court Facility',
-          distance: '0.8 km away',
-          hostName: 'Organizer',
-          hostAvatar: 'alex',
-          spotsTotal: dbSession.max_players || 10,
-          spotsJoined: dbSession.current_players_count || 1,
-          pricePerPlayer: Math.round((dbSession.fee_cents || 0) / 100),
-          notes: dbSession.description || '',
-          isPublic: false,
-          visibility: 'Invite',
+          date: matched?.date || 'Upcoming',
+          time: matched?.time || dbSession.start_time || '18:00',
+          locationName: dbSession.venue?.name || matched?.locationName || 'Verified Court Facility',
+          locationDetails: dbSession.location_details || matched?.locationDetails || undefined,
+          distance: matched?.distance || '0.8 km away',
+          hostId: dbSession.host_id || matched?.hostId,
+          hostName,
+          hostAvatar,
+          spotsTotal: totalSpots,
+          spotsJoined: joinedCount,
+          pricePerPlayer: dbSession.fee_cents ? Math.round(dbSession.fee_cents / 100) : (matched?.pricePerPlayer || 0),
+          notes: dbSession.description || matched?.notes || '',
+          coordinates: matched?.coordinates,
+          isPublic: dbSession.visibility ? dbSession.visibility !== 'Invite' : (matched?.isPublic ?? false),
+          visibility: (dbSession.visibility as any) || matched?.visibility || 'Invite',
           inviteCode: code,
-          members: [{ name: 'Organizer', avatar: 'alex' }],
+          members: allMembers,
         };
+
         diskCache[code] = mappedGame;
         memoryStore[code] = mappedGame;
+        if (mappedGame.id) {
+          diskCache[mappedGame.id.trim().toUpperCase()] = mappedGame;
+          memoryStore[mappedGame.id.trim().toUpperCase()] = mappedGame;
+        }
         saveCache(diskCache);
         return NextResponse.json({ success: true, game: mappedGame });
       }
     } catch {}
+  }
+
+  if (matched) {
+    return NextResponse.json({ success: true, game: matched });
   }
 
   return NextResponse.json({ success: false, error: 'Invitation not found or expired' }, { status: 404 });
@@ -148,6 +226,22 @@ export async function POST(req: NextRequest) {
     }
 
     saveCache(diskCache);
+
+    const supabase = getServerSupabaseClient();
+    if (supabase) {
+      const sId = game.sessionId || (game.id && game.id.includes('-') ? game.id : undefined);
+      if (sId) {
+        try {
+          await supabase
+            .from('sessions')
+            .update({
+              current_players_count: game.spotsJoined,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sId);
+        } catch {}
+      }
+    }
 
     return NextResponse.json({ success: true, game });
   } catch (err: unknown) {

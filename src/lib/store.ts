@@ -853,6 +853,10 @@ export function useMatchiStore() {
       maxPlayers: number;
       rotationFormat: string;
       skillLevel?: SkillLevel;
+      hostId?: string;
+      visibility?: 'Public' | 'Friends' | 'Invite';
+      inviteCode?: string;
+      locationDetails?: string;
     }) => {
       try {
         const newSession = await createDbOpenPlaySession({
@@ -870,6 +874,10 @@ export function useMatchiStore() {
           max_players: data.maxPlayers,
           rotation_format: data.rotationFormat,
           status: 'active',
+          host_id: data.hostId || globalState.currentUser.id,
+          visibility: data.visibility || 'Public',
+          invite_code: data.inviteCode,
+          location_details: data.locationDetails,
         });
 
         if (newSession) {

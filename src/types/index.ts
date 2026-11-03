@@ -260,6 +260,13 @@ export interface Session {
   venue_id: string;
   venue?: Venue;
   host_id?: string;
+  host?: {
+    id: string;
+    full_name: string;
+    nickname?: string;
+    avatar_url?: string;
+    role?: string;
+  };
   title: string;
   description: string;
   sport: SportType;
