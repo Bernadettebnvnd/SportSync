@@ -25,6 +25,67 @@ export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<s
   return { ids, titles };
 }
 
+/**
+ * Detects mock template sessions so they can be purged and never shown in the UI.
+ */
+export function isMockSession(session: Partial<Session> | null | undefined): boolean {
+  if (!session) return true;
+
+  const mockIds = new Set([
+    'd0000000-0000-0000-0000-000000000001',
+    'd0000000-0000-0000-0000-000000000002',
+    'sess_test_01',
+    'sess_test_02',
+    'cg1',
+    'cg2',
+    'cg3',
+    'cg4',
+    'cg5',
+    'cg6',
+    'cg7',
+    'cg8',
+  ]);
+
+  if (session.id) {
+    if (mockIds.has(session.id)) return true;
+    if (
+      session.id.startsWith('sess_test_') ||
+      session.id.startsWith('cg') ||
+      session.id.startsWith('mock_')
+    ) {
+      return true;
+    }
+  }
+
+  const titleLower = (session.title || '').toLowerCase().trim();
+  const mockTitlePatterns = [
+    'friday night smash',
+    'dinking & rally',
+    'open play queuing',
+    'pickleball social rotation',
+    'doubles open play',
+    'doubles social',
+    '5v5: sunset game',
+    'sunday morning league prep',
+    'clay doubles friendly',
+    '3v3 half-court runs',
+    'casual friday night 5v5',
+  ];
+  if (mockTitlePatterns.some((pattern) => titleLower.includes(pattern))) {
+    return true;
+  }
+
+  const rotationLower = (session.rotation_format || '').toLowerCase().trim();
+  if (
+    rotationLower.includes('sudden death') ||
+    rotationLower.includes('win by 2')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function markSessionDeleted(sessionId: string, sessionTitle?: string) {
   if (typeof window === 'undefined') return;
   try {
@@ -66,7 +127,7 @@ function getLocalStoredSessions(): Session[] {
     const deduped: Session[] = [];
 
     parsed.forEach((s) => {
-      if (!s || !s.id) return;
+      if (!s || !s.id || isMockSession(s)) return;
       const normTitle = s.title ? s.title.trim().toLowerCase() : '';
       if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !seenIds.has(s.id)) {
         seenIds.add(s.id);
@@ -75,6 +136,10 @@ function getLocalStoredSessions(): Session[] {
       }
     });
 
+    if (deduped.length !== parsed.length) {
+      localStorage.setItem('sportsync_user_sessions', JSON.stringify(deduped));
+    }
+
     return deduped;
   } catch {
     return [];
@@ -82,7 +147,7 @@ function getLocalStoredSessions(): Session[] {
 }
 
 function saveLocalStoredSession(session: Session) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || isMockSession(session)) return;
   try {
     const { ids, titles } = getDeletedSessionTombstones();
     const normTitle = session.title ? session.title.trim().toLowerCase() : '';
@@ -111,7 +176,15 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
 
   const isSessionNotDeleted = (s: Session) =>
-    !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled';
+    !deletedIds.has(s.id) &&
+    !deletedTitles.has(s.title.trim().toLowerCase()) &&
+    s.status !== 'cancelled' &&
+    !isMockSession(s);
+
+  // Trigger background server cleanup of legacy mock sessions from DB
+  if (typeof window !== 'undefined') {
+    fetch('/api/sessions/clean-mock', { method: 'POST' }).catch(() => {});
+  }
 
   if (!supabase || !isSupabaseConfigured) {
     const filtered = localSessions.filter(isSessionNotDeleted);
@@ -136,13 +209,26 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
       return venueId ? filtered.filter((s) => s.venue_id === venueId) : filtered;
     }
 
+    // Proactively clean mock rows from Supabase if returned
+    const mockDbSessionIds = ((data as Session[]) || [])
+      .filter((s) => isMockSession(s))
+      .map((s) => s.id);
+    if (mockDbSessionIds.length > 0) {
+      Promise.resolve(
+        supabase
+          .from('sessions')
+          .delete()
+          .in('id', mockDbSessionIds)
+      ).catch(() => {});
+    }
+
     const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);
     const seenIds = new Set<string>();
     const seenTitles = new Set<string>();
     const combined: Session[] = [];
 
     dbSessions.forEach((s) => {
-      if (!s || !s.id) return;
+      if (!s || !s.id || isMockSession(s)) return;
       const normTitle = s.title ? s.title.trim().toLowerCase() : '';
       if (!seenIds.has(s.id)) {
         seenIds.add(s.id);
@@ -152,7 +238,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     });
 
     localSessions.forEach((ls) => {
-      if (!ls || !ls.id) return;
+      if (!ls || !ls.id || isMockSession(ls)) return;
       const normTitle = ls.title ? ls.title.trim().toLowerCase() : '';
       if (isSessionNotDeleted(ls) && !seenIds.has(ls.id) && (!normTitle || !seenTitles.has(normTitle))) {
         if (!venueId || ls.venue_id === venueId) {

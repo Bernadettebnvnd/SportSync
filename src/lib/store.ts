@@ -31,6 +31,7 @@ import {
   createOpenPlaySession as createDbOpenPlaySession,
   updateOpenPlaySession as updateDbOpenPlaySession,
   deleteOpenPlaySession as deleteDbOpenPlaySession,
+  isMockSession,
 } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
 import { getSportDisplayName } from './utils';
@@ -223,7 +224,7 @@ async function initializeStore() {
     const sessions = await getOpenPlaySessions();
     const seenSessionIds = new Set<string>();
     globalState.sessions = sessions.filter((s) => {
-      if (!s || !s.id || seenSessionIds.has(s.id)) return false;
+      if (!s || !s.id || seenSessionIds.has(s.id) || isMockSession(s)) return false;
       seenSessionIds.add(s.id);
       return true;
     });

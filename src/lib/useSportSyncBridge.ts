@@ -14,7 +14,7 @@ import {
 import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
-import { markSessionDeleted } from './services/sessions';
+import { markSessionDeleted, isMockSession } from './services/sessions';
 import { addNotification } from './notifications';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
@@ -203,13 +203,45 @@ export function getLevelTitle(level: number): string {
 }
 
 /**
- * Detects mock template games (from earlier London prototypes) so they can be purged.
+ * Detects mock template games (from earlier prototypes or seed templates) so they can be purged.
  */
 export function isMockGame(game: Partial<CommunityGame> | null | undefined): boolean {
   if (!game) return true;
 
-  const mockIds = new Set(['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8']);
-  if (game.id && mockIds.has(game.id)) return true;
+  const mockIds = new Set([
+    'cg1',
+    'cg2',
+    'cg3',
+    'cg4',
+    'cg5',
+    'cg6',
+    'cg7',
+    'cg8',
+    'd0000000-0000-0000-0000-000000000001',
+    'd0000000-0000-0000-0000-000000000002',
+    'sess_test_01',
+    'sess_test_02',
+  ]);
+  if (game.id) {
+    if (mockIds.has(game.id)) return true;
+    if (
+      game.id.startsWith('sess_test_') ||
+      game.id.startsWith('cg') ||
+      game.id.startsWith('mock_')
+    ) {
+      return true;
+    }
+  }
+  if (game.sessionId) {
+    if (mockIds.has(game.sessionId)) return true;
+    if (
+      game.sessionId.startsWith('sess_test_') ||
+      game.sessionId.startsWith('cg') ||
+      game.sessionId.startsWith('mock_')
+    ) {
+      return true;
+    }
+  }
 
   const mockTitles = [
     '5v5: sunset game',
@@ -217,9 +249,23 @@ export function isMockGame(game: Partial<CommunityGame> | null | undefined): boo
     'clay doubles friendly',
     '3v3 half-court runs',
     'casual friday night 5v5',
+    'friday night smash',
+    'dinking & rally',
+    'open play queuing',
+    'pickleball social rotation',
+    'doubles open play',
+    'doubles social',
   ];
   const titleLower = (game.title || '').toLowerCase().trim();
   if (mockTitles.some((t) => titleLower.includes(t))) return true;
+
+  const formatLower = (game.format || '').toLowerCase().trim();
+  if (
+    formatLower.includes('sudden death') ||
+    formatLower.includes('win by 2')
+  ) {
+    return true;
+  }
 
   const mockLocations = [
     'the pitchway',
@@ -545,6 +591,9 @@ export function useSportSyncBridge() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const cleanGames = games.filter((g) => !isMockGame(g));
+      if (cleanGames.length !== games.length) {
+        setGames(cleanGames);
+      }
       localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
     }
   }, [games]);
@@ -564,7 +613,7 @@ export function useSportSyncBridge() {
 
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
-          if (!s || !s.id) return;
+          if (!s || !s.id || isMockSession(s)) return;
           // If session was permanently deleted or cancelled, do NOT re-add to games
           if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled') {
             return;
@@ -585,7 +634,7 @@ export function useSportSyncBridge() {
           const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
           const shortFormat = getShortFormat(s.rotation_format, s.sport);
 
-          added.push({
+          const candidateGame: CommunityGame = {
             id: s.id,
             sessionId: s.id,
             sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as any,
@@ -605,7 +654,10 @@ export function useSportSyncBridge() {
             notes: s.description || 'Verified SportSync session',
             isPublic: true,
             members: [{ name: isUserHost ? userProfile.name : 'Host', avatar: 'alex' }],
-          });
+          };
+
+          if (isMockGame(candidateGame)) return;
+          added.push(candidateGame);
         });
         return added.length > 0 ? [...added, ...cleanPrev] : cleanPrev;
       });
