@@ -1305,7 +1305,7 @@ export function useSportSyncBridge() {
         pricePerPlayer: gameData.pricePerPlayer,
         notes: gameData.notes || 'Organized via SportSync Matchmaking',
         isPublic: true,
-        members: [{ name: userName, avatar: userAvatar }],
+        members: [{ name: userName, avatar: userAvatar, id: userProfile.id }],
         coordinates: gameData.coordinates,
       };
 
@@ -1682,9 +1682,24 @@ export function useSportSyncBridge() {
 
       // 3. Save the join operation in Supabase before generating host notification
       const supabase = getSupabaseClient();
-      const sessionIdForDb =
+      let sessionIdForDb =
         targetGame.sessionId ||
         (targetGame.id.startsWith('session_') || targetGame.id.includes('-') ? targetGame.id : undefined);
+
+      if (supabase && isSupabaseConfigured && !sessionIdForDb) {
+        try {
+          const { data: dbSession } = await supabase
+            .from('sessions')
+            .select('id')
+            .ilike('title', targetGame.title.trim())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (dbSession?.id) {
+            sessionIdForDb = dbSession.id;
+          }
+        } catch {}
+      }
 
       if (supabase && isSupabaseConfigured && sessionIdForDb) {
         try {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   Heart,
@@ -44,6 +44,8 @@ interface MatchDetailScreenProps {
     coordinates?: [number, number];
   }) => Promise<void> | void;
   onDeleteGame?: () => Promise<void> | void;
+  currentUserName?: string;
+  currentUserId?: string;
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
@@ -54,6 +56,8 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   isHost = false,
   onEditGame,
   onDeleteGame,
+  currentUserName,
+  currentUserId,
 }) => {
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -61,9 +65,30 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const isAlreadyMember = useMemo(() => {
+    if (!game || !Array.isArray(game.members)) return false;
+    const name = currentUserName?.trim().toLowerCase();
+    const id = currentUserId;
+    return game.members.some(
+      (m) =>
+        (name && m.name?.trim().toLowerCase() === name) ||
+        (id && m.id && m.id === id)
+    );
+  }, [game, currentUserName, currentUserId]);
+
+  const effectiveIsJoined = isJoined || isAlreadyMember;
+
   const handleJoinClick = async () => {
-    setIsJoined(!isJoined);
-    await onJoin();
+    if (effectiveIsJoined) {
+      if (onOpenChat) onOpenChat();
+      return;
+    }
+    try {
+      await onJoin();
+      setIsJoined(true);
+    } catch (err: any) {
+      console.warn('[MatchDetailScreen] Join click error:', err);
+    }
   };
 
   const handleSaveEdits = async (updatedData: any) => {
@@ -378,12 +403,12 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           </div>
         ) : (
           <Button
-            variant={isJoined ? 'secondary' : 'primary'}
+            variant={effectiveIsJoined ? 'secondary' : 'primary'}
             size="lg"
             onClick={handleJoinClick}
             className="flex-1 h-14 font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)]"
           >
-            {isJoined ? 'Joined • Open Team Chat' : 'Join Match Now'}
+            {effectiveIsJoined ? 'Joined • Open Team Chat' : 'Join Match Now'}
           </Button>
         )}
       </div>

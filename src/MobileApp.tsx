@@ -482,6 +482,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             game={activeTargetGame}
             onBack={goBack}
             isHost={isHost}
+            currentUserName={bridge.userProfile.name}
+            currentUserId={bridge.userProfile.id}
             onEditGame={async (updatedData) => {
               if (!activeTargetGame) return;
               const res = await bridge.updateCommunityGame(activeTargetGame.id, updatedData);
