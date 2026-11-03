@@ -3,6 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
+import { syncSupabaseClientSession } from '@/lib/services/auth';
 import { SportType, MatchFormat, SkillLevel } from '@/types';
 import { defaultGeocodingProvider } from '@/lib/maps/provider';
 import { getPlayerInitials } from '@/lib/utils';
@@ -1253,6 +1254,11 @@ function OnboardingContent() {
                   if (!res.ok) {
                     throw new Error(data.error || 'Registration failed.');
                   }
+                  // Establish browser Supabase session so subsequent facility & court creation runs with a valid Supabase user
+                  await syncSupabaseClientSession(data.session, {
+                    email: ownerEmail.trim().toLowerCase(),
+                    password: ownerPassword.trim(),
+                  });
                   if (data.user) {
                     setAuthenticatedUser({
                       id: data.user.id,

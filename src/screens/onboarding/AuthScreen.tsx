@@ -3,6 +3,7 @@ import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertC
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
+import { syncSupabaseClientSession } from '../../lib/services/auth';
 import { useMatchiStore } from '../../lib/store';
 
 export type AuthRole = 'player' | 'facility_owner';
@@ -114,6 +115,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (!res.ok) {
         throw new Error(data.error || (isSignUp ? 'Registration failed.' : 'Login failed. Please check credentials.'));
       }
+
+      // Synchronize browser Supabase client with the authenticated user session
+      await syncSupabaseClientSession(data.session, { email: trimmedEmail, password: cleanPassword });
 
       // Update store user state with real authenticated session
       if (data.user) {

@@ -278,10 +278,38 @@ export async function createVenueWithCourts(
   }
 
   try {
-    const { data: userData } = await supabase.auth.getUser();
-    const rawOwnerId = userData?.user?.id || formattedVenue.owner_id;
-    // UUID verification to avoid postgres foreign key syntax error
-    const ownerId = isValidUuid(rawOwnerId) ? rawOwnerId : null;
+    let { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user) {
+        userData = { user: sessionData.session.user };
+      }
+    }
+
+    let publicUserId: string | null = null;
+    if (userData?.user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id')
+        .or(`auth_id.eq.${userData.user.id},email.eq.${userData.user.email}`)
+        .maybeSingle();
+      if (profile?.id) {
+        publicUserId = profile.id;
+      }
+    }
+
+    if (!publicUserId && formattedVenue.owner_id && isValidUuid(formattedVenue.owner_id)) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id')
+        .or(`id.eq.${formattedVenue.owner_id},auth_id.eq.${formattedVenue.owner_id}`)
+        .maybeSingle();
+      if (profile?.id) {
+        publicUserId = profile.id;
+      }
+    }
+
+    const ownerId = publicUserId || (isValidUuid(formattedVenue.owner_id) ? formattedVenue.owner_id : null);
 
     // Insert to Supabase venues table
     const { data: newVenue, error: venueError } = await supabase

@@ -301,3 +301,47 @@ export async function resetOnboardingForTesting(): Promise<boolean> {
 
   return true;
 }
+
+/**
+ * Synchronize the browser Supabase client with the authenticated user's session.
+ * Ensures client-side calls to Supabase (like createVenueWithCourts) run with a valid Supabase user session.
+ */
+export async function syncSupabaseClientSession(
+  session?: { access_token?: string; refresh_token?: string } | null,
+  credentials?: { email?: string; password?: string }
+): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  if (!supabase || !isSupabaseConfigured) return false;
+
+  // 1. Try to set session directly from tokens
+  if (session?.access_token) {
+    try {
+      const { error } = await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token || '',
+      });
+      if (!error) return true;
+      console.warn('[Auth] supabase.auth.setSession error:', error.message);
+    } catch (e) {
+      console.warn('[Auth] Exception during setSession:', e);
+    }
+  }
+
+  // 2. Fallback to client-side sign-in if credentials provided
+  if (credentials?.email && credentials?.password) {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: credentials.email.trim().toLowerCase(),
+        password: credentials.password.trim(),
+      });
+      if (!error && data?.session) return true;
+      if (error) {
+        console.warn('[Auth] Direct client signInWithPassword notice:', error.message);
+      }
+    } catch (e) {
+      console.warn('[Auth] Exception during client signInWithPassword:', e);
+    }
+  }
+
+  return false;
+}

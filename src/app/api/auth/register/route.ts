@@ -54,6 +54,7 @@ export async function POST(request: Request) {
           fullName: result.user.full_name,
         },
         token: result.token,
+        session: result.session || null,
       },
       { status: 201 }
     );
@@ -67,14 +68,25 @@ export async function POST(request: Request) {
       maxAge: 7 * 24 * 60 * 60, // 7 days
     });
 
-    // Also set sb-access-token cookie for middleware compatibility
-    response.cookies.set('sb-access-token', result.token, {
+    // Also set sb-access-token cookie with real Supabase access token if available, or session token
+    const sbAccessToken = result.session?.access_token || result.token;
+    response.cookies.set('sb-access-token', sbAccessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: result.session?.expires_in || 7 * 24 * 60 * 60,
     });
+
+    if (result.session?.refresh_token) {
+      response.cookies.set('sb-refresh-token', result.session.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 30 * 24 * 60 * 60,
+      });
+    }
 
     return response;
   } catch (err: unknown) {

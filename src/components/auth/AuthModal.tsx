@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { syncSupabaseClientSession } from '@/lib/services/auth';
 import { useMatchiStore } from '@/lib/store';
 import { SportType } from '@/types';
 import {
@@ -102,6 +103,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       if (!res.ok) {
         throw new Error(data.error || (mode === 'signup' ? 'Registration failed.' : 'Login failed. Please check credentials.'));
       }
+
+      // Synchronize browser Supabase client with the authenticated user session
+      await syncSupabaseClientSession(data.session, { email: trimmedEmail, password: cleanPassword });
 
       if (data.user) {
         const isFacility = role === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';

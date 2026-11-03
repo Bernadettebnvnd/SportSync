@@ -20,6 +20,21 @@ export interface SanitizedUser {
 
 export type StoredUser = SanitizedUser;
 
+export interface ServerAuthSession {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number;
+  token_type?: string;
+  user?: any;
+}
+
+export interface ServerAuthResult {
+  user: SanitizedUser;
+  token: string;
+  session?: ServerAuthSession | null;
+}
+
 // Generate simple HMAC session token
 const SESSION_SECRET = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
 
@@ -130,7 +145,7 @@ export async function serverRegister(data: {
   fullName: string;
   role?: string;
   city?: string;
-}): Promise<{ user: SanitizedUser; token: string }> {
+}): Promise<ServerAuthResult> {
   const normalizedEmail = data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
   const registrationCity = data.city ? data.city.trim() : '';
@@ -165,7 +180,7 @@ export async function serverRegister(data: {
     });
 
     const token = createSessionToken(sanitized);
-    return { user: sanitized, token };
+    return { user: sanitized, token, session: null };
   }
 
   // 2. Production Supabase Registration
@@ -289,14 +304,40 @@ export async function serverRegister(data: {
     created_at: supaCreatedAt,
   };
 
+  // 3. Establish active Supabase session tokens for the client
+  let supabaseSession: ServerAuthSession | null = null;
+  const anonClient = createServerClient();
+  if (anonClient) {
+    try {
+      const { data: signInData, error: signInErr } = await anonClient.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: data.password.trim(),
+      });
+      if (signInData?.session) {
+        supabaseSession = {
+          access_token: signInData.session.access_token,
+          refresh_token: signInData.session.refresh_token,
+          expires_in: signInData.session.expires_in,
+          expires_at: signInData.session.expires_at,
+          token_type: signInData.session.token_type,
+          user: signInData.session.user,
+        };
+      } else if (signInErr) {
+        console.warn('[ServerAuth] Post-registration signIn notice:', signInErr.message);
+      }
+    } catch (sessionErr) {
+      console.warn('[ServerAuth] Error obtaining Supabase session after registration:', sessionErr);
+    }
+  }
+
   const token = createSessionToken(sanitized);
-  return { user: sanitized, token };
+  return { user: sanitized, token, session: supabaseSession };
 }
 
 export async function serverLogin(data: {
   email: string;
   password: string;
-}): Promise<{ user: SanitizedUser; token: string }> {
+}): Promise<ServerAuthResult> {
   const normalizedEmail = data.email.trim().toLowerCase();
   const cleanPassword = (data.password || '').trim();
 
@@ -319,7 +360,7 @@ export async function serverLogin(data: {
         throw new Error('Invalid email or password. Please verify your credentials (or use demo password "password123").');
       }
       const token = createSessionToken(record.user);
-      return { user: record.user, token };
+      return { user: record.user, token, session: null };
     }
 
     // Auto-provision local developer account for testing if not yet explicitly registered
@@ -347,7 +388,7 @@ export async function serverLogin(data: {
     });
 
     const token = createSessionToken(autoUser);
-    return { user: autoUser, token };
+    return { user: autoUser, token, session: null };
   }
 
   // 2. Production Supabase Login
@@ -487,8 +528,17 @@ export async function serverLogin(data: {
     created_at: supaData.user.created_at,
   };
 
+  const supabaseSession: ServerAuthSession | null = supaData?.session ? {
+    access_token: supaData.session.access_token,
+    refresh_token: supaData.session.refresh_token,
+    expires_in: supaData.session.expires_in,
+    expires_at: supaData.session.expires_at,
+    token_type: supaData.session.token_type,
+    user: supaData.session.user,
+  } : null;
+
   const token = createSessionToken(sanitized);
-  return { user: sanitized, token };
+  return { user: sanitized, token, session: supabaseSession };
 }
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
