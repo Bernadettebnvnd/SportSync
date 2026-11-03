@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, MapPin, List, Map as MapIcon, SlidersHorizontal, Zap } from 'lucide-react';
+import { ArrowLeft, MapPin, Zap } from 'lucide-react';
 import { SearchBar } from '../../design-system/components/SearchBar';
 import { MatchCard } from '../../design-system/components/MatchCard';
 import { CommunityGame } from '../../mock/types';
@@ -16,7 +16,6 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   onBack,
   onSelectGame,
 }) => {
-  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
 
@@ -62,11 +61,12 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
-      {/* 1. Header with View Toggle (Map / List) */}
+      {/* 1. Header (List-only community feed) */}
       <div className="px-5 pt-4 pb-2 flex items-center justify-between">
         <button
           onClick={onBack}
-          className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
+          className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+          aria-label="Back"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -75,25 +75,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
           Find Pickup Games
         </h1>
 
-        {/* List / Map Toggle */}
-        <div className="flex bg-[#1C241E] p-1 rounded-full border border-white/10">
-          <button
-            onClick={() => setViewMode('list')}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-              viewMode === 'list' ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'text-[#A5B0A6]'
-            }`}
-          >
-            <List className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('map')}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-              viewMode === 'map' ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'text-[#A5B0A6]'
-            }`}
-          >
-            <MapIcon className="w-4 h-4" />
-          </button>
-        </div>
+        <div className="w-10 h-10" aria-hidden="true" />
       </div>
 
       {/* 2. Search & Filters */}
@@ -101,7 +83,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Filter by sport, location..."
+          placeholder="Filter by sport, location in Naga City..."
         />
 
         {/* Urgency & Timing Filter Pills */}
@@ -140,60 +122,31 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         </div>
       </div>
 
-      {/* 3. Main Viewport: List or Map */}
+      {/* 3. Main Games List */}
       <div className="px-5 pt-3">
-        {viewMode === 'list' ? (
-          <div className="space-y-3">
-            {filteredGames.length > 0 ? (
-              filteredGames.map((game) => (
-                <MatchCard
-                  key={game.id}
-                  game={game}
-                  onClick={() => onSelectGame(game)}
-                />
-              ))
-            ) : (
-              <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#1C241E] text-[#C8FF2E] flex items-center justify-center mx-auto">
-                  <MapPin className="w-6 h-6" />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-bold text-[#F4F7F0]">No pickup games found</h3>
-                  <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                    No community matches are currently scheduled matching your filters.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Map View with Interactive Pins */
-          <div className="relative w-full h-[520px] rounded-3xl overflow-hidden border border-white/10 bg-[#1C241E]">
-            <img
-              src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=800&q=80"
-              alt="Map Background"
-              className="w-full h-full object-cover filter brightness-50"
-            />
-            {/* Interactive Pins on Map */}
-            {filteredGames.slice(0, 4).map((game, idx) => (
-              <button
+        <div className="space-y-3">
+          {filteredGames.length > 0 ? (
+            filteredGames.map((game) => (
+              <MatchCard
                 key={game.id}
+                game={game}
                 onClick={() => onSelectGame(game)}
-                style={{
-                  top: `${25 + idx * 20}%`,
-                  left: `${20 + (idx % 2) * 45}%`,
-                }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full bg-[#0B0F0C]/90 backdrop-blur-md border border-[#C8FF2E] shadow-xl flex items-center gap-1.5 press-scale group hover:scale-105"
-              >
-                <span className="w-2 h-2 rounded-full bg-[#FF8FC7] animate-live-pulse" />
-                <span className="text-xs font-bold text-[#F4F7F0]">{game.format}</span>
-                <span className="text-[10px] text-[#C8FF2E] font-semibold">
-                  {game.spotsTotal - game.spotsJoined} left
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+              />
+            ))
+          ) : (
+            <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#1C241E] text-[#C8FF2E] flex items-center justify-center mx-auto">
+                <MapPin className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-[#F4F7F0]">No pickup games in Naga City right now</h3>
+                <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
+                  No community matches currently scheduled in Naga City matching your filters. Host a game or check back soon!
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

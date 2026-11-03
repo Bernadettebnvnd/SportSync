@@ -1883,7 +1883,7 @@ export default function OrganizerDashboard() {
                       required
                       value={editAddress}
                       onChange={(e) => setEditAddress(e.target.value)}
-                      placeholder="e.g. 32nd St cor 9th Ave, Bonifacio Global City"
+                      placeholder="e.g. Magsaysay Ave, Concepcion Pequeña"
                       className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     />
                   </div>
@@ -1896,7 +1896,7 @@ export default function OrganizerDashboard() {
                         required
                         value={editCity}
                         onChange={(e) => setEditCity(e.target.value)}
-                        placeholder="e.g. Taguig City"
+                        placeholder="e.g. Naga City"
                         className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                       />
                     </div>

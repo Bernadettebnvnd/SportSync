@@ -43,7 +43,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? ['Basketball', 'Pickleball']);
   const [customSportInput, setCustomSportInput] = useState<string>(initialValues?.customSportInput ?? '');
   const [skillLevel, setSkillLevel] = useState(initialValues?.skillLevel ?? 2); // 0: Beginner, 1: Casual, 2: Intermediate, 3: Competitive
-  const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Metro Manila');
+  const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Naga City');
   const [availability, setAvailability] = useState(initialValues?.availability ?? 'Weekday Evenings & Weekends');
 
   const handleBack = () => {
@@ -74,14 +74,6 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 
   const locationOptions = [
     'Naga City',
-    'Metro Manila',
-    'Taguig / BGC',
-    'Makati',
-    'Pasig / Ortigas',
-    'Quezon City',
-    'Mandaluyong',
-    'Cebu City',
-    'Davao City',
   ];
 
   const toggleSport = (sport: string) => {
@@ -264,23 +256,26 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 
         {/* 4. Preferred Playing Location */}
         <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-          <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
-            4. Preferred Playing Location
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+              4. Playing Location (Pilot Market)
+            </label>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
+              Pilot Market
+            </span>
+          </div>
           <div className="relative flex items-center">
             <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
-            <select
-              value={preferredArea}
-              onChange={(e) => setPreferredArea(e.target.value)}
-              className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E] cursor-pointer"
-            >
-              {locationOptions.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
-              ))}
-            </select>
+            <input
+              type="text"
+              readOnly
+              value="Naga City, Camarines Sur"
+              className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none cursor-default font-semibold"
+            />
           </div>
+          <p className="text-[11px] text-[#A5B0A6]">
+            SportSync is currently exclusively live for players across Naga City, Camarines Sur.
+          </p>
         </div>
 
         {/* 5. General Availability */}

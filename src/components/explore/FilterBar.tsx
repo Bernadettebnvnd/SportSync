@@ -46,7 +46,7 @@ export function FilterBar({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search city, province, or court name..."
+            placeholder="Search courts in Naga City..."
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-white/10 bg-[#141A15] text-xs sm:text-sm text-[#F4F7F0] placeholder-[#6F7B71] focus:outline-none focus:border-[#C8FF2E] transition-all"
           />
         </div>

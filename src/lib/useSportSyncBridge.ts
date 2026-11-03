@@ -11,7 +11,7 @@ import {
   AvatarId,
   SportType,
 } from '../mock/types';
-import { SportType as DbSportType, SkillLevel, MatchFormat } from '../types';
+import { SportType as DbSportType, SkillLevel } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
@@ -204,15 +204,31 @@ export function getLevelTitle(level: number): string {
 }
 
 /**
- * Detects mock template games (from earlier London prototypes) so they can be purged.
+ * Detects mock template games and legacy prototype records so they can be purged.
  */
 export function isMockGame(game: Partial<CommunityGame> | null | undefined): boolean {
   if (!game) return true;
 
-  const mockIds = new Set(['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8']);
-  if (game.id && mockIds.has(game.id)) return true;
+  const mockIds = new Set([
+    'cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8',
+    'sess_test_01', 'sess_test_02', 'game_test_01', 'game_test_02',
+  ]);
+  if (game.id && (mockIds.has(game.id) || game.id.startsWith('sess_test_') || game.id.startsWith('session_test_'))) {
+    return true;
+  }
+  if (game.sessionId && (mockIds.has(game.sessionId) || game.sessionId.startsWith('sess_test_') || game.sessionId.startsWith('session_test_'))) {
+    return true;
+  }
 
   const mockTitles = [
+    'friday night smash',
+    'open play queuing',
+    'dinking & rally',
+    'pickleball social rotation',
+    'pickleball doubles social',
+    'king of court',
+    'king of the court',
+    'rally rotation',
     '5v5: sunset game',
     'sunday morning league prep',
     'clay doubles friendly',
@@ -223,6 +239,17 @@ export function isMockGame(game: Partial<CommunityGame> | null | undefined): boo
   if (mockTitles.some((t) => titleLower.includes(t))) return true;
 
   const mockLocations = [
+    'the upper deck',
+    'the upper deck sports center',
+    'pickleball playground qc',
+    'pickleball playground',
+    'smash zone bgc',
+    'padel club manila',
+    'bgc turf',
+    'kerry sports',
+    'makati sports club',
+    'spike zone',
+    'star billiards',
     'the pitchway',
     'victoria park pitch',
     'clay court club kensington',
@@ -383,12 +410,7 @@ export function useSportSyncBridge() {
               if (Array.isArray(sp)) storedSports = sp.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
             } catch {}
           }
-          const hasStaleDefaultCity = parsed.city === 'Metro Manila' || parsed.city === 'Current Location' || !parsed.city;
-          const cleanStoredCity = storedCity && storedCity !== 'Metro Manila' && storedCity !== 'Current Location' ? storedCity : null;
-          const cleanUserCity = store.currentUser.city && store.currentUser.city !== 'Metro Manila' && store.currentUser.city !== 'Current Location' ? store.currentUser.city : null;
-          const finalCity = cleanStoredCity
-            ? cleanStoredCity
-            : (cleanUserCity ? cleanUserCity : (hasStaleDefaultCity ? (cleanStoredCity || cleanUserCity || 'Naga City') : parsed.city));
+          const finalCity = 'Naga City';
 
           const hasStaleDefaultSports = parsed.preferredSports?.length === 2 &&
             parsed.preferredSports.includes('Pickleball') &&
@@ -432,7 +454,7 @@ export function useSportSyncBridge() {
       levelTitle: getLevelTitle(1),
       xp: 0,
       xpNextLevel: 1000,
-      city: (store.currentUser.city && store.currentUser.city !== 'Current Location' && store.currentUser.city !== 'Metro Manila')
+      city: (store.currentUser.city && store.currentUser.city.toLowerCase().includes('naga'))
         ? store.currentUser.city
         : 'Naga City',
       primarySport: store.currentUser.primary_sport || 'football',
@@ -490,7 +512,7 @@ export function useSportSyncBridge() {
           ? `@${store.currentUser.nickname.toLowerCase()}`
           : (store.currentUser.email ? `@${store.currentUser.email.split('@')[0]}` : prev.username),
         role: store.currentUser.role || prev.role,
-        city: store.currentUser.city || prev.city || 'Metro Manila',
+        city: 'Naga City',
         primarySport: store.currentUser.primary_sport || prev.primarySport || 'pickleball',
         preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
           ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
@@ -587,6 +609,10 @@ export function useSportSyncBridge() {
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
           if (!s || !s.id) return;
+          const venue = store.venues.find((v) => v.id === s.venue_id);
+          if (isMockGame({ id: s.id, sessionId: s.id, title: s.title, locationName: venue?.name })) {
+            return;
+          }
           // If session was permanently deleted, cancelled, or expired, do NOT re-add to games
           if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled' || isSessionExpired(s)) {
             return;
@@ -599,7 +625,6 @@ export function useSportSyncBridge() {
           seenSessionIds.add(s.id);
           seenTitles.add(normTitle);
 
-          const venue = store.venues.find((v) => v.id === s.venue_id);
           const isUserHost = Boolean(
             (userProfile.id && s.host_id === userProfile.id) ||
             (userProfile.name && s.host_id === userProfile.name)
@@ -736,7 +761,12 @@ export function useSportSyncBridge() {
       return 'Pickleball';
     };
 
-    const sourceVenues = store.venues || [];
+    const sourceVenues = (store.venues || []).filter((v: any) => {
+      const c = (v.city || '').toLowerCase();
+      const a = (v.address || '').toLowerCase();
+      const n = (v.name || '').toLowerCase();
+      return c.includes('naga') || a.includes('naga') || a.includes('camarines') || n.includes('naga');
+    });
 
     const adaptedDbVenues: Venue[] = sourceVenues.map((dbV) => {
       const primaryCourt = dbV.courts?.[0];
@@ -769,49 +799,26 @@ export function useSportSyncBridge() {
         });
       }
 
-      // Dynamic realistic distance in km based on user city and venue coordinates
-      const userCityLower = (store.currentUser.city || '').toLowerCase();
-      const vCityLower = (dbV.city || '').toLowerCase();
+      // Dynamic realistic distance in km within Naga City pilot market
       const vAddrLower = (dbV.address || '').toLowerCase();
+      const vNameLower = (dbV.name || '').toLowerCase();
 
-      let computedDistance = 1.6;
-      if (
-        !userCityLower ||
-        userCityLower === 'current location' ||
-        userCityLower.includes('current') ||
-        userCityLower.includes('naga') ||
-        userCityLower.includes('camarines') ||
-        userCityLower.includes('bicol')
-      ) {
-        if (vCityLower.includes('naga') || vAddrLower.includes('naga')) {
-          computedDistance = dbV.name.toLowerCase().includes('metro naga') ? 1.2 : 0.8;
-        } else if (vCityLower.includes('cebu')) {
-          computedDistance = 375;
-        } else {
-          computedDistance = 268;
-        }
-      } else if (userCityLower.includes('cebu')) {
-        if (vCityLower.includes('cebu')) {
-          computedDistance = 1.5;
-        } else if (vCityLower.includes('naga')) {
-          computedDistance = 375;
-        } else {
-          computedDistance = 570;
-        }
+      let computedDistance = 1.2;
+      if (vNameLower.includes('metro naga') || vAddrLower.includes('cbd')) {
+        computedDistance = 1.1;
+      } else if (vNameLower.includes('pacol') || vAddrLower.includes('pacol')) {
+        computedDistance = 3.2;
+      } else if (vAddrLower.includes('magsaysay') || vNameLower.includes('magsaysay')) {
+        computedDistance = 0.8;
       } else {
-        if (vCityLower.includes('taguig')) computedDistance = 0.9;
-        else if (vCityLower.includes('makati')) computedDistance = 2.4;
-        else if (vCityLower.includes('pasig')) computedDistance = 4.8;
-        else if (vCityLower.includes('quezon')) computedDistance = 11.2;
-        else if (vCityLower.includes('naga')) computedDistance = 268;
-        else if (vCityLower.includes('cebu')) computedDistance = 570;
+        computedDistance = 1.4;
       }
 
       return {
         id: dbV.id,
         name: dbV.name,
         sport: primarySport,
-        city: dbV.city || 'Metro Manila',
+        city: dbV.city || 'Naga City',
         address: dbV.address,
         surface: primaryCourt?.floor_type || 'Competition Surface',
         isIndoor: primaryCourt?.is_indoor ?? true,
@@ -2255,7 +2262,7 @@ export function useSportSyncBridge() {
           preferredSports: mappedSports,
           preferredFormat: 'doubles',
           skillLevel: mappedSkill,
-          city: prefs.preferredArea || 'Metro Area',
+          city: prefs.preferredArea || 'Naga City',
         });
       } catch (err) {
         console.warn('Profile update warning:', err);
@@ -2274,7 +2281,7 @@ export function useSportSyncBridge() {
           nickname: prefs.fullName.split(' ')[0],
           preferredSports: mappedSports,
           skillLevel: mappedSkill,
-          city: prefs.preferredArea || 'Metro Manila',
+          city: prefs.preferredArea || 'Naga City',
           preferredFormat: 'doubles',
           availability: cleanAvailability,
         });

@@ -144,7 +144,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           preferred_sports: data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football']),
           preferred_format: data.user.preferred_format || 'doubles',
           skill_level: data.user.skill_level || 'intermediate',
-          city: data.user.city || 'Metro Manila',
+          city: data.user.city || 'Naga City',
           onboarding_completed: !isNewUser,
           has_completed_onboarding: !isNewUser,
         });

@@ -89,7 +89,7 @@ const initialPlayerUser: SanitizedUser = {
   preferred_sports: ['pickleball', 'badminton'],
   preferred_format: 'doubles',
   skill_level: 'intermediate',
-  city: 'Taguig City',
+  city: 'Naga City',
   onboarding_completed: true,
   created_at: new Date().toISOString(),
 };
@@ -112,7 +112,7 @@ const initialOwnerUser: SanitizedUser = {
   preferred_sports: ['badminton', 'pickleball'],
   preferred_format: 'doubles',
   skill_level: 'advanced',
-  city: 'Pasig City',
+  city: 'Naga City',
   onboarding_completed: true,
   created_at: new Date().toISOString(),
 };
@@ -138,7 +138,7 @@ export async function serverRegister(data: {
   }
   const normalizedEmail = emailValidation.normalizedEmail || data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
-  const registrationCity = data.city ? data.city.trim() : '';
+  const registrationCity = data.city ? data.city.trim() : 'Naga City';
 
   // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
   if (!isSupabaseConfigured) {
@@ -340,7 +340,7 @@ export async function serverLogin(data: {
       preferred_sports: ['pickleball', 'badminton'],
       preferred_format: 'doubles',
       skill_level: 'intermediate',
-      city: 'Metro Manila',
+      city: 'Naga City',
       onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
@@ -458,7 +458,7 @@ export async function serverLogin(data: {
           preferred_sports: ['pickleball', 'badminton'],
           preferred_format: 'doubles',
           skill_level: 'intermediate',
-          city: userMeta?.city || '',
+          city: userMeta?.city || 'Naga City',
           onboarding_completed: initialOnboardingCompleted,
         };
         await dbClient.from('users').insert(newProfile);
@@ -487,7 +487,7 @@ export async function serverLogin(data: {
     preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
     preferred_format: dbProfile?.preferred_format || 'doubles',
     skill_level: dbProfile?.skill_level || 'intermediate',
-    city: dbProfile?.city || userMeta?.city || '',
+    city: dbProfile?.city || userMeta?.city || 'Naga City',
     onboarding_completed: resolvedOnboardingCompleted,
     created_at: supaData.user.created_at,
   };
@@ -648,7 +648,7 @@ export async function serverUpdateUserProfile(
       preferred_sports: resolvedPreferredSports || ['pickleball', 'badminton'],
       preferred_format: resolvedPreferredFormat || 'doubles',
       skill_level: resolvedSkillLevel || 'intermediate',
-      city: resolvedCity || 'Metro Manila',
+      city: resolvedCity || 'Naga City',
       onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : false,
       created_at: new Date().toISOString(),
     };

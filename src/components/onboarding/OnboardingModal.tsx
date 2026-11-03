@@ -40,16 +40,7 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
 ];
 
 const PHILIPPINE_AREAS = [
-  'Naga City (Pilot Area)',
-  'BGC, Taguig City',
-  'Pasig & Ortigas Center',
-  'Makati City',
-  'Quezon City',
-  'Mandaluyong / San Juan',
-  'Alabang & South Metro',
-  'Metro Cebu',
-  'Davao City',
-  'Baguio City',
+  'Naga City',
 ];
 
 const NICKNAME_SUGGESTIONS = [
@@ -73,7 +64,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
     return ['pickleball', 'basketball'];
   });
   const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
-  const [selectedArea, setSelectedArea] = useState(currentUser.city || PHILIPPINE_AREAS[0]);
+  const [selectedArea, setSelectedArea] = useState('Naga City');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => {
     if (currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
       return currentUser.skill_level;
@@ -459,33 +450,19 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
               <span className="text-[10px] text-[#C8FF2E] font-medium">Court Discovery</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {PHILIPPINE_AREAS.map((area) => {
-                const isSelected = selectedArea === area;
-                const isPilot = area.includes('Naga City');
-                return (
-                  <button
-                    key={area}
-                    type="button"
-                    onClick={() => setSelectedArea(area)}
-                    className={`px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer active:scale-95 ${
-                      isSelected
-                        ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)]'
-                        : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <MapPin className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
-                      <span className="text-xs truncate">{area}</span>
-                    </div>
-                    {isPilot && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
-                        Pilot Hub
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-1 gap-2">
+              <div className="px-3.5 py-3 rounded-2xl border bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] flex items-center justify-between shadow-[0_0_12px_rgba(200,255,46,0.2)]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 shrink-0 text-[#C8FF2E]" />
+                  <div>
+                    <span className="text-xs font-bold block text-[#F4F7F0]">Naga City</span>
+                    <span className="text-[10px] text-[#A5B0A6]">Camarines Sur, Bicol &bull; Exclusive Pilot Market</span>
+                  </div>
+                </div>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
+                  Pilot Hub
+                </span>
+              </div>
             </div>
           </div>
 

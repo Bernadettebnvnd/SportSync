@@ -47,7 +47,7 @@ export const GUEST_USER: User = {
   preferred_format: 'doubles',
   skill_level: 'beginner',
   availability: 'Weekday Evenings & Weekends',
-  city: '',
+  city: 'Naga City',
   onboarding_completed: false,
   has_completed_onboarding: false,
   matches_played: 0,
@@ -141,11 +141,8 @@ async function initializeStore() {
       const storedNickname = localStorage.getItem('matchi_user_nickname') || localStorage.getItem('sportsync_user_nickname');
       if (storedNickname) globalState.currentUser.nickname = storedNickname;
 
-      const storedCity = localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location');
-      if (storedCity && storedCity !== 'Current Location') {
-        globalState.currentUser.city = storedCity;
-      } else if (storedCity === 'Current Location') {
-        globalState.currentUser.city = 'Naga City';
+      globalState.currentUser.city = 'Naga City';
+      if (typeof window !== 'undefined') {
         localStorage.setItem('sportsync_user_city', 'Naga City');
         localStorage.setItem('sportsync_user_location', 'Naga City');
       }
@@ -197,12 +194,7 @@ async function initializeStore() {
         ? (storedSports! as SportType[])
         : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (['football'] as SportType[]));
 
-      const safeStoredCity = storedCity && storedCity !== 'Current Location' ? storedCity : null;
-      const finalCity = (user.city && user.city !== 'Metro Manila' && user.city !== 'Current Location')
-        ? user.city
-        : (safeStoredCity || (user.city && user.city !== 'Current Location' ? user.city : 'Naga City'));
-
-      user.city = finalCity;
+      user.city = 'Naga City';
       user.preferred_sports = finalSports;
       user.primary_sport = (finalSports[0] || user.primary_sport || 'football') as SportType;
 

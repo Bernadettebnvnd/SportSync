@@ -112,7 +112,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
         {
           type: 'booking',
           title: 'Court Booking Confirmed',
-          desc: 'Makati Sports Club: Court 3 reserved for Saturday 09:00 AM.',
+          desc: 'Metro Naga Sports Complex: Badminton Court 1 reserved for Saturday 09:00 AM.',
           linkScreen: 'my-bookings',
         },
         {

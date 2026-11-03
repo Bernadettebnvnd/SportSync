@@ -55,6 +55,50 @@ export function generateUniqueSessionId(): string {
   return `session_${timestamp}_${perfNow}_${randomSuffix}`;
 }
 
+/**
+ * Detects mock template sessions so they can be safely excluded from runtime feeds.
+ */
+export function isMockSession(s: Partial<Session> | null | undefined): boolean {
+  if (!s) return true;
+  if (s.id && (s.id.startsWith('sess_test_') || s.id.startsWith('session_test_') || ['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8'].includes(s.id))) {
+    return true;
+  }
+  const title = (s.title || '').toLowerCase();
+  const mockTitles = [
+    'friday night smash',
+    'open play queuing',
+    'dinking & rally',
+    'pickleball social rotation',
+    'pickleball doubles social',
+    'king of court',
+    'king of the court',
+    'rally rotation',
+    '5v5: sunset game',
+    'sunday morning league prep',
+    'clay doubles friendly',
+    '3v3 half-court runs',
+    'casual friday night 5v5',
+  ];
+  if (mockTitles.some((t) => title.includes(t))) return true;
+
+  const venueName = (s.venue?.name || '').toLowerCase();
+  const mockVenues = [
+    'the upper deck',
+    'pickleball playground qc',
+    'pickleball playground',
+    'smash zone bgc',
+    'padel club manila',
+    'bgc turf',
+    'kerry sports',
+    'makati sports club',
+    'spike zone',
+    'star billiards',
+  ];
+  if (mockVenues.some((v) => venueName.includes(v))) return true;
+
+  return false;
+}
+
 function getLocalStoredSessions(): Session[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -67,7 +111,7 @@ function getLocalStoredSessions(): Session[] {
     const deduped: Session[] = [];
 
     parsed.forEach((s) => {
-      if (!s || !s.id) return;
+      if (!s || !s.id || isMockSession(s)) return;
       const normTitle = s.title ? s.title.trim().toLowerCase() : '';
       if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !isSessionExpired(s) && !seenIds.has(s.id)) {
         seenIds.add(s.id);
@@ -112,7 +156,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
 
   const isSessionNotDeleted = (s: Session) =>
-    !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled' && !isSessionExpired(s);
+    !isMockSession(s) && !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled' && !isSessionExpired(s);
 
   if (!supabase || !isSupabaseConfigured) {
     const filtered = localSessions.filter(isSessionNotDeleted);

@@ -41,16 +41,7 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
 ];
 
 const PHILIPPINE_AREAS = [
-  'Naga City (Pilot Area)',
-  'BGC, Taguig City',
-  'Pasig & Ortigas Center',
-  'Makati City',
-  'Quezon City',
-  'Mandaluyong / San Juan',
-  'Alabang & South Metro',
-  'Metro Cebu',
-  'Davao City',
-  'Baguio City',
+  'Naga City',
 ];
 
 const NICKNAME_SUGGESTIONS = [
@@ -64,12 +55,6 @@ const NICKNAME_SUGGESTIONS = [
 
 const FACILITY_LOCATIONS = [
   'Naga City',
-  'BGC & Taguig',
-  'Makati',
-  'Pasig',
-  'Quezon City',
-  'Cebu City',
-  'Davao City',
 ];
 
 function OnboardingContent() {
@@ -156,7 +141,7 @@ function OnboardingContent() {
     return ['pickleball', 'basketball'];
   });
   const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
-  const [selectedArea, setSelectedArea] = useState(currentUser.city || PHILIPPINE_AREAS[0]);
+  const [selectedArea, setSelectedArea] = useState('Naga City');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => {
     if (currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
       return currentUser.skill_level;
@@ -256,70 +241,12 @@ function OnboardingContent() {
   };
 
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setSelectedArea('Naga City (Pilot Area)');
-      return;
-    }
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-
-          // Quick bounding box check for active Philippine hubs
-          // Bicol / Naga City area: lat ~13.0 to 14.2, lon ~122.5 to 124.0
-          if (lat >= 13.0 && lat <= 14.2 && lon >= 122.5 && lon <= 124.0) {
-            setSelectedArea('Naga City (Pilot Area)');
-            return;
-          }
-          // Metro Manila area: lat ~14.3 to 14.8, lon ~120.8 to 121.2
-          if (lat >= 14.3 && lat <= 14.8 && lon >= 120.8 && lon <= 121.2) {
-            setSelectedArea('BGC, Taguig City');
-            return;
-          }
-          // Metro Cebu area: lat ~10.1 to 10.6, lon ~123.7 to 124.1
-          if (lat >= 10.1 && lat <= 10.6 && lon >= 123.7 && lon <= 124.1) {
-            setSelectedArea('Metro Cebu');
-            return;
-          }
-
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const city =
-              data.address?.city ||
-              data.address?.town ||
-              data.address?.municipality ||
-              data.address?.suburb ||
-              data.address?.county;
-            if (city) {
-              const lower = city.toLowerCase();
-              if (lower.includes('naga') || lower.includes('camarines') || lower.includes('bicol')) {
-                setSelectedArea('Naga City (Pilot Area)');
-              } else {
-                setSelectedArea(city);
-              }
-            } else {
-              setSelectedArea('Naga City (Pilot Area)');
-            }
-          } else {
-            setSelectedArea('Naga City (Pilot Area)');
-          }
-        } catch {
-          setSelectedArea('Naga City (Pilot Area)');
-        } finally {
-          setIsLocating(false);
-        }
-      },
-      () => {
-        setIsLocating(false);
-        setSelectedArea('Naga City (Pilot Area)');
-      },
-      { timeout: 6000 }
-    );
+    setTimeout(() => {
+      setSelectedArea('Naga City');
+      setLocationSearch('Naga City');
+      setIsLocating(false);
+    }, 400);
   };
 
   const handleSearchLocation = async (q: string) => {
@@ -328,15 +255,18 @@ function OnboardingContent() {
       setLocationSuggestions([]);
       return;
     }
-    setIsSearchingLocation(true);
-    try {
-      const results = await defaultGeocodingProvider.search(q);
-      setLocationSuggestions(results.map((r) => r.shortName));
-    } catch {
-      setLocationSuggestions([]);
-    } finally {
-      setIsSearchingLocation(false);
-    }
+    const nagaDistricts = [
+      'Pacol, Naga City',
+      'Triangulo, Naga City',
+      'Magsaysay Ave, Naga City',
+      'San Felipe, Naga City',
+      'Concepcion Pequeña, Naga City',
+      'San Francisco, Downtown, Naga City',
+      'Bagumbayan Sur, Naga City',
+      'Naga City',
+    ];
+    const matches = nagaDistricts.filter((d) => d.toLowerCase().includes(q.trim().toLowerCase()));
+    setLocationSuggestions(matches.length > 0 ? matches : ['Naga City']);
   };
 
   // =========================================================================
@@ -809,37 +739,27 @@ function OnboardingContent() {
                 )}
               </div>
 
-              {/* Hub Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                {PHILIPPINE_AREAS.map((area) => {
-                  const isSelected = selectedArea === area;
-                  const isPilot = area.includes('Naga City');
-                  return (
-                    <button
-                      key={area}
-                      type="button"
-                      onClick={() => {
-                        setSelectedArea(area);
-                        setLocationSearch(area);
-                      }}
-                      className={`px-3.5 py-2.5 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer active:scale-95 ${
-                        isSelected
-                          ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)]'
-                          : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <MapPin className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
-                        <span className="text-xs truncate">{area}</span>
-                      </div>
-                      {isPilot && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
-                          Pilot Hub
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+              {/* Hub Card */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedArea('Naga City');
+                    setLocationSearch('Naga City');
+                  }}
+                  className="w-full px-4 py-3 rounded-2xl border bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MapPin className="w-4 h-4 shrink-0 text-[#C8FF2E]" />
+                    <div className="text-left">
+                      <span className="text-sm font-bold block text-[#F4F7F0]">Naga City</span>
+                      <span className="text-[11px] text-[#A5B0A6]">Camarines Sur, Bicol &bull; Exclusive Pilot Market</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
+                    Pilot Hub
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -1121,17 +1041,12 @@ function OnboardingContent() {
                 <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
                   City / Area
                 </label>
-                <select
-                  value={facilityCity}
-                  onChange={(e) => setFacilityCity(e.target.value)}
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                >
-                  {FACILITY_LOCATIONS.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  readOnly
+                  value="Naga City"
+                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] text-base font-bold text-[#1A241E] focus:outline-none cursor-default shadow-xs"
+                />
               </div>
             </div>
           </div>

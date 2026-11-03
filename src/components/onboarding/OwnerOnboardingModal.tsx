@@ -101,7 +101,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
   const [facilityName, setFacilityName] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
-  const [city, setCity] = useState(currentUser.city || '');
+  const [city, setCity] = useState(currentUser.city || 'Naga City');
 
   const [selectedSports, setSelectedSports] = useState<SportType[]>(['pickleball', 'badminton']);
 
@@ -376,7 +376,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Taguig City"
+                      placeholder="e.g. Naga City"
                       className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     />
                   </div>

@@ -7,19 +7,15 @@ import {
   List,
   LayoutGrid,
   Calendar,
-  Clock,
   RotateCcw,
   ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
   ChevronDown,
   X,
   Sparkles,
 } from 'lucide-react';
 import { VenueCard } from '../../design-system/components/VenueCard';
 import { Venue } from '../../mock/types';
-import { SportIcon, SportId } from '../../illustrations/SportIcons';
-import { APP_CONFIG } from '../../config/appConfig';
+import { SportIcon } from '../../illustrations/SportIcons';
 import { STANDARDIZED_SPORTS } from '../../config/sports';
 
 interface VenuesListScreenProps {
@@ -36,16 +32,6 @@ const OFFICIAL_SPORTS: Array<{ label: string; value: string }> = STANDARDIZED_SP
   value: s,
 }));
 
-const CITIES = [
-  { label: 'All Cities', value: 'all' },
-  { label: 'Naga City', value: 'naga' },
-  { label: 'Taguig / BGC', value: 'taguig' },
-  { label: 'Pasig / Ortigas', value: 'pasig' },
-  { label: 'Makati', value: 'makati' },
-  { label: 'Quezon City', value: 'quezon' },
-  { label: 'Cebu City', value: 'cebu' },
-];
-
 const DATE_OPTIONS = ['Any Date', 'Today', 'Tomorrow', 'This Weekend'];
 
 const TIME_OPTIONS = [
@@ -61,11 +47,10 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
   onBack,
   initialQuery = '',
   initialSport = 'All',
-  initialCity = 'all',
+  initialCity: _initialCity,
 }) => {
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedSport, setSelectedSport] = useState<string>(initialSport);
-  const [selectedCity, setSelectedCity] = useState<string>(initialCity || 'all');
   const [selectedDate, setSelectedDate] = useState<string>('Any Date');
   const [selectedTime, setSelectedTime] = useState<string>('all');
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'available_only' | 'inquire'>('all');
@@ -76,17 +61,15 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (selectedSport !== 'All') count++;
-    if (selectedCity !== 'all') count++;
     if (selectedDate !== 'Any Date') count++;
     if (selectedTime !== 'all') count++;
     if (availabilityFilter !== 'all') count++;
     return count;
-  }, [selectedSport, selectedCity, selectedDate, selectedTime, availabilityFilter]);
+  }, [selectedSport, selectedDate, selectedTime, availabilityFilter]);
 
   const resetAllFilters = () => {
     setSearchQuery('');
     setSelectedSport('All');
-    setSelectedCity('all');
     setSelectedDate('Any Date');
     setSelectedTime('all');
     setAvailabilityFilter('all');
@@ -94,6 +77,12 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
 
   const filteredVenues = useMemo(() => {
     return venues.filter((v) => {
+      // Enforce Naga City location
+      const vCity = (v.city || '').toLowerCase();
+      const vAddr = (v.address || '').toLowerCase();
+      if (!vCity.includes('naga') && !vAddr.includes('naga') && !vAddr.includes('camarines')) {
+        return false;
+      }
       // 1. Sport filter (checks primary sport, featured sports list, and any registered court sport)
       if (selectedSport !== 'All') {
         const sportLower = selectedSport.toLowerCase();
@@ -106,29 +95,7 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
         if (!primaryMatch && !featuredMatch && !courtsMatch) return false;
       }
 
-      // 2. City / Location filter
-      if (selectedCity !== 'all') {
-        const cLower = selectedCity.toLowerCase();
-        const vCity = (v.city || '').toLowerCase();
-        const vAddr = (v.address || '').toLowerCase();
-        if (cLower === 'naga') {
-          if (!vCity.includes('naga') && !vAddr.includes('naga') && !vAddr.includes('camarines')) return false;
-        } else if (cLower === 'taguig') {
-          if (!vCity.includes('taguig') && !vAddr.includes('taguig') && !vAddr.includes('bgc')) return false;
-        } else if (cLower === 'pasig') {
-          if (!vCity.includes('pasig') && !vAddr.includes('pasig') && !vAddr.includes('ortigas')) return false;
-        } else if (cLower === 'makati') {
-          if (!vCity.includes('makati') && !vAddr.includes('makati')) return false;
-        } else if (cLower === 'quezon') {
-          if (!vCity.includes('quezon') && !vAddr.includes('quezon') && !vCity.includes('qc')) return false;
-        } else if (cLower === 'cebu') {
-          if (!vCity.includes('cebu') && !vAddr.includes('cebu')) return false;
-        } else {
-          if (!vCity.includes(cLower) && !vAddr.includes(cLower)) return false;
-        }
-      }
-
-      // 3. Availability Filter
+      // 2. Availability Filter
       if (availabilityFilter === 'available_only') {
         if (!v.availableSlots || v.availableSlots.length === 0) return false;
       } else if (availabilityFilter === 'inquire') {
@@ -165,7 +132,7 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
 
       return true;
     });
-  }, [venues, selectedSport, selectedCity, availabilityFilter, selectedTime, searchQuery]);
+  }, [venues, selectedSport, availabilityFilter, selectedTime, searchQuery]);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none min-h-screen">
@@ -289,21 +256,10 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
 
         {/* 4. Quick Filter Pills: City, Date, Availability */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-          {/* City select chip */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="h-8 pl-7 pr-7 rounded-full bg-[#1C241E] text-xs font-semibold text-[#F4F7F0] border border-white/10 appearance-none focus:outline-none focus:border-[#C8FF2E] cursor-pointer"
-            >
-              {CITIES.map((c) => (
-                <option key={c.value} value={c.value} className="bg-[#141A15] text-white">
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <MapPin className="w-3.5 h-3.5 text-[#C8FF2E] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <ChevronDown className="w-3 h-3 text-[#A5B0A6] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* City Pill: Naga City Pilot Market */}
+          <div className="h-8 pl-3 pr-3 rounded-full bg-[#1C241E] text-xs font-semibold text-[#F4F7F0] border border-[#C8FF2E]/30 flex items-center gap-1.5 shrink-0">
+            <MapPin className="w-3.5 h-3.5 text-[#C8FF2E]" />
+            <span>Naga City</span>
           </div>
 
           {/* Date select chip */}
@@ -427,7 +383,7 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
         </span>
         <span className="flex items-center gap-1 text-[11px] text-[#00E599]">
           <ShieldCheck className="w-3.5 h-3.5" />
-          Verified Philippine Venues
+          Verified Naga City Venues
         </span>
       </div>
 
@@ -458,7 +414,7 @@ export const VenuesListScreen: React.FC<VenuesListScreenProps> = ({
             <div>
               <h3 className="font-display font-bold text-lg text-[#F4F7F0]">No courts match your search</h3>
               <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto mt-1">
-                Try widening your city selection or switching to another sport in the filter rail above.
+                No venues in Naga City matched your filters. Try selecting another sport or reset your search.
               </p>
             </div>
             <button

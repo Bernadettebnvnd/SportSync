@@ -145,14 +145,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const LOCATION_OPTIONS = [
     'Naga City',
-    'Metro Manila',
-    'BGC, Taguig City',
-    'Makati City',
-    'Pasig & Ortigas',
-    'Quezon City',
-    'Mandaluyong',
-    'Cebu City',
-    'Davao City',
   ];
 
   const SKILL_LEVELS = ['Beginner', 'Casual', 'Intermediate', 'Advanced'];
@@ -618,30 +610,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             {/* 2. Home Court Region / City */}
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-                Home Court Region
+                Home Court Region (Pilot Market)
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {LOCATION_OPTIONS.map((loc) => {
-                  const isSelected = draftCity === loc;
-                  return (
-                    <button
-                      key={loc}
-                      type="button"
-                      onClick={() => setDraftCity(loc)}
-                      className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between text-left transition-all ${
-                        isSelected
-                          ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_10px_rgba(200,255,46,0.2)]'
-                          : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6] hover:text-[#F4F7F0]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <MapPin className="w-3 h-3 text-[#C8FF2E] shrink-0" />
-                        <span className="truncate">{loc}</span>
-                      </div>
-                      {isSelected && <Check className="w-3 h-3 text-[#C8FF2E] shrink-0 ml-1" />}
-                    </button>
-                  );
-                })}
+              <div className="p-3 rounded-2xl bg-[#0B0F0C] border border-[#C8FF2E]/40 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-[#C8FF2E]" />
+                  <div>
+                    <span className="text-xs font-bold text-[#F4F7F0] block">Naga City</span>
+                    <span className="text-[10px] text-[#A5B0A6]">Camarines Sur, Bicol</span>
+                  </div>
+                </div>
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
+                  Pilot Hub
+                </span>
               </div>
             </div>
 

@@ -132,7 +132,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             preferred_sports: isFacility ? ['pickleball', 'badminton'] : ['football'],
             preferred_format: 'doubles',
             skill_level: 'intermediate',
-            city: data.user.city || 'Metro Manila',
+            city: data.user.city || 'Naga City',
             onboarding_completed: false,
             has_completed_onboarding: false,
           });
@@ -172,7 +172,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
             preferred_format: data.user.preferred_format || 'doubles',
             skill_level: data.user.skill_level || 'intermediate',
-            city: data.user.city || 'Metro Manila',
+            city: data.user.city || 'Naga City',
             onboarding_completed: true,
             has_completed_onboarding: true,
           });

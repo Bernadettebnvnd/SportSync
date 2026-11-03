@@ -240,13 +240,6 @@ export function VenueMap({
     setIsSearchOpen(false);
   };
 
-  // Fly to Philippines Overview (6/13.02/121.77)
-  const flyToPhilippines = () => {
-    if (mapInstanceRef.current) {
-      setIsPilotArea(false);
-      mapInstanceRef.current.flyTo(OSM_PH_CENTER, OSM_PH_ZOOM, { duration: 1.2 });
-    }
-  };
 
   // User-triggered location request using native navigator.geolocation.getCurrentPosition API
   const locateUser = useCallback(() => {
@@ -436,19 +429,6 @@ export function VenueMap({
     }
   }, []);
 
-  const jumpToRegion = (region: 'manila' | 'visayas' | 'mindanao' | 'luzon') => {
-    if (!mapInstanceRef.current) return;
-    setIsPilotArea(false);
-    if (region === 'manila') {
-      mapInstanceRef.current.flyTo([14.5828, 121.0664], 12, { duration: 1.0 });
-    } else if (region === 'visayas') {
-      mapInstanceRef.current.flyTo([10.5, 123.3], 9, { duration: 1.0 });
-    } else if (region === 'mindanao') {
-      mapInstanceRef.current.flyTo([7.8, 125.1], 9, { duration: 1.0 });
-    } else if (region === 'luzon') {
-      mapInstanceRef.current.flyTo([15.4, 120.8], 9, { duration: 1.0 });
-    }
-  };
 
   // Initialize Map ONCE on mount
   useEffect(() => {
@@ -887,55 +867,17 @@ export function VenueMap({
               title="Center on Naga City, Camarines Sur (Pilot Area)"
             >
               <MapPin className="w-3 h-3 text-[#2D724E]" />
-              <span>Naga (Pilot)</span>
+              <span>Naga City</span>
             </button>
 
             <button
               type="button"
               onClick={fitAllCourts}
               className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-              title="Show all courts on map"
+              title="Show all verified Naga courts on map"
             >
               <Compass className="w-3 h-3 text-[#2D724E]" />
-              <span>All ({venues.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => jumpToRegion('manila')}
-              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-            >
-              <span>Manila</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => jumpToRegion('visayas')}
-              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-            >
-              <span>Visayas</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => jumpToRegion('mindanao')}
-              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-            >
-              <span>Mindanao</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => jumpToRegion('luzon')}
-              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-            >
-              <span>Luzon</span>
-            </button>
-            <button
-              type="button"
-              onClick={flyToPhilippines}
-              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 backdrop-blur-md border border-[#E8E5DF] text-[10px] font-extrabold text-[#1A241E] hover:bg-[#FAF8F5] shadow-sm shrink-0"
-              title="Zoom to OpenStreetMap Philippines overview"
-            >
-              <Globe className="w-3 h-3 text-[#C87D43]" />
-              <span>PH</span>
+              <span>All Courts ({venues.length})</span>
             </button>
           </div>
         )}

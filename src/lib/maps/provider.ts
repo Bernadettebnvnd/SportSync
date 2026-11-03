@@ -119,7 +119,7 @@ export async function searchDiscoveredCourts(
   queryOrCity?: string
 ): Promise<DiscoveredFacility[]> {
   const sportTerm = sport === 'all' ? 'sports complex' : `${sport} court`;
-  const locationTerm = queryOrCity && queryOrCity.trim().length > 1 ? queryOrCity.trim() : 'Philippines';
+  const locationTerm = queryOrCity && queryOrCity.trim().length > 1 ? queryOrCity.trim() : 'Naga City, Camarines Sur';
   const query = `${sportTerm} ${locationTerm}`;
 
   try {
@@ -144,9 +144,15 @@ export async function searchDiscoveredCourts(
       type?: string;
     }> = await res.json();
 
+    // Strictly restrict discovered courts to Naga City and Camarines Sur pilot area
+    const pilotData = data.filter((item) => {
+      const lower = item.display_name.toLowerCase();
+      return lower.includes('naga') || lower.includes('camarines');
+    });
+
     const resolvedSport: SportType = sport === 'all' ? 'pickleball' : (sport as SportType);
 
-    return data.map((item) => {
+    return pilotData.map((item) => {
       const parts = item.display_name.split(',').map((p) => p.trim());
       const name = parts[0] || `${sport} Court`;
       const city = parts.length > 2 ? parts[1] : undefined;

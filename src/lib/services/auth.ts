@@ -93,7 +93,7 @@ export async function getCurrentUser(): Promise<User | null> {
             preferred_sports: json.user.preferred_sports || ['pickleball', 'badminton'],
             preferred_format: json.user.preferred_format || 'doubles',
             skill_level: json.user.skill_level || 'intermediate',
-            city: json.user.city || '',
+            city: json.user.city || 'Naga City',
             matches_played: 0,
             matches_won: 0,
             win_streak: 0,

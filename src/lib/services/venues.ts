@@ -21,10 +21,21 @@ function generateUniqueId(prefix: string): string {
 }
 
 /**
- * Filter venues locally by sport, city, or search query.
+ * Verifies whether a venue is located in the pilot market: Naga City, Camarines Sur.
+ */
+export function isNagaVenue(v: Venue): boolean {
+  if (!v) return false;
+  const c = (v.city || '').toLowerCase();
+  const a = (v.address || '').toLowerCase();
+  return c.includes('naga') || a.includes('naga') || a.includes('camarines');
+}
+
+/**
+ * Filter venues locally by sport, city, or search query (strictly scoped to Naga City pilot market).
  */
 export function filterVenuesList(venues: Venue[], options: VenueFilterOptions = {}): Venue[] {
-  let result = [...venues];
+  // Enforce Naga City market boundary on all runtime venue discovery
+  let result = venues.filter(isNagaVenue);
 
   if (options.verifiedOnly) {
     result = result.filter((v) => v.is_verified);
@@ -44,12 +55,6 @@ export function filterVenuesList(venues: Venue[], options: VenueFilterOptions = 
     result = result.filter((v) => {
       const vCity = (v.city || '').toLowerCase();
       const vAddr = (v.address || '').toLowerCase();
-      if (c === 'naga') return vCity.includes('naga') || vAddr.includes('naga') || vAddr.includes('camarines');
-      if (c === 'taguig') return vCity.includes('taguig') || vAddr.includes('taguig') || vAddr.includes('bgc');
-      if (c === 'pasig') return vCity.includes('pasig') || vAddr.includes('pasig') || vAddr.includes('ortigas');
-      if (c === 'makati') return vCity.includes('makati') || vAddr.includes('makati');
-      if (c === 'quezon') return vCity.includes('quezon') || vAddr.includes('quezon') || vCity.includes('qc');
-      if (c === 'cebu') return vCity.includes('cebu') || vAddr.includes('cebu');
       return vCity.includes(c) || vAddr.includes(c);
     });
   }
@@ -103,7 +108,7 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
 
   if (!supabase || !isSupabaseConfigured) {
     const combined = [...localVenues];
-    INITIAL_VENUES.forEach((iv) => {
+    INITIAL_VENUES.filter(isNagaVenue).forEach((iv) => {
       if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
         combined.push(iv);
       }
@@ -122,9 +127,8 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
       query = query.contains('featured_sports', [options.sport]);
     }
 
-    if (options.city && options.city.trim() && options.city !== 'all' && options.city !== 'All Cities') {
-      query = query.ilike('city', `%${options.city.trim()}%`);
-    }
+    // Always scope to Naga City pilot market
+    query = query.or('city.ilike.%naga%,address.ilike.%naga%,address.ilike.%camarines%');
 
     if (options.searchQuery && options.searchQuery.trim()) {
       const q = options.searchQuery.trim();
@@ -147,7 +151,7 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
       }
     });
     if (combined.length === 0) {
-      INITIAL_VENUES.forEach((iv) => {
+      INITIAL_VENUES.filter(isNagaVenue).forEach((iv) => {
         if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
           combined.push(iv);
         }
@@ -166,7 +170,10 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
  */
 export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
   const supabase = getSupabaseClient();
-  const localVenue = getLocalStoredVenues().find((v) => v.id === idOrSlug || v.slug === idOrSlug) || null;
+  const localVenue =
+    getLocalStoredVenues().find((v) => isNagaVenue(v) && (v.id === idOrSlug || v.slug === idOrSlug)) ||
+    INITIAL_VENUES.filter(isNagaVenue).find((v) => v.id === idOrSlug || v.slug === idOrSlug) ||
+    null;
 
   if (!supabase || !isSupabaseConfigured) {
     return localVenue;
