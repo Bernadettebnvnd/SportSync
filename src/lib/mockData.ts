@@ -535,7 +535,48 @@ export const TEST_VENUES: Venue[] = [
   },
 ];
 
-export const INITIAL_SESSIONS: Session[] = [];
+export const INITIAL_SESSIONS: Session[] = [
+  {
+    id: 'sess_test_01',
+    venue_id: 'venue_test_01',
+    host_id: 'usr_test_player_01',
+    title: 'Friday Night Smash: Doubles Open Play',
+    description: 'Energetic doubles rotation across 2 courts. King of the Court format, shuttles provided, beginner & intermediate friendly.',
+    sport: 'badminton',
+    session_type: 'open_play',
+    allowed_formats: ['doubles', 'mixed_doubles'],
+    skill_level: 'all_levels',
+    court_ids: ['court_test_01', 'court_test_02'],
+    start_time: new Date(Date.now() - 3600000).toISOString(),
+    end_time: new Date(Date.now() + 7200000).toISOString(),
+    fee_cents: 28000,
+    max_players: 16,
+    current_players_count: 12,
+    rotation_format: 'King of the Court Doubles',
+    status: 'active',
+    venue: TEST_VENUES[0],
+  },
+  {
+    id: 'sess_test_02',
+    venue_id: 'venue_test_04',
+    host_id: 'usr_test_player_01',
+    title: 'Dinking & Rally: Pickleball Doubles Social',
+    description: 'Fast-paced pickleball doubles queue. 11-point games, win by 2, rotation after each game. Demo paddles available.',
+    sport: 'pickleball',
+    session_type: 'open_play',
+    allowed_formats: ['doubles'],
+    skill_level: 'intermediate',
+    court_ids: ['court_test_06'],
+    start_time: new Date(Date.now() + 7200000).toISOString(),
+    end_time: new Date(Date.now() + 18000000).toISOString(),
+    fee_cents: 25000,
+    max_players: 12,
+    current_players_count: 7,
+    rotation_format: 'Rally Rotation Doubles',
+    status: 'upcoming',
+    venue: TEST_VENUES[3],
+  },
+];
 
 // Backwards-compatible aliases for test runners
 export const INITIAL_CURRENT_USER = TEST_USER;

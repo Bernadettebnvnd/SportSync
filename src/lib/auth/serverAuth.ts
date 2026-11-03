@@ -20,21 +20,6 @@ export interface SanitizedUser {
 
 export type StoredUser = SanitizedUser;
 
-export interface ServerAuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_in?: number;
-  expires_at?: number;
-  token_type?: string;
-  user?: any;
-}
-
-export interface ServerAuthResult {
-  user: SanitizedUser;
-  token: string;
-  session?: ServerAuthSession | null;
-}
-
 // Generate simple HMAC session token
 const SESSION_SECRET = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
 
@@ -145,7 +130,7 @@ export async function serverRegister(data: {
   fullName: string;
   role?: string;
   city?: string;
-}): Promise<ServerAuthResult> {
+}): Promise<{ user: SanitizedUser; token: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
   const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
   const registrationCity = data.city ? data.city.trim() : '';
@@ -180,7 +165,7 @@ export async function serverRegister(data: {
     });
 
     const token = createSessionToken(sanitized);
-    return { user: sanitized, token, session: null };
+    return { user: sanitized, token };
   }
 
   // 2. Production Supabase Registration
@@ -253,54 +238,39 @@ export async function serverRegister(data: {
   const dbClient = admin || serverClient;
   if (dbClient) {
     try {
-      const { data: existingUser, error: findError } = await dbClient
+      const { data: existingUser } = await dbClient
         .from('users')
         .select('id')
         .eq('email', normalizedEmail)
         .maybeSingle();
 
-      if (findError) {
-        throw new Error(`Failed to query user profile: ${findError.message}`);
-      }
-
       if (existingUser) {
-        const { error: updateError } = await dbClient
+        await dbClient
           .from('users')
           .update({
             auth_id: supaUserId,
             full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
             role: assignedRole,
+            onboarding_completed: false,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingUser.id);
-        if (updateError) {
-          throw new Error(`Failed to update public user profile: ${updateError.message}`);
-        }
       } else {
-        const { error: insertError } = await dbClient.from('users').insert({
+        await dbClient.from('users').insert({
           auth_id: supaUserId,
           email: normalizedEmail,
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
           role: assignedRole,
+          onboarding_completed: false,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
+          preferred_format: 'doubles',
           skill_level: 'intermediate',
           city: registrationCity || null,
         });
-        if (insertError) {
-          throw new Error(`Failed to create public user profile: ${insertError.message}`);
-        }
       }
     } catch (dbErr) {
-      console.error('[ServerAuth] public.users profile persistence failed:', dbErr);
-      if (admin && supaUserId) {
-        try {
-          await admin.auth.admin.deleteUser(supaUserId);
-        } catch (cleanupErr) {
-          console.warn('[ServerAuth] Failed to clean up auth user after profile error:', cleanupErr);
-        }
-      }
-      throw new Error(dbErr instanceof Error ? dbErr.message : 'Failed to save public user profile.');
+      console.warn('[ServerAuth] public.users upsert warning:', dbErr);
     }
   }
 
@@ -319,40 +289,14 @@ export async function serverRegister(data: {
     created_at: supaCreatedAt,
   };
 
-  // 3. Establish active Supabase session tokens for the client
-  let supabaseSession: ServerAuthSession | null = null;
-  const anonClient = createServerClient();
-  if (anonClient) {
-    try {
-      const { data: signInData, error: signInErr } = await anonClient.auth.signInWithPassword({
-        email: normalizedEmail,
-        password: data.password.trim(),
-      });
-      if (signInData?.session) {
-        supabaseSession = {
-          access_token: signInData.session.access_token,
-          refresh_token: signInData.session.refresh_token,
-          expires_in: signInData.session.expires_in,
-          expires_at: signInData.session.expires_at,
-          token_type: signInData.session.token_type,
-          user: signInData.session.user,
-        };
-      } else if (signInErr) {
-        console.warn('[ServerAuth] Post-registration signIn notice:', signInErr.message);
-      }
-    } catch (sessionErr) {
-      console.warn('[ServerAuth] Error obtaining Supabase session after registration:', sessionErr);
-    }
-  }
-
   const token = createSessionToken(sanitized);
-  return { user: sanitized, token, session: supabaseSession };
+  return { user: sanitized, token };
 }
 
 export async function serverLogin(data: {
   email: string;
   password: string;
-}): Promise<ServerAuthResult> {
+}): Promise<{ user: SanitizedUser; token: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
   const cleanPassword = (data.password || '').trim();
 
@@ -375,7 +319,7 @@ export async function serverLogin(data: {
         throw new Error('Invalid email or password. Please verify your credentials (or use demo password "password123").');
       }
       const token = createSessionToken(record.user);
-      return { user: record.user, token, session: null };
+      return { user: record.user, token };
     }
 
     // Auto-provision local developer account for testing if not yet explicitly registered
@@ -403,7 +347,7 @@ export async function serverLogin(data: {
     });
 
     const token = createSessionToken(autoUser);
-    return { user: autoUser, token, session: null };
+    return { user: autoUser, token };
   }
 
   // 2. Production Supabase Login
@@ -499,6 +443,7 @@ export async function serverLogin(data: {
         dbProfile.auth_id = supaData.user.id;
       } else if (!dbProfile) {
         // Auto-provision public.users row if missing, respecting user metadata or defaulting to false
+        const initialOnboardingCompleted = Boolean(userMeta?.onboarding_completed === true);
         const newProfile = {
           auth_id: supaData.user.id,
           email: normalizedEmail,
@@ -506,8 +451,10 @@ export async function serverLogin(data: {
           role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
           primary_sport: 'pickleball',
           preferred_sports: ['pickleball', 'badminton'],
+          preferred_format: 'doubles',
           skill_level: 'intermediate',
           city: userMeta?.city || '',
+          onboarding_completed: initialOnboardingCompleted,
         };
         await dbClient.from('users').insert(newProfile);
         dbProfile = newProfile;
@@ -540,17 +487,8 @@ export async function serverLogin(data: {
     created_at: supaData.user.created_at,
   };
 
-  const supabaseSession: ServerAuthSession | null = supaData?.session ? {
-    access_token: supaData.session.access_token,
-    refresh_token: supaData.session.refresh_token,
-    expires_in: supaData.session.expires_in,
-    expires_at: supaData.session.expires_at,
-    token_type: supaData.session.token_type,
-    user: supaData.session.user,
-  } : null;
-
   const token = createSessionToken(sanitized);
-  return { user: sanitized, token, session: supabaseSession };
+  return { user: sanitized, token };
 }
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
@@ -765,15 +703,9 @@ export async function serverUpdateUserProfile(
         .select('*')
         .maybeSingle();
 
-      // If Postgres rejected update due to column schema cache or enum constraint
+      // If Postgres rejected update due to enum constraint (e.g. remote DB hasn't run ALTER TYPE for football)
       if (error) {
         console.warn('[ServerAuth] public.users direct update warning:', error.message);
-        if (error.message?.includes('preferred_format')) {
-          delete updatePayload.preferred_format;
-        }
-        if (error.message?.includes('onboarding_completed')) {
-          delete updatePayload.onboarding_completed;
-        }
         const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
         const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
         const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));

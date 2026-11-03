@@ -55,3 +55,10 @@ VALUES
     ('c0000000-0000-0000-0000-000000000007', 'b0000000-0000-0000-0000-000000000006', 'Court 3 (Pickleball Championship)', 'pickleball', 30000, 'Pro Cushioned Acrylic', TRUE, TRUE, TRUE),
     ('c0000000-0000-0000-0000-000000000008', 'b0000000-0000-0000-0000-000000000007', 'Coliseum Hardwood Main Court', 'basketball', 60000, 'Maple Hardwood Surface', TRUE, TRUE, TRUE)
 ON CONFLICT (id) DO NOTHING;
+
+-- 6. Sample Open Play Sessions
+INSERT INTO public.sessions (id, venue_id, host_id, title, description, sport, session_type, allowed_formats, skill_level, court_ids, start_time, end_time, fee_cents, max_players, current_players_count, rotation_format, status)
+VALUES
+    ('d0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 'Friday Night Smash: Doubles Open Play', 'Energetic doubles rotation across 2 courts. King of the Court format, shuttles provided, beginner & intermediate friendly.', 'badminton', 'open_play', ARRAY['doubles', 'mixed_doubles']::match_format[], 'all_levels', ARRAY['c0000000-0000-0000-0000-000000000001'::UUID, 'c0000000-0000-0000-0000-000000000002'::UUID], NOW() - INTERVAL '1 hour', NOW() + INTERVAL '3 hours', 28000, 16, 12, 'King of the Court Doubles', 'active'),
+    ('d0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000002', 'Dinking & Rally: Pickleball Doubles Social', 'Fast-paced pickleball doubles queue. 11-point games, win by 2, rotation after each game. Demo paddles available.', 'pickleball', 'open_play', ARRAY['doubles']::match_format[], 'intermediate', ARRAY['c0000000-0000-0000-0000-000000000003'::UUID], NOW() + INTERVAL '2 hours', NOW() + INTERVAL '5 hours', 25000, 12, 7, 'Rally Rotation Doubles', 'upcoming')
+ON CONFLICT (id) DO NOTHING;

@@ -31,7 +31,6 @@ import {
   createOpenPlaySession as createDbOpenPlaySession,
   updateOpenPlaySession as updateDbOpenPlaySession,
   deleteOpenPlaySession as deleteDbOpenPlaySession,
-  isMockSession,
 } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
 import { getSportDisplayName } from './utils';
@@ -224,7 +223,7 @@ async function initializeStore() {
     const sessions = await getOpenPlaySessions();
     const seenSessionIds = new Set<string>();
     globalState.sessions = sessions.filter((s) => {
-      if (!s || !s.id || seenSessionIds.has(s.id) || isMockSession(s)) return false;
+      if (!s || !s.id || seenSessionIds.has(s.id)) return false;
       seenSessionIds.add(s.id);
       return true;
     });
@@ -667,11 +666,7 @@ export function useMatchiStore() {
           return result.venue;
         }
       } catch (err) {
-        if (isSupabaseConfigured) {
-          console.error('Owner onboarding database creation failed:', err);
-          throw err;
-        }
-        console.warn('Owner onboarding backend creation warning, using local state fallback for offline MVP:', err);
+        console.warn('Owner onboarding backend creation warning, using local state fallback:', err);
         const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? `venue_${crypto.randomUUID()}`
           : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
