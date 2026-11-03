@@ -619,13 +619,61 @@ export function useSportSyncBridge() {
               ? userProfile.name
               : (matchSession.host?.full_name || matchSession.host?.nickname || g.hostName || 'Match Organizer');
             const resolvedHostAvatar = (matchSession.host?.avatar_url as any) || g.hostAvatar || 'alex';
+            const relevantQueues = [
+              ...(matchSession.queues || []),
+              ...store.queues.filter((q) => q.session_id === matchSession.id),
+            ];
+
+            const seenMemberIds = new Set<string>();
+            const seenMemberNames = new Set<string>();
+
+            const hostIdClean = (isUserHost ? userProfile.id : matchSession.host_id) || g.hostId || 'organizer';
+            const hostNameClean = (resolvedHostName || '').trim().toLowerCase();
+            if (hostIdClean) seenMemberIds.add(hostIdClean);
+            if (hostNameClean) seenMemberNames.add(hostNameClean);
+
+            const hostMember = {
+              id: hostIdClean,
+              name: resolvedHostName,
+              avatar: resolvedHostAvatar,
+            };
+
+            const queueMembers: { id?: string; name: string; avatar: any }[] = [];
+            relevantQueues.forEach((q) => {
+              if ((q.status as string) === 'cancelled' || (q.status as string) === 'left') return;
+              const qName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]) || '';
+              const normQName = qName.trim().toLowerCase();
+              const qId = q.user?.id || q.user_id;
+
+              if (qId && seenMemberIds.has(qId)) return;
+              if (normQName && seenMemberNames.has(normQName)) return;
+
+              if (qId) seenMemberIds.add(qId);
+              if (normQName) seenMemberNames.add(normQName);
+
+              queueMembers.push({
+                id: qId,
+                name: qName || 'Participant',
+                avatar: (q.user?.avatar_url as any) || 'alex',
+              });
+            });
+
+            const existingNonHostMembers = (g.members || []).slice(1).filter((m) => {
+              const mId = m.id;
+              const mName = (m.name || '').trim().toLowerCase();
+              if (mId && seenMemberIds.has(mId)) return false;
+              if (mName && seenMemberNames.has(mName)) return false;
+              if (mId) seenMemberIds.add(mId);
+              if (mName) seenMemberNames.add(mName);
+              return true;
+            });
+
+            const updatedMembers = [hostMember, ...queueMembers, ...existingNonHostMembers];
             const spotsJoined = Math.min(
               g.spotsTotal,
-              Math.max(g.spotsJoined, matchSession.current_players_count || 1, g.members?.length || 1)
+              Math.max(updatedMembers.length, matchSession.current_players_count || 1, g.spotsJoined)
             );
-            const updatedMembers = (g.members && g.members.length > 0)
-              ? g.members.map((m, idx) => idx === 0 ? { ...m, name: resolvedHostName, avatar: resolvedHostAvatar } : m)
-              : [{ id: matchSession.host_id || g.hostId || 'organizer', name: resolvedHostName, avatar: resolvedHostAvatar }];
+
             return {
               ...g,
               hostName: resolvedHostName,
@@ -667,6 +715,51 @@ export function useSportSyncBridge() {
             : (s.host?.full_name || s.host?.nickname || (venue?.name ? `${venue.name} Host` : 'Match Organizer'));
           const resolvedHostAvatar = (s.host?.avatar_url as any) || 'alex';
 
+          const relevantQueues = [
+            ...(s.queues || []),
+            ...store.queues.filter((q) => q.session_id === s.id),
+          ];
+
+          const seenMemberIds = new Set<string>();
+          const seenMemberNames = new Set<string>();
+
+          const hostIdClean = (isUserHost ? userProfile.id : s.host_id) || 'organizer';
+          const hostNameClean = (resolvedHostName || '').trim().toLowerCase();
+          if (hostIdClean) seenMemberIds.add(hostIdClean);
+          if (hostNameClean) seenMemberNames.add(hostNameClean);
+
+          const hostMember = {
+            id: hostIdClean,
+            name: resolvedHostName,
+            avatar: resolvedHostAvatar,
+          };
+
+          const queueMembers: { id?: string; name: string; avatar: any }[] = [];
+          relevantQueues.forEach((q) => {
+            if ((q.status as string) === 'cancelled' || (q.status as string) === 'left') return;
+            const qName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]) || '';
+            const normQName = qName.trim().toLowerCase();
+            const qId = q.user?.id || q.user_id;
+
+            if (qId && seenMemberIds.has(qId)) return;
+            if (normQName && seenMemberNames.has(normQName)) return;
+
+            if (qId) seenMemberIds.add(qId);
+            if (normQName) seenMemberNames.add(normQName);
+
+            queueMembers.push({
+              id: qId,
+              name: qName || 'Participant',
+              avatar: (q.user?.avatar_url as any) || 'alex',
+            });
+          });
+
+          const initialMembers = [hostMember, ...queueMembers];
+          const initialSpotsJoined = Math.min(
+            s.max_players || 12,
+            Math.max(initialMembers.length, s.current_players_count || 1)
+          );
+
           added.push({
             id: s.id,
             sessionId: s.id,
@@ -683,19 +776,19 @@ export function useSportSyncBridge() {
             hostName: resolvedHostName,
             hostAvatar: resolvedHostAvatar,
             spotsTotal: s.max_players || 12,
-            spotsJoined: s.current_players_count || 1,
+            spotsJoined: initialSpotsJoined,
             pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
             notes: s.description || 'Verified SportSync session',
             isPublic: s.visibility ? s.visibility !== 'Invite' : true,
             visibility: (s.visibility as any) || 'Public',
             inviteCode: s.invite_code,
-            members: [{ id: isUserHost ? userProfile.id : s.host_id, name: resolvedHostName, avatar: resolvedHostAvatar }],
+            members: initialMembers,
           });
         });
         return added.length > 0 ? [...added, ...updatedExisting] : updatedExisting;
       });
     }
-  }, [store.sessions, store.venues, userProfile.id, userProfile.name]);
+  }, [store.sessions, store.queues, store.venues, userProfile.id, userProfile.name]);
 
   const syncSessionRoster = useCallback(
     async (sessionIdOrCode: string) => {
@@ -1957,7 +2050,7 @@ export function useSportSyncBridge() {
 
   // 18. Join Community Game with host notification and Supabase persistence
   const joinCommunityGame = useCallback(
-    async (gameId: string): Promise<{
+    async (gameId: string, preloadedGame?: CommunityGame): Promise<{
       success: boolean;
       game?: CommunityGame;
       xpResult?: any;
@@ -1965,7 +2058,7 @@ export function useSportSyncBridge() {
       message?: string;
       error?: string;
     }> => {
-      const targetGame = games.find((g) => g.id === gameId);
+      const targetGame = games.find((g) => g.id === gameId) || preloadedGame;
       if (!targetGame) {
         return { success: false, message: 'Game not found.' };
       }
@@ -2141,12 +2234,41 @@ export function useSportSyncBridge() {
 
       if (typeof window !== 'undefined') {
         try {
-          await fetch('/api/invitations', {
+          const apiRes = await fetch('/api/invitations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: updatedGame }),
+            body: JSON.stringify({
+              action: 'accept',
+              game: updatedGame,
+              participant: {
+                id: userProfile.id,
+                name: userName,
+                avatar: userAvatar,
+                email: (userProfile as any).email,
+              },
+            }),
           });
+          const apiData = await apiRes.json();
+          if (!apiRes.ok || !apiData.success) {
+            return {
+              success: false,
+              error: apiData.error || 'Failed to accept invitation.',
+              message: apiData.error || 'Failed to accept invitation.',
+            };
+          }
+        } catch (e: any) {
+          console.warn('[SportSyncBridge] API invitation acceptance call warning:', e);
+        }
+
+        try {
+          const raw = localStorage.getItem('sportsync_joined_games');
+          const list: string[] = raw ? JSON.parse(raw) : [];
+          if (!list.includes(targetGame.id)) list.push(targetGame.id);
+          if (targetGame.sessionId && !list.includes(targetGame.sessionId)) list.push(targetGame.sessionId);
+          if (targetGame.inviteCode && !list.includes(targetGame.inviteCode.toUpperCase())) list.push(targetGame.inviteCode.toUpperCase());
+          localStorage.setItem('sportsync_joined_games', JSON.stringify(list));
         } catch {}
+
         try {
           window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
         } catch {}
@@ -2280,7 +2402,19 @@ export function useSportSyncBridge() {
         } catch {}
       }
 
-      const joinResult = await joinCommunityGame(targetGame.id);
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_joined_games');
+          const list: string[] = raw ? JSON.parse(raw) : [];
+          if (!list.includes(targetGame.id)) list.push(targetGame.id);
+          if (targetGame.sessionId && !list.includes(targetGame.sessionId)) list.push(targetGame.sessionId);
+          if (cleanCode && !list.includes(cleanCode)) list.push(cleanCode);
+          if (targetGame.inviteCode && !list.includes(targetGame.inviteCode.toUpperCase())) list.push(targetGame.inviteCode.toUpperCase());
+          localStorage.setItem('sportsync_joined_games', JSON.stringify(list));
+        } catch {}
+      }
+
+      const joinResult = await joinCommunityGame(targetGame.id, targetGame);
 
       if (joinResult.success && joinResult.game) {
         return {

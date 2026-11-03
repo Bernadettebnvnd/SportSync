@@ -71,7 +71,27 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
 
       // Tab filter
       if (activeTab === 'my_games') {
-        const isJoined = game.members.some((m) => m.name === userName);
+        const uName = (userName || '').trim().toLowerCase();
+        const uId = user?.id;
+        const isMember = game.members?.some((m) =>
+          Boolean((uId && m.id && m.id === uId) || (uName && m.name && m.name.trim().toLowerCase() === uName))
+        );
+        const isHost = Boolean(
+          (game.hostId && uId && game.hostId === uId) ||
+          (game.hostName && uName && game.hostName.trim().toLowerCase() === uName)
+        );
+        let hasJoinedToken = false;
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('sportsync_joined_games');
+            const joinedList: string[] = raw ? JSON.parse(raw) : [];
+            hasJoinedToken =
+              joinedList.includes(game.id) ||
+              Boolean(game.sessionId && joinedList.includes(game.sessionId)) ||
+              Boolean(game.inviteCode && joinedList.includes(game.inviteCode.toUpperCase()));
+          } catch {}
+        }
+        const isJoined = isMember || isHost || hasJoinedToken;
         if (!isJoined) return false;
       } else if (activeTab === 'hosting') {
         const isHost = Boolean(

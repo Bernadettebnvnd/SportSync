@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CommunityGame } from '@/mock/types';
 import fs from 'fs';
 import path from 'path';
-import { createClient } from '@supabase/supabase-js';
+import { createAdminClient, createServerClient } from '@/lib/supabase/server';
 
 const DATA_DIR = path.join(process.cwd(), '.data');
 const CACHE_FILE = path.join(DATA_DIR, 'invitations.json');
@@ -36,16 +36,9 @@ function saveCache(cache: Record<string, CommunityGame>): void {
 const memoryStore: Record<string, CommunityGame> = loadCache();
 
 function getServerSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key || url.includes('xyzcompany') || url.includes('placeholder')) {
-    return null;
-  }
-  try {
-    return createClient(url, key);
-  } catch {
-    return null;
-  }
+  const admin = createAdminClient();
+  if (admin) return admin;
+  return createServerClient();
 }
 
 export async function GET(req: NextRequest) {
@@ -206,12 +199,181 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const game = body.game as CommunityGame;
+    const action = body.action as string | undefined;
+    const participant = body.participant as { id?: string; name: string; avatar?: string; email?: string } | undefined;
 
     if (!game || !game.id) {
       return NextResponse.json({ success: false, error: 'Invalid game payload' }, { status: 400 });
     }
 
     const diskCache = loadCache();
+    const supabase = getServerSupabaseClient();
+
+    let dbSession: any = null;
+    if (supabase) {
+      const inviteKey = (game.inviteCode || body.inviteCode || '').trim().toUpperCase();
+      if (inviteKey) {
+        const { data: byCode } = await supabase
+          .from('sessions')
+          .select('id, max_players, current_players_count, host_id, visibility, invite_code')
+          .eq('invite_code', inviteKey)
+          .maybeSingle();
+        if (byCode) dbSession = byCode;
+      }
+      if (!dbSession && (game.sessionId || (game.id && game.id.includes('-')))) {
+        const sId = game.sessionId || game.id;
+        const { data: byId } = await supabase
+          .from('sessions')
+          .select('id, max_players, current_players_count, host_id, visibility, invite_code')
+          .eq('id', sId)
+          .maybeSingle();
+        if (byId) dbSession = byId;
+      }
+    }
+
+    if (action === 'accept' && participant) {
+      if (!supabase || !dbSession) {
+        const updatedMembers = [
+          ...(game.members || []),
+          { id: participant.id || 'usr_' + Date.now(), name: participant.name, avatar: (participant.avatar as any) || 'alex' },
+        ];
+        const dedupedMap = new Map<string, any>();
+        updatedMembers.forEach((m) => {
+          const key = m.id || m.name;
+          if (!dedupedMap.has(key)) dedupedMap.set(key, m);
+        });
+        const finalMembers = Array.from(dedupedMap.values());
+        const updatedGame: CommunityGame = {
+          ...game,
+          spotsJoined: Math.min(game.spotsTotal, Math.max(game.spotsJoined + 1, finalMembers.length)),
+          members: finalMembers,
+        };
+        if (game.inviteCode) {
+          const inviteKey = game.inviteCode.trim().toUpperCase();
+          diskCache[inviteKey] = updatedGame;
+          memoryStore[inviteKey] = updatedGame;
+        }
+        if (game.id) {
+          const idKey = game.id.trim().toUpperCase();
+          diskCache[idKey] = updatedGame;
+          memoryStore[idKey] = updatedGame;
+        }
+        saveCache(diskCache);
+        return NextResponse.json({ success: true, game: updatedGame });
+      }
+
+      let participantUserId: string | null = null;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(participant.id || '');
+      if (isUUID) {
+        const { data: byId } = await supabase.from('users').select('id').eq('id', participant.id).maybeSingle();
+        if (byId?.id) participantUserId = byId.id;
+      }
+      if (!participantUserId && participant.email) {
+        const { data: byEmail } = await supabase.from('users').select('id').eq('email', participant.email).maybeSingle();
+        if (byEmail?.id) participantUserId = byEmail.id;
+      }
+      if (!participantUserId && participant.name) {
+        const { data: byName } = await supabase.from('users').select('id').ilike('full_name', participant.name.trim()).maybeSingle();
+        if (byName?.id) participantUserId = byName.id;
+      }
+
+      if (!participantUserId) {
+        const newProfile = {
+          email: participant.email || `player_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@sportsync.ph`,
+          full_name: participant.name || 'Invited Player',
+          nickname: participant.name?.split(' ')[0] || 'Player',
+          avatar_url: participant.avatar || 'alex',
+          role: 'player' as const,
+          onboarding_completed: true,
+        };
+        const { data: createdUser, error: createErr } = await supabase
+          .from('users')
+          .insert(newProfile)
+          .select('id')
+          .single();
+        if (createErr) {
+          return NextResponse.json({ success: false, error: 'Database write failed: ' + createErr.message }, { status: 500 });
+        }
+        participantUserId = createdUser?.id || null;
+      }
+
+      if (!participantUserId) {
+        return NextResponse.json({ success: false, error: 'Database write failed: Could not resolve participant user profile.' }, { status: 500 });
+      }
+
+      const { count } = await supabase
+        .from('queues')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', dbSession.id);
+
+      const nextQueueNumber = (count || 0) + 1;
+      const { error: queueErr } = await supabase
+        .from('queues')
+        .upsert(
+          {
+            session_id: dbSession.id,
+            user_id: participantUserId,
+            queue_number: nextQueueNumber,
+            group_size: 1,
+            match_format: 'doubles',
+            status: 'waiting',
+            partner_names: [participant.name],
+          },
+          { onConflict: 'session_id,user_id' }
+        );
+
+      if (queueErr) {
+        return NextResponse.json({ success: false, error: 'Database write failed: ' + queueErr.message }, { status: 500 });
+      }
+
+      const { count: activeQueueCount } = await supabase
+        .from('queues')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
+
+      const finalSpotsJoined = Math.min(dbSession.max_players || 10, (activeQueueCount || 0) + 1);
+
+      await supabase
+        .from('sessions')
+        .update({
+          current_players_count: finalSpotsJoined,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', dbSession.id);
+
+      const updatedMembers = [
+        ...(game.members || []),
+        { id: participantUserId, name: participant.name, avatar: (participant.avatar as any) || 'alex' },
+      ];
+      const dedupedMap = new Map<string, any>();
+      updatedMembers.forEach((m) => {
+        const key = m.id || m.name;
+        if (!dedupedMap.has(key)) dedupedMap.set(key, m);
+      });
+      const finalMembers = Array.from(dedupedMap.values());
+
+      const updatedGame: CommunityGame = {
+        ...game,
+        sessionId: dbSession.id,
+        spotsJoined: finalSpotsJoined,
+        members: finalMembers,
+      };
+
+      if (game.inviteCode) {
+        const inviteKey = game.inviteCode.trim().toUpperCase();
+        diskCache[inviteKey] = updatedGame;
+        memoryStore[inviteKey] = updatedGame;
+      }
+      if (game.id) {
+        const idKey = game.id.trim().toUpperCase();
+        diskCache[idKey] = updatedGame;
+        memoryStore[idKey] = updatedGame;
+      }
+      saveCache(diskCache);
+
+      return NextResponse.json({ success: true, game: updatedGame });
+    }
 
     if (game.inviteCode) {
       const inviteKey = game.inviteCode.trim().toUpperCase();
@@ -227,20 +389,16 @@ export async function POST(req: NextRequest) {
 
     saveCache(diskCache);
 
-    const supabase = getServerSupabaseClient();
-    if (supabase) {
-      const sId = game.sessionId || (game.id && game.id.includes('-') ? game.id : undefined);
-      if (sId) {
-        try {
-          await supabase
-            .from('sessions')
-            .update({
-              current_players_count: game.spotsJoined,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sId);
-        } catch {}
-      }
+    if (supabase && dbSession?.id) {
+      try {
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: game.spotsJoined,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', dbSession.id);
+      } catch {}
     }
 
     return NextResponse.json({ success: true, game });

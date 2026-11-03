@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BottomNav, NavTabId } from './design-system/components/BottomNav';
 import { QuickActionSheet } from './design-system/components/QuickActionSheet';
 import { Toast } from './design-system/components/SearchBar';
@@ -188,9 +188,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   }>({ isOpen: false });
 
   const resolvedCodeRef = useRef<string | null>(null);
+  const inviteDismissedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (inviteDismissedRef.current) return;
     try {
       const searchParams = new URLSearchParams(window.location.search);
       const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
@@ -299,12 +301,70 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setCurrentScreen(screen);
     onScreenChange?.(screen);
 
+    if (typeof window !== 'undefined') {
+      try {
+        window.history.pushState({ screen }, '', window.location.href);
+      } catch {}
+    }
+
     // Synchronize bottom nav tab if appropriate
     if (screen === 'home') setActiveTab('home');
     else if (screen === 'scores') setActiveTab('scores');
     else if (screen === 'social-home' || screen === 'venues-list') setActiveTab('play');
     else if (screen === 'profile') setActiveTab('profile');
   };
+
+  const handleCloseInvitation = useCallback(() => {
+    inviteDismissedRef.current = true;
+    setActiveInviteCode(null);
+    setInviteGame(null);
+    setInviteError(null);
+
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('invite');
+        url.searchParams.delete('code');
+        url.searchParams.delete('match');
+        window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+      } catch {}
+    }
+
+    if (screenHistory.length > 1) {
+      const nextHistory = [...screenHistory];
+      nextHistory.pop();
+      const prevScreen = nextHistory[nextHistory.length - 1];
+      setScreenHistory(nextHistory);
+      setCurrentScreen(prevScreen);
+      onScreenChange?.(prevScreen);
+    } else {
+      const fallbackScreen = isUserAuthenticated() ? 'home' : 'social-home';
+      setScreenHistory([fallbackScreen]);
+      setCurrentScreen(fallbackScreen);
+      onScreenChange?.(fallbackScreen);
+    }
+  }, [screenHistory, isUserAuthenticated, onScreenChange]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = () => {
+      if (currentScreen === 'invitation-landing') {
+        handleCloseInvitation();
+      } else if (screenHistory.length > 1) {
+        setScreenHistory((prev) => {
+          if (prev.length <= 1) return prev;
+          const next = [...prev];
+          next.pop();
+          const prevScreen = next[next.length - 1];
+          setCurrentScreen(prevScreen);
+          onScreenChange?.(prevScreen);
+          return next;
+        });
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentScreen, screenHistory, handleCloseInvitation, onScreenChange]);
 
   const goBack = () => {
     if (screenHistory.length > 1) {
@@ -699,6 +759,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (!activeInviteCode) return;
               const result = await bridge.acceptGameInvitation(activeInviteCode);
               if (result.success && result.game) {
+                if (typeof window !== 'undefined') {
+                  try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('invite');
+                    url.searchParams.delete('code');
+                    url.searchParams.delete('match');
+                    window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+                  } catch {}
+                }
                 setSelectedGame(result.game);
                 setToastMessage('Invitation accepted! You joined the roster.');
                 navigateTo('match-detail');
@@ -715,9 +784,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onRequireAuth={(title, message, pendingAction) => {
               return requireAuth(title, message, pendingAction);
             }}
-            onGoHome={() => {
-              navigateTo('home');
-            }}
+            onGoHome={handleCloseInvitation}
+            onClose={handleCloseInvitation}
+            onBack={handleCloseInvitation}
             onOpenMatch={(g) => {
               setSelectedGame(g);
               navigateTo('match-detail');

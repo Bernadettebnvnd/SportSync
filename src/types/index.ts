@@ -286,6 +286,7 @@ export interface Session {
   invite_code?: string;
   invited_players?: Array<{ id: string; name: string }>;
   location_details?: string;
+  queues?: QueueEntry[];
   created_at?: string;
   updated_at?: string;
 }

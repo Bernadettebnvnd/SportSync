@@ -34,6 +34,8 @@ interface InvitationLandingScreenProps {
   onDecline: () => void;
   onRequireAuth: (actionName: string, message: string, pendingAction?: () => void) => boolean;
   onGoHome: () => void;
+  onClose?: () => void;
+  onBack?: () => void;
   onOpenMatch: (game: CommunityGame) => void;
 }
 
@@ -50,8 +52,11 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   onDecline,
   onRequireAuth,
   onGoHome,
+  onClose,
+  onBack,
   onOpenMatch,
 }) => {
+  const handleClose = onClose || onBack || onGoHome;
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclined, setIsDeclined] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -118,7 +123,29 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
 
   if (isLoading) {
     return (
-      <div className="w-full min-h-[540px] flex flex-col items-center justify-center p-6 text-center bg-[#0B0F0C] text-[#F4F7F0] select-none space-y-4">
+      <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
+        <div className="flex items-center justify-between pb-3 border-b border-white/5">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+            Invitation
+          </span>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 my-auto">
         <div className="w-14 h-14 rounded-2xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 text-[#C8FF2E] flex items-center justify-center animate-pulse shadow-[0_0_24px_rgba(200,255,46,0.2)]">
           <Lock className="w-6 h-6" />
         </div>
@@ -128,6 +155,14 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           </h2>
           <p className="text-xs text-[#A5B0A6] mt-1">
             Validating private access code: {inviteCode}
+          </p>
+        </div>
+        </div>
+        <div className="text-center text-[11px] text-[#6F7B71] pb-2">
+          SportSync Naga City Private Matchmaking
+        </div>
+        <div className="hidden">
+          <p>
           </p>
         </div>
       </div>
@@ -140,7 +175,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
         <div className="flex items-center justify-between pb-3 border-b border-white/5">
           <button
             type="button"
-            onClick={onGoHome}
+            onClick={handleClose}
             className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
             title="Go home"
           >
@@ -149,7 +184,14 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
             Invitation
           </span>
-          <div className="w-9" />
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
@@ -169,7 +211,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               variant="primary"
               size="lg"
               className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
-              onClick={onGoHome}
+              onClick={handleClose}
             >
               Browse Public Matches
             </Button>
@@ -189,7 +231,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
         <div className="flex items-center justify-between pb-3 border-b border-white/5">
           <button
             type="button"
-            onClick={onGoHome}
+            onClick={handleClose}
             className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -197,7 +239,14 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
             Invitation Expired
           </span>
-          <div className="w-9" />
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
@@ -217,7 +266,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               variant="primary"
               size="lg"
               className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
-              onClick={onGoHome}
+              onClick={handleClose}
             >
               Find Active Matches
             </Button>
@@ -237,7 +286,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
         <div className="flex items-center justify-between pb-3 border-b border-white/5">
           <button
             type="button"
-            onClick={onGoHome}
+            onClick={handleClose}
             className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -245,7 +294,14 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
             Invitation
           </span>
-          <div className="w-9" />
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
@@ -265,7 +321,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               variant="primary"
               size="lg"
               className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
-              onClick={onGoHome}
+              onClick={handleClose}
             >
               Explore Public Games
             </Button>
@@ -293,7 +349,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
       <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/5 shrink-0 bg-[#0B0F0C]">
         <button
           type="button"
-          onClick={onGoHome}
+          onClick={handleClose}
           className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
           title="Back to discovery"
         >
@@ -318,6 +374,15 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             className="w-8 h-8 rounded-full bg-[#1C241E] text-[#C8FF2E] hover:bg-[#C8FF2E] hover:text-[#0B0F0C] flex items-center justify-center transition-all press-scale border border-white/10"
           >
             <Share2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            title="Close invitation"
+            aria-label="Close invitation"
+            className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-all press-scale border border-white/10"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
           <div className="px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold flex items-center gap-1">
             <Lock className="w-3 h-3 text-[#C8FF2E]" />
@@ -479,7 +544,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               variant="secondary"
               size="lg"
               className="w-full font-bold min-h-[48px]"
-              onClick={onGoHome}
+              onClick={handleClose}
             >
               Roster Full • Explore Public Games
             </Button>
