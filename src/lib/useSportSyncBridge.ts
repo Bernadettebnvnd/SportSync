@@ -1328,6 +1328,16 @@ export function useSportSyncBridge() {
         return [newGame, ...filtered];
       });
 
+      if (typeof window !== 'undefined' && newGame.inviteCode) {
+        try {
+          fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: newGame }),
+          }).catch(() => {});
+        } catch {}
+      }
+
       if (typeof window !== 'undefined' && gameData.inviteCode) {
         try {
           const existing = localStorage.getItem('sportsync_unlocked_invites');
@@ -1842,6 +1852,16 @@ export function useSportSyncBridge() {
         } catch {}
       }
 
+      if (typeof window !== 'undefined' && (targetGame.inviteCode || targetGame.visibility === 'Invite')) {
+        try {
+          fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: updatedGame }),
+          }).catch(() => {});
+        } catch {}
+      }
+
       // 5. Notify the Host When a Player Joins Their Game
       // Example notification: "John Doe joined your game, Basketball Match."
       const hostName = targetGame.hostName;
@@ -1916,6 +1936,99 @@ export function useSportSyncBridge() {
       };
     },
     [games, userProfile.name, userProfile.id, userProfile.avatarId, awardXp]
+  );
+
+  const addExternalGame = useCallback((game: CommunityGame) => {
+    if (!game || !game.id) return;
+    setGames((prev) => {
+      const idx = prev.findIndex(
+        (g) => g.id === game.id || (game.inviteCode && g.inviteCode === game.inviteCode)
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...game };
+        return copy;
+      }
+      return [game, ...prev];
+    });
+  }, []);
+
+  const acceptGameInvitation = useCallback(
+    async (inviteCode: string): Promise<{ success: boolean; game?: CommunityGame; message?: string }> => {
+      const cleanCode = inviteCode.trim().toUpperCase();
+      let targetGame = games.find(
+        (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
+      );
+
+      if (!targetGame && typeof window !== 'undefined') {
+        try {
+          const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.game) {
+              targetGame = data.game;
+              addExternalGame(data.game);
+            }
+          }
+        } catch {}
+      }
+
+      if (!targetGame) {
+        return { success: false, message: 'Invitation not found.' };
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_unlocked_invites');
+          const list: string[] = raw ? JSON.parse(raw) : [];
+          if (!list.includes(cleanCode)) list.push(cleanCode);
+          if (targetGame.inviteCode && !list.includes(targetGame.inviteCode.toUpperCase())) {
+            list.push(targetGame.inviteCode.toUpperCase());
+          }
+          if (!list.includes(targetGame.id)) list.push(targetGame.id);
+          localStorage.setItem('sportsync_unlocked_invites', JSON.stringify(list));
+        } catch {}
+      }
+
+      const joinResult = await joinCommunityGame(targetGame.id);
+
+      if (joinResult.success && joinResult.game) {
+        return {
+          success: true,
+          game: joinResult.game,
+          message: 'Invitation accepted! You have joined the match roster.',
+        };
+      }
+
+      if (joinResult.alreadyParticipant) {
+        return {
+          success: true,
+          game: targetGame,
+          message: 'You have already accepted this invitation.',
+        };
+      }
+
+      return {
+        success: false,
+        message: joinResult.message || 'Failed to accept invitation.',
+      };
+    },
+    [games, joinCommunityGame, addExternalGame]
+  );
+
+  const declineGameInvitation = useCallback(
+    (inviteCode: string): void => {
+      const cleanCode = inviteCode.trim().toUpperCase();
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_unlocked_invites');
+          const list: string[] = raw ? JSON.parse(raw) : [];
+          const next = list.filter((c) => c !== cleanCode);
+          localStorage.setItem('sportsync_unlocked_invites', JSON.stringify(next));
+        } catch {}
+      }
+    },
+    []
   );
 
   // 19. Leave Community Game
@@ -2155,6 +2268,9 @@ export function useSportSyncBridge() {
     isGameHost,
     joinCommunityGame,
     leaveCommunityGame,
+    addExternalGame,
+    acceptGameInvitation,
+    declineGameInvitation,
     createReservation,
     cancelReservation,
     completeOnboarding,

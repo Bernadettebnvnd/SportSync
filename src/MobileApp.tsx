@@ -21,6 +21,7 @@ import { FindGamesScreen } from './screens/community/FindGamesScreen';
 import { MatchDetailScreen } from './screens/community/MatchDetailScreen';
 import { MatchGroupChatScreen } from './screens/community/MatchGroupChatScreen';
 import { PostMatchScreen } from './screens/community/PostMatchScreen';
+import { InvitationLandingScreen } from './screens/community/InvitationLandingScreen';
 import { VenuesListScreen } from './screens/venues/VenuesListScreen';
 import { VenueDetailScreen } from './screens/venues/VenueDetailScreen';
 import { BookingFlowScreen } from './screens/venues/BookingFlowScreen';
@@ -60,6 +61,7 @@ export type ScreenId =
   | 'match-detail'
   | 'match-chat'
   | 'post-match'
+  | 'invitation-landing'
   | 'venues-list'
   | 'venue-detail'
   | 'booking-flow'
@@ -147,6 +149,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
+  const [activeInviteCode, setActiveInviteCode] = useState<string | null>(null);
+  const [inviteGame, setInviteGame] = useState<CommunityGame | null>(null);
+  const [isInviteLoading, setIsInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('login');
   const [guestPrompt, setGuestPrompt] = useState<{
     isOpen: boolean;
@@ -160,22 +166,46 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (typeof window === 'undefined') return;
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const inviteParam = searchParams.get('invite') || searchParams.get('match');
+      const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
       if (inviteParam) {
         const cleanCode = inviteParam.trim().toUpperCase();
-        const raw = localStorage.getItem('sportsync_unlocked_invites');
-        const list = raw ? JSON.parse(raw) : [];
-        if (!list.includes(cleanCode)) {
-          list.push(cleanCode);
-          localStorage.setItem('sportsync_unlocked_invites', JSON.stringify(list));
-        }
-        const matchingGame = bridge.games.find(
+        setActiveInviteCode(cleanCode);
+
+        const localMatch = bridge.games.find(
           (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
         );
-        if (matchingGame) {
-          setSelectedGame(matchingGame);
-          navigateTo('match-detail');
+
+        if (localMatch) {
+          setInviteGame(localMatch);
+          setCurrentScreen('invitation-landing');
+          setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+          return;
         }
+
+        setIsInviteLoading(true);
+        fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`)
+          .then((res) => {
+            if (!res.ok) throw new Error('Invitation not found or expired');
+            return res.json();
+          })
+          .then((data) => {
+            if (data.success && data.game) {
+              setInviteGame(data.game);
+              bridge.addExternalGame(data.game);
+              setCurrentScreen('invitation-landing');
+              setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+            } else {
+              setInviteError(data.error || 'Invitation not found');
+              setCurrentScreen('invitation-landing');
+            }
+          })
+          .catch((err) => {
+            setInviteError(err?.message || 'Invitation not found or expired');
+            setCurrentScreen('invitation-landing');
+          })
+          .finally(() => {
+            setIsInviteLoading(false);
+          });
       }
     } catch {}
   }, [bridge.games]);
@@ -563,6 +593,52 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onDone={() => navigateTo('home')}
           />
         );
+      case 'invitation-landing': {
+        const targetGame = inviteGame || bridge.games.find(
+          (g) => (g.inviteCode && activeInviteCode && g.inviteCode.toUpperCase() === activeInviteCode.toUpperCase()) ||
+                 (activeInviteCode && g.id === activeInviteCode)
+        ) || null;
+
+        return (
+          <InvitationLandingScreen
+            inviteCode={activeInviteCode || ''}
+            game={targetGame}
+            isLoading={isInviteLoading}
+            isError={Boolean(inviteError && !targetGame)}
+            errorMessage={inviteError || undefined}
+            currentUserName={bridge.userProfile.name}
+            currentUserId={bridge.userProfile.id}
+            isAuthenticated={isUserAuthenticated()}
+            onAccept={async () => {
+              if (!activeInviteCode) return;
+              const result = await bridge.acceptGameInvitation(activeInviteCode);
+              if (result.success && result.game) {
+                setSelectedGame(result.game);
+                setToastMessage('Invitation accepted! You joined the roster.');
+                navigateTo('match-detail');
+              } else {
+                setToastMessage(result.message || 'Could not accept invitation.');
+              }
+            }}
+            onDecline={() => {
+              if (activeInviteCode) {
+                bridge.declineGameInvitation(activeInviteCode);
+              }
+              setToastMessage('Invitation declined. No roster spot reserved.');
+            }}
+            onRequireAuth={(title, message, pendingAction) => {
+              return requireAuth(title, message, pendingAction);
+            }}
+            onGoHome={() => {
+              navigateTo('home');
+            }}
+            onOpenMatch={(g) => {
+              setSelectedGame(g);
+              navigateTo('match-detail');
+            }}
+          />
+        );
+      }
 
       // Flow 5: Venues & Booking
       case 'venues-list':

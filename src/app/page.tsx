@@ -208,6 +208,7 @@ export default function RootHomePage() {
                     { id: 'create-match', label: '7. Create Match Wizard' },
                     { id: 'find-games', label: '8. Discover Pickups' },
                     { id: 'match-detail', label: '9. Roster Details' },
+                    { id: 'invitation-landing', label: '9b. Event Invitation' },
                     { id: 'match-chat', label: '10. Match Group Chat' },
                   ],
                 },
