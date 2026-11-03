@@ -606,6 +606,7 @@ export function VenueMap({
         const primarySport = venue.featured_sports[0] || 'badminton';
         const sportLabel = getSportDisplayName(primarySport);
         const isSelected = activeItem?.type === 'platform' && activeItem.venue.id === venue.id;
+        const venueDisplayName = venue.name.length > 20 ? `${venue.name.substring(0, 18)}…` : venue.name;
 
         const customHtml = `
           <div style="
@@ -626,7 +627,7 @@ export function VenueMap({
             transition: all 0.2s ease;
           ">
             <span style="color: #E9C46A; font-size: 13px; line-height: 1;">&bull;</span>
-            <span>${venue.name.split(' ')[0]}</span>
+            <span>${venueDisplayName}</span>
             <span style="opacity: 0.85; font-size: 9px; font-weight: 700; background: rgba(0,0,0,0.25); padding: 1px 4px; border-radius: 4px;">${sportLabel}</span>
           </div>
         `;
@@ -634,11 +635,15 @@ export function VenueMap({
         const icon = L.divIcon({
           html: customHtml,
           className: 'custom-venue-pin',
-          iconSize: [110, 28],
-          iconAnchor: [55, 14],
+          iconSize: [140, 28],
+          iconAnchor: [70, 14],
         });
 
-        const marker = L.marker([venue.latitude, venue.longitude], { icon }).addTo(map);
+        const marker = L.marker([venue.latitude, venue.longitude], {
+          icon,
+          title: `${venue.name} — Bookable on SportSync (${venue.city})`,
+          alt: `${venue.name} in ${venue.city}`,
+        }).addTo(map);
 
         marker.on('click', () => {
           setActiveVenueIndex(index);
@@ -656,6 +661,7 @@ export function VenueMap({
       // Add pins for map-discovered facilities (Slate)
       discoveredFacilities.forEach((facility) => {
         const isSelected = activeItem?.type === 'discovered' && activeItem.facility.id === facility.id;
+        const facilityDisplayName = facility.name.length > 20 ? `${facility.name.substring(0, 18)}…` : facility.name;
         const customHtml = `
           <div style="
             background: ${isSelected ? '#0F172A' : '#334155'};
@@ -675,19 +681,23 @@ export function VenueMap({
             transition: all 0.2s ease;
           ">
             <span style="color: #38BDF8; font-size: 11px; line-height: 1;">&bull;</span>
-            <span>${facility.name.split(' ')[0]}</span>
-            <span style="opacity: 0.85; font-size: 8px; font-weight: 700; background: rgba(0,0,0,0.3); padding: 1px 3px; border-radius: 3px;">MAP</span>
+            <span>${facilityDisplayName}</span>
+            <span style="opacity: 0.9; font-size: 8px; font-weight: 700; background: rgba(0,0,0,0.3); padding: 1px 4px; border-radius: 4px;">Public Map</span>
           </div>
         `;
 
         const icon = L.divIcon({
           html: customHtml,
           className: 'custom-discovered-pin',
-          iconSize: [100, 26],
-          iconAnchor: [50, 13],
+          iconSize: [130, 26],
+          iconAnchor: [65, 13],
         });
 
-        const marker = L.marker([facility.latitude, facility.longitude], { icon }).addTo(map);
+        const marker = L.marker([facility.latitude, facility.longitude], {
+          icon,
+          title: `${facility.name} — Community Sports Facility (${facility.city || 'Philippines'})`,
+          alt: `${facility.name} public facility`,
+        }).addTo(map);
 
         marker.on('click', () => {
           setClickedItem({ type: 'discovered', facility });

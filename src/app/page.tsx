@@ -34,11 +34,18 @@ export default function RootHomePage() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('home');
   const [useDeviceChassis, setUseDeviceChassis] = useState(false);
   const [showScreenDrawer, setShowScreenDrawer] = useState(false);
+  const [showInternalNav, setShowInternalNav] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { isLightMode, toggleTheme } = useTheme();
 
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('debug') === 'true' || params.get('prototype') === 'true') {
+        setShowInternalNav(true);
+      }
+    }
   }, []);
 
   return (
@@ -46,7 +53,7 @@ export default function RootHomePage() {
       suppressHydrationWarning
       className={`min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-between select-none ${mounted && isLightMode ? 'light' : 'dark'}`}
     >
-      {/* Adaptive Header with quick links for Players & Facility Partners */}
+      {/* Player Navigation Header */}
       <header className="w-full border-b border-white/5 bg-[#0B0F0C]/90 backdrop-blur-xl sticky top-0 z-50 px-3 sm:px-6 py-2 sm:py-2.5">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">
@@ -63,14 +70,14 @@ export default function RootHomePage() {
             </div>
           </div>
 
-          {/* Quick Route Switches & Portals */}
+          {/* Player Actions & Navigation */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Theme Toggle (Dark / Light Mode) */}
             <button
               type="button"
               onClick={toggleTheme}
               suppressHydrationWarning
-              className="hidden sm:flex h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#F4F7F0] items-center gap-1.5 transition-all press-scale"
+              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-[#F4F7F0] flex items-center gap-1.5 transition-all press-scale"
               title={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
               aria-label={mounted && isLightMode ? 'Switch to Dark Floodlight Mode' : 'Switch to Light Canvas Mode'}
             >
@@ -91,56 +98,50 @@ export default function RootHomePage() {
                 </>
               )}
             </button>
-            {/* View Mode Toggle: Adaptive View vs Phone Frame */}
-            <button
-              type="button"
-              onClick={() => setUseDeviceChassis(!useDeviceChassis)}
-              className="hidden md:flex h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white items-center gap-1.5 transition-all"
-              title="Toggle Device Frame"
-            >
-              {useDeviceChassis ? (
-                <>
-                  <Monitor className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                  <span>Adaptive View</span>
-                </>
-              ) : (
-                <>
-                  <Smartphone className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                  <span>Phone Frame</span>
-                </>
-              )}
-            </button>
 
-            {/* Direct Guest Player Explore Link */}
+            {/* Direct Player Explore Link */}
             <Link
               href="/explore"
-              className="h-8 sm:h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E]/30 text-xs text-[#A5B0A6] hover:text-[#C8FF2E] flex items-center gap-1.5 transition-all"
-              title="Browse Facilities as Guest"
+              className="h-8 sm:h-9 px-3.5 rounded-full bg-[#C8FF2E] hover:bg-[#d4ff52] text-xs font-black text-[#0B0F0C] flex items-center gap-1.5 transition-all shadow-sm"
+              title="Browse and Book Sports Facilities"
             >
-              <Compass className="w-3.5 h-3.5 text-[#C8FF2E]" />
-              <span>Explore</span>
+              <Compass className="w-3.5 h-3.5 text-[#0B0F0C]" />
+              <span>Explore Courts</span>
             </Link>
 
-            {/* Facility Portal Link */}
-            <Link
-              href="/organizer"
-              className="h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-[#C8FF2E]/30 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1.5 transition-all shadow-sm"
-              title="Facility Owner Portal"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Facility Portal</span>
-            </Link>
+            {/* Internal Prototype / QA controls (Gated outside customer production) */}
+            {showInternalNav && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setUseDeviceChassis(!useDeviceChassis)}
+                  className="hidden md:flex h-9 px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white items-center gap-1.5 transition-all"
+                  title="Toggle Device Frame"
+                >
+                  {useDeviceChassis ? (
+                    <>
+                      <Monitor className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                      <span>Adaptive View</span>
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                      <span>Phone Frame</span>
+                    </>
+                  )}
+                </button>
 
-            {/* Screen Jumper for QA / Navigation */}
-            <button
-              type="button"
-              onClick={() => setShowScreenDrawer(!showScreenDrawer)}
-              className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white flex items-center gap-1.5 transition-all"
-              title="Quick Screen Navigator"
-            >
-              <Menu className="w-4 h-4 text-[#C8FF2E]" />
-              <span className="hidden lg:inline">Screens</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setShowScreenDrawer(!showScreenDrawer)}
+                  className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-full bg-[#141A15] hover:bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6] hover:text-white flex items-center gap-1.5 transition-all"
+                  title="Quick Screen Navigator"
+                >
+                  <Menu className="w-4 h-4 text-[#C8FF2E]" />
+                  <span className="hidden lg:inline">Screens</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -170,8 +171,8 @@ export default function RootHomePage() {
         )}
       </main>
 
-      {/* Screen Jumper Drawer Modal for QA verification */}
-      {showScreenDrawer && (
+      {/* Screen Jumper Drawer Modal for QA verification (gated behind internal ?debug=true or ?prototype=true) */}
+      {showInternalNav && showScreenDrawer && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-lg max-h-[85vh] rounded-3xl bg-[#141A15] border border-white/10 p-5 flex flex-col overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">

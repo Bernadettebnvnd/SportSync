@@ -322,7 +322,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             initialValues={personalizationDraft || {
               displayName: bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : '',
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
-              preferredArea: bridge.userProfile.city || 'Naga City',
+              preferredArea: (bridge.userProfile.city && bridge.userProfile.city !== 'Current Location') ? bridge.userProfile.city : 'Metro Manila',
               skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,
             }}
             onDraftChange={setPersonalizationDraft}

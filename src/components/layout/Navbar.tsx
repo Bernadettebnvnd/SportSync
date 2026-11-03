@@ -114,18 +114,20 @@ export function Navbar() {
               <span>Find Courts</span>
             </Link>
 
-            <Link
-              href="/organizer"
-              className={cn(
-                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                isFacilityView
-                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
-              )}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Facility Portal</span>
-            </Link>
+            {isOwnerOrAdmin && (
+              <Link
+                href="/organizer"
+                className={cn(
+                  'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                  isFacilityView
+                    ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                    : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                )}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Facility Portal</span>
+              </Link>
+            )}
           </nav>
 
           {/* Right Side Controls */}

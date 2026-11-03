@@ -29,24 +29,24 @@ import { useNotifications } from '../../lib/notifications';
 
 
 export const FEATURED_CITY_FILTERS = [
+  { label: '🌟 All Cities', value: 'all' },
   { label: '📍 Near You', value: 'near' },
-  { label: 'All Cities', value: 'all' },
-  { label: 'Naga City', value: 'naga' },
   { label: 'Taguig / BGC', value: 'taguig' },
   { label: 'Pasig / Ortigas', value: 'pasig' },
   { label: 'Makati', value: 'makati' },
   { label: 'Quezon City', value: 'quezon' },
+  { label: 'Naga City', value: 'naga' },
   { label: 'Cebu City', value: 'cebu' },
 ];
 
 export const AVAILABLE_USER_LOCATIONS = [
-  'Naga City',
   'Taguig / BGC',
-  'Makati',
-  'Pasig',
-  'Quezon City',
-  'Cebu City',
   'Metro Manila',
+  'Pasig',
+  'Makati',
+  'Quezon City',
+  'Naga City',
+  'Cebu City',
 ];
 
 function isVenueInCity(venue: Venue, cityKey: string): boolean {
@@ -166,11 +166,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     }
     const candidate = currentUser.city || user?.city;
     if (candidate && candidate !== 'Current Location') return candidate;
-    return 'Naga City';
+    return 'Taguig / BGC';
   });
 
-  // Featured Courts City Filter ('near' = near user location, 'all' = All Cities, or specific city)
-  const [selectedCityFilter, setSelectedCityFilter] = useState<string>('near');
+  // Featured Courts City Filter ('all' = All Cities by default for demo reliability, 'near' = near user location, or specific city)
+  const [selectedCityFilter, setSelectedCityFilter] = useState<string>('all');
   const [showLocationPicker, setShowLocationPicker] = useState<boolean>(false);
   const [isDetectingGps, setIsDetectingGps] = useState<boolean>(false);
 
@@ -178,8 +178,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('sportsync_user_location');
       if (stored === 'Current Location') {
-        localStorage.setItem('sportsync_user_location', 'Naga City');
-        localStorage.setItem('sportsync_user_city', 'Naga City');
+        localStorage.setItem('sportsync_user_location', 'Taguig / BGC');
+        localStorage.setItem('sportsync_user_city', 'Taguig / BGC');
       }
     }
     const candidate = currentUser.city || user?.city;
@@ -189,7 +189,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   }, [currentUser.city, user?.city, userLocation]);
 
   const handleSelectLocation = (newLoc: string) => {
-    const safeLoc = !newLoc || newLoc === 'Current Location' ? 'Naga City' : newLoc;
+    const safeLoc = !newLoc || newLoc === 'Current Location' ? 'Taguig / BGC' : newLoc;
     setUserLocation(safeLoc);
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_user_location', safeLoc);
@@ -203,7 +203,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   const handleDetectGpsLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      handleSelectLocation('Naga City');
+      handleSelectLocation('Taguig / BGC');
       return;
     }
     setIsDetectingGps(true);
@@ -223,11 +223,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           handleSelectLocation('Cebu City');
           return;
         }
-        handleSelectLocation('Naga City');
+        handleSelectLocation('Taguig / BGC');
       },
       () => {
         setIsDetectingGps(false);
-        handleSelectLocation('Naga City');
+        handleSelectLocation('Taguig / BGC');
       },
       { timeout: 6000 }
     );
@@ -240,14 +240,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const { salutation, fullGreeting, showName } = useTimeGreeting(userName, effectiveIsGuest);
 
   // Filter featured courts by active sport AND location / city filter
-  // If the court is far from current location (e.g. user is in Naga, courts are in Manila/Cebu), it shouldn't appear
-  // It can only be seen in filters (All Cities)
+  // Ensures customer demo never displays a blank empty home screen on launch
   const featuredCourts = useMemo(() => {
-    return venues.filter((v) => {
+    const list = venues.filter((v) => {
       // 1. Sport filter
       if (activeSport !== 'All') {
         const sportLower = activeSport.toLowerCase();
-        const primaryMatch = v.sport.toLowerCase().includes(sportLower);
+        const primaryMatch = v.sport?.toLowerCase().includes(sportLower);
         const featuredMatch = v.featuredSports?.some((s) => s.toLowerCase().includes(sportLower));
         const courtsMatch = v.courts?.some((c: any) => c.sport?.toLowerCase().includes(sportLower));
         if (!primaryMatch && !featuredMatch && !courtsMatch) return false;
@@ -255,18 +254,31 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
       // 2. City / Location filter
       if (selectedCityFilter === 'all') {
-        // "All Cities": All courts appear (Naga, Manila, Cebu, etc.)
         return true;
       }
 
       if (selectedCityFilter === 'near') {
-        // "Near You": If user is in Naga City, Camarines Sur, courts in Manila, Cebu, etc. DO NOT appear
         return isVenueNearLocation(v, userLocation);
       }
 
-      // Specific city selected (e.g. 'naga', 'taguig', 'cebu')
       return isVenueInCity(v, selectedCityFilter);
     });
+
+    // If near filter yielded 0 venues, fallback automatically to all venues for the selected sport so screen is never empty
+    if (list.length === 0 && selectedCityFilter === 'near') {
+      return venues.filter((v) => {
+        if (activeSport !== 'All') {
+          const sportLower = activeSport.toLowerCase();
+          const primaryMatch = v.sport?.toLowerCase().includes(sportLower);
+          const featuredMatch = v.featuredSports?.some((s) => s.toLowerCase().includes(sportLower));
+          const courtsMatch = v.courts?.some((c: any) => c.sport?.toLowerCase().includes(sportLower));
+          return primaryMatch || featuredMatch || courtsMatch;
+        }
+        return true;
+      });
+    }
+
+    return list;
   }, [venues, activeSport, selectedCityFilter, userLocation]);
 
   // Filter upcoming games by active sport (strictly deduplicated by game.id)
@@ -544,10 +556,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
             <div className="space-y-1">
               <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
-                No {activeSport !== 'All' ? activeSport : ''} courts found near {(userLocation === 'Current Location' || !userLocation ? 'Naga City' : userLocation).split(',')[0]}
+                No {activeSport !== 'All' ? activeSport : ''} courts found {selectedCityFilter === 'all' ? 'in this sport' : `near ${userLocation}`}
               </h4>
               <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                Courts in Manila, Cebu, and other cities can be viewed in &quot;All Cities&quot;.
+                Explore verified venues across Metro Manila, Cebu, and all partner cities.
               </p>
             </div>
             <div className="pt-1 flex items-center justify-center gap-2">

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useMatchiStore } from '@/lib/store';
 import { BookingModal } from '@/components/payments/BookingModal';
 import { SportCourtVisualizer } from '@/components/explore/SportCourtVisualizer';
-import { formatCurrency, getSportDisplayName } from '@/lib/utils';
+import { formatCurrency, getSportDisplayName, formatSkillLevel } from '@/lib/utils';
 import {
   ArrowLeft,
   Calendar,
@@ -93,8 +93,8 @@ export default function SessionDetailPage({ params }: SessionPageProps) {
               <span className="rounded-md bg-[#EBF4EE] px-2.5 py-1 text-xs font-bold text-[#1E4A32] capitalize">
                 {getSportDisplayName(session.sport)}
               </span>
-              <span className="rounded-md bg-[#FBF0E6] px-2.5 py-1 text-xs font-bold text-[#C87D43] capitalize">
-                {session.skill_level.replace('_', ' ')}
+              <span className="rounded-md bg-[#FBF0E6] px-2.5 py-1 text-xs font-bold text-[#C87D43]">
+                {formatSkillLevel(session.skill_level)}
               </span>
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#2D724E] bg-[#EBF4EE] px-2.5 py-1 rounded-full">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#2D724E] animate-pulse" />
