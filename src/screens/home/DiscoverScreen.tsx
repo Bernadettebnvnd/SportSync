@@ -96,7 +96,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Fixed Naga City pilot location
   const userLocation = 'Naga City';
 
-  const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
+  const userName = user?.name || currentUser.full_name || (effectiveIsGuest ? 'Guest' : 'Player');
 
   // Time-based greeting per Phase 8
   const { salutation, fullGreeting, showName } = useTimeGreeting(userName, effectiveIsGuest);

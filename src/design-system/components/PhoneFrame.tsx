@@ -1,5 +1,8 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import { Wifi, Battery } from 'lucide-react';
+import { getDeviceLocalTimeZone } from '../../lib/useGreeting';
 
 interface PhoneFrameProps {
   children: React.ReactNode;
@@ -8,12 +11,80 @@ interface PhoneFrameProps {
   showGlassReflection?: boolean;
 }
 
+/**
+ * Format the user's actual local device time for the phone status bar.
+ * Accurately uses the browser's local timezone (never hardcoded 9:41 or fixed UTC).
+ */
+function getFormattedDeviceTime(): string {
+  if (typeof window === 'undefined') return '';
+
+  try {
+    // Check if developer testing mock hour is set
+    const mock = window.localStorage.getItem('sportsync_mock_hour');
+    if (mock !== null && mock !== '') {
+      const parsed = parseInt(mock, 10);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 23) {
+        const mockDate = new Date();
+        mockDate.setHours(parsed);
+        mockDate.setMinutes(0);
+        return new Intl.DateTimeFormat(undefined, {
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(mockDate);
+      }
+    }
+  } catch {}
+
+  const now = new Date();
+  try {
+    const timeZone = getDeviceLocalTimeZone();
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+      ...(timeZone ? { timeZone } : {}),
+    }).format(now);
+  } catch {
+    const hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+}
+
 export const PhoneFrame: React.FC<PhoneFrameProps> = ({
   children,
   title,
   className = '',
   showGlassReflection = false,
 }) => {
+  const [deviceTime, setDeviceTime] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => setDeviceTime(getFormattedDeviceTime());
+
+    // Sync immediately on client mount with actual local device time
+    updateTime();
+
+    // Re-check every 10 seconds to keep minutes accurate
+    const interval = setInterval(updateTime, 10000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') updateTime();
+    };
+
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', updateTime);
+    window.addEventListener('storage', updateTime);
+    window.addEventListener('sportsync:timechange', updateTime);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', updateTime);
+      window.removeEventListener('storage', updateTime);
+      window.removeEventListener('sportsync:timechange', updateTime);
+    };
+  }, []);
+
   return (
     <div className={`relative flex flex-col items-center shrink-0 ${className}`}>
       {/* Title above phone if specified */}
@@ -33,7 +104,9 @@ export const PhoneFrame: React.FC<PhoneFrameProps> = ({
 
         {/* Top iOS Status Bar (Safe Area Top: 44px) */}
         <div className="h-11 w-full px-6 flex items-center justify-between text-xs text-[#F4F7F0] font-semibold shrink-0 z-40 bg-transparent pointer-events-none pt-1">
-          <span className="text-[13px] font-display font-bold tracking-tight">9:41</span>
+          <span className="text-[12px] font-display font-bold tracking-tight">
+            {deviceTime || getFormattedDeviceTime() || '12:00'}
+          </span>
           <div className="flex items-center gap-1.5 opacity-90">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current">
               <rect x="2" y="16" width="3" height="5" rx="1" />
@@ -58,7 +131,7 @@ export const PhoneFrame: React.FC<PhoneFrameProps> = ({
 
         {/* Subtle Diagonal Glass Glare for Dribbble presentation shots */}
         {showGlassReflection && (
-          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-white/[0.07] pointer-events-none rounded-[38px]" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.03] to-transparent pointer-events-none" />
         )}
       </div>
     </div>
