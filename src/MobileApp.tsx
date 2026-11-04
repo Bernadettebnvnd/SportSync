@@ -315,6 +315,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   }, [initialScreen]);
 
   useEffect(() => {
+    if (currentScreen === 'match-detail' && selectedGame) {
+      const hasMatch = bridge.games.some(
+        (g) =>
+          g.id === selectedGame.id ||
+          (selectedGame.sessionId && (g.sessionId === selectedGame.sessionId || g.id === selectedGame.sessionId)) ||
+          (selectedGame.id && (g.sessionId === selectedGame.id || g.id === selectedGame.id)) ||
+          (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
+      );
+      if (!hasMatch) {
+        const lookupKey = selectedGame.sessionId || selectedGame.id || selectedGame.inviteCode;
+        if (lookupKey) {
+          fetch(`/api/invitations?code=${encodeURIComponent(lookupKey)}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data?.success && data.game) {
+                bridge.addExternalGame(data.game);
+                setSelectedGame(data.game);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }
+  }, [currentScreen, selectedGame, bridge.games, bridge]);
+
+  useEffect(() => {
     if (selectedGame) {
       const match = bridge.games.find(
         (g) =>
@@ -686,6 +712,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               navigateTo('match-center');
             }}
             onSelectGame={(g) => {
+              bridge.addExternalGame(g);
               setSelectedGame(g);
               navigateTo('match-detail');
             }}
@@ -820,7 +847,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             ? bridge.games.find(
                 (g) =>
                   g.id === selectedGame.id ||
-                  (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
+                  (selectedGame.sessionId && (g.sessionId === selectedGame.sessionId || g.id === selectedGame.sessionId)) ||
+                  (selectedGame.id && (g.sessionId === selectedGame.id || g.id === selectedGame.id)) ||
                   (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
               ) || selectedGame
             : bridge.games[0]) || null;

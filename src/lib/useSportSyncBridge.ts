@@ -2147,7 +2147,16 @@ export function useSportSyncBridge() {
         coordinates?: [number, number];
       }
     ): Promise<{ success: boolean; game?: CommunityGame; error?: string }> => {
-      const targetGame = games.find((g) => g.id === gameId);
+      let targetGame = games.find((g) => g.id === gameId || (g.sessionId && g.sessionId === gameId));
+      if (!targetGame && typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("sportsync_community_games");
+          if (stored) {
+            const list = JSON.parse(stored);
+            targetGame = list.find((g: any) => g.id === gameId || (g.sessionId && g.sessionId === gameId));
+          }
+        } catch {}
+      }
       if (!targetGame) {
         return { success: false, error: 'Game not found.' };
       }

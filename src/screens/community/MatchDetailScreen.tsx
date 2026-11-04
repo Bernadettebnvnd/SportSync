@@ -219,7 +219,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
     }
   };
 
-  if (!game || (game as any).status === 'cancelled') {
+  if (game && (game as any).status === 'cancelled') {
     return (
       <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-6 text-center space-y-4 bg-[#0B0F0C] text-[#F4F7F0]">
         <div className="w-14 h-14 rounded-full bg-[#1C241E] text-[#FF5C5C] border border-[#FF5C5C]/20 flex items-center justify-center mx-auto">
@@ -236,6 +236,15 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
         <Button onClick={onBack} variant="primary">
           Back to Games
         </Button>
+      </div>
+    );
+  }
+
+  if (!game) {
+    return (
+      <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-6 text-center space-y-4 bg-[#0B0F0C] text-[#F4F7F0]">
+        <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-xs text-[#A5B0A6]">Loading match details...</p>
       </div>
     );
   }
