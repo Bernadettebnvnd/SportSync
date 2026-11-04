@@ -147,7 +147,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     'Naga City',
   ];
 
-  const SKILL_LEVELS = ['Beginner', 'Casual', 'Intermediate', 'Advanced'];
+  const SKILL_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 
   const AVAILABILITY_OPTIONS = [
     'Weekday Evenings & Weekends',
@@ -631,7 +631,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                 Skill Tier
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {SKILL_LEVELS.map((lvl) => {
                   const isSelected = draftSkill === lvl;
                   return (

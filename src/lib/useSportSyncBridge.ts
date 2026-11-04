@@ -376,7 +376,7 @@ export function formatSkillTier(rawSkill?: string): string {
   const lower = rawSkill.toLowerCase().trim();
   if (lower === 'all_levels' || lower === 'all levels') return 'Beginner';
   if (lower === 'beginner') return 'Beginner';
-  if (lower === 'casual') return 'Casual';
+  if (lower === 'casual') return 'Intermediate';
   if (lower === 'intermediate') return 'Intermediate';
   if (lower === 'advanced' || lower === 'competitive') return 'Advanced';
   return lower.charAt(0).toUpperCase() + lower.slice(1);

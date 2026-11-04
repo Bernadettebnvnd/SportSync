@@ -20,6 +20,7 @@ export interface PersonalizationDraftData {
 
 interface PersonalizationScreenProps {
   onBack?: () => void;
+  isEditing?: boolean;
   initialValues?: PersonalizationDraftData;
   onDraftChange?: (draft: PersonalizationDraftData) => void;
   onComplete: (preferences?: {
@@ -34,15 +35,23 @@ interface PersonalizationScreenProps {
 
 export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   onBack,
+  isEditing,
   initialValues,
   onDraftChange,
   onComplete,
 }) => {
+  const skillLabels = ['Beginner', 'Intermediate', 'Advanced'];
+
   const [displayName, setDisplayName] = useState(initialValues?.displayName ?? '');
   const [selectedAvatar, setSelectedAvatar] = useState<string>(initialValues?.selectedAvatar ?? 'alex');
   const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? ['Basketball', 'Pickleball']);
   const [customSportInput, setCustomSportInput] = useState<string>(initialValues?.customSportInput ?? '');
-  const [skillLevel, setSkillLevel] = useState(initialValues?.skillLevel ?? 2); // 0: Beginner, 1: Casual, 2: Intermediate, 3: Competitive
+  const [skillLevel, setSkillLevel] = useState(() => {
+    if (typeof initialValues?.skillLevel === 'number') {
+      return Math.min(Math.max(initialValues.skillLevel, 0), skillLabels.length - 1);
+    }
+    return 1; // 0: Beginner, 1: Intermediate, 2: Advanced
+  });
   const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Naga City');
   const [availability, setAvailability] = useState(initialValues?.availability ?? 'Weekday Evenings & Weekends');
 
@@ -62,8 +71,6 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       onBack();
     }
   };
-
-  const skillLabels = ['Beginner', 'Casual', 'Intermediate', 'Competitive'];
 
   const availabilityOptions = [
     'Weekday Evenings & Weekends',
@@ -122,10 +129,10 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
             )}
             <div>
               <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
-                Player Onboarding &bull; Preferences
+                {isEditing ? 'Account & Profile • Preferences' : 'Player Onboarding • Preferences'}
               </span>
               <h2 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0]">
-                Profile &amp; Playing Preferences
+                {isEditing ? 'Edit Profile & Preferences' : 'Profile & Playing Preferences'}
               </h2>
             </div>
           </div>
@@ -236,7 +243,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {skillLabels.map((label, idx) => (
               <button
                 key={label}
@@ -311,7 +318,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
           onClick={handleFinish}
           className="w-full text-base font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)]"
         >
-          <span>Complete Onboarding &amp; Play</span>
+          <span>{isEditing ? 'Save Changes' : 'Complete Onboarding & Play'}</span>
           <ArrowRight className="w-4 h-4 ml-1" />
         </Button>
       </div>

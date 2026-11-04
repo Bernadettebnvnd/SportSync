@@ -159,6 +159,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     duration?: number;
   } | null>(null);
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
+  const [isEditingFromProfile, setIsEditingFromProfile] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
   const [activeInviteCode, setActiveInviteCode] = useState<string | null>(() => {
@@ -619,19 +620,31 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       }
-      case 'personalization':
+      case 'personalization': {
+        const isEditing = isEditingFromProfile || Boolean(
+          bridge.userProfile.onboardingCompleted ||
+          (screenHistory.length > 1 && screenHistory[screenHistory.length - 2] === 'profile')
+        );
+        const resolvedSkill = bridge.userProfile.skillLevel?.toLowerCase();
+        const initialSkillIndex = resolvedSkill === 'beginner' ? 0 : (resolvedSkill === 'advanced' || resolvedSkill === 'competitive') ? 2 : 1;
+
         return (
           <PersonalizationScreen
-            onBack={goBack}
+            onBack={() => {
+              setIsEditingFromProfile(false);
+              goBack();
+            }}
+            isEditing={isEditing}
             initialValues={personalizationDraft || {
               displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name) ? bridge.userProfile.name : '',
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
               preferredArea: bridge.userProfile.city || 'Naga City',
               availability: bridge.userProfile.availability || 'Weekday Evenings & Weekends',
-              skillLevel: bridge.userProfile.skillLevel === 'Beginner' ? 0 : bridge.userProfile.skillLevel === 'Casual' ? 1 : bridge.userProfile.skillLevel === 'Competitive' ? 3 : 2,
+              skillLevel: initialSkillIndex,
             }}
             onDraftChange={setPersonalizationDraft}
             onComplete={async (prefs) => {
+              const wasEditing = isEditing;
               if (prefs) {
                 await bridge.completeOnboarding({
                   fullName: prefs.fullName || bridge.userProfile.name,
@@ -642,18 +655,22 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   avatarUrl: prefs.avatarUrl,
                 });
                 setPersonalizationDraft(null);
-                setToastMessage('Preferences saved! Welcome to SportSync.');
+                setToastMessage(wasEditing ? 'Profile updated successfully!' : 'Preferences saved! Welcome to SportSync.');
               }
+              setIsEditingFromProfile(false);
               if (guestPrompt.pendingAction) {
                 const act = guestPrompt.pendingAction;
                 setGuestPrompt({ isOpen: false });
                 act();
+              } else if (wasEditing) {
+                navigateTo('profile');
               } else {
                 navigateTo('home');
               }
             }}
           />
         );
+      }
 
       // Flow 2: Home
       case 'home':
@@ -1115,7 +1132,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               });
               setToastMessage('Preferences updated successfully!');
             }}
-            onEditPreferences={() => navigateTo('personalization')}
+            onEditPreferences={() => {
+              setIsEditingFromProfile(true);
+              navigateTo('personalization');
+            }}
           />
         );
       case 'leaderboard':
