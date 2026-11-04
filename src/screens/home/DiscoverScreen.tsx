@@ -118,30 +118,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       if (activeSport !== 'All' && !g.sport.toLowerCase().includes(activeSport.toLowerCase())) {
         return false;
       }
-      if (g.visibility === 'Invite') {
-        const name = (effectiveUserName || '').trim().toLowerCase();
-        const id = effectiveUserId;
-        const isHost = Boolean(
-          (g.hostName && name && g.hostName.trim().toLowerCase() === name) ||
-          (g.hostId && id && g.hostId === id)
-        );
-        const isMember = g.members?.some((m) => (name && m.name.trim().toLowerCase() === name) || (id && m.id && m.id === id));
-        const isInvited = g.invitedPlayers?.some((ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id));
-        let hasToken = false;
-        if (typeof window !== 'undefined') {
-          try {
-            const rawU = localStorage.getItem('sportsync_unlocked_invites');
-            const unlocked: string[] = rawU ? JSON.parse(rawU) : [];
-            const rawJ = localStorage.getItem('sportsync_joined_games');
-            const joined: string[] = rawJ ? JSON.parse(rawJ) : [];
-            const combined = [...unlocked, ...joined];
-            hasToken =
-              Boolean(g.inviteCode && combined.includes(g.inviteCode.toUpperCase())) ||
-              combined.includes(g.id) ||
-              Boolean(g.sessionId && combined.includes(g.sessionId));
-          } catch {}
-        }
-        if (!isHost && !isMember && !isInvited && !hasToken) return false;
+      // Hide invite-only games from public Discover Games, search results, and recommendations
+      if (g.visibility === 'Invite' || g.isPublic === false) {
+        return false;
       }
       seenIds.add(g.id);
       return true;

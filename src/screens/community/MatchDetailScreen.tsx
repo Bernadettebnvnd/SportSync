@@ -95,18 +95,24 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   }, [game, currentUserName, currentUserId]);
 
   const isDirectlyInvited = useMemo(() => {
-    if (!game || !Array.isArray(game.invitedPlayers)) return false;
+    if (!game) return false;
     const name = currentUserName?.trim().toLowerCase();
     const id = currentUserId;
-    return game.invitedPlayers.some(
+    const inInvitedPlayers = Array.isArray(game.invitedPlayers) && game.invitedPlayers.some(
       (p) =>
         (name && p.name?.trim().toLowerCase() === name) ||
         (id && p.id && p.id === id)
     );
+    const inInvitedPlayerIds = Array.isArray(game.invitedPlayerIds) && Boolean(id && game.invitedPlayerIds.includes(id));
+    return Boolean(inInvitedPlayers || inInvitedPlayerIds);
   }, [game, currentUserName, currentUserId]);
 
+  const isInviteOnly = useMemo(() => {
+    return Boolean(game?.visibility === 'Invite' || game?.isPublic === false);
+  }, [game]);
+
   const hasUnlockedInviteToken = useMemo(() => {
-    if (!game || game.visibility !== 'Invite') return true;
+    if (!game || !isInviteOnly) return true;
     if (isHost || isAlreadyMember || isDirectlyInvited || inviteUnlocked) return true;
     if (typeof window === 'undefined') return false;
     try {
@@ -119,7 +125,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
     } catch {
       return false;
     }
-  }, [game, isHost, isAlreadyMember, isDirectlyInvited, inviteUnlocked]);
+  }, [game, isInviteOnly, isHost, isAlreadyMember, isDirectlyInvited, inviteUnlocked]);
 
   const effectiveIsJoined = isJoined || isAlreadyMember;
 
@@ -147,9 +153,12 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   };
 
   const handleJoinClick = async () => {
-    if (!hasUnlockedInviteToken) {
-      setFeedbackMessage({ type: 'error', text: 'This is an invite-only match. A valid invite code or link is required.' });
-      setTimeout(() => setFeedbackMessage(null), 3000);
+    if (isInviteOnly && !hasUnlockedInviteToken) {
+      setFeedbackMessage({
+        type: 'error',
+        text: 'This is an invite-only game. You can only join if the host has invited you.',
+      });
+      setTimeout(() => setFeedbackMessage(null), 4000);
       return;
     }
     if (effectiveIsJoined) {
@@ -160,7 +169,11 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
       await onJoin();
       setIsJoined(true);
     } catch (err: any) {
-      console.warn('[MatchDetailScreen] Join click error:', err);
+      setFeedbackMessage({
+        type: 'error',
+        text: err?.message || 'This is an invite-only game. You can only join if the host has invited you.',
+      });
+      setTimeout(() => setFeedbackMessage(null), 4000);
     }
   };
 
@@ -587,13 +600,12 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
             variant={effectiveIsJoined ? 'secondary' : 'primary'}
             size="lg"
             onClick={handleJoinClick}
-            disabled={!hasUnlockedInviteToken && !effectiveIsJoined}
             className="flex-1 h-14 font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)]"
           >
             {effectiveIsJoined
               ? 'Joined • Open Team Chat'
-              : !hasUnlockedInviteToken
-              ? 'Invite Code Required'
+              : isInviteOnly && !hasUnlockedInviteToken
+              ? 'Join Match (Invite Only)'
               : 'Join Match Now'}
           </Button>
         )}

@@ -839,6 +839,69 @@ export function useSportSyncBridge() {
       const supabase = getSupabaseClient();
       if (supabase && isSupabaseConfigured) {
         try {
+          const { data: dbGame } = await supabase
+            .from('community_games')
+            .select('*')
+            .or(`id.eq.${cleanKey},invite_code.eq.${cleanKey}`)
+            .maybeSingle();
+
+          if (dbGame) {
+            const { data: parts } = await supabase
+              .from('game_participants')
+              .select('*')
+              .eq('game_id', dbGame.id)
+              .neq('status', 'left');
+
+            const roster: Array<{ id?: string; name: string; avatar: any }> = [];
+            if (dbGame.host_name) {
+              roster.push({ id: dbGame.host_id, name: dbGame.host_name, avatar: dbGame.host_avatar || 'alex' });
+            }
+            if (Array.isArray(parts)) {
+              parts.forEach((p: any) => {
+                const pName = p.user_name || 'Player';
+                if (!roster.some((r) => r.name.toLowerCase() === pName.toLowerCase())) {
+                  roster.push({ id: p.user_id || p.id, name: pName, avatar: p.user_avatar || 'alex' });
+                }
+              });
+            }
+
+            const mappedCommunityGame: CommunityGame = {
+              id: dbGame.id,
+              sport: dbGame.sport || 'Football',
+              title: dbGame.title,
+              format: dbGame.format || '5v5',
+              skillLevel: dbGame.skill_level || 'Casual',
+              date: dbGame.date || 'Today',
+              time: dbGame.time || '18:00',
+              locationName: dbGame.location_name,
+              locationDetails: dbGame.location_details,
+              distance: dbGame.distance || '0.5 km away',
+              hostId: dbGame.host_id,
+              hostName: dbGame.host_name,
+              hostAvatar: dbGame.host_avatar || 'alex',
+              spotsTotal: dbGame.spots_total || 10,
+              spotsJoined: Math.max(roster.length, dbGame.spots_joined || 1),
+              pricePerPlayer: Number(dbGame.price_per_player) || 0,
+              notes: dbGame.notes,
+              isPublic: dbGame.is_public ?? true,
+              visibility: dbGame.visibility || 'Public',
+              inviteCode: dbGame.invite_code,
+              invitedPlayerIds: dbGame.invited_player_ids || [],
+              invitedPlayers: dbGame.invited_players || [],
+              members: roster,
+            };
+
+            setGames((prev) => {
+              const exists = prev.some((g) => g.id === mappedCommunityGame.id);
+              if (exists) {
+                return prev.map((g) => (g.id === mappedCommunityGame.id ? mappedCommunityGame : g));
+              }
+              return [mappedCommunityGame, ...prev];
+            });
+          }
+        } catch {}
+
+        try {
           const { data: dbSession } = await supabase
             .from('sessions')
             .select('*, venue:venues(*), host:users(*)')
@@ -1695,6 +1758,66 @@ export function useSportSyncBridge() {
         return [newGame, ...filtered];
       });
 
+      // Persist created game and host participant to Supabase
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase && isSupabaseConfigured) {
+          let hostDbId = userProfile.id && userProfile.id.includes('-') && !userProfile.id.startsWith('usr_')
+            ? userProfile.id
+            : null;
+          if (!hostDbId) {
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id) {
+              const { data: pubUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('auth_id', authData.user.id)
+                .maybeSingle();
+              if (pubUser?.id) hostDbId = pubUser.id;
+            }
+          }
+
+          await supabase.from('community_games').upsert({
+            id: newGame.id,
+            title: newGame.title,
+            sport: newGame.sport,
+            format: newGame.format,
+            skill_level: newGame.skillLevel,
+            date: newGame.date,
+            time: newGame.time,
+            location_name: newGame.locationName,
+            location_details: newGame.locationDetails,
+            distance: newGame.distance,
+            host_id: hostDbId,
+            host_name: userName,
+            host_avatar: userAvatar,
+            spots_total: newGame.spotsTotal,
+            spots_joined: 1,
+            price_per_player: newGame.pricePerPlayer,
+            notes: newGame.notes,
+            is_public: newGame.isPublic,
+            visibility: newGame.visibility,
+            invite_code: newGame.inviteCode,
+            invited_player_ids: newGame.invitedPlayerIds || [],
+            invited_players: newGame.invitedPlayers || [],
+          });
+
+          await supabase.from('game_participants').upsert(
+            {
+              game_id: newGame.id,
+              user_id: hostDbId,
+              user_name: userName,
+              user_avatar: userAvatar,
+              role: 'host',
+              status: 'joined',
+            },
+            { onConflict: 'game_id,user_id' }
+          );
+        }
+      } catch (cgErr) {
+        console.warn('[SportSyncBridge] Error persisting community_game to Supabase:', cgErr);
+      }
+
       if (typeof window !== 'undefined' && newGame.inviteCode) {
         try {
           await fetch('/api/invitations', {
@@ -2077,11 +2200,12 @@ export function useSportSyncBridge() {
           (targetGame.hostId && userProfile.id && targetGame.hostId === userProfile.id)
         );
         const isDirectlyInvited = Boolean(
-          targetGame.invitedPlayers?.some(
+          (targetGame.invitedPlayers?.some(
             (ip) =>
               (ip.name && userName && ip.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
               (ip.id && userProfile.id && ip.id === userProfile.id)
-          )
+          )) ||
+          (Array.isArray(targetGame.invitedPlayerIds) && userProfile.id && targetGame.invitedPlayerIds.includes(userProfile.id))
         );
         let hasUnlockedToken = false;
         if (typeof window !== 'undefined' && targetGame.inviteCode) {
@@ -2097,8 +2221,31 @@ export function useSportSyncBridge() {
         if (!isHost && !isDirectlyInvited && !hasUnlockedToken) {
           return {
             success: false,
-            message: 'This is an invite-only match. A valid invitation or invite link is required to join.',
+            message: 'This is an invite-only game. You can only join if the host has invited you.',
           };
+        }
+
+        // Verify with backend join route for server-side enforcement
+        if (typeof window !== 'undefined') {
+          try {
+            const apiRes = await fetch(`/api/games/${encodeURIComponent(targetGame.id)}/join`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: userProfile.id,
+                userName,
+                userAvatar: (userProfile.avatarId || 'alex') as AvatarId,
+                inviteCode: targetGame.inviteCode,
+              }),
+            });
+            if (apiRes.status === 403) {
+              const apiJson = await apiRes.json();
+              return {
+                success: false,
+                message: apiJson.error || 'This is an invite-only game. You can only join if the host has invited you.',
+              };
+            }
+          } catch {}
         }
       }
 
@@ -2217,6 +2364,54 @@ export function useSportSyncBridge() {
 
       // 4. Update local game state
       const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
+
+      // Persist joined participant to Supabase game_participants
+      if (supabase && isSupabaseConfigured) {
+        try {
+          let userDbId = userProfile.id && userProfile.id.includes('-') && !userProfile.id.startsWith('usr_')
+            ? userProfile.id
+            : null;
+
+          if (!userDbId) {
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id) {
+              const { data: pubUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('auth_id', authData.user.id)
+                .maybeSingle();
+              if (pubUser?.id) userDbId = pubUser.id;
+            }
+          }
+
+          await supabase.from('game_participants').upsert(
+            {
+              game_id: targetGame.id,
+              user_id: userDbId,
+              user_name: userName,
+              user_avatar: userAvatar,
+              role: 'player',
+              status: 'joined',
+            },
+            { onConflict: 'game_id,user_id' }
+          );
+
+          const { data: cgRow } = await supabase
+            .from('community_games')
+            .select('spots_joined')
+            .eq('id', targetGame.id)
+            .maybeSingle();
+          if (cgRow) {
+            await supabase
+              .from('community_games')
+              .update({ spots_joined: (cgRow.spots_joined || 1) + 1 })
+              .eq('id', targetGame.id);
+          }
+        } catch (gpErr) {
+          console.warn('[SportSyncBridge] Error persisting participant to Supabase:', gpErr);
+        }
+      }
+
       const updatedGame: CommunityGame = {
         ...targetGame,
         spotsJoined: Math.min(targetGame.spotsTotal, targetGame.spotsJoined + 1),
