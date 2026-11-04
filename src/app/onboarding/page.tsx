@@ -65,9 +65,15 @@ function OnboardingContent() {
   const urlRole = searchParams.get('role');
   const isFacilityUrl = urlRole === 'owner' || urlRole === 'facility_owner' || urlRole === 'facility' || urlRole === 'venue_owner';
 
-  const [hasPendingOnboarding, setHasPendingOnboarding] = useState<boolean>(() => {
-    return typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-  });
+  const [isMounted, setIsMounted] = useState(false);
+  const [hasPendingOnboarding, setHasPendingOnboarding] = useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+    if (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+      setHasPendingOnboarding(true);
+    }
+  }, []);
 
   const isCompleted = !hasPendingOnboarding && Boolean(
     currentUser.onboarding_completed === true ||
@@ -121,15 +127,17 @@ function OnboardingContent() {
   // =========================================================================
   const [fullName, setFullName] = useState(() => {
     if (currentUser.full_name && currentUser.full_name !== 'Guest Player') return currentUser.full_name;
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('sportsync_user_name') || localStorage.getItem('matchi_user_name') || '';
-    }
     return '';
   });
 
   React.useEffect(() => {
     if (currentUser.full_name && currentUser.full_name !== 'Guest Player') {
       setFullName((prev) => prev || currentUser.full_name);
+    } else if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sportsync_user_name') || localStorage.getItem('matchi_user_name');
+      if (stored) {
+        setFullName((prev) => prev || stored);
+      }
     }
   }, [currentUser.full_name]);
 
@@ -462,14 +470,17 @@ function OnboardingContent() {
               {/* Circular Initials Profile Icon Row */}
               <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-14 h-14 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-xl flex items-center justify-center shadow-[0_0_16px_rgba(200,255,46,0.3)] shrink-0 select-none">
-                    {getPlayerInitials(fullName)}
+                  <div
+                    className="w-14 h-14 rounded-full bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-xl flex items-center justify-center shadow-[0_0_16px_rgba(200,255,46,0.3)] shrink-0 select-none"
+                    suppressHydrationWarning
+                  >
+                    {isMounted ? getPlayerInitials(fullName) : (fullName.trim() ? getPlayerInitials(fullName) : 'CP')}
                   </div>
                   <div className="min-w-0">
-                    <span className="text-sm font-bold text-[#F4F7F0] block truncate">
+                    <span className="text-sm font-bold text-[#F4F7F0] block truncate" suppressHydrationWarning>
                       {fullName.trim() || 'Court Player'}
                     </span>
-                    <span className="text-[11px] text-[#A5B0A6] block truncate">
+                    <span className="text-[11px] text-[#A5B0A6] block truncate" suppressHydrationWarning>
                       &ldquo;{nickname.trim() || 'Moniker'}&rdquo; &bull; {selectedArea}
                     </span>
                   </div>
@@ -494,6 +505,7 @@ function OnboardingContent() {
                   onChange={(e) => handleNameChange(e.target.value)}
                   placeholder="e.g. Maria Santos"
                   autoComplete="off"
+                  suppressHydrationWarning
                   className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
                 />
               </div>

@@ -148,7 +148,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
 
   const handleJoinClick = async () => {
     if (!hasUnlockedInviteToken) {
-      setFeedbackMessage({ type: 'error', text: 'This is an invite-only match. A valid invite code or link is required.' });
+      setFeedbackMessage({ type: 'error', text: 'This is an invite-only game. You can only join if the host has invited you.' });
       setTimeout(() => setFeedbackMessage(null), 3000);
       return;
     }
@@ -587,13 +587,12 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
             variant={effectiveIsJoined ? 'secondary' : 'primary'}
             size="lg"
             onClick={handleJoinClick}
-            disabled={!hasUnlockedInviteToken && !effectiveIsJoined}
             className="flex-1 h-14 font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)]"
           >
             {effectiveIsJoined
               ? 'Joined • Open Team Chat'
               : !hasUnlockedInviteToken
-              ? 'Invite Code Required'
+              ? 'Join Match (Invite Only)'
               : 'Join Match Now'}
           </Button>
         )}

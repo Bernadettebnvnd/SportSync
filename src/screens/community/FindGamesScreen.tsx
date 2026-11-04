@@ -9,12 +9,16 @@ interface FindGamesScreenProps {
   games?: CommunityGame[];
   onBack: () => void;
   onSelectGame: (game: CommunityGame) => void;
+  currentUserName?: string;
+  currentUserId?: string;
 }
 
 export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
   games = [],
   onBack,
   onSelectGame,
+  currentUserName,
+  currentUserId,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'today'>('all');
@@ -42,22 +46,26 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         if (!g.date.toLowerCase().includes('today')) return false;
       }
 
+      // Hide invite-only games from public search results unless host or specifically invited
       if (g.visibility === 'Invite') {
-        let hasUnlockedToken = false;
-        if (typeof window !== 'undefined' && g.inviteCode) {
-          try {
-            const raw = localStorage.getItem('sportsync_unlocked_invites');
-            const unlocked: string[] = raw ? JSON.parse(raw) : [];
-            hasUnlockedToken = unlocked.includes(g.inviteCode.toUpperCase()) || unlocked.includes(g.id);
-          } catch {}
-        }
-        if (!hasUnlockedToken) return false;
+        const name = (currentUserName || '').trim().toLowerCase();
+        const id = currentUserId;
+        const isHost = Boolean(
+          (g.hostName && name && g.hostName.trim().toLowerCase() === name) ||
+          (g.hostId && id && g.hostId === id)
+        );
+        const isInvited = Boolean(
+          g.invitedPlayers?.some(
+            (ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id)
+          )
+        );
+        if (!isHost && !isInvited) return false;
       }
 
       seenIds.add(g.id);
       return true;
     });
-  }, [games, searchQuery, activeFilter]);
+  }, [games, searchQuery, activeFilter, currentUserName, currentUserId]);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">

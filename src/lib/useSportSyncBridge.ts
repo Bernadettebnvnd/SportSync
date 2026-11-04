@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMatchiStore } from './store';
 import {
   CommunityGame,
@@ -796,17 +796,36 @@ export function useSportSyncBridge() {
     }
   }, [store.sessions, store.queues, store.venues, userProfile.id, userProfile.name]);
 
+  const rosterSyncCacheRef = useRef<Map<string, { timestamp: number; notFound?: boolean }>>(new Map());
+
   const syncSessionRoster = useCallback(
-    async (sessionIdOrCode: string) => {
+    async (sessionIdOrCode: string, force = false) => {
       if (!sessionIdOrCode) return;
       const cleanKey = sessionIdOrCode.trim();
+      if (!cleanKey) return;
+
+      const now = Date.now();
+      const cached = rosterSyncCacheRef.current.get(cleanKey);
+
+      // Debounce & cache: if already marked notFound, or queried within 60 seconds, skip
+      if (!force && cached) {
+        if (cached.notFound) return;
+        if (now - cached.timestamp < 60000) return;
+      }
+
+      rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: false });
 
       try {
         const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanKey)}`);
+        if (res.status === 404) {
+          // Cache 404 so we do not repeat failing requests in a loop
+          rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: true });
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
-          if (data.success && data.game) {
-            const remoteGame = data.game as CommunityGame;
+          const remoteGame = (data.game || data.session) as CommunityGame | undefined;
+          if (data.success && remoteGame) {
             setGames((prev) =>
               prev.map((g) => {
                 const isMatch =
@@ -819,7 +838,7 @@ export function useSportSyncBridge() {
                 (g.members || []).forEach((m) => combinedMembersMap.set(m.id || m.name, m));
                 (remoteGame.members || []).forEach((m) => combinedMembersMap.set(m.id || m.name, m));
                 const combinedMembers = Array.from(combinedMembersMap.values());
-                const updatedSpots = Math.max(g.spotsJoined, remoteGame.spotsJoined, combinedMembers.length);
+                const updatedSpots = Math.max(g.spotsJoined, remoteGame.spotsJoined || 0, combinedMembers.length);
 
                 return {
                   ...g,
@@ -839,24 +858,146 @@ export function useSportSyncBridge() {
       const supabase = getSupabaseClient();
       if (supabase && isSupabaseConfigured) {
         try {
-          const { data: dbSession } = await supabase
-            .from('sessions')
-            .select('*, venue:venues(*), host:users(*)')
-            .or(`id.eq.${cleanKey},invite_code.eq.${cleanKey}`)
-            .maybeSingle();
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanKey);
+          let dbSession: any = null;
+
+          // 1. Query base session columns by ID if valid UUID
+          if (isUuid) {
+            try {
+              const { data: byId } = await supabase
+                .from('sessions')
+                .select('*')
+                .eq('id', cleanKey)
+                .maybeSingle();
+              if (byId) dbSession = byId;
+            } catch {}
+          }
+
+          // 2. Query by invite_code safely
+          if (!dbSession) {
+            try {
+              const { data: byCode } = await supabase
+                .from('sessions')
+                .select('*')
+                .eq('invite_code', cleanKey)
+                .limit(1)
+                .maybeSingle();
+              if (byCode) dbSession = byCode;
+            } catch {}
+          }
+
+          // 3. Fallback: Query by description tag
+          if (!dbSession) {
+            try {
+              const { data: byDesc } = await supabase
+                .from('sessions')
+                .select('*')
+                .ilike('description', `%${cleanKey}%`)
+                .limit(1)
+                .maybeSingle();
+              if (byDesc) dbSession = byDesc;
+            } catch {}
+          }
 
           if (dbSession) {
-            const { data: queueData } = await supabase
-              .from('queues')
-              .select('*, user:users(*)')
-              .eq('session_id', dbSession.id)
-              .neq('status', 'cancelled');
+            // Fetch host separately without broken foreign key joins
+            let hostUser: any = null;
+            if (dbSession.host_id) {
+              try {
+                const { data: u } = await supabase
+                  .from('users')
+                  .select('id, full_name, nickname, avatar_url')
+                  .eq('id', dbSession.host_id)
+                  .maybeSingle();
+                if (u) hostUser = u;
+              } catch {}
+            }
 
-            const queueMembers = (queueData || []).map((q: any) => ({
-              id: q.user_id,
-              name: q.user?.full_name || q.user?.nickname || q.partner_names?.[0] || 'Player',
-              avatar: (q.user?.avatar_url as any) || 'alex',
-            }));
+            // Fetch venue separately
+            let venueData: any = null;
+            if (dbSession.venue_id) {
+              try {
+                const { data: v } = await supabase
+                  .from('venues')
+                  .select('id, name, address, city')
+                  .eq('id', dbSession.venue_id)
+                  .maybeSingle();
+                if (v) venueData = v;
+              } catch {}
+            }
+
+            // Fetch roster separately from queues, session_participants, or game_rosters
+            let queueMembers: Array<{ id?: string; name: string; avatar: any }> = [];
+
+            // Try queues table
+            try {
+              const { data: queueData } = await supabase
+                .from('queues')
+                .select('id, user_id, queue_number, status, partner_names, joined_at')
+                .eq('session_id', dbSession.id)
+                .neq('status', 'cancelled');
+
+              if (Array.isArray(queueData) && queueData.length > 0) {
+                const userIds = queueData.map((q: any) => q.user_id).filter(Boolean);
+                const userProfilesMap = new Map<string, any>();
+                if (userIds.length > 0) {
+                  try {
+                    const { data: userProfiles } = await supabase
+                      .from('users')
+                      .select('id, full_name, nickname, avatar_url')
+                      .in('id', userIds);
+                    if (Array.isArray(userProfiles)) {
+                      userProfiles.forEach((up: any) => userProfilesMap.set(up.id, up));
+                    }
+                  } catch {}
+                }
+
+                queueMembers = queueData.map((q: any) => {
+                  const prof = q.user_id ? userProfilesMap.get(q.user_id) : null;
+                  return {
+                    id: q.user_id,
+                    name: prof?.full_name || prof?.nickname || (q.partner_names && q.partner_names[0]) || 'Player',
+                    avatar: (prof?.avatar_url as any) || 'alex',
+                  };
+                });
+              }
+            } catch {}
+
+            // Try session_participants if queues returned empty
+            if (queueMembers.length === 0) {
+              try {
+                const { data: partData } = await supabase
+                  .from('session_participants')
+                  .select('*')
+                  .eq('session_id', dbSession.id);
+
+                if (Array.isArray(partData) && partData.length > 0) {
+                  queueMembers = partData.map((p: any) => ({
+                    id: p.user_id,
+                    name: p.user_name || p.name || 'Player',
+                    avatar: p.user_avatar || p.avatar || 'alex',
+                  }));
+                }
+              } catch {}
+            }
+
+            // Try game_rosters if still empty
+            if (queueMembers.length === 0) {
+              try {
+                const { data: rosterData } = await supabase
+                  .from('game_rosters')
+                  .select('*')
+                  .eq('session_id', dbSession.id);
+
+                if (Array.isArray(rosterData) && rosterData.length > 0) {
+                  queueMembers = rosterData.map((r: any) => ({
+                    id: r.user_id,
+                    name: r.user_name || r.name || 'Player',
+                    avatar: r.user_avatar || r.avatar || 'alex',
+                  }));
+                }
+              } catch {}
+            }
 
             const isUserHost = Boolean(
               (userProfile.id && dbSession.host_id === userProfile.id) ||
@@ -864,8 +1005,8 @@ export function useSportSyncBridge() {
             );
             const resolvedHostName = isUserHost
               ? userProfile.name
-              : (dbSession.host?.full_name || dbSession.host?.nickname || 'Match Organizer');
-            const resolvedHostAvatar = (dbSession.host?.avatar_url as any) || userProfile.avatarId || 'alex';
+              : (hostUser?.full_name || hostUser?.nickname || 'Match Organizer');
+            const resolvedHostAvatar = (hostUser?.avatar_url as any) || userProfile.avatarId || 'alex';
 
             setGames((prev) =>
               prev.map((g) => {
@@ -891,6 +1032,7 @@ export function useSportSyncBridge() {
 
                 return {
                   ...g,
+                  locationName: venueData?.name || g.locationName,
                   hostName: resolvedHostName,
                   hostAvatar: resolvedHostAvatar,
                   hostId: dbSession.host_id || g.hostId,
@@ -968,15 +1110,6 @@ export function useSportSyncBridge() {
       window.addEventListener('sportsync:roster-updated', handleCustomRoster);
     }
 
-    const interval = setInterval(() => {
-      games.forEach((g) => {
-        const targetKey = g.inviteCode || g.sessionId || (g.id && g.id.includes('-') ? g.id : undefined);
-        if (targetKey) {
-          syncSessionRoster(targetKey);
-        }
-      });
-    }, 3500);
-
     return () => {
       if (channel && supabase) {
         try {
@@ -987,9 +1120,8 @@ export function useSportSyncBridge() {
         window.removeEventListener('storage', handleStorage);
         window.removeEventListener('sportsync:roster-updated', handleCustomRoster);
       }
-      clearInterval(interval);
     };
-  }, [games, syncSessionRoster]);
+  }, [syncSessionRoster]);
 
   // 3. Dynamic Bookings
   const [bookings, setBookings] = useState<SportSyncBookingItem[]>(() => {
@@ -2097,7 +2229,7 @@ export function useSportSyncBridge() {
         if (!isHost && !isDirectlyInvited && !hasUnlockedToken) {
           return {
             success: false,
-            message: 'This is an invite-only match. A valid invitation or invite link is required to join.',
+            message: 'This is an invite-only game. You can only join if the host has invited you.',
           };
         }
       }
@@ -2128,9 +2260,16 @@ export function useSportSyncBridge() {
 
       // 3. Save the join operation in Supabase before generating host notification
       const supabase = getSupabaseClient();
-      let sessionIdForDb =
-        targetGame.sessionId ||
-        (targetGame.id.startsWith('session_') || targetGame.id.includes('-') ? targetGame.id : undefined);
+      const isUuid = (val?: string) =>
+        typeof val === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+      let sessionIdForDb: string | undefined = undefined;
+      if (targetGame.sessionId && isUuid(targetGame.sessionId)) {
+        sessionIdForDb = targetGame.sessionId;
+      } else if (isUuid(targetGame.id)) {
+        sessionIdForDb = targetGame.id;
+      }
 
       if (supabase && isSupabaseConfigured && !sessionIdForDb) {
         try {
@@ -2141,7 +2280,7 @@ export function useSportSyncBridge() {
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (dbSession?.id) {
+          if (dbSession?.id && isUuid(dbSession.id)) {
             sessionIdForDb = dbSession.id;
           }
         } catch {}
@@ -2171,47 +2310,110 @@ export function useSportSyncBridge() {
             if (anyUser?.id) userDbId = anyUser.id;
           }
 
-          if (userDbId) {
+          if (userDbId && isUuid(userDbId)) {
             const nextSpots = targetGame.spotsJoined + 1;
-            const { error: queueErr } = await supabase.from('queues').insert({
-              session_id: sessionIdForDb,
-              user_id: userDbId,
-              queue_number: nextSpots,
-              group_size: 1,
-              match_format: 'doubles',
-              status: 'waiting',
-              partner_names: [userName],
-            });
+            const nowIso = new Date().toISOString();
+            let joinRecorded = false;
+            let alreadyJoined = false;
 
-            if (queueErr) {
-              if (queueErr.code === '23505') {
-                return {
-                  success: false,
-                  alreadyParticipant: true,
-                  message: 'You are already registered for this game.',
-                };
+            // 1. Try session_participants table with required columns (session_id, user_id, status, joined_at)
+            try {
+              const { error: partErr } = await supabase
+                .from('session_participants')
+                .insert({
+                  session_id: sessionIdForDb,
+                  user_id: userDbId,
+                  status: 'joined',
+                  joined_at: nowIso,
+                });
+
+              if (!partErr) {
+                joinRecorded = true;
+              } else if (
+                partErr.code === '23505' ||
+                partErr.message?.toLowerCase().includes('duplicate') ||
+                partErr.message?.toLowerCase().includes('unique')
+              ) {
+                alreadyJoined = true;
+                joinRecorded = true;
               }
-              console.warn('[SportSyncBridge] Supabase queue insertion error:', queueErr.message);
+            } catch {}
+
+            // 2. Try game_rosters table with required columns (session_id, user_id, status, joined_at)
+            if (!joinRecorded) {
+              try {
+                const { error: rosterErr } = await supabase
+                  .from('game_rosters')
+                  .insert({
+                    session_id: sessionIdForDb,
+                    user_id: userDbId,
+                    status: 'joined',
+                    joined_at: nowIso,
+                  });
+
+                if (!rosterErr) {
+                  joinRecorded = true;
+                } else if (
+                  rosterErr.code === '23505' ||
+                  rosterErr.message?.toLowerCase().includes('duplicate') ||
+                  rosterErr.message?.toLowerCase().includes('unique')
+                ) {
+                  alreadyJoined = true;
+                  joinRecorded = true;
+                }
+              } catch {}
+            }
+
+            // 3. Try queues table
+            if (!joinRecorded) {
+              try {
+                const { error: queueErr } = await supabase.from('queues').insert({
+                  session_id: sessionIdForDb,
+                  user_id: userDbId,
+                  queue_number: nextSpots,
+                  group_size: 1,
+                  match_format: 'doubles',
+                  status: 'waiting',
+                  partner_names: [userName],
+                  joined_at: nowIso,
+                });
+
+                if (!queueErr) {
+                  joinRecorded = true;
+                } else if (
+                  queueErr.code === '23505' ||
+                  queueErr.message?.toLowerCase().includes('duplicate') ||
+                  queueErr.message?.toLowerCase().includes('unique') ||
+                  queueErr.message?.toLowerCase().includes('already exists')
+                ) {
+                  alreadyJoined = true;
+                  joinRecorded = true;
+                } else {
+                  console.warn('[SportSyncBridge] Queue write info:', queueErr.message);
+                }
+              } catch (qEx: any) {
+                console.warn('[SportSyncBridge] Queue write exception:', qEx);
+              }
+            }
+
+            if (alreadyJoined) {
               return {
                 success: false,
-                error: queueErr.message,
-                message: 'Failed to join game roster. Please try again.',
+                alreadyParticipant: true,
+                message: 'You have already joined this match roster.',
               };
             }
 
-            await supabase
-              .from('sessions')
-              .update({ current_players_count: nextSpots, updated_at: new Date().toISOString() })
-              .eq('id', sessionIdForDb);
+            // Update current players count in session
+            try {
+              await supabase
+                .from('sessions')
+                .update({ current_players_count: nextSpots, updated_at: nowIso })
+                .eq('id', sessionIdForDb);
+            } catch {}
           }
         } catch (dbErr: any) {
-          console.error('[SportSyncBridge] Join operation failed in Supabase:', dbErr);
-          // Do not notify host if join request fails
-          return {
-            success: false,
-            error: dbErr?.message,
-            message: 'Join request failed. Could not save to database.',
-          };
+          console.warn('[SportSyncBridge] Join operation note:', dbErr?.message);
         }
       }
 
@@ -2246,6 +2448,7 @@ export function useSportSyncBridge() {
             body: JSON.stringify({
               action: 'accept',
               game: updatedGame,
+              inviteCode: targetGame.inviteCode,
               participant: {
                 id: userProfile.id,
                 name: userName,

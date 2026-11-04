@@ -164,22 +164,56 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   }
 
   try {
+    // 1. Fetch base session columns without broken relationship joins
     let query = supabase
       .from('sessions')
-      .select('*, venue:venues(*), host:users(*), queues(*, user:users(*))')
+      .select('*')
       .in('status', ['active', 'upcoming']);
 
     if (venueId) {
       query = query.eq('venue_id', venueId);
     }
 
-    const { data, error } = await query.order('start_time', { ascending: true });
+    const { data: rawSessions, error } = await query.order('start_time', { ascending: true });
 
     if (error) {
       console.warn('[Sessions] Query returned error, using local records:', error.message);
       const filtered = localSessions.filter(isSessionNotDeleted);
       return venueId ? filtered.filter((s) => s.venue_id === venueId) : filtered;
     }
+
+    // 2. Fetch venues and hosts cleanly in separate simple queries
+    const venuesMap = new Map<string, any>();
+    const usersMap = new Map<string, any>();
+
+    if (Array.isArray(rawSessions) && rawSessions.length > 0) {
+      const venueIds = Array.from(new Set(rawSessions.map((s) => s.venue_id).filter(Boolean)));
+      const hostIds = Array.from(new Set(rawSessions.map((s) => s.host_id).filter(Boolean)));
+
+      if (venueIds.length > 0) {
+        try {
+          const { data: venues } = await supabase.from('venues').select('*').in('id', venueIds);
+          if (Array.isArray(venues)) {
+            venues.forEach((v: any) => venuesMap.set(v.id, v));
+          }
+        } catch {}
+      }
+
+      if (hostIds.length > 0) {
+        try {
+          const { data: users } = await supabase.from('users').select('*').in('id', hostIds);
+          if (Array.isArray(users)) {
+            users.forEach((u: any) => usersMap.set(u.id, u));
+          }
+        } catch {}
+      }
+    }
+
+    const data = (rawSessions || []).map((s) => ({
+      ...s,
+      venue: s.venue_id ? venuesMap.get(s.venue_id) : undefined,
+      host: s.host_id ? usersMap.get(s.host_id) : undefined,
+    }));
 
     const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);
     const seenIds = new Set<string>();
@@ -388,7 +422,7 @@ export async function createOpenPlaySession(
       invite_code: sessionData.invite_code,
       location_details: sessionData.location_details,
     })
-    .select('*, venue:venues(*), host:users(*)')
+    .select('*')
     .single();
 
   if (error) {
@@ -396,7 +430,30 @@ export async function createOpenPlaySession(
     return localSession;
   }
 
-  const created = newSession as Session;
+  // Fetch venue and host cleanly without broken joins
+  let venueObj = localSession.venue;
+  let hostObj = localSession.host;
+
+  if (newSession.venue_id && !venueObj) {
+    try {
+      const { data: v } = await supabase.from('venues').select('*').eq('id', newSession.venue_id).maybeSingle();
+      if (v) venueObj = v;
+    } catch {}
+  }
+
+  if (newSession.host_id && !hostObj) {
+    try {
+      const { data: u } = await supabase.from('users').select('*').eq('id', newSession.host_id).maybeSingle();
+      if (u) hostObj = u;
+    } catch {}
+  }
+
+  const created = {
+    ...newSession,
+    venue: venueObj,
+    host: hostObj,
+  } as Session;
+
   saveLocalStoredSession(created);
   return created;
 }
@@ -438,7 +495,7 @@ export async function updateOpenPlaySession(
       .from('sessions')
       .update(dbUpdates)
       .eq('id', sessionId)
-      .select('*, venue:venues(*), host:users(*), queues(*, user:users(*))')
+      .select('*')
       .single();
 
     if (error) {
@@ -447,8 +504,9 @@ export async function updateOpenPlaySession(
     }
 
     if (data) {
-      saveLocalStoredSession(data as Session);
-      return data as Session;
+      const enriched = { ...data, venue: target?.venue, host: target?.host } as Session;
+      saveLocalStoredSession(enriched);
+      return enriched;
     }
   } catch (err) {
     console.warn('[Sessions] Exception updating session:', err);

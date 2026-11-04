@@ -125,23 +125,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           (g.hostName && name && g.hostName.trim().toLowerCase() === name) ||
           (g.hostId && id && g.hostId === id)
         );
-        const isMember = g.members?.some((m) => (name && m.name.trim().toLowerCase() === name) || (id && m.id && m.id === id));
-        const isInvited = g.invitedPlayers?.some((ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id));
-        let hasToken = false;
-        if (typeof window !== 'undefined') {
-          try {
-            const rawU = localStorage.getItem('sportsync_unlocked_invites');
-            const unlocked: string[] = rawU ? JSON.parse(rawU) : [];
-            const rawJ = localStorage.getItem('sportsync_joined_games');
-            const joined: string[] = rawJ ? JSON.parse(rawJ) : [];
-            const combined = [...unlocked, ...joined];
-            hasToken =
-              Boolean(g.inviteCode && combined.includes(g.inviteCode.toUpperCase())) ||
-              combined.includes(g.id) ||
-              Boolean(g.sessionId && combined.includes(g.sessionId));
-          } catch {}
-        }
-        if (!isHost && !isMember && !isInvited && !hasToken) return false;
+        const isInvited = Boolean(
+          g.invitedPlayers?.some(
+            (ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id)
+          )
+        );
+        if (!isHost && !isInvited) return false;
       }
       seenIds.add(g.id);
       return true;

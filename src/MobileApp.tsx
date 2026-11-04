@@ -41,6 +41,7 @@ import { GuestPromptModal } from './components/auth/GuestPromptModal';
 import { useSportSyncBridge } from './lib/useSportSyncBridge';
 import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
+import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -228,34 +229,150 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       setIsInviteLoading(true);
       setInviteError(null);
 
-      fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`)
-        .then((res) => {
-          if (!res.ok) throw new Error('Invitation not found or expired');
-          return res.json();
-        })
-        .then((data) => {
-          if (data.success && data.game) {
-            setInviteGame(data.game);
-            bridge.addExternalGame(data.game);
+      const resolveInvitation = async () => {
+        try {
+          // 1. Check if game already loaded in bridge
+          const inBridge = bridge.games.find(
+            (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
+          );
+          if (inBridge) {
+            setInviteGame(inBridge);
             setInviteError(null);
-            if (bridge.isGameHost(data.game)) {
-              setSelectedGame(data.game);
-              setCurrentScreen('match-detail');
-              setScreenHistory((prev) => (prev[prev.length - 1] === 'match-detail' ? prev : [...prev, 'match-detail']));
+            setIsInviteLoading(false);
+            setCurrentScreen('invitation-landing');
+            return;
+          }
+
+          // 2. Query sessions table directly using .eq('invite_code', code) via Supabase
+          const supabase = getSupabaseClient();
+          if (supabase && isSupabaseConfigured) {
+            let sessionRow: any = null;
+
+            // Direct query using .eq('invite_code', code)
+            try {
+              const { data: byCode } = await supabase
+                .from('sessions')
+                .select('*')
+                .eq('invite_code', cleanCode)
+                .limit(1)
+                .maybeSingle();
+              if (byCode) sessionRow = byCode;
+            } catch {}
+
+            // Fallback: description tag search
+            if (!sessionRow) {
+              try {
+                const { data: byDesc } = await supabase
+                  .from('sessions')
+                  .select('*')
+                  .ilike('description', `%${cleanCode}%`)
+                  .limit(1)
+                  .maybeSingle();
+                if (byDesc) sessionRow = byDesc;
+              } catch {}
+            }
+
+            // Fallback: UUID id search
+            if (!sessionRow && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode)) {
+              try {
+                const { data: byId } = await supabase
+                  .from('sessions')
+                  .select('*')
+                  .eq('id', cleanCode)
+                  .maybeSingle();
+                if (byId) sessionRow = byId;
+              } catch {}
+            }
+
+            if (sessionRow) {
+              let hostName = 'Match Organizer';
+              let hostAvatar: any = 'alex';
+              if (sessionRow.host_id) {
+                try {
+                  const { data: u } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('id', sessionRow.host_id)
+                    .maybeSingle();
+                  if (u) {
+                    hostName = u.full_name || u.nickname || hostName;
+                    hostAvatar = u.avatar_url || hostAvatar;
+                  }
+                } catch {}
+              }
+
+              let locName = 'Verified Court Facility';
+              if (sessionRow.venue_id) {
+                try {
+                  const { data: v } = await supabase
+                    .from('venues')
+                    .select('*')
+                    .eq('id', sessionRow.venue_id)
+                    .maybeSingle();
+                  if (v?.name) locName = v.name;
+                } catch {}
+              }
+
+              const directGame: CommunityGame = {
+                id: sessionRow.id,
+                sessionId: sessionRow.id,
+                sport: (sessionRow.sport ? sessionRow.sport.charAt(0).toUpperCase() + sessionRow.sport.slice(1) : 'Pickleball') as any,
+                title: sessionRow.title || 'Pickup Match',
+                format: (sessionRow.rotation_format || '5v5') as any,
+                skillLevel: sessionRow.skill_level === 'all_levels' ? 'Casual' : 'Competitive',
+                date: 'Today',
+                time: sessionRow.start_time || '18:00',
+                locationName: locName,
+                distance: '0.8 km away',
+                hostId: sessionRow.host_id,
+                hostName,
+                hostAvatar,
+                spotsTotal: sessionRow.max_players || 10,
+                spotsJoined: sessionRow.current_players_count || 1,
+                pricePerPlayer: sessionRow.fee_cents ? Math.round(sessionRow.fee_cents / 100) : 0,
+                notes: sessionRow.description || '',
+                isPublic: sessionRow.visibility ? sessionRow.visibility !== 'Invite' : false,
+                visibility: (sessionRow.visibility as any) || 'Invite',
+                inviteCode: cleanCode,
+                members: [{ name: hostName, avatar: hostAvatar, id: sessionRow.host_id }],
+              };
+
+              setInviteGame(directGame);
+              bridge.addExternalGame(directGame);
+              setInviteError(null);
+              setIsInviteLoading(false);
+              setCurrentScreen('invitation-landing');
               return;
             }
-          } else {
-            setInviteError(data.error || 'Invitation not found or expired');
           }
-        })
-        .catch((err) => {
+
+          // 3. Fallback to API route
+          try {
+            const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.game) {
+                setInviteGame(data.game);
+                bridge.addExternalGame(data.game);
+                setInviteError(null);
+                setIsInviteLoading(false);
+                setCurrentScreen('invitation-landing');
+                return;
+              }
+            }
+          } catch {}
+
+          setInviteError('Invitation not found or expired');
+        } catch (err: any) {
           setInviteError(err?.message || 'Invitation not found or expired');
-        })
-        .finally(() => {
+        } finally {
           setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
           setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
-        });
+        }
+      };
+
+      resolveInvitation();
     } catch {}
   }, [bridge.games]);
 
@@ -656,6 +773,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <FindGamesScreen
             games={bridge.games}
+            currentUserName={bridge.userProfile.name}
+            currentUserId={bridge.userProfile.id}
             onBack={goBack}
             onSelectGame={(g) => {
               setSelectedGame(g);

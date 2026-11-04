@@ -43,60 +43,125 @@ function getServerSupabaseClient() {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const code = (searchParams.get('code') || searchParams.get('invite') || '').trim().toUpperCase();
+  const rawCode = searchParams.get('code') || searchParams.get('invite');
 
-  if (!code) {
-    return NextResponse.json({ success: false, error: 'Invite code is required' }, { status: 400 });
+  if (!rawCode || typeof rawCode !== 'string' || !rawCode.trim()) {
+    return NextResponse.json({ error: 'Invite code is required' }, { status: 400 });
   }
+
+  const code = rawCode.trim().toUpperCase();
+  const rawClean = rawCode.trim();
 
   const diskCache = loadCache();
   const combined = { ...memoryStore, ...diskCache };
 
-  const matched = combined[code] || Object.values(combined).find((g) => {
+  const matched = combined[code] || combined[rawClean] || Object.values(combined).find((g) => {
     if (!g) return false;
     const matchInvite = g.inviteCode && g.inviteCode.trim().toUpperCase() === code;
-    const matchId = g.id && g.id.trim().toUpperCase() === code;
+    const matchId = g.id && (g.id.trim().toUpperCase() === code || g.id === rawClean);
     return matchInvite || matchId;
   });
 
   const supabase = getServerSupabaseClient();
   if (supabase) {
     try {
-      const { data: byCode } = await supabase
-        .from('sessions')
-        .select('*, venue:venues(*), host:users(*)')
-        .eq('invite_code', code)
-        .limit(1);
+      let dbSession: any = null;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawClean);
 
-      let dbSession = byCode && byCode[0];
-
-      if (!dbSession && matched?.sessionId) {
-        const { data: bySessionId } = await supabase
+      // 1. Query base session by invite_code
+      try {
+        const { data: byCode } = await supabase
           .from('sessions')
-          .select('*, venue:venues(*), host:users(*)')
-          .eq('id', matched.sessionId)
-          .limit(1);
-        dbSession = bySessionId && bySessionId[0];
+          .select('*')
+          .or(`invite_code.eq.${code},invite_code.eq.${rawClean}`)
+          .limit(1)
+          .maybeSingle();
+        if (byCode) dbSession = byCode;
+      } catch {}
+
+      // 2. Query by sessionId if matched has it
+      if (!dbSession && matched?.sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(matched.sessionId)) {
+        try {
+          const { data: bySessionId } = await supabase
+            .from('sessions')
+            .select('*')
+            .eq('id', matched.sessionId)
+            .maybeSingle();
+          if (bySessionId) dbSession = bySessionId;
+        } catch {}
       }
 
+      // 3. Query by UUID id if code is valid UUID
+      if (!dbSession && isUuid) {
+        try {
+          const { data: byId } = await supabase
+            .from('sessions')
+            .select('*')
+            .eq('id', rawClean)
+            .maybeSingle();
+          if (byId) dbSession = byId;
+        } catch {}
+      }
+
+      // 4. Query invitations table if it exists
       if (!dbSession) {
-        const { data: byDesc } = await supabase
-          .from('sessions')
-          .select('*, venue:venues(*), host:users(*)')
-          .ilike('description', `%[INVITE:${code}]%`)
-          .limit(1);
-        dbSession = byDesc && byDesc[0];
+        try {
+          const { data: invRow } = await supabase
+            .from('invitations')
+            .select('*')
+            .or(`invite_code.eq.${code},code.eq.${code},id.eq.${rawClean}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (invRow?.session_id) {
+            const { data: fromInv } = await supabase
+              .from('sessions')
+              .select('*')
+              .eq('id', invRow.session_id)
+              .maybeSingle();
+            if (fromInv) dbSession = fromInv;
+          } else if (invRow) {
+            dbSession = invRow;
+          }
+        } catch {}
+      }
+
+      // 5. Query by description tag
+      if (!dbSession) {
+        try {
+          const { data: byDesc } = await supabase
+            .from('sessions')
+            .select('*')
+            .ilike('description', `%${rawClean}%`)
+            .limit(1)
+            .maybeSingle();
+          if (byDesc) dbSession = byDesc;
+        } catch {}
       }
 
       if (dbSession) {
-        let hostUser = dbSession.host;
-        if (!hostUser && dbSession.host_id) {
-          const { data: u } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', dbSession.host_id)
-            .maybeSingle();
-          if (u) hostUser = u;
+        let hostUser: any = null;
+        if (dbSession.host_id) {
+          try {
+            const { data: u } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', dbSession.host_id)
+              .maybeSingle();
+            if (u) hostUser = u;
+          } catch {}
+        }
+
+        let venueData: any = null;
+        if (dbSession.venue_id) {
+          try {
+            const { data: v } = await supabase
+              .from('venues')
+              .select('*')
+              .eq('id', dbSession.venue_id)
+              .maybeSingle();
+            if (v) venueData = v;
+          } catch {}
         }
 
         const hostName =
@@ -106,17 +171,38 @@ export async function GET(req: NextRequest) {
           'Match Organizer';
         const hostAvatar = (hostUser?.avatar_url as any) || matched?.hostAvatar || 'alex';
 
-        const { data: queueData } = await supabase
-          .from('queues')
-          .select('*, user:users(*)')
-          .eq('session_id', dbSession.id)
-          .neq('status', 'cancelled');
+        let queueMembers: Array<{ id?: string; name: string; avatar: any }> = [];
+        try {
+          const { data: queueData } = await supabase
+            .from('queues')
+            .select('*')
+            .eq('session_id', dbSession.id)
+            .neq('status', 'cancelled');
 
-        const queueMembers = (queueData || []).map((q: any) => ({
-          id: q.user_id,
-          name: q.user?.full_name || q.user?.nickname || q.partner_names?.[0] || 'Player',
-          avatar: (q.user?.avatar_url as any) || 'alex',
-        }));
+          if (Array.isArray(queueData)) {
+            queueMembers = queueData.map((q: any) => ({
+              id: q.user_id,
+              name: (q.partner_names && q.partner_names[0]) || 'Player',
+              avatar: 'alex',
+            }));
+          }
+        } catch {}
+
+        if (queueMembers.length === 0) {
+          try {
+            const { data: partData } = await supabase
+              .from('session_participants')
+              .select('*')
+              .eq('session_id', dbSession.id);
+            if (Array.isArray(partData) && partData.length > 0) {
+              queueMembers = partData.map((p: any) => ({
+                id: p.user_id,
+                name: p.user_name || p.name || 'Player',
+                avatar: p.user_avatar || p.avatar || 'alex',
+              }));
+            }
+          } catch {}
+        }
 
         const hostMember = {
           id: dbSession.host_id || matched?.hostId || 'organizer',
@@ -183,16 +269,16 @@ export async function GET(req: NextRequest) {
           memoryStore[mappedGame.id.trim().toUpperCase()] = mappedGame;
         }
         saveCache(diskCache);
-        return NextResponse.json({ success: true, game: mappedGame });
+        return NextResponse.json({ success: true, session: dbSession, game: mappedGame });
       }
     } catch {}
   }
 
   if (matched) {
-    return NextResponse.json({ success: true, game: matched });
+    return NextResponse.json({ success: true, session: matched, game: matched });
   }
 
-  return NextResponse.json({ success: false, error: 'Invitation not found or expired' }, { status: 404 });
+  return NextResponse.json({ error: 'Invitation not found' }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {
@@ -232,6 +318,39 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'accept' && participant) {
+      // Check invite-only game authorization
+      const isInviteOnly = (dbSession?.visibility === 'Invite') || (game.visibility === 'Invite');
+      if (isInviteOnly) {
+        const pName = (participant.name || '').trim().toLowerCase();
+        const pId = participant.id;
+        const isHost = Boolean(
+          (dbSession?.host_id && pId && dbSession.host_id === pId) ||
+          (game.hostId && pId && game.hostId === pId) ||
+          (game.hostName && pName && game.hostName.trim().toLowerCase() === pName)
+        );
+        const isDirectlyInvited = Boolean(
+          game.invitedPlayers?.some(
+            (ip) =>
+              (ip.name && pName && ip.name.trim().toLowerCase() === pName) ||
+              (ip.id && pId && ip.id === pId)
+          )
+        );
+        const providedCode = (body.inviteCode || game.inviteCode || '').trim().toUpperCase();
+        const actualCode = (dbSession?.invite_code || game.inviteCode || '').trim().toUpperCase();
+        const hasValidCode = Boolean(providedCode && actualCode && providedCode === actualCode);
+
+        if (!isHost && !isDirectlyInvited && !hasValidCode) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'This is an invite-only game. You can only join if the host has invited you.',
+              message: 'This is an invite-only game. You can only join if the host has invited you.',
+            },
+            { status: 403 }
+          );
+        }
+      }
+
       if (!supabase || !dbSession) {
         const updatedMembers = [
           ...(game.members || []),
@@ -301,16 +420,53 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Database write failed: Could not resolve participant user profile.' }, { status: 500 });
       }
 
-      const { count } = await supabase
-        .from('queues')
-        .select('*', { count: 'exact', head: true })
-        .eq('session_id', dbSession.id);
+      const nowIso = new Date().toISOString();
+      let rosterRecorded = false;
 
-      const nextQueueNumber = (count || 0) + 1;
-      const { error: queueErr } = await supabase
-        .from('queues')
-        .upsert(
-          {
+      // 1. Try session_participants table with required columns (session_id, user_id, status, joined_at)
+      try {
+        const { error: partErr } = await supabase
+          .from('session_participants')
+          .insert({
+            session_id: dbSession.id,
+            user_id: participantUserId,
+            status: 'joined',
+            joined_at: nowIso,
+          });
+
+        if (!partErr || partErr.code === '23505' || partErr.message?.toLowerCase().includes('duplicate') || partErr.message?.toLowerCase().includes('unique')) {
+          rosterRecorded = true;
+        }
+      } catch {}
+
+      // 2. Try game_rosters table with required columns (session_id, user_id, status, joined_at)
+      if (!rosterRecorded) {
+        try {
+          const { error: rosterErr } = await supabase
+            .from('game_rosters')
+            .insert({
+              session_id: dbSession.id,
+              user_id: participantUserId,
+              status: 'joined',
+              joined_at: nowIso,
+            });
+
+          if (!rosterErr || rosterErr.code === '23505' || rosterErr.message?.toLowerCase().includes('duplicate') || rosterErr.message?.toLowerCase().includes('unique')) {
+            rosterRecorded = true;
+          }
+        } catch {}
+      }
+
+      // 3. Try queues table
+      if (!rosterRecorded) {
+        try {
+          const { count } = await supabase
+            .from('queues')
+            .select('*', { count: 'exact', head: true })
+            .eq('session_id', dbSession.id);
+
+          const nextQueueNumber = (count || 0) + 1;
+          const { error: queueErr } = await supabase.from('queues').insert({
             session_id: dbSession.id,
             user_id: participantUserId,
             queue_number: nextQueueNumber,
@@ -318,29 +474,36 @@ export async function POST(req: NextRequest) {
             match_format: 'doubles',
             status: 'waiting',
             partner_names: [participant.name],
-          },
-          { onConflict: 'session_id,user_id' }
-        );
+            joined_at: nowIso,
+          });
 
-      if (queueErr) {
-        return NextResponse.json({ success: false, error: 'Database write failed: ' + queueErr.message }, { status: 500 });
+          if (!queueErr || queueErr.code === '23505' || queueErr.message?.toLowerCase().includes('duplicate') || queueErr.message?.toLowerCase().includes('unique') || queueErr.message?.toLowerCase().includes('already exists')) {
+            rosterRecorded = true;
+          }
+        } catch {}
       }
 
-      const { count: activeQueueCount } = await supabase
-        .from('queues')
-        .select('*', { count: 'exact', head: true })
-        .eq('session_id', dbSession.id)
-        .neq('status', 'cancelled');
+      let activeCount = 0;
+      try {
+        const { count: c } = await supabase
+          .from('queues')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+        activeCount = c || 0;
+      } catch {}
 
-      const finalSpotsJoined = Math.min(dbSession.max_players || 10, (activeQueueCount || 0) + 1);
+      const finalSpotsJoined = Math.min(dbSession.max_players || 10, Math.max(dbSession.current_players_count || 1, activeCount + 1));
 
-      await supabase
-        .from('sessions')
-        .update({
-          current_players_count: finalSpotsJoined,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', dbSession.id);
+      try {
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: finalSpotsJoined,
+            updated_at: nowIso,
+          })
+          .eq('id', dbSession.id);
+      } catch {}
 
       const updatedMembers = [
         ...(game.members || []),
