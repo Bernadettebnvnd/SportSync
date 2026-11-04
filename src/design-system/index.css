@@ -32,13 +32,13 @@ html.light, .light {
   --surface-2: #E8ECE4;
   --surface-3: #DDE2D8;
   --stroke-subtle: rgba(0, 0, 0, 0.07);
-  --stroke-medium: rgba(0, 0, 0, 0.14);
-  --accent-lime: #C8FF2E;
+  --accent-lime: #7DB800;
+  --accent-lime-text: #365314;
   --accent-lime-ink: #0B0F0C;
   --accent-pink: #FF8FC7;
   --accent-clay: #C8432B;
   --live-red: #FF3B30;
-  --win-green: #14532D;
+  --win-green: #15803D;
   --loss-red: #E04848;
   --draw-amber: #E29B24;
   --text-primary: #0F1612;

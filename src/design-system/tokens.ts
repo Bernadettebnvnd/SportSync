@@ -36,6 +36,20 @@ export const colors = {
   lightSurfaceSecondary: '#4A554D',
 } as const;
 
+export const lightColors = {
+  accentLime: '#7DB800',
+  accentLimeText: '#365314',
+  accentLimeInk: '#0B0F0C',
+  winGreen: '#15803D',
+  bgBase: '#F4F6F2',
+  surface1: '#FFFFFF',
+  surface2: '#E8ECE4',
+  surface3: '#DDE2D8',
+  textPrimary: '#0F1612',
+  textSecondary: '#4C5A50',
+  textTertiary: '#68766C',
+} as const;
+
 export const radii = {
   none: '0px',
   sm: '8px',
