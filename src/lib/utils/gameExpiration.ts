@@ -59,8 +59,7 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
   const now = new Date();
   const currentTimestamp = now.getTime();
 
-  // 1. If linked session end_time exists as valid ISO timestamp
-  if (sessionEndTime) {
+  if (sessionEndTime && (sessionEndTime.includes('T') || sessionEndTime.includes('-'))) {
     const sessionEnd = new Date(sessionEndTime);
     if (!isNaN(sessionEnd.getTime())) {
       return sessionEnd.getTime() <= currentTimestamp;

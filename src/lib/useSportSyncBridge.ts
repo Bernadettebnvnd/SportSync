@@ -1853,7 +1853,97 @@ export function useSportSyncBridge() {
       const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
       const userName = userProfile.name || 'Player';
 
-      // Store sync & Supabase session creation
+      const finalInviteCode = gameData.inviteCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      const now = new Date();
+      let startYear = now.getFullYear();
+      let startMonth = now.getMonth();
+      let startDay = now.getDate();
+      const dNorm = (displayDate || '').trim().toLowerCase();
+      if (dNorm === 'tomorrow') {
+        const tom = new Date(now);
+        tom.setDate(now.getDate() + 1);
+        startYear = tom.getFullYear();
+        startMonth = tom.getMonth();
+        startDay = tom.getDate();
+      } else if (dNorm && dNorm !== 'today') {
+        const parsed = new Date(displayDate);
+        if (!isNaN(parsed.getTime())) {
+          startYear = parsed.getFullYear();
+          startMonth = parsed.getMonth();
+          startDay = parsed.getDate();
+        }
+      }
+      let startH = 18;
+      let startM = 0;
+      if (displayTime) {
+        const parts = displayTime.trim().split(':');
+        if (parts.length >= 2) {
+          const ph = parseInt(parts[0], 10);
+          const pm = parseInt(parts[1], 10);
+          if (!isNaN(ph)) startH = ph;
+          if (!isNaN(pm)) startM = pm;
+        }
+      }
+      const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
+      const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
+
+      let newGame: CommunityGame = {
+        id: assignedId,
+        sessionId: createdSessionId,
+        sport: (gameData.sport as any) || 'Badminton',
+        title: gameData.title,
+        format: formatStr as any,
+        skillLevel: (gameData.skillLevel as any) || 'Casual',
+        date: displayDate,
+        time: displayTime,
+        locationName: gameData.locationName,
+        locationDetails: gameData.locationDetails,
+        distance: distanceStr,
+        hostId: userProfile.id,
+        hostName: userName,
+        hostAvatar: userAvatar,
+        spotsTotal: gameData.playersCount,
+        spotsJoined: 0,
+        pricePerPlayer: gameData.pricePerPlayer,
+        notes: gameData.notes || 'Organized via SportSync Matchmaking',
+        isPublic: gameData.visibility ? gameData.visibility !== 'Invite' : true,
+        visibility: gameData.visibility || 'Public',
+        inviteCode: finalInviteCode,
+        invitedPlayers: gameData.invitedPlayers || [],
+        members: [],
+        coordinates: gameData.coordinates,
+      };
+
+      if (typeof window !== 'undefined') {
+        try {
+          const res = await fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: newGame, action: 'create_game' }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.game) {
+              newGame = {
+                ...newGame,
+                ...data.game,
+                hostId: userProfile.id || data.game.hostId,
+                hostName: userName || data.game.hostName,
+                hostAvatar: userAvatar || data.game.hostAvatar,
+                inviteCode: finalInviteCode,
+              };
+              if (data.session?.id) {
+                newGame.sessionId = data.session.id;
+                newGame.id = data.session.id;
+                createdSessionId = data.session.id;
+                assignedId = data.session.id;
+              }
+            }
+          }
+        } catch {}
+      }
+
       try {
         const sportNorm = gameData.sport.toLowerCase();
         const matchingSport: DbSportType =
@@ -1876,55 +1966,26 @@ export function useSportSyncBridge() {
           const createdSession = await store.createOpenPlaySession({
             venueId: targetVenue.id,
             title: gameData.title,
-            description: `${gameData.notes || 'SportSync community game'}${gameData.inviteCode ? ` [INVITE:${gameData.inviteCode.toUpperCase()}]` : ''}`,
+            description: `${gameData.notes || 'SportSync community game'}${finalInviteCode ? ` [INVITE:${finalInviteCode.toUpperCase()}]` : ''}`,
             sport: matchingSport,
             courtIds: targetVenue.courts?.map((c) => c.id) || [],
-            startTime: displayTime,
-            endTime: '20:00',
+            startTime: startIso,
+            endTime: endIso,
             feeCents: gameData.pricePerPlayer * 100,
             maxPlayers: gameData.playersCount,
             rotationFormat: formatStr,
             skillLevel: (gameData.skillLevel?.toLowerCase() as SkillLevel) || 'all_levels',
             hostId: userProfile.id,
             visibility: gameData.visibility,
-            inviteCode: gameData.inviteCode,
+            inviteCode: finalInviteCode,
             locationDetails: gameData.locationDetails,
           });
           if (createdSession?.id) {
-            createdSessionId = createdSession.id;
-            assignedId = createdSession.id;
+            newGame.sessionId = createdSession.id;
+            newGame.id = createdSession.id;
           }
         }
-      } catch (err) {
-        console.warn('[SportSyncBridge] Global open play session creation fallback handled:', err);
-      }
-
-      const newGame: CommunityGame = {
-        id: assignedId,
-        sessionId: createdSessionId,
-        sport: (gameData.sport as any) || 'Badminton',
-        title: gameData.title,
-        format: formatStr as any,
-        skillLevel: (gameData.skillLevel as any) || 'Casual',
-        date: displayDate,
-        time: displayTime,
-        locationName: gameData.locationName,
-        locationDetails: gameData.locationDetails,
-        distance: distanceStr,
-        hostId: userProfile.id,
-        hostName: userName,
-        hostAvatar: userAvatar,
-        spotsTotal: gameData.playersCount,
-        spotsJoined: 0,
-        pricePerPlayer: gameData.pricePerPlayer,
-        notes: gameData.notes || 'Organized via SportSync Matchmaking',
-        isPublic: gameData.visibility ? gameData.visibility !== 'Invite' : true,
-        visibility: gameData.visibility || 'Public',
-        inviteCode: gameData.inviteCode,
-        invitedPlayers: gameData.invitedPlayers || [],
-        members: [],
-        coordinates: gameData.coordinates,
-      };
+      } catch {}
 
       setGames((prev) => {
         const normTitle = newGame.title.trim().toLowerCase();
@@ -1939,13 +2000,15 @@ export function useSportSyncBridge() {
         return [newGame, ...filtered];
       });
 
-      if (typeof window !== 'undefined' && newGame.inviteCode) {
+      if (typeof window !== 'undefined') {
         try {
-          await fetch('/api/invitations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: newGame }),
-          });
+          const raw = localStorage.getItem('sportsync_community_games');
+          const list = raw ? JSON.parse(raw) : [];
+          const updated = [
+            newGame,
+            ...list.filter((g: any) => g.id !== newGame.id && (!newGame.sessionId || g.sessionId !== newGame.sessionId)),
+          ];
+          localStorage.setItem('sportsync_community_games', JSON.stringify(updated));
         } catch {}
       }
 

@@ -408,31 +408,58 @@ export async function createOpenPlaySession(
     return localSession;
   }
 
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData?.user) {
-    throw new Error('You must be signed in to create an Open Play session.');
+  let resolvedHostId = sessionData.host_id;
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData?.user) {
+      const { data: publicUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_id', userData.user.id)
+        .maybeSingle();
+      if (publicUser?.id) {
+        resolvedHostId = publicUser.id;
+      }
+    }
+  } catch {}
+
+  const isHostUuid = Boolean(
+    resolvedHostId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedHostId)
+  );
+
+  let resolvedVenueId = sessionData.venue_id;
+  if (!resolvedVenueId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedVenueId)) {
+    try {
+      const { data: firstVenue } = await supabase.from('venues').select('id').limit(1).maybeSingle();
+      if (firstVenue?.id) resolvedVenueId = firstVenue.id;
+    } catch {}
   }
 
-  const { data: publicUser } = await supabase
-    .from('users')
-    .select('id')
-    .eq('auth_id', userData.user.id)
-    .single();
+  let startTimeIso = sessionData.start_time;
+  if (!startTimeIso || (!startTimeIso.includes('T') && !startTimeIso.includes('-'))) {
+    startTimeIso = new Date().toISOString();
+  }
+  let endTimeIso = sessionData.end_time;
+  if (!endTimeIso || (!endTimeIso.includes('T') && !endTimeIso.includes('-'))) {
+    const parsedStart = new Date(startTimeIso);
+    endTimeIso = new Date(parsedStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
+  }
 
   const { data: newSession, error } = await supabase
     .from('sessions')
     .insert({
-      venue_id: sessionData.venue_id,
-      host_id: publicUser?.id || sessionData.host_id,
+      venue_id: resolvedVenueId,
+      host_id: isHostUuid ? resolvedHostId : null,
       title: sessionData.title,
       description: sessionData.description,
       sport: sessionData.sport,
       session_type: 'open_play',
       allowed_formats: sessionData.allowed_formats,
       skill_level: sessionData.skill_level,
-      court_ids: sessionData.court_ids,
-      start_time: sessionData.start_time,
-      end_time: sessionData.end_time,
+      court_ids: sessionData.court_ids || [],
+      start_time: startTimeIso,
+      end_time: endTimeIso,
       fee_cents: sessionData.fee_cents,
       max_players: sessionData.max_players,
       current_players_count: 0,
@@ -446,7 +473,49 @@ export async function createOpenPlaySession(
     .single();
 
   if (error) {
-    console.warn('Supabase create session fallback handled, returning local session:', error.message);
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch('/api/invitations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_game',
+            game: {
+              id: localId,
+              venueId: resolvedVenueId,
+              hostId: sessionData.host_id,
+              title: sessionData.title,
+              sport: sessionData.sport,
+              notes: sessionData.description,
+              date: startTimeIso,
+              time: startTimeIso,
+              spotsTotal: sessionData.max_players,
+              pricePerPlayer: Math.round((sessionData.fee_cents || 0) / 100),
+              format: sessionData.rotation_format,
+              skillLevel: sessionData.skill_level === 'intermediate' ? 'Competitive' : 'Casual',
+              visibility: sessionData.visibility || 'Public',
+              inviteCode: sessionData.invite_code,
+              locationDetails: sessionData.location_details,
+            },
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.session?.id) {
+            const serverSession: Session = {
+              ...localSession,
+              id: json.session.id,
+              venue_id: json.session.venue_id || localSession.venue_id,
+              host_id: json.session.host_id || localSession.host_id,
+              start_time: json.session.start_time || localSession.start_time,
+              end_time: json.session.end_time || localSession.end_time,
+            };
+            saveLocalStoredSession(serverSession);
+            return serverSession;
+          }
+        }
+      } catch {}
+    }
     return localSession;
   }
 

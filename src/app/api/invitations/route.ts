@@ -35,6 +35,44 @@ function saveCache(cache: Record<string, CommunityGame>): void {
 
 const memoryStore: Record<string, CommunityGame> = loadCache();
 
+function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: string; endIso: string } {
+  const now = new Date();
+  let y = now.getFullYear();
+  let m = now.getMonth();
+  let d = now.getDate();
+  const dNorm = (dateStr || '').trim().toLowerCase();
+  if (dNorm === 'tomorrow') {
+    const tom = new Date(now);
+    tom.setDate(now.getDate() + 1);
+    y = tom.getFullYear();
+    m = tom.getMonth();
+    d = tom.getDate();
+  } else if (dNorm && dNorm !== 'today') {
+    const parsed = new Date(dateStr!);
+    if (!isNaN(parsed.getTime())) {
+      y = parsed.getFullYear();
+      m = parsed.getMonth();
+      d = parsed.getDate();
+    }
+  }
+
+  let startH = 18;
+  let startMin = 0;
+  if (timeStr) {
+    const parts = timeStr.trim().split(':');
+    if (parts.length >= 2) {
+      const h = parseInt(parts[0], 10);
+      const min = parseInt(parts[1], 10);
+      if (!isNaN(h)) startH = h;
+      if (!isNaN(min)) startMin = min;
+    }
+  }
+
+  const start = new Date(y, m, d, startH, startMin, 0);
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
 function getServerSupabaseClient() {
   const admin = createAdminClient();
   if (admin) return admin;
@@ -351,19 +389,108 @@ export async function POST(req: NextRequest) {
       if (inviteKey) {
         const { data: byCode } = await supabase
           .from('sessions')
-          .select('id, max_players, current_players_count, host_id, visibility, invite_code')
-          .eq('invite_code', inviteKey)
+          .select('*')
+          .ilike('invite_code', inviteKey)
           .maybeSingle();
         if (byCode) dbSession = byCode;
       }
-      if (!dbSession && (game.sessionId || (game.id && game.id.includes('-')))) {
+      if (!dbSession && (game.sessionId || (game.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.id)))) {
         const sId = game.sessionId || game.id;
         const { data: byId } = await supabase
           .from('sessions')
-          .select('id, max_players, current_players_count, host_id, visibility, invite_code')
+          .select('*')
           .eq('id', sId)
           .maybeSingle();
         if (byId) dbSession = byId;
+      }
+
+      if (!dbSession && (action === 'create_game' || !action)) {
+        let venueId: string | null = null;
+        const targetVenueId = body.game?.venueId || (game as any).venue_id || (game as any).venueId;
+        if (targetVenueId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetVenueId)) {
+          venueId = targetVenueId;
+        }
+        if (!venueId && game.locationName) {
+          try {
+            const firstWord = game.locationName.trim().split(' ')[0];
+            const { data: v } = await supabase
+              .from('venues')
+              .select('id')
+              .ilike('name', `%${firstWord}%`)
+              .limit(1)
+              .maybeSingle();
+            if (v?.id) venueId = v.id;
+          } catch {}
+        }
+        if (!venueId) {
+          try {
+            const { data: firstV } = await supabase.from('venues').select('id').limit(1).maybeSingle();
+            if (firstV?.id) venueId = firstV.id;
+          } catch {}
+        }
+
+        let hostUserId: string | null = null;
+        if (game.hostId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.hostId)) {
+          try {
+            const { data: u } = await supabase.from('users').select('id').or(`id.eq.${game.hostId},auth_id.eq.${game.hostId}`).limit(1).maybeSingle();
+            if (u?.id) hostUserId = u.id;
+          } catch {}
+        }
+        if (!hostUserId && game.hostName) {
+          try {
+            const { data: u } = await supabase.from('users').select('id').ilike('full_name', `%${game.hostName}%`).limit(1).maybeSingle();
+            if (u?.id) hostUserId = u.id;
+          } catch {}
+        }
+
+        const sLower = (game.sport || '').toLowerCase();
+        const validSport = sLower.includes('basket')
+          ? 'basketball'
+          : sLower.includes('tennis')
+          ? 'tennis'
+          : sLower.includes('badminton')
+          ? 'badminton'
+          : sLower.includes('volley')
+          ? 'volleyball'
+          : 'pickleball';
+
+        const { startIso, endIso } = parseIsoSchedule(game.date, game.time);
+
+        if (venueId) {
+          try {
+            const { data: inserted } = await supabase
+              .from('sessions')
+              .insert({
+                venue_id: venueId,
+                host_id: hostUserId,
+                title: game.title,
+                description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${(game.inviteCode || '').toUpperCase()}] [HOST:${game.hostName || ''}]`,
+                sport: validSport,
+                session_type: 'open_play',
+                allowed_formats: ['doubles', 'singles'],
+                skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
+                court_ids: [],
+                start_time: startIso,
+                end_time: endIso,
+                fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
+                max_players: game.spotsTotal || 10,
+                current_players_count: (game.members || []).length,
+                rotation_format: game.format || '5v5',
+                status: 'active',
+                visibility: game.visibility || 'Public',
+                invite_code: game.inviteCode ? game.inviteCode.trim().toUpperCase() : null,
+                location_details: game.locationDetails || game.locationName || null,
+              })
+              .select('*')
+              .single();
+
+            if (inserted) {
+              dbSession = inserted;
+              game.id = inserted.id;
+              game.sessionId = inserted.id;
+            }
+          } catch {}
+        }
       }
     }
 
@@ -915,7 +1042,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
-    return NextResponse.json({ success: true, game });
+    return NextResponse.json({ success: true, game, session: dbSession });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Server error processing invitation';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

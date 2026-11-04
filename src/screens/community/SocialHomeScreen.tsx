@@ -101,9 +101,14 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
         const isJoined = isMember || isHost || hasJoinedToken;
         if (!isJoined) return false;
       } else if (activeTab === 'hosting') {
+        const uId = user?.id;
+        const uName = (userName || '').trim().toLowerCase();
+        const uUsername = ((user as any)?.username || '').trim().toLowerCase();
         const isHost = Boolean(
-          (game.hostId && user?.id && game.hostId === user.id) ||
-          (game.hostName && userName && game.hostName.trim().toLowerCase() === userName.trim().toLowerCase())
+          (game.hostId && uId && game.hostId === uId) ||
+          (game.hostName && uName && game.hostName.trim().toLowerCase() === uName) ||
+          (game.hostName && uUsername && game.hostName.trim().toLowerCase() === uUsername) ||
+          (!game.hostId && game.hostName && game.hostName.trim().toLowerCase() === uName)
         );
         if (!isHost) return false;
       }

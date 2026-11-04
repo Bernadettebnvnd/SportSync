@@ -332,7 +332,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   };
 
   const persistDraftInvitation = useCallback(async () => {
-    if (visibility !== 'Invite' || !inviteCode || typeof window === 'undefined') return;
+    if (!inviteCode || typeof window === 'undefined') return;
     const matchTime = scheduleMode === 'today'
       ? defaultTodayTime
       : scheduleMode === 'tomorrow'
@@ -857,7 +857,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
         coordinates,
         visibility,
-        inviteCode: visibility === 'Invite' ? inviteCode : undefined,
+        inviteCode,
         invitedPlayers:
           visibility === 'Invite'
             ? FRIENDS.filter((f) => invitedFriendIds.includes(f.id)).map((f) => ({
