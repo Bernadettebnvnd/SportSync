@@ -51,6 +51,7 @@ interface MatchDetailScreenProps {
   currentUserId?: string;
   onRemovePlayer?: (player: { id?: string; name: string }) => Promise<void> | void;
   onToggleHostParticipation?: (participate: boolean) => Promise<void> | void;
+  unreadCount?: number;
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
@@ -65,6 +66,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   currentUserName,
   currentUserId,
   onToggleHostParticipation,
+  unreadCount = 0,
 }) => {
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -289,10 +291,29 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
             </button>
             <button
               onClick={onOpenChat}
-              className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md text-[#C8FF2E] flex items-center justify-center hover:bg-black/70"
+              className="relative w-10 h-10 rounded-full bg-black/50 backdrop-blur-md text-[#C8FF2E] flex items-center justify-center hover:bg-black/70 transition-all press-scale"
               aria-label="Open team chat"
+              title="Open team chat"
             >
               <MessageCircle className="w-5 h-5" />
+              {(() => {
+                const isAuthorized = Boolean(
+                  isHost ||
+                  (game && game.members && game.members.some(
+                    (m) =>
+                      (m.id && currentUserId && m.id === currentUserId) ||
+                      (m.name && currentUserName && m.name.trim().toLowerCase() === currentUserName.trim().toLowerCase())
+                  ))
+                );
+                const count = isAuthorized ? unreadCount : 0;
+                if (count <= 0) return null;
+                const badgeText = count > 99 ? '99+' : count.toString();
+                return (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF3B30] text-white font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_rgba(255,59,48,0.7)] border border-[#0B0F0C] animate-pulse">
+                    {badgeText}
+                  </span>
+                );
+              })()}
             </button>
           </div>
         </div>
@@ -502,7 +523,11 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 No players in lineup yet.
               </div>
             ) : (
-              game.members.map((member, idx) => {
+              Array.from(
+                new Map(
+                  (game.members || []).map((m) => [m.id || m.name.toLowerCase().trim(), m])
+                ).values()
+              ).map((member, idx) => {
               const isOrganizer = Boolean(
 
                 (game.hostId && member.id && member.id === game.hostId) ||

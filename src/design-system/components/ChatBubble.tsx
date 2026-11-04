@@ -1,49 +1,108 @@
 import React, { useState } from 'react';
 import { UserAvatar, AvatarId } from '../../illustrations/Avatars';
-import { Vote, Check } from 'lucide-react';
+import { Vote, Check, Crown } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
+  senderId?: string;
   senderName: string;
   avatarId: AvatarId;
   text: string;
   time: string;
   isMe?: boolean;
+  isHost?: boolean;
 }
 
 export const ChatBubble: React.FC<{
   message: ChatMessage;
   className?: string;
 }> = ({ message, className = '' }) => {
+  const isMe = Boolean(message.isMe);
+
   return (
     <div
-      className={`flex items-end gap-2.5 my-2 select-none ${
-        message.isMe ? 'justify-end' : 'justify-start'
+      className={`flex items-end gap-2.5 my-2.5 select-none ${
+        isMe ? 'justify-end' : 'justify-start'
       } ${className}`}
     >
-      {!message.isMe && <UserAvatar id={message.avatarId} size={28} />}
+      {/* 1. Left Avatar for other players or host */}
+      {!isMe && (
+        <div className="relative shrink-0 mb-1">
+          <UserAvatar
+            id={message.avatarId}
+            name={message.senderName}
+            size={34}
+            className="border-[#C8FF2E]/40"
+          />
+          {message.isHost && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center shadow-sm">
+              <Crown className="w-2.5 h-2.5 stroke-[3]" />
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className={`max-w-[78%] flex flex-col ${message.isMe ? 'items-end' : 'items-start'}`}>
-        {!message.isMe && (
-          <span className="text-[10px] text-[#A5B0A6] mb-0.5 ml-1 font-medium">
+      {/* 2. Message Content Block */}
+      <div className={`max-w-[78%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+        {/* Sender Name & Role Label Header */}
+        <div
+          className={`flex items-center gap-1.5 mb-1 px-1 ${
+            isMe ? 'flex-row-reverse' : 'flex-row'
+          }`}
+        >
+          <span className="text-[11px] font-bold text-[#F4F7F0] truncate max-w-[180px]">
             {message.senderName}
           </span>
-        )}
 
+          {message.isHost ? (
+            <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-[#C8FF2E]/15 text-[#C8FF2E] font-bold border border-[#C8FF2E]/30 flex items-center gap-0.5">
+              <Crown className="w-2.5 h-2.5 stroke-[3]" />
+              <span>Host</span>
+            </span>
+          ) : isMe ? (
+            <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-white/10 text-[#A5B0A6] font-medium">
+              You
+            </span>
+          ) : (
+            <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-[#1C241E] text-[#A5B0A6] font-medium border border-white/5">
+              Player
+            </span>
+          )}
+        </div>
+
+        {/* Message Bubble */}
         <div
           className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-            message.isMe
-              ? 'bg-[#C8FF2E] text-[#0B0F0C] rounded-br-sm font-medium'
-              : 'bg-[#1C241E] text-[#F4F7F0] rounded-bl-sm border border-white/5'
+            isMe
+              ? 'bg-[#C8FF2E] text-[#0B0F0C] rounded-br-sm font-medium shadow-sm'
+              : 'bg-[#1C241E] text-[#F4F7F0] rounded-bl-sm border border-white/5 shadow-sm'
           }`}
         >
           {message.text}
         </div>
 
+        {/* Timestamp */}
         <span className="text-[9px] text-[#6F7B71] mt-0.5 px-1 font-mono">
           {message.time}
         </span>
       </div>
+
+      {/* 3. Right Avatar for current user */}
+      {isMe && (
+        <div className="relative shrink-0 mb-1">
+          <UserAvatar
+            id={message.avatarId}
+            name={message.senderName}
+            size={34}
+            className="border-[#C8FF2E]"
+          />
+          {message.isHost && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center shadow-sm">
+              <Crown className="w-2.5 h-2.5 stroke-[3]" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

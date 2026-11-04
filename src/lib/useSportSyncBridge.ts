@@ -482,6 +482,9 @@ export function useSportSyncBridge() {
     };
   });
 
+  const userProfileRef = useRef(userProfile);
+  userProfileRef.current = userProfile;
+
   // Persist userProfile to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -586,10 +589,16 @@ export function useSportSyncBridge() {
     return [];
   });
 
+  const lastSerializedGamesRef = useRef<string>('');
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const cleanGames = games.filter((g) => !isMockGame(g) && !isGameExpired(g));
-      localStorage.setItem('sportsync_community_games', JSON.stringify(cleanGames));
+      const serialized = JSON.stringify(cleanGames);
+      if (serialized !== lastSerializedGamesRef.current) {
+        lastSerializedGamesRef.current = serialized;
+        localStorage.setItem('sportsync_community_games', serialized);
+      }
     }
   }, [games]);
 
@@ -764,6 +773,27 @@ export function useSportSyncBridge() {
             members: initialMembers,
           });
         });
+        // Structural equality check: if nothing changed, bail out and return prev to halt render cascade
+        if (added.length === 0 && cleanPrev.length === updatedExisting.length) {
+          const isIdentical = cleanPrev.every((prevGame, idx) => {
+            const nextGame = updatedExisting[idx];
+            if (!nextGame || prevGame.id !== nextGame.id) return false;
+            if (prevGame.spotsJoined !== nextGame.spotsJoined) return false;
+            if (prevGame.hostName !== nextGame.hostName) return false;
+            if (prevGame.hostAvatar !== nextGame.hostAvatar) return false;
+            const prevMembers = prevGame.members || [];
+            const nextMembers = nextGame.members || [];
+            if (prevMembers.length !== nextMembers.length) return false;
+            return prevMembers.every((pm, mIdx) => {
+              const nm = nextMembers[mIdx];
+              return nm && (pm.id || pm.name) === (nm.id || nm.name);
+            });
+          });
+          if (isIdentical) {
+            return prev;
+          }
+        }
+
         return added.length > 0 ? [...added, ...updatedExisting] : updatedExisting;
       });
     }
@@ -972,14 +1002,15 @@ export function useSportSyncBridge() {
               } catch {}
             }
 
+            const currentProfile = userProfileRef.current;
             const isUserHost = Boolean(
-              (userProfile.id && dbSession.host_id === userProfile.id) ||
-              (userProfile.name && dbSession.host_id === userProfile.name)
+              (currentProfile.id && dbSession.host_id === currentProfile.id) ||
+              (currentProfile.name && dbSession.host_id === currentProfile.name)
             );
             const resolvedHostName = isUserHost
-              ? userProfile.name
+              ? currentProfile.name
               : (hostUser?.full_name || hostUser?.nickname || 'Match Organizer');
-            const resolvedHostAvatar = (hostUser?.avatar_url as any) || userProfile.avatarId || 'alex';
+            const resolvedHostAvatar = (hostUser?.avatar_url as any) || currentProfile.avatarId || 'alex';
 
             setGames((prev) =>
               prev.map((g) => {
@@ -1012,7 +1043,7 @@ export function useSportSyncBridge() {
         } catch {}
       }
     },
-    [userProfile.name, userProfile.avatarId, userProfile.id]
+    []
   );
 
   useEffect(() => {
@@ -2386,10 +2417,19 @@ export function useSportSyncBridge() {
 
       // 4. Update local game state
       const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
+      const alreadyHasMember = targetGame.members.some(
+        (m) =>
+          (userName && m.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+          (userProfile.id && m.id && m.id === userProfile.id)
+      );
+      const nextMembers = alreadyHasMember
+        ? targetGame.members
+        : [...targetGame.members, { name: userName, avatar: userAvatar, id: userProfile.id }];
+
       const updatedGame: CommunityGame = {
         ...targetGame,
-        spotsJoined: Math.min(targetGame.spotsTotal, targetGame.spotsJoined + 1),
-        members: [...targetGame.members, { name: userName, avatar: userAvatar, id: userProfile.id }],
+        spotsJoined: Math.min(targetGame.spotsTotal, Math.max(nextMembers.length, targetGame.spotsJoined + (alreadyHasMember ? 0 : 1))),
+        members: nextMembers,
       };
 
       setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));

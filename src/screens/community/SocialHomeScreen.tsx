@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Crown,
   Edit3,
+  MessageSquare,
 } from 'lucide-react';
 import { StadiumScene } from '../../illustrations/Scenes';
 import { MatchCard } from '../../design-system/components/MatchCard';
@@ -40,6 +41,8 @@ interface SocialHomeScreenProps {
   onOpenNotifications: () => void;
   onRequireAuth?: (actionName?: string) => void;
   isGuest?: boolean;
+  chatUnreadCount?: number;
+  onOpenChat?: () => void;
 }
 
 export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
@@ -51,6 +54,8 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
   onOpenNotifications,
   onRequireAuth,
   isGuest = false,
+  chatUnreadCount = 0,
+  onOpenChat,
 }) => {
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
@@ -182,18 +187,39 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={handleNotificationsClick}
-            aria-label="View notifications"
-            className="relative w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/60 transition-colors press-scale"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_#C8FF2E]">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
+          <div className="flex items-center gap-2">
+            {/* Message Icon Button with Real-time Unread Badge */}
+            {onOpenChat && (
+              <button
+                type="button"
+                onClick={onOpenChat}
+                aria-label="View match chats"
+                className="relative w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-[#C8FF2E] hover:bg-black/60 transition-colors press-scale"
+                title="Match Chats"
+              >
+                <MessageSquare className="w-4 h-4" />
+                {chatUnreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF3B30] text-white font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_rgba(255,59,48,0.7)] border border-[#0B0F0C] animate-pulse">
+                    {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                  </span>
+                )}
+              </button>
             )}
-          </button>
+
+            {/* Notifications Bell */}
+            <button
+              onClick={handleNotificationsClick}
+              aria-label="View notifications"
+              className="relative w-10 h-10 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-black/60 transition-colors press-scale"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-black text-[10px] flex items-center justify-center shadow-[0_0_8px_#C8FF2E]">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Header Punchy Copy */}

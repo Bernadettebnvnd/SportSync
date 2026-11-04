@@ -7,6 +7,7 @@ interface BottomNavProps {
   activeTab: NavTabId;
   onTabChange: (tab: NavTabId) => void;
   onOpenQuickAction: () => void;
+  playBadge?: string | null;
   className?: string;
 }
 
@@ -14,6 +15,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onTabChange,
   onOpenQuickAction,
+  playBadge,
   className = '',
 }) => {
   // Required SportSync order: Home | Play | Quick Action | Scores | Profile
@@ -64,10 +66,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5'
                 }`}
               >
-                <IconComponent
-                  className="w-5 h-5 shrink-0"
-                  strokeWidth={isActive ? 2.5 : 1.75}
-                />
+                <div className="relative">
+                  <IconComponent
+                    className="w-5 h-5 shrink-0"
+                    strokeWidth={isActive ? 2.5 : 1.75}
+                  />
+                  {tab.id === 'play' && playBadge && (
+                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-[#FF3B30] text-white font-display font-black text-[9px] flex items-center justify-center shadow-[0_0_6px_rgba(255,59,48,0.7)] border border-[#0B0F0C] animate-pulse">
+                      {playBadge}
+                    </span>
+                  )}
+                </div>
                 {/* Fixed-height reserved label container — Never shifts layout */}
                 <span
                   className={`text-[10px] tracking-tight leading-none text-center ${

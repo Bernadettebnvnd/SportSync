@@ -42,6 +42,7 @@ import { useSportSyncBridge } from './lib/useSportSyncBridge';
 import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
+import { useChatUnread, isUserAuthorizedForChat } from './lib/services/chat';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -522,6 +523,33 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setToastMessage('Signed out successfully.');
   };
 
+  // Real-time unread messages tracking across authorized match chats
+  const chatUnread = useChatUnread({
+    games: bridge.games,
+    currentUserId: bridge.userProfile.id,
+    currentUserName: bridge.userProfile.name,
+    activeChatGameId: currentScreen === 'match-chat' ? (selectedGame?.id || null) : null,
+  });
+
+  const handleOpenChatFromHeader = useCallback(() => {
+    if (!requireAuth('Match Chat', 'Sign in to access your match chats.')) return;
+
+    const authorizedGames = bridge.games.filter((g) =>
+      isUserAuthorizedForChat(g, bridge.userProfile.id, bridge.userProfile.name)
+    );
+
+    if (authorizedGames.length === 0) {
+      setToastMessage('No active match chats. Join or create a match to start chatting with your squad!');
+      return;
+    }
+
+    const gameWithUnread = authorizedGames.find((g) => (chatUnread.unreadByGame[g.id] || 0) > 0);
+    const targetGame = gameWithUnread || selectedGame || authorizedGames[0];
+
+    setSelectedGame(targetGame);
+    navigateTo('match-chat');
+  }, [bridge.games, bridge.userProfile.id, bridge.userProfile.name, chatUnread.unreadByGame, selectedGame]);
+
   const handleTabChange = (tab: NavTabId) => {
     setActiveTab(tab);
     if (tab === 'home') navigateTo('home');
@@ -651,6 +679,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             venues={bridge.venues}
             games={bridge.games}
             user={bridge.userProfile}
+            chatUnreadCount={chatUnread.totalUnread}
+            onOpenChat={handleOpenChatFromHeader}
             onSelectMatch={(m) => {
               setSelectedMatch(m);
               navigateTo('match-center');
@@ -732,6 +762,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <SocialHomeScreen
             games={bridge.games}
             user={bridge.userProfile}
+            chatUnreadCount={chatUnread.totalUnread}
+            onOpenChat={handleOpenChatFromHeader}
             onCreateMatch={() => {
               if (!requireAuth('Create a Match', 'Join SportSync to create pickup games and recruit players.')) return;
               navigateTo('create-match');
@@ -800,6 +832,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             isHost={isHost}
             currentUserName={bridge.userProfile.name}
             currentUserId={bridge.userProfile.id}
+            unreadCount={activeTargetGame ? (chatUnread.unreadByGame[activeTargetGame.id] || 0) : 0}
             onEditGame={async (updatedData) => {
               if (!activeTargetGame) return;
               const res = await bridge.updateCommunityGame(activeTargetGame.id, updatedData);
@@ -864,20 +897,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         );
       }
       case 'match-chat': {
-        const activeChatGame =
-          (selectedGame
-            ? bridge.games.find(
-                (g) =>
-                  g.id === selectedGame.id ||
-                  (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
-                  (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
-              ) || selectedGame
-            : bridge.games[0]) || null;
+        const activeChatGame = selectedGame
+          ? bridge.games.find(
+              (g) =>
+                g.id === selectedGame.id ||
+                (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
+                (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
+            ) || selectedGame
+          : null;
         return (
           <MatchGroupChatScreen
             game={activeChatGame}
             currentUserName={bridge.userProfile.name}
             currentUserId={bridge.userProfile.id}
+            currentUserAvatar={bridge.userProfile.avatarId}
             onBack={goBack}
             onOpenMatchDetail={() => navigateTo('match-detail')}
             onToast={(msg) => setToastMessage(msg)}
@@ -1195,6 +1228,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           activeTab={activeTab}
           onTabChange={handleTabChange}
           onOpenQuickAction={() => setIsQuickActionOpen(true)}
+          playBadge={chatUnread.totalUnread > 0 ? chatUnread.formattedTotal : null}
         />
       )}
 
