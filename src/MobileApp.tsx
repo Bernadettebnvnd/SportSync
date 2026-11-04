@@ -208,17 +208,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       );
 
       if (localMatch) {
+        if ((localMatch as any).status === 'cancelled') {
+          setInviteGame(null);
+          setInviteError('Event No Longer Available');
+          setIsInviteLoading(false);
+          setCurrentScreen('invitation-landing');
+          return;
+        }
         setInviteGame(localMatch);
         setIsInviteLoading(false);
         setInviteError(null);
-        if (bridge.isGameHost(localMatch)) {
-          setSelectedGame(localMatch);
-          setCurrentScreen('match-detail');
-          setScreenHistory((prev) => (prev[prev.length - 1] === 'match-detail' ? prev : [...prev, 'match-detail']));
-        } else {
-          setCurrentScreen('invitation-landing');
-          setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
-        }
+        setCurrentScreen('invitation-landing');
+        setScreenHistory(['social-home', 'invitation-landing']);
         return;
       }
 
@@ -240,9 +241,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
           try {
             const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
-            if (res.status === 404 || res.status === 410) {
+            if (res.status === 404) {
               setInviteGame(null);
-              setInviteError('This event is no longer available.');
+              setInviteError('Invitation Not Found');
+              setIsInviteLoading(false);
+              setCurrentScreen('invitation-landing');
+              return;
+            }
+            if (res.status === 410) {
+              const data = await res.json().catch(() => ({}));
+              setInviteGame(null);
+              setInviteError(data.error || 'Event No Longer Available');
               setIsInviteLoading(false);
               setCurrentScreen('invitation-landing');
               return;
@@ -254,7 +263,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 bridge.addExternalGame(data.game);
               } else if (data.deleted) {
                 setInviteGame(null);
-                setInviteError('This event is no longer available.');
+                setInviteError('Event No Longer Available');
+                setIsInviteLoading(false);
+                setCurrentScreen('invitation-landing');
+                return;
+              } else if (data.error) {
+                setInviteGame(null);
+                setInviteError(data.error);
                 setIsInviteLoading(false);
                 setCurrentScreen('invitation-landing');
                 return;
@@ -264,7 +279,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
           if (!resolvedGame) {
             setInviteGame(null);
-            setInviteError('This event is no longer available.');
+            setInviteError('Invitation Not Found');
             setIsInviteLoading(false);
             setCurrentScreen('invitation-landing');
             return;
@@ -272,37 +287,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
           if ((resolvedGame as any).status === 'cancelled') {
             setInviteGame(null);
-            setInviteError('This event is no longer available.');
+            setInviteError('Event No Longer Available');
             setIsInviteLoading(false);
             setCurrentScreen('invitation-landing');
-            return;
-          }
-
-          const isHost = bridge.isGameHost(resolvedGame);
-          const isAlreadyMember = Boolean(
-            Array.isArray(resolvedGame.members) && resolvedGame.members.some(
-              (m) =>
-                (bridge.userProfile.id && m.id && m.id === bridge.userProfile.id) ||
-                (bridge.userProfile.name && m.name && m.name.trim().toLowerCase() === bridge.userProfile.name.trim().toLowerCase())
-            )
-          );
-
-          if (isHost || isAlreadyMember) {
-            if (typeof window !== 'undefined') {
-              try {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('invite');
-                url.searchParams.delete('code');
-                url.searchParams.delete('match');
-                window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
-              } catch {}
-            }
-            setSelectedGame(resolvedGame);
-            setInviteGame(null);
-            setInviteError(null);
-            setIsInviteLoading(false);
-            setCurrentScreen('match-detail');
-            setScreenHistory(['social-home', 'match-detail']);
             return;
           }
 
@@ -310,8 +297,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           setInviteError(null);
           setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
+          setScreenHistory(['social-home', 'invitation-landing']);
         } catch (err: any) {
-          setInviteError(err?.message || 'This event is no longer available.');
+          setInviteError(err?.message || 'Invitation Not Found');
           setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
         }
@@ -964,6 +952,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onBack={handleCloseInvitation}
             onOpenMatch={(g) => {
               setSelectedGame(g);
+              setScreenHistory(['social-home', 'match-detail']);
               navigateTo('match-detail');
             }}
             onSyncInvitation={(code) => bridge.syncSessionRoster(code, true)}

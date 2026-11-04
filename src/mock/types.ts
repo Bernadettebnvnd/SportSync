@@ -165,6 +165,8 @@ export interface CommunityGame {
   notes: string;
   isPublic: boolean;
   visibility?: 'Public' | 'Friends' | 'Invite';
+  status?: 'upcoming' | 'live' | 'completed' | 'cancelled' | 'ended' | 'expired' | 'revoked';
+  invitationStatus?: 'active' | 'accepted' | 'declined' | 'revoked' | 'expired';
   inviteCode?: string;
   invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
   members: Array<{ name: string; avatar: AvatarId; id?: string }>;

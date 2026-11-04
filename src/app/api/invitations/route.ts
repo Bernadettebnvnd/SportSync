@@ -113,15 +113,21 @@ export async function GET(req: NextRequest) {
             .limit(1)
             .maybeSingle();
 
-          if (invRow?.session_id) {
-            const { data: fromInv } = await supabase
-              .from('sessions')
-              .select('*')
-              .eq('id', invRow.session_id)
-              .maybeSingle();
-            if (fromInv) dbSession = fromInv;
-          } else if (invRow) {
-            dbSession = invRow;
+          if (invRow) {
+            const isExpired = invRow.expires_at && new Date(invRow.expires_at) < new Date();
+            if (invRow.status === 'revoked' || invRow.status === 'expired' || isExpired) {
+              return NextResponse.json({ success: false, error: 'Invitation No Longer Valid.', invitationStatus: invRow.status || 'expired' }, { status: 410 });
+            }
+            if (invRow.session_id) {
+              const { data: fromInv } = await supabase
+                .from('sessions')
+                .select('*')
+                .eq('id', invRow.session_id)
+                .maybeSingle();
+              if (fromInv) dbSession = fromInv;
+            } else {
+              dbSession = invRow;
+            }
           }
         } catch {}
       }
@@ -148,7 +154,7 @@ export async function GET(req: NextRequest) {
             delete memoryStore[dbSession.id.trim().toUpperCase()];
           }
           saveCache(diskCache);
-          return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 410 });
+          return NextResponse.json({ success: false, error: 'Event No Longer Available', deleted: true }, { status: 410 });
         }
 
         let hostUser: any = null;
@@ -258,6 +264,7 @@ export async function GET(req: NextRequest) {
           coordinates: matched?.coordinates,
           isPublic: dbSession.visibility ? dbSession.visibility !== 'Invite' : (matched?.isPublic ?? false),
           visibility: (dbSession.visibility as any) || matched?.visibility || 'Invite',
+          status: (dbSession.status || matched?.status || 'upcoming') as any,
           inviteCode: code,
           members: allMembers,
         };
@@ -279,12 +286,12 @@ export async function GET(req: NextRequest) {
       delete diskCache[code];
       delete memoryStore[code];
       saveCache(diskCache);
-      return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 410 });
+      return NextResponse.json({ success: false, error: 'Event No Longer Available', deleted: true }, { status: 410 });
     }
     return NextResponse.json({ success: true, session: matched, game: matched });
   }
 
-  return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 404 });
+  return NextResponse.json({ success: false, error: 'Invitation Not Found', notFound: true }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {

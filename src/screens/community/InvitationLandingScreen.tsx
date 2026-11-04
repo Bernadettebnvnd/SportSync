@@ -102,14 +102,37 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
     );
   }, [game, currentUserName, currentUserId]);
 
-  useEffect(() => {
-    if (game && (isHost || isAlreadyMember)) {
-      onOpenMatch(game);
-    }
-  }, [game, isHost, isAlreadyMember, onOpenMatch]);
-
   const isRosterFull = Boolean(game && game.spotsJoined >= game.spotsTotal);
-  const isCancelled = Boolean(game && (game as any).status === 'cancelled');
+  const isDeleted = Boolean(
+    (game as any)?.status === 'cancelled' ||
+    (game as any)?.deleted === true ||
+    errorMessage?.toLowerCase().includes('no longer available') ||
+    errorMessage?.toLowerCase().includes('deleted') ||
+    errorMessage?.toLowerCase().includes('cancelled')
+  );
+
+  const isEnded = Boolean(
+    (game as any)?.status === 'completed' ||
+    (game as any)?.status === 'ended' ||
+    errorMessage?.toLowerCase().includes('ended') ||
+    errorMessage?.toLowerCase().includes('concluded')
+  );
+
+  const isExpiredOrRevoked = Boolean(
+    (game as any)?.invitationStatus === 'expired' ||
+    (game as any)?.invitationStatus === 'revoked' ||
+    (game as any)?.status === 'expired' ||
+    (game as any)?.status === 'revoked' ||
+    errorMessage?.toLowerCase().includes('no longer valid') ||
+    errorMessage?.toLowerCase().includes('expired') ||
+    errorMessage?.toLowerCase().includes('revoked')
+  );
+
+  const isNotFound = Boolean(
+    (!game && !isLoading && !isDeleted && !isEnded && !isExpiredOrRevoked) ||
+    errorMessage?.toLowerCase().includes('not found') ||
+    errorMessage?.toLowerCase().includes('invalid')
+  );
 
   const handleAcceptClick = async () => {
     setActionError(null);
@@ -200,7 +223,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
     );
   }
 
-  if (isError || !game) {
+  if (isDeleted) {
     return (
       <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
         <div className="flex items-center justify-between pb-3 border-b border-white/5">
@@ -208,7 +231,172 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             type="button"
             onClick={handleClose}
             className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-            title="Go home"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+            Invitation
+          </span>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
+          <div className="w-14 h-14 rounded-full bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 text-[#FF5C5C] flex items-center justify-center mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <div>
+            <h2 className="font-display font-black text-xl text-[#F4F7F0]">
+              Event No Longer Available
+            </h2>
+            <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
+              This match was cancelled or deleted by the organizer.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
+              onClick={handleClose}
+            >
+              Back to Games
+            </Button>
+          </div>
+        </div>
+
+        <div className="text-center text-[11px] text-[#6F7B71] pb-2">
+          SportSync Naga City Private Matchmaking
+        </div>
+      </div>
+    );
+  }
+
+  if (isEnded) {
+    return (
+      <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
+        <div className="flex items-center justify-between pb-3 border-b border-white/5">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+            Invitation
+          </span>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
+          <div className="w-14 h-14 rounded-full bg-[#1C241E] border border-white/15 text-[#A5B0A6] flex items-center justify-center mx-auto">
+            <Clock className="w-7 h-7" />
+          </div>
+          <div>
+            <h2 className="font-display font-black text-xl text-[#F4F7F0]">
+              This Match Has Ended
+            </h2>
+            <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
+              This event has already concluded. You can no longer join this match.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
+              onClick={handleClose}
+            >
+              Back to Games
+            </Button>
+          </div>
+        </div>
+
+        <div className="text-center text-[11px] text-[#6F7B71] pb-2">
+          SportSync Naga City Private Matchmaking
+        </div>
+      </div>
+    );
+  }
+
+  if (isExpiredOrRevoked) {
+    return (
+      <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
+        <div className="flex items-center justify-between pb-3 border-b border-white/5">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+            Invitation
+          </span>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
+          <div className="w-14 h-14 rounded-full bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 text-[#FF5C5C] flex items-center justify-center mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <div>
+            <h2 className="font-display font-black text-xl text-[#F4F7F0]">
+              Invitation No Longer Valid
+            </h2>
+            <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
+              This invitation link has expired or has been revoked by the organizer.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
+              onClick={handleClose}
+            >
+              Back to Games
+            </Button>
+          </div>
+        </div>
+
+        <div className="text-center text-[11px] text-[#6F7B71] pb-2">
+          SportSync Naga City Private Matchmaking
+        </div>
+      </div>
+    );
+  }
+
+  if (isNotFound) {
+    return (
+      <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
+        <div className="flex items-center justify-between pb-3 border-b border-white/5">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title="Back to games"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -234,62 +422,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               Invitation Not Found
             </h2>
             <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
-              {errorMessage || 'The invitation link is invalid, has expired, or the match is no longer available.'}
-            </p>
-          </div>
-          <div className="pt-2">
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
-              onClick={handleClose}
-            >
-              Browse Public Matches
-            </Button>
-          </div>
-        </div>
-
-        <div className="text-center text-[11px] text-[#6F7B71] pb-2">
-          SportSync Naga City Private Matchmaking
-        </div>
-      </div>
-    );
-  }
-
-  if (isCancelled) {
-    return (
-      <div className="w-full min-h-[540px] flex flex-col justify-between p-5 bg-[#0B0F0C] text-[#F4F7F0] select-none">
-        <div className="flex items-center justify-between pb-3 border-b border-white/5">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
-            Invitation Expired
-          </span>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-            title="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-6 rounded-3xl bg-[#141A15] border border-white/10 text-center space-y-4 max-w-sm mx-auto my-auto">
-          <div className="w-14 h-14 rounded-full bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 text-[#FF5C5C] flex items-center justify-center mx-auto">
-            <AlertCircle className="w-7 h-7" />
-          </div>
-          <div>
-            <h2 className="font-display font-black text-xl text-[#F4F7F0]">
-              Event No Longer Available
-            </h2>
-            <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
-              This event has ended or was cancelled by the organizer.
+              The invitation link is invalid or does not exist.
             </p>
           </div>
           <div className="pt-2">
@@ -344,7 +477,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               Invitation Declined
             </h2>
             <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
-              You have declined the invitation to join <span className="text-[#F4F7F0] font-semibold">{game.title}</span>. You have not been added to the roster and no spot was reserved.
+              You have declined this invitation. You have not been added to the roster and no spot was reserved.
             </p>
           </div>
           <div className="pt-2 space-y-2">
@@ -354,15 +487,8 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
               onClick={handleClose}
             >
-              Explore Public Games
+              Back to Games
             </Button>
-            <button
-              type="button"
-              onClick={() => setIsDeclined(false)}
-              className="text-xs text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors underline pt-1 block mx-auto"
-            >
-              Review invitation again
-            </button>
           </div>
         </div>
 
@@ -371,6 +497,10 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
         </div>
       </div>
     );
+  }
+
+  if (!game) {
+    return null;
   }
 
   const spotsCount = Array.isArray(game.members) ? game.members.length : game.spotsJoined;
@@ -475,7 +605,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             <CheckCircle2 className="w-5 h-5 text-[#C8FF2E] shrink-0" />
             <div>
               <span className="font-display font-bold text-xs text-[#F4F7F0] block">
-                You are on this roster
+                Joined • Spot Confirmed
               </span>
               <span className="text-[10px] text-[#A5B0A6]">
                 You have already accepted this invitation and reserved your spot.
