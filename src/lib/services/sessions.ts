@@ -207,6 +207,39 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
             });
           }
         } catch {}
+
+        try {
+          const { data: participants } = await supabase
+            .from('session_participants')
+            .select('*, user:users(*)')
+            .in('session_id', sessionIds)
+            .neq('status', 'cancelled');
+          if (Array.isArray(participants)) {
+            participants.forEach((p: any) => {
+              const list = queuesMap.get(p.session_id) || [];
+              const alreadyInList = list.some(
+                (existing: any) =>
+                  (p.user_id && (existing.user_id === p.user_id || existing.user?.id === p.user_id)) ||
+                  (p.user?.full_name && existing.user?.full_name === p.user.full_name)
+              );
+              if (!alreadyInList) {
+                list.push({
+                  id: p.id,
+                  session_id: p.session_id,
+                  user_id: p.user_id,
+                  user: p.user || {
+                    id: p.user_id,
+                    full_name: p.user_name || p.name || 'Participant',
+                    avatar_url: p.user_avatar || p.avatar || 'alex',
+                  },
+                  status: p.status || 'joined',
+                  joined_at: p.joined_at,
+                });
+                queuesMap.set(p.session_id, list);
+              }
+            });
+          }
+        } catch {}
       }
 
       if (venueIds.length > 0) {
@@ -228,12 +261,27 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
       }
     }
 
-    const data = (rawSessions || []).map((s) => ({
-      ...s,
-      venue: s.venue_id ? venuesMap.get(s.venue_id) : undefined,
-      host: s.host_id ? usersMap.get(s.host_id) : undefined,
-      queues: queuesMap.get(s.id) || [],
-    }));
+    const data = (rawSessions || []).map((s) => {
+      let resolvedHost = s.host_id ? usersMap.get(s.host_id) : undefined;
+      if (!resolvedHost && s.description) {
+        const hostTagMatch = s.description.match(/\[HOST:(.*?)\]/i);
+        if (hostTagMatch && hostTagMatch[1]) {
+          const taggedName = hostTagMatch[1].trim();
+          resolvedHost = {
+            id: s.host_id || 'host',
+            full_name: taggedName,
+            nickname: taggedName.split(' ')[0],
+            avatar_url: 'alex',
+          };
+        }
+      }
+      return {
+        ...s,
+        venue: s.venue_id ? venuesMap.get(s.venue_id) : undefined,
+        host: resolvedHost,
+        queues: queuesMap.get(s.id) || [],
+      };
+    });
 
     const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);
     const seenIds = new Set<string>();

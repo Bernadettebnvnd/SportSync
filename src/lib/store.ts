@@ -334,6 +334,24 @@ export function useMatchiStore() {
     };
   }, []);
 
+  // Reload sessions from database
+  const refreshSessions = useCallback(async () => {
+    try {
+      const sessions = await getOpenPlaySessions();
+      const seenSessionIds = new Set<string>();
+      globalState.sessions = sessions.filter((s) => {
+        if (!s || !s.id || seenSessionIds.has(s.id)) return false;
+        seenSessionIds.add(s.id);
+        return true;
+      });
+      notify();
+      return globalState.sessions;
+    } catch (err) {
+      console.error('Failed to refresh sessions:', err);
+      return globalState.sessions;
+    }
+  }, []);
+
   // Reload venues from database
   const refreshVenues = useCallback(async () => {
     globalState.isLoading = true;
@@ -1017,6 +1035,7 @@ export function useMatchiStore() {
     toggleRole,
     setAuthenticatedUser,
     logoutUser,
+    refreshSessions,
     refreshVenues,
     refreshBookings,
     completePlayerOnboarding,

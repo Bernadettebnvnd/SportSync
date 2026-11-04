@@ -79,13 +79,24 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
       // Tab filter
       if (activeTab === 'my_games') {
         const uName = (userName || '').trim().toLowerCase();
+        const uUsername = ((user as any)?.username || '').trim().toLowerCase();
         const uId = user?.id;
-        const isMember = game.members?.some((m) =>
-          Boolean((uId && m.id && m.id === uId) || (uName && m.name && m.name.trim().toLowerCase() === uName))
+        const isMember = Boolean(
+          game.members?.some((m) =>
+            Boolean(
+              (uId && m.id && m.id === uId) ||
+              (uName && m.name && m.name.trim().toLowerCase() === uName) ||
+              (uUsername && m.name && m.name.trim().toLowerCase() === uUsername)
+            )
+          )
         );
+        const hostTagMatch = game.notes?.match(/\[HOST:(.*?)\]/i) || (game as any).description?.match(/\[HOST:(.*?)\]/i);
+        const taggedHost = hostTagMatch ? hostTagMatch[1].trim().toLowerCase() : '';
         const isHost = Boolean(
           (game.hostId && uId && game.hostId === uId) ||
-          (game.hostName && uName && game.hostName.trim().toLowerCase() === uName)
+          (game.hostName && uName && game.hostName.trim().toLowerCase() === uName) ||
+          (game.hostName && uUsername && game.hostName.trim().toLowerCase() === uUsername) ||
+          (taggedHost && (taggedHost === uName || taggedHost === uUsername))
         );
         let hasJoinedToken = false;
         if (typeof window !== 'undefined') {
@@ -104,10 +115,13 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
         const uId = user?.id;
         const uName = (userName || '').trim().toLowerCase();
         const uUsername = ((user as any)?.username || '').trim().toLowerCase();
+        const hostTagMatch = game.notes?.match(/\[HOST:(.*?)\]/i) || (game as any).description?.match(/\[HOST:(.*?)\]/i);
+        const taggedHost = hostTagMatch ? hostTagMatch[1].trim().toLowerCase() : '';
         const isHost = Boolean(
           (game.hostId && uId && game.hostId === uId) ||
           (game.hostName && uName && game.hostName.trim().toLowerCase() === uName) ||
           (game.hostName && uUsername && game.hostName.trim().toLowerCase() === uUsername) ||
+          (taggedHost && (taggedHost === uName || taggedHost === uUsername)) ||
           (!game.hostId && game.hostName && game.hostName.trim().toLowerCase() === uName)
         );
         if (!isHost) return false;

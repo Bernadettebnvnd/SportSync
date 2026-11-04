@@ -231,9 +231,12 @@ export async function GET(req: NextRequest) {
           } catch {}
         }
 
+        const hostTagMatch = dbSession.description?.match(/\[HOST:(.*?)\]/i);
+        const taggedHostName = hostTagMatch ? hostTagMatch[1].trim() : '';
         const hostName =
           hostUser?.full_name ||
           hostUser?.nickname ||
+          taggedHostName ||
           matched?.hostName ||
           'Match Organizer';
         const hostAvatar = (hostUser?.avatar_url as any) || matched?.hostAvatar || 'alex';

@@ -631,7 +631,10 @@ export function useSportSyncBridge() {
               ((matchSession.host as any)?.auth_id && userProfile.id && (matchSession.host as any).auth_id === userProfile.id) ||
               (matchSession.host?.id && userProfile.id && matchSession.host.id === userProfile.id) ||
               (userProfile.name && matchSession.host?.full_name && matchSession.host.full_name.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
-              (userProfile.name && matchSession.host_id && matchSession.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
+              (userProfile.name && matchSession.host_id && matchSession.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+              (userProfile.name && matchSession.description && matchSession.description.toLowerCase().includes(`[host:${userProfile.name.trim().toLowerCase()}]`)) ||
+              (userProfile.name && g.hostName && g.hostName.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+              (userProfile.id && g.hostId && g.hostId === userProfile.id)
             );
             const resolvedHostName = isUserHost
               ? userProfile.name
@@ -706,12 +709,15 @@ export function useSportSyncBridge() {
           seenSessionIds.add(s.id);
           seenTitles.add(normTitle);
 
+          const hostMatch = s.description?.match(/\[HOST:(.*?)\]/i);
+          const taggedHostName = hostMatch ? hostMatch[1].trim() : "";
           const isUserHost = Boolean(
             (userProfile.id && s.host_id === userProfile.id) ||
             ((s.host as any)?.auth_id && userProfile.id && (s.host as any).auth_id === userProfile.id) ||
             (s.host?.id && userProfile.id && s.host.id === userProfile.id) ||
             (userProfile.name && s.host?.full_name && s.host.full_name.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
-            (userProfile.name && s.host_id && s.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase())
+            (userProfile.name && s.host_id && s.host_id.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+            (userProfile.name && taggedHostName && taggedHostName.toLowerCase() === userProfile.name.trim().toLowerCase())
           );
           const { date: formattedDate, time: formattedTime } = formatSessionDateTime(s.start_time, s.status);
           const shortFormat = getShortFormat(s.rotation_format, s.sport);
@@ -1915,35 +1921,6 @@ export function useSportSyncBridge() {
         coordinates: gameData.coordinates,
       };
 
-      if (typeof window !== 'undefined') {
-        try {
-          const res = await fetch('/api/invitations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: newGame, action: 'create_game' }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.game) {
-              newGame = {
-                ...newGame,
-                ...data.game,
-                hostId: userProfile.id || data.game.hostId,
-                hostName: userName || data.game.hostName,
-                hostAvatar: userAvatar || data.game.hostAvatar,
-                inviteCode: finalInviteCode,
-              };
-              if (data.session?.id) {
-                newGame.sessionId = data.session.id;
-                newGame.id = data.session.id;
-                createdSessionId = data.session.id;
-                assignedId = data.session.id;
-              }
-            }
-          }
-        } catch {}
-      }
-
       try {
         const sportNorm = gameData.sport.toLowerCase();
         const matchingSport: DbSportType =
@@ -1966,7 +1943,7 @@ export function useSportSyncBridge() {
           const createdSession = await store.createOpenPlaySession({
             venueId: targetVenue.id,
             title: gameData.title,
-            description: `${gameData.notes || 'SportSync community game'}${finalInviteCode ? ` [INVITE:${finalInviteCode.toUpperCase()}]` : ''}`,
+            description: `${gameData.notes || 'SportSync community game'}${finalInviteCode ? ` [INVITE:${finalInviteCode.toUpperCase()}]` : ''} [HOST:${userName}]`,
             sport: matchingSport,
             courtIds: targetVenue.courts?.map((c) => c.id) || [],
             startTime: startIso,
@@ -1983,9 +1960,41 @@ export function useSportSyncBridge() {
           if (createdSession?.id) {
             newGame.sessionId = createdSession.id;
             newGame.id = createdSession.id;
+            createdSessionId = createdSession.id;
+            assignedId = createdSession.id;
           }
         }
-      } catch {}
+      } catch (sessErr) {
+        console.warn('Error creating open play session:', sessErr);
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          const res = await fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: newGame, action: 'create_game' }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.game) {
+              newGame = {
+                ...newGame,
+                ...data.game,
+                hostId: userProfile.id || data.game.hostId,
+                hostName: userName || data.game.hostName,
+                hostAvatar: userAvatar || data.game.hostAvatar,
+                inviteCode: finalInviteCode,
+              };
+              if (!newGame.sessionId && data.session?.id) {
+                newGame.sessionId = data.session.id;
+                newGame.id = data.session.id;
+              }
+            }
+          }
+        } catch {}
+      }
+      try { store.refreshSessions?.(); } catch {}
 
       setGames((prev) => {
         const normTitle = newGame.title.trim().toLowerCase();
@@ -2175,7 +2184,15 @@ export function useSportSyncBridge() {
         }
       }
 
-      setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));
+      setGames((prev) => {
+        const matchIdx = prev.findIndex((g) => g.id === gameId || (updatedGame.sessionId && g.sessionId === updatedGame.sessionId));
+        if (matchIdx >= 0) {
+          const next = [...prev];
+          next[matchIdx] = updatedGame;
+          return next;
+        }
+        return [updatedGame, ...prev];
+      });
 
       // Save to localStorage immediately
       if (typeof window !== 'undefined') {
@@ -2925,6 +2942,7 @@ export function useSportSyncBridge() {
       const joinResult = await joinCommunityGame(targetGame.id, targetGame);
 
       if (joinResult.success && joinResult.game) {
+        try { store.refreshSessions?.(); } catch {}
         return {
           success: true,
           game: joinResult.game,
