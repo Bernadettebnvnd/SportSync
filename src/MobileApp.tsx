@@ -232,130 +232,29 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
       const resolveInvitation = async () => {
         try {
-          // 1. Check if game already loaded in bridge
           const inBridge = bridge.games.find(
             (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
           );
-          if (inBridge) {
-            setInviteGame(inBridge);
-            setInviteError(null);
-            setIsInviteLoading(false);
-            setCurrentScreen('invitation-landing');
-            return;
-          }
 
-          // 2. Query sessions table directly using .eq('invite_code', code) via Supabase
-          const supabase = getSupabaseClient();
-          if (supabase && isSupabaseConfigured) {
-            let sessionRow: any = null;
+          let resolvedGame: CommunityGame | null = inBridge || null;
 
-            // Direct query using .eq('invite_code', code)
-            try {
-              const { data: byCode } = await supabase
-                .from('sessions')
-                .select('*')
-                .eq('invite_code', cleanCode)
-                .limit(1)
-                .maybeSingle();
-              if (byCode) sessionRow = byCode;
-            } catch {}
-
-            // Fallback: description tag search
-            if (!sessionRow) {
-              try {
-                const { data: byDesc } = await supabase
-                  .from('sessions')
-                  .select('*')
-                  .ilike('description', `%${cleanCode}%`)
-                  .limit(1)
-                  .maybeSingle();
-                if (byDesc) sessionRow = byDesc;
-              } catch {}
-            }
-
-            // Fallback: UUID id search
-            if (!sessionRow && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCode)) {
-              try {
-                const { data: byId } = await supabase
-                  .from('sessions')
-                  .select('*')
-                  .eq('id', cleanCode)
-                  .maybeSingle();
-                if (byId) sessionRow = byId;
-              } catch {}
-            }
-
-            if (sessionRow) {
-              let hostName = 'Match Organizer';
-              let hostAvatar: any = 'alex';
-              if (sessionRow.host_id) {
-                try {
-                  const { data: u } = await supabase
-                    .from('users')
-                    .select('*')
-                    .eq('id', sessionRow.host_id)
-                    .maybeSingle();
-                  if (u) {
-                    hostName = u.full_name || u.nickname || hostName;
-                    hostAvatar = u.avatar_url || hostAvatar;
-                  }
-                } catch {}
-              }
-
-              let locName = 'Verified Court Facility';
-              if (sessionRow.venue_id) {
-                try {
-                  const { data: v } = await supabase
-                    .from('venues')
-                    .select('*')
-                    .eq('id', sessionRow.venue_id)
-                    .maybeSingle();
-                  if (v?.name) locName = v.name;
-                } catch {}
-              }
-
-              const directGame: CommunityGame = {
-                id: sessionRow.id,
-                sessionId: sessionRow.id,
-                sport: (sessionRow.sport ? sessionRow.sport.charAt(0).toUpperCase() + sessionRow.sport.slice(1) : 'Pickleball') as any,
-                title: sessionRow.title || 'Pickup Match',
-                format: (sessionRow.rotation_format || '5v5') as any,
-                skillLevel: sessionRow.skill_level === 'all_levels' ? 'Casual' : 'Competitive',
-                date: 'Today',
-                time: sessionRow.start_time || '18:00',
-                locationName: locName,
-                distance: '0.8 km away',
-                hostId: sessionRow.host_id,
-                hostName,
-                hostAvatar,
-                spotsTotal: sessionRow.max_players || 10,
-                spotsJoined: sessionRow.current_players_count || 1,
-                pricePerPlayer: sessionRow.fee_cents ? Math.round(sessionRow.fee_cents / 100) : 0,
-                notes: sessionRow.description || '',
-                isPublic: sessionRow.visibility ? sessionRow.visibility !== 'Invite' : false,
-                visibility: (sessionRow.visibility as any) || 'Invite',
-                inviteCode: cleanCode,
-                members: [{ name: hostName, avatar: hostAvatar, id: sessionRow.host_id }],
-              };
-
-              setInviteGame(directGame);
-              bridge.addExternalGame(directGame);
-              setInviteError(null);
+          try {
+            const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
+            if (res.status === 404 || res.status === 410) {
+              setInviteGame(null);
+              setInviteError('This event is no longer available.');
               setIsInviteLoading(false);
               setCurrentScreen('invitation-landing');
               return;
             }
-          }
-
-          // 3. Fallback to API route
-          try {
-            const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
             if (res.ok) {
               const data = await res.json();
               if (data.success && data.game) {
-                setInviteGame(data.game);
+                resolvedGame = data.game;
                 bridge.addExternalGame(data.game);
-                setInviteError(null);
+              } else if (data.deleted) {
+                setInviteGame(null);
+                setInviteError('This event is no longer available.');
                 setIsInviteLoading(false);
                 setCurrentScreen('invitation-landing');
                 return;
@@ -363,13 +262,58 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }
           } catch {}
 
-          setInviteError('Invitation not found or expired');
-        } catch (err: any) {
-          setInviteError(err?.message || 'Invitation not found or expired');
-        } finally {
+          if (!resolvedGame) {
+            setInviteGame(null);
+            setInviteError('This event is no longer available.');
+            setIsInviteLoading(false);
+            setCurrentScreen('invitation-landing');
+            return;
+          }
+
+          if ((resolvedGame as any).status === 'cancelled') {
+            setInviteGame(null);
+            setInviteError('This event is no longer available.');
+            setIsInviteLoading(false);
+            setCurrentScreen('invitation-landing');
+            return;
+          }
+
+          const isHost = bridge.isGameHost(resolvedGame);
+          const isAlreadyMember = Boolean(
+            Array.isArray(resolvedGame.members) && resolvedGame.members.some(
+              (m) =>
+                (bridge.userProfile.id && m.id && m.id === bridge.userProfile.id) ||
+                (bridge.userProfile.name && m.name && m.name.trim().toLowerCase() === bridge.userProfile.name.trim().toLowerCase())
+            )
+          );
+
+          if (isHost || isAlreadyMember) {
+            if (typeof window !== 'undefined') {
+              try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('invite');
+                url.searchParams.delete('code');
+                url.searchParams.delete('match');
+                window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+              } catch {}
+            }
+            setSelectedGame(resolvedGame);
+            setInviteGame(null);
+            setInviteError(null);
+            setIsInviteLoading(false);
+            setCurrentScreen('match-detail');
+            setScreenHistory(['social-home', 'match-detail']);
+            return;
+          }
+
+          setInviteGame(resolvedGame);
+          setInviteError(null);
           setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
-          setScreenHistory((prev) => (prev[prev.length - 1] === 'invitation-landing' ? prev : [...prev, 'invitation-landing']));
+        } catch (err: any) {
+          setInviteError(err?.message || 'This event is no longer available.');
+          setIsInviteLoading(false);
+          setCurrentScreen('invitation-landing');
         }
       };
 
@@ -396,16 +340,67 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
           (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
       );
-      if (
-        match &&
-        (match.spotsJoined !== selectedGame.spotsJoined ||
-          match.members.length !== selectedGame.members.length ||
-          match.hostName !== selectedGame.hostName)
+      if (!match || (match as any).status === 'cancelled') {
+        if ((selectedGame as any).status !== 'cancelled') {
+          setSelectedGame({ ...selectedGame, status: 'cancelled' } as CommunityGame);
+        }
+      } else if (
+        match.spotsJoined !== selectedGame.spotsJoined ||
+        match.members.length !== selectedGame.members.length ||
+        match.hostName !== selectedGame.hostName
       ) {
         setSelectedGame(match);
       }
     }
   }, [bridge.games, selectedGame]);
+
+  useEffect(() => {
+    if (inviteGame) {
+      const match = bridge.games.find(
+        (g) =>
+          g.id === inviteGame.id ||
+          (inviteGame.sessionId && g.sessionId === inviteGame.sessionId) ||
+          (inviteGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === inviteGame.inviteCode.toUpperCase())
+      );
+      if (!match || (match as any).status === 'cancelled') {
+        setInviteGame(null);
+        setInviteError('This event is no longer available.');
+      } else if (
+        match.spotsJoined !== inviteGame.spotsJoined ||
+        match.members.length !== inviteGame.members.length ||
+        match.hostName !== inviteGame.hostName
+      ) {
+        setInviteGame(match);
+      }
+    }
+  }, [bridge.games, inviteGame]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleGameDeleted = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const dId = detail?.gameId || detail?.sessionId;
+      if (dId) {
+        setSelectedGame((prev) => {
+          if (prev && (prev.id === dId || prev.sessionId === dId || (prev.inviteCode && prev.inviteCode.toUpperCase() === String(dId).toUpperCase()))) {
+            return { ...prev, status: 'cancelled' } as CommunityGame;
+          }
+          return prev;
+        });
+        setInviteGame((prev) => {
+          if (prev && (prev.id === dId || prev.sessionId === dId || (prev.inviteCode && prev.inviteCode.toUpperCase() === String(dId).toUpperCase()))) {
+            setInviteError('This event is no longer available.');
+            return null;
+          }
+          return prev;
+        });
+      }
+    };
+    window.addEventListener('sportsync:game-deleted', handleGameDeleted);
+    return () => {
+      window.removeEventListener('sportsync:game-deleted', handleGameDeleted);
+    };
+  }, []);
 
   const requireAuth = (
     title: string,
@@ -460,20 +455,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       } catch {}
     }
 
-    if (screenHistory.length > 1) {
-      const nextHistory = [...screenHistory];
-      nextHistory.pop();
-      const prevScreen = nextHistory[nextHistory.length - 1];
-      setScreenHistory(nextHistory);
-      setCurrentScreen(prevScreen);
-      onScreenChange?.(prevScreen);
-    } else {
-      const fallbackScreen = isUserAuthenticated() ? 'home' : 'social-home';
-      setScreenHistory([fallbackScreen]);
-      setCurrentScreen(fallbackScreen);
-      onScreenChange?.(fallbackScreen);
-    }
-  }, [screenHistory, isUserAuthenticated, onScreenChange]);
+    const fallbackScreen: ScreenId = isUserAuthenticated() ? 'social-home' : 'home';
+    setActiveTab(fallbackScreen === 'social-home' ? 'play' : 'home');
+    setScreenHistory([fallbackScreen]);
+    setCurrentScreen(fallbackScreen);
+    onScreenChange?.(fallbackScreen);
+  }, [isUserAuthenticated, onScreenChange]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -893,6 +880,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 throw new Error(res.error || 'Failed to update participation.');
               }
             }}
+            onSyncRoster={(id) => bridge.syncSessionRoster(id, true)}
           />
         );
       }
@@ -978,6 +966,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               setSelectedGame(g);
               navigateTo('match-detail');
             }}
+            onSyncInvitation={(code) => bridge.syncSessionRoster(code, true)}
           />
         );
       }

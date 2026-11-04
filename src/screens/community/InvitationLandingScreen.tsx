@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -39,6 +39,7 @@ interface InvitationLandingScreenProps {
   onBack?: () => void;
   onOpenMatch: (game: CommunityGame) => void;
   isHost?: boolean;
+  onSyncInvitation?: (code: string) => void;
 }
 
 export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = ({
@@ -58,7 +59,17 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   onBack,
   onOpenMatch,
   isHost: customIsHost,
+  onSyncInvitation,
 }) => {
+  useEffect(() => {
+    if (inviteCode && onSyncInvitation) {
+      onSyncInvitation(inviteCode);
+      const interval = setInterval(() => {
+        onSyncInvitation(inviteCode);
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [inviteCode, onSyncInvitation]);
   const handleClose = onClose || onBack || onGoHome;
   const isHost = Boolean(
     customIsHost ||
@@ -90,6 +101,12 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
         (id && m.id && m.id === id)
     );
   }, [game, currentUserName, currentUserId]);
+
+  useEffect(() => {
+    if (game && (isHost || isAlreadyMember)) {
+      onOpenMatch(game);
+    }
+  }, [game, isHost, isAlreadyMember, onOpenMatch]);
 
   const isRosterFull = Boolean(game && game.spotsJoined >= game.spotsTotal);
   const isCancelled = Boolean(game && (game as any).status === 'cancelled');
@@ -269,10 +286,10 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
           </div>
           <div>
             <h2 className="font-display font-black text-xl text-[#F4F7F0]">
-              Invitation Expired or Revoked
+              Event No Longer Available
             </h2>
             <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
-              This match has ended or was cancelled by the organizer.
+              This event has ended or was cancelled by the organizer.
             </p>
           </div>
           <div className="pt-2">
@@ -282,7 +299,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
               className="w-full font-bold shadow-[0_0_24px_rgba(200,255,46,0.3)]"
               onClick={handleClose}
             >
-              Find Active Matches
+              Back to Games
             </Button>
           </div>
         </div>

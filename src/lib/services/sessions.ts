@@ -185,10 +185,29 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     // 2. Fetch venues and hosts cleanly in separate simple queries
     const venuesMap = new Map<string, any>();
     const usersMap = new Map<string, any>();
+    const queuesMap = new Map<string, any[]>();
 
     if (Array.isArray(rawSessions) && rawSessions.length > 0) {
+      const sessionIds = Array.from(new Set(rawSessions.map((s) => s.id).filter(Boolean)));
       const venueIds = Array.from(new Set(rawSessions.map((s) => s.venue_id).filter(Boolean)));
       const hostIds = Array.from(new Set(rawSessions.map((s) => s.host_id).filter(Boolean)));
+
+      if (sessionIds.length > 0) {
+        try {
+          const { data: queues } = await supabase
+            .from('queues')
+            .select('*, user:users(*)')
+            .in('session_id', sessionIds)
+            .neq('status', 'cancelled');
+          if (Array.isArray(queues)) {
+            queues.forEach((q: any) => {
+              const list = queuesMap.get(q.session_id) || [];
+              list.push(q);
+              queuesMap.set(q.session_id, list);
+            });
+          }
+        } catch {}
+      }
 
       if (venueIds.length > 0) {
         try {
@@ -213,6 +232,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
       ...s,
       venue: s.venue_id ? venuesMap.get(s.venue_id) : undefined,
       host: s.host_id ? usersMap.get(s.host_id) : undefined,
+      queues: queuesMap.get(s.id) || [],
     }));
 
     const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);

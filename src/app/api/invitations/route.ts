@@ -140,6 +140,17 @@ export async function GET(req: NextRequest) {
       }
 
       if (dbSession) {
+        if (dbSession.status === 'cancelled') {
+          delete diskCache[code];
+          delete memoryStore[code];
+          if (dbSession.id) {
+            delete diskCache[dbSession.id.trim().toUpperCase()];
+            delete memoryStore[dbSession.id.trim().toUpperCase()];
+          }
+          saveCache(diskCache);
+          return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 410 });
+        }
+
         let hostUser: any = null;
         if (dbSession.host_id) {
           try {
@@ -175,15 +186,15 @@ export async function GET(req: NextRequest) {
         try {
           const { data: queueData } = await supabase
             .from('queues')
-            .select('*')
+            .select('*, user:users(*)')
             .eq('session_id', dbSession.id)
             .neq('status', 'cancelled');
 
           if (Array.isArray(queueData)) {
             queueMembers = queueData.map((q: any) => ({
-              id: q.user_id,
-              name: (q.partner_names && q.partner_names[0]) || 'Player',
-              avatar: 'alex',
+              id: q.user_id || q.id,
+              name: q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]) || 'Player',
+              avatar: (q.user?.avatar_url as any) || 'alex',
             }));
           }
         } catch {}
@@ -264,10 +275,16 @@ export async function GET(req: NextRequest) {
   }
 
   if (matched) {
+    if ((matched as any).status === 'cancelled') {
+      delete diskCache[code];
+      delete memoryStore[code];
+      saveCache(diskCache);
+      return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 410 });
+    }
     return NextResponse.json({ success: true, session: matched, game: matched });
   }
 
-  return NextResponse.json({ error: 'Invitation not found' }, { status: 404 });
+  return NextResponse.json({ success: false, error: 'This event is no longer available.', deleted: true }, { status: 404 });
 }
 
 export async function POST(req: NextRequest) {
@@ -276,6 +293,31 @@ export async function POST(req: NextRequest) {
     const game = body.game as CommunityGame;
     const action = body.action as string | undefined;
     const participant = body.participant as { id?: string; name: string; avatar?: string; email?: string } | undefined;
+
+    if (action === 'delete_game') {
+      const gId = (body.gameId || body.game?.id || '').trim().toUpperCase();
+      const sId = (body.sessionId || body.game?.sessionId || '').trim().toUpperCase();
+      const invCode = (body.inviteCode || body.game?.inviteCode || '').trim().toUpperCase();
+
+      const diskCache = loadCache();
+      [gId, sId, invCode].filter(Boolean).forEach((k) => {
+        delete diskCache[k];
+        delete memoryStore[k];
+      });
+      saveCache(diskCache);
+
+      const supabase = getServerSupabaseClient();
+      if (supabase && (sId || gId)) {
+        const idToDelete = sId || gId;
+        try {
+          await supabase.from('queues').delete().eq('session_id', idToDelete);
+          await supabase.from('sessions').update({ status: 'cancelled' }).eq('id', idToDelete);
+          await supabase.from('sessions').delete().eq('id', idToDelete);
+        } catch {}
+      }
+
+      return NextResponse.json({ success: true, deleted: true });
+    }
 
     if (!game || !game.id) {
       return NextResponse.json({ success: false, error: 'Invalid game payload' }, { status: 400 });

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
   Heart,
@@ -52,6 +52,7 @@ interface MatchDetailScreenProps {
   onRemovePlayer?: (player: { id?: string; name: string }) => Promise<void> | void;
   onToggleHostParticipation?: (participate: boolean) => Promise<void> | void;
   unreadCount?: number;
+  onSyncRoster?: (gameId: string) => void;
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
@@ -67,7 +68,17 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   currentUserId,
   onToggleHostParticipation,
   unreadCount = 0,
+  onSyncRoster,
 }) => {
+  useEffect(() => {
+    if (game?.id) {
+      onSyncRoster?.(game.id);
+      const interval = setInterval(() => {
+        onSyncRoster?.(game.id);
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [game?.id, onSyncRoster]);
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -208,11 +219,23 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
     }
   };
 
-  if (!game) {
+  if (!game || (game as any).status === 'cancelled') {
     return (
       <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-6 text-center space-y-4 bg-[#0B0F0C] text-[#F4F7F0]">
-        <p className="text-sm text-[#A5B0A6]">No match selected or match has ended.</p>
-        <Button onClick={onBack} variant="secondary">Go Back</Button>
+        <div className="w-14 h-14 rounded-full bg-[#1C241E] text-[#FF5C5C] border border-[#FF5C5C]/20 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <div>
+          <h2 className="font-display font-black text-lg text-[#F4F7F0]">
+            Event No Longer Available
+          </h2>
+          <p className="text-xs text-[#A5B0A6] mt-1 leading-relaxed">
+            This match was cancelled or deleted by the organizer.
+          </p>
+        </div>
+        <Button onClick={onBack} variant="primary">
+          Back to Games
+        </Button>
       </div>
     );
   }
