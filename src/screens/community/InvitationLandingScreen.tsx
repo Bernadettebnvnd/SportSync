@@ -356,7 +356,8 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
     );
   }
 
-  const spotsLeft = Math.max(0, game.spotsTotal - game.spotsJoined);
+  const spotsCount = Array.isArray(game.members) ? game.members.length : game.spotsJoined;
+  const spotsLeft = Math.max(0, game.spotsTotal - spotsCount);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
@@ -437,7 +438,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                   You are the Match Organizer
                 </span>
                 <span className="text-[10px] text-[#A5B0A6]">
-                  {game.spotsJoined} / {game.spotsTotal} spots filled • {spotsLeft} remaining
+                  {spotsCount} / {game.spotsTotal} spots filled • {spotsLeft} remaining
                 </span>
               </div>
             </div>
@@ -544,7 +545,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                 Roster Status
               </span>
               <div className="font-display font-bold text-sm text-[#F4F7F0] mt-0.5">
-                {game.spotsJoined} / {game.spotsTotal}
+                {spotsCount} / {game.spotsTotal}
               </div>
               <span className="text-[10px] text-[#3DDC84]">
                 {spotsLeft} spot{spotsLeft === 1 ? '' : 's'} open
@@ -584,7 +585,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                   Player Lineup
                 </h3>
                 <span className="text-xs text-[#A5B0A6]">
-                  {game.spotsJoined} of {game.spotsTotal} spots taken
+                  {spotsCount} of {game.spotsTotal} spots taken
                 </span>
               </div>
               <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
@@ -595,7 +596,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             <div className="divide-y divide-white/5 pt-1">
               {game.members.map((member, idx) => {
                 const isOrganizer = Boolean(
-                  idx === 0 ||
+
                   (game.hostId && member.id && member.id === game.hostId) ||
                   (game.hostName && member.name && member.name.trim().toLowerCase() === game.hostName.trim().toLowerCase())
                 );

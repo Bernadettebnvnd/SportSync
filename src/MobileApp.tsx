@@ -849,6 +849,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 throw new Error(res.error || 'Failed to remove player.');
               }
             }}
+            onToggleHostParticipation={async (participate) => {
+              if (!activeTargetGame) return;
+              const res = await bridge.toggleHostParticipation(activeTargetGame.id, participate);
+              if (res.success && res.game) {
+                setSelectedGame(res.game);
+                setToastMessage(participate ? 'Joined match lineup.' : 'Left match lineup.');
+              } else {
+                setToastMessage(res.error || 'Failed to update participation.');
+                throw new Error(res.error || 'Failed to update participation.');
+              }
+            }}
           />
         );
       }

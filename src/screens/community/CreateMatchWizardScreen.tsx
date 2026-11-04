@@ -362,14 +362,14 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       hostName: resolvedHostName,
       hostAvatar: resolvedHostAvatar,
       spotsTotal: activeCount,
-      spotsJoined: 1,
+      spotsJoined: 0,
       pricePerPlayer: splitCost ? pricePerPlayer : 0,
       notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
       coordinates,
       isPublic: false,
       visibility: 'Invite',
       inviteCode,
-      members: [{ id: resolvedHostId, name: resolvedHostName, avatar: resolvedHostAvatar }],
+      members: [],
     };
     try {
       await fetch('/api/invitations', {

@@ -204,15 +204,7 @@ export async function GET(req: NextRequest) {
           } catch {}
         }
 
-        const hostMember = {
-          id: dbSession.host_id || matched?.hostId || 'organizer',
-          name: hostName,
-          avatar: hostAvatar,
-        };
-
         const membersMap = new Map<string, { id?: string; name: string; avatar: any }>();
-        membersMap.set(hostMember.id || hostMember.name, hostMember);
-
         queueMembers.forEach((m: any) => {
           const key = m.id || m.name;
           if (!membersMap.has(key)) {
@@ -220,21 +212,18 @@ export async function GET(req: NextRequest) {
           }
         });
 
-        if (matched?.members && Array.isArray(matched.members)) {
-          matched.members.forEach((m) => {
-            const key = m.id || m.name;
-            if (!membersMap.has(key)) {
-              membersMap.set(key, m);
-            }
-          });
-        }
-
         const allMembers = Array.from(membersMap.values());
         const totalSpots = dbSession.max_players || matched?.spotsTotal || 10;
-        const joinedCount = Math.min(
-          totalSpots,
-          Math.max(dbSession.current_players_count || 1, allMembers.length, matched?.spotsJoined || 1)
-        );
+        const joinedCount = allMembers.length;
+
+        if (dbSession.current_players_count !== joinedCount) {
+          try {
+            await supabase
+              .from('sessions')
+              .update({ current_players_count: joinedCount, updated_at: new Date().toISOString() })
+              .eq('id', dbSession.id);
+          } catch {}
+        }
 
         const mappedGame: CommunityGame = {
           id: dbSession.id,
@@ -493,7 +482,7 @@ export async function POST(req: NextRequest) {
         activeCount = c || 0;
       } catch {}
 
-      const finalSpotsJoined = Math.min(dbSession.max_players || 10, Math.max(dbSession.current_players_count || 1, activeCount + 1));
+      const finalSpotsJoined = Math.min(dbSession.max_players || 10, activeCount || 0);
 
       try {
         await supabase
@@ -610,7 +599,7 @@ export async function POST(req: NextRequest) {
           .eq('session_id', dbSession.id)
           .neq('status', 'cancelled');
 
-        const nextSpots = Math.max(1, (activeQueueCount || 0) + 1);
+        const nextSpots = activeQueueCount || 0;
         await supabase
           .from('sessions')
           .update({
@@ -653,7 +642,7 @@ export async function POST(req: NextRequest) {
         return true;
       });
 
-      const nextSpots = Math.max(1, (game.spotsJoined || 1) - 1);
+      const nextSpots = updatedMembers.length;
       const updatedGame: CommunityGame = {
         ...game,
         spotsJoined: nextSpots,
@@ -674,6 +663,170 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({ success: true, game: updatedGame, spotsJoined: nextSpots });
     }
+
+    if (action === 'toggle_host_participation') {
+      const hostId = body.hostId as string | undefined;
+      const hostName = (body.hostName as string | undefined || '').trim();
+      const hostAvatar = body.hostAvatar || 'alex';
+      const participate = Boolean(body.participate);
+
+      if (dbSession && supabase) {
+        let hostUserId: string | null = null;
+        if (dbSession.host_id) {
+          hostUserId = dbSession.host_id;
+        } else if (hostId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(hostId)) {
+          hostUserId = hostId;
+        } else if (hostName) {
+          const { data: u } = await supabase.from('users').select('id').ilike('full_name', hostName).maybeSingle();
+          if (u?.id) hostUserId = u.id;
+        }
+
+        if (participate) {
+          const { count: currentActive } = await supabase
+            .from('queues')
+            .select('*', { count: 'exact', head: true })
+            .eq('session_id', dbSession.id)
+            .neq('status', 'cancelled');
+
+          if ((currentActive || 0) >= (dbSession.max_players || 10)) {
+            return NextResponse.json({ success: false, error: 'Cannot join lineup: Match roster is already full.' }, { status: 400 });
+          }
+
+          if (hostUserId) {
+            await supabase
+              .from('queues')
+              .upsert(
+                {
+                  session_id: dbSession.id,
+                  user_id: hostUserId,
+                  queue_number: (currentActive || 0) + 1,
+                  group_size: 1,
+                  match_format: 'doubles',
+                  status: 'waiting',
+                  partner_names: [hostName || 'Organizer'],
+                },
+                { onConflict: 'session_id,user_id' }
+              );
+          }
+        } else {
+          if (hostUserId) {
+            await supabase
+              .from('queues')
+              .delete()
+              .eq('session_id', dbSession.id)
+              .eq('user_id', hostUserId);
+          } else if (hostName) {
+            const { data: qList } = await supabase
+              .from('queues')
+              .select('id, user:users(full_name), partner_names')
+              .eq('session_id', dbSession.id);
+            const hostQueue = (qList || []).find((q: any) =>
+              (q.partner_names && q.partner_names[0]?.trim().toLowerCase() === hostName.toLowerCase()) ||
+              (q.user?.full_name?.trim().toLowerCase() === hostName.toLowerCase())
+            );
+            if (hostQueue?.id) {
+              await supabase.from('queues').delete().eq('id', hostQueue.id);
+            }
+          }
+        }
+
+        const { count: finalQueueCount } = await supabase
+          .from('queues')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const finalSpots = finalQueueCount || 0;
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: finalSpots,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', dbSession.id);
+
+        let updatedMembers: { id?: string; name: string; avatar: any }[] = [];
+        if (participate) {
+          const hostEntry = {
+            id: hostUserId || hostId || 'organizer',
+            name: hostName || 'Organizer',
+            avatar: hostAvatar,
+          };
+          const existing = (game.members || []).filter(
+            (m) => (hostUserId ? m.id !== hostUserId : m.name.trim().toLowerCase() !== hostName.toLowerCase())
+          );
+          updatedMembers = [hostEntry, ...existing];
+        } else {
+          updatedMembers = (game.members || []).filter((m) => {
+            if (hostUserId && m.id && m.id === hostUserId) return false;
+            if (hostName && m.name && m.name.trim().toLowerCase() === hostName.toLowerCase()) return false;
+            return true;
+          });
+        }
+
+        const updatedGame: CommunityGame = {
+          ...game,
+          sessionId: dbSession.id,
+          spotsJoined: updatedMembers.length,
+          members: updatedMembers,
+        };
+
+        if (game.inviteCode) {
+          const inviteKey = game.inviteCode.trim().toUpperCase();
+          diskCache[inviteKey] = updatedGame;
+          memoryStore[inviteKey] = updatedGame;
+        }
+        if (game.id) {
+          const idKey = game.id.trim().toUpperCase();
+          diskCache[idKey] = updatedGame;
+          memoryStore[idKey] = updatedGame;
+        }
+        saveCache(diskCache);
+
+        return NextResponse.json({ success: true, game: updatedGame, spotsJoined: updatedMembers.length, isParticipating: participate });
+      }
+
+      let updatedMembers: { id?: string; name: string; avatar: any }[] = [];
+      if (participate) {
+        const hostEntry = {
+          id: hostId || 'organizer',
+          name: hostName || 'Organizer',
+          avatar: hostAvatar,
+        };
+        const existing = (game.members || []).filter(
+          (m) => (hostId ? m.id !== hostId : m.name.trim().toLowerCase() !== hostName.toLowerCase())
+        );
+        updatedMembers = [hostEntry, ...existing];
+      } else {
+        updatedMembers = (game.members || []).filter((m) => {
+          if (hostId && m.id && m.id === hostId) return false;
+          if (hostName && m.name && m.name.trim().toLowerCase() === hostName.toLowerCase()) return false;
+          return true;
+        });
+      }
+
+      const updatedGame: CommunityGame = {
+        ...game,
+        spotsJoined: updatedMembers.length,
+        members: updatedMembers,
+      };
+
+      if (game.inviteCode) {
+        const inviteKey = game.inviteCode.trim().toUpperCase();
+        diskCache[inviteKey] = updatedGame;
+        memoryStore[inviteKey] = updatedGame;
+      }
+      if (game.id) {
+        const idKey = game.id.trim().toUpperCase();
+        diskCache[idKey] = updatedGame;
+        memoryStore[idKey] = updatedGame;
+      }
+      saveCache(diskCache);
+
+      return NextResponse.json({ success: true, game: updatedGame, spotsJoined: updatedMembers.length, isParticipating: participate });
+    }
+
+
 
     if (game.inviteCode) {
       const inviteKey = game.inviteCode.trim().toUpperCase();

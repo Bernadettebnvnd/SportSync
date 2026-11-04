@@ -50,6 +50,7 @@ interface MatchDetailScreenProps {
   currentUserName?: string;
   currentUserId?: string;
   onRemovePlayer?: (player: { id?: string; name: string }) => Promise<void> | void;
+  onToggleHostParticipation?: (participate: boolean) => Promise<void> | void;
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
@@ -63,6 +64,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   onRemovePlayer,
   currentUserName,
   currentUserId,
+  onToggleHostParticipation,
 }) => {
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
@@ -71,6 +73,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const [playerToRemove, setPlayerToRemove] = useState<{ id?: string; name: string } | null>(null);
   const [isRemovingPlayer, setIsRemovingPlayer] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isTogglingParticipation, setIsTogglingParticipation] = useState(false);
 
   const [enteredInviteCode, setEnteredInviteCode] = useState('');
   const [inviteUnlocked, setInviteUnlocked] = useState(false);
@@ -122,6 +125,20 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   }, [game, isHost, isAlreadyMember, isDirectlyInvited, inviteUnlocked]);
 
   const effectiveIsJoined = isJoined || isAlreadyMember;
+
+  const lineupCount = Array.isArray(game?.members) ? game.members.length : (game?.spotsJoined || 0);
+  const spotsLeft = Math.max(0, (game?.spotsTotal || 10) - lineupCount);
+
+  const isHostParticipating = useMemo(() => {
+    if (!isHost || !Array.isArray(game?.members)) return false;
+    return game.members.some(
+      (m) =>
+        (currentUserId && m.id && m.id === currentUserId) ||
+        (currentUserName && m.name && m.name.trim().toLowerCase() === currentUserName.trim().toLowerCase()) ||
+        (game.hostId && m.id && m.id === game.hostId) ||
+        (game.hostName && m.name && m.name.trim().toLowerCase() === game.hostName.trim().toLowerCase())
+    );
+  }, [isHost, game?.members, game?.hostId, game?.hostName, currentUserId, currentUserName]);
 
   const handleUnlockWithCode = () => {
     if (!enteredInviteCode.trim()) return;
@@ -319,6 +336,43 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
             <p className="text-xs text-[#A5B0A6] leading-relaxed">
               As host, you can edit the match schedule, sport, location, slots, or delete this match for all players.
             </p>
+
+            <div className="p-3 rounded-2xl bg-[#1C241E] border border-white/5 flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold text-[#F4F7F0] block">
+                  {isHostParticipating ? 'Playing in Game' : 'Hosting Only'}
+                </span>
+                <span className="text-[11px] text-[#A5B0A6] block">
+                  {isHostParticipating
+                    ? 'You occupy 1 player slot in the lineup.'
+                    : 'You do not occupy a slot. Full roster open to other players.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={isTogglingParticipation || (!isHostParticipating && spotsLeft <= 0)}
+                onClick={async () => {
+                  if (!onToggleHostParticipation) return;
+                  setIsTogglingParticipation(true);
+                  try {
+                    await onToggleHostParticipation(!isHostParticipating);
+                  } catch (e: any) {
+                    setFeedbackMessage({ type: 'error', text: e?.message || 'Failed to update participation.' });
+                  } finally {
+                    setIsTogglingParticipation(false);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all press-scale shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isHostParticipating
+                    ? 'bg-[#FF5C5C]/15 hover:bg-[#FF5C5C]/25 text-[#FF5C5C] border border-[#FF5C5C]/30'
+                    : 'bg-[#C8FF2E] hover:bg-[#d4ff52] text-[#0B0F0C]'
+                }`}
+              >
+                {isHostParticipating ? 'Leave Game' : 'Join Game'}
+              </button>
+            </div>
+
+
             <div className="grid grid-cols-2 gap-2 pt-0.5">
               <button
                 type="button"
@@ -424,12 +478,12 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 Player Lineup
               </h3>
               <span className="text-xs text-[#A5B0A6]">
-                {game.spotsJoined} of {game.spotsTotal} spots taken
+                {lineupCount} of {game.spotsTotal} spots taken
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
-                {Math.max(0, game.spotsTotal - game.spotsJoined)} spots left
+                {spotsLeft} spots left
               </span>
               <button
                 type="button"
@@ -443,9 +497,14 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           </div>
 
           <div className="divide-y divide-white/5 pt-1">
-            {game.members.map((member, idx) => {
+            {(!game.members || game.members.length === 0) ? (
+              <div className="py-4 text-center text-xs text-[#A5B0A6]">
+                No players in lineup yet.
+              </div>
+            ) : (
+              game.members.map((member, idx) => {
               const isOrganizer = Boolean(
-                idx === 0 ||
+
                 (game.hostId && member.id && member.id === game.hostId) ||
                 (game.hostName && member.name && member.name.trim().toLowerCase() === game.hostName.trim().toLowerCase())
               );
@@ -483,7 +542,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                   )}
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
 
@@ -510,6 +569,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
             <p className="text-[11px] text-[#A5B0A6]">
               This match is private and unlisted from the public discovery feed. Only players with the invite link or direct invitation can join.
             </p>
+
             {!hasUnlockedInviteToken && (
               <div className="pt-2 border-t border-white/10 space-y-2">
                 <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
@@ -631,6 +691,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
               <p className="text-xs text-[#A5B0A6] leading-relaxed">
                 Are you sure you want to remove <span className="text-[#F4F7F0] font-semibold">{playerToRemove.name}</span> from the match roster? Their reserved spot will be reopened.
               </p>
+  
             </div>
             <div className="flex items-center gap-2 pt-2">
               <Button
