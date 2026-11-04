@@ -334,16 +334,26 @@ export function useMatchiStore() {
     };
   }, []);
 
-  // Reload sessions from database
+  // Reload sessions from database without discarding active local/existing sessions
   const refreshSessions = useCallback(async () => {
     try {
-      const sessions = await getOpenPlaySessions();
-      const seenSessionIds = new Set<string>();
-      globalState.sessions = sessions.filter((s) => {
-        if (!s || !s.id || seenSessionIds.has(s.id)) return false;
-        seenSessionIds.add(s.id);
-        return true;
+      const fetched = await getOpenPlaySessions();
+      const existing = globalState.sessions.filter((s) => s && s.id && s.status !== "cancelled");
+      const mergedMap = new Map<string, Session>();
+      existing.forEach((s) => mergedMap.set(s.id, s));
+      fetched.forEach((s) => {
+        if (s && s.id) {
+          const prev = mergedMap.get(s.id);
+          if (prev) {
+            // Preserve existing queue entries / participants if fetched has none
+            const mergedQueues = (s.queues && s.queues.length > 0) ? s.queues : (prev.queues || []);
+            mergedMap.set(s.id, { ...prev, ...s, queues: mergedQueues });
+          } else {
+            mergedMap.set(s.id, s);
+          }
+        }
       });
+      globalState.sessions = Array.from(mergedMap.values());
       notify();
       return globalState.sessions;
     } catch (err) {

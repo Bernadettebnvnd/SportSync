@@ -668,16 +668,14 @@ export function useSportSyncBridge() {
               });
             });
 
-            let updatedMembers: { id?: string; name: string; avatar: any }[] = [];
-            if (relevantQueues.length > 0) {
-              updatedMembers = queueMembers;
-            } else if (g.members && g.members.length > 0) {
-              updatedMembers = g.members;
-            } else {
-              updatedMembers = [];
-            }
-
-            const spotsJoined = Math.min(g.spotsTotal, updatedMembers.length);
+            const mergedMembersMap = new Map<string, { id?: string; name: string; avatar: any }>();
+            (g.members || []).forEach((m) => mergedMembersMap.set(m.id || m.name, m));
+            queueMembers.forEach((m) => mergedMembersMap.set(m.id || m.name, m));
+            const updatedMembers = Array.from(mergedMembersMap.values());
+            const spotsJoined = Math.min(
+              g.spotsTotal,
+              Math.max(updatedMembers.length, matchSession.current_players_count || 0, g.spotsJoined)
+            );
 
             return {
               ...g,
@@ -2733,7 +2731,22 @@ export function useSportSyncBridge() {
         members: nextMembers,
       };
 
-      setGames((prev) => prev.map((g) => (g.id === gameId ? updatedGame : g)));
+      setGames((prev) => {
+        const matchIdx = prev.findIndex(
+          (g) => g.id === gameId || (updatedGame.sessionId && g.sessionId === updatedGame.sessionId) || (updatedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === updatedGame.inviteCode.toUpperCase())
+        );
+        if (matchIdx >= 0) {
+          const next = [...prev];
+          next[matchIdx] = {
+            ...next[matchIdx],
+            ...updatedGame,
+            members: nextMembers,
+            spotsJoined: Math.min(targetGame.spotsTotal, Math.max(nextMembers.length, next[matchIdx].spotsJoined + (alreadyHasMember ? 0 : 1))),
+          };
+          return next;
+        }
+        return [updatedGame, ...prev];
+      });
 
       if (typeof window !== 'undefined') {
         try {

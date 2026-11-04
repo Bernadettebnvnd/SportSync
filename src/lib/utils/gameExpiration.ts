@@ -56,6 +56,14 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
     return true;
   }
 
+  // Active or upcoming games must remain visible and not be discarded prematurely
+  if ((game as any).status === 'active' || (game as any).status === 'upcoming') {
+    const rawDate = (game.date || (game as any).scheduled_date || "").toLowerCase();
+    if (rawDate.includes('today') || rawDate.includes('tomorrow')) {
+      return false;
+    }
+  }
+
   const now = new Date();
   const currentTimestamp = now.getTime();
 

@@ -156,7 +156,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
   const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
 
   const isSessionNotDeleted = (s: Session) =>
-    !isMockSession(s) && !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled' && !isSessionExpired(s);
+    !isMockSession(s) && !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled';
 
   if (!supabase || !isSupabaseConfigured) {
     const filtered = localSessions.filter(isSessionNotDeleted);
