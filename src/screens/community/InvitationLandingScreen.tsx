@@ -61,15 +61,17 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   isHost: customIsHost,
   onSyncInvitation,
 }) => {
+  const syncRef = React.useRef(onSyncInvitation);
+  syncRef.current = onSyncInvitation;
+
   useEffect(() => {
-    if (inviteCode && onSyncInvitation) {
-      onSyncInvitation(inviteCode);
+    if (inviteCode && syncRef.current) {
       const interval = setInterval(() => {
-        onSyncInvitation(inviteCode);
-      }, 4000);
+        syncRef.current?.(inviteCode);
+      }, 5000);
       return () => clearInterval(interval);
     }
-  }, [inviteCode, onSyncInvitation]);
+  }, [inviteCode]);
   const handleClose = onClose || onBack || onGoHome;
   const isHost = Boolean(
     customIsHost ||
@@ -129,7 +131,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   );
 
   const isNotFound = Boolean(
-    (!game && !isLoading && !isDeleted && !isEnded && !isExpiredOrRevoked) ||
+    (!game && !isLoading && !isDeleted && !isEnded && !isExpiredOrRevoked && Boolean(errorMessage)) ||
     errorMessage?.toLowerCase().includes('not found') ||
     errorMessage?.toLowerCase().includes('invalid')
   );

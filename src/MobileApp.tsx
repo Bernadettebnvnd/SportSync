@@ -190,103 +190,84 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     pendingAction?: () => void;
   }>({ isOpen: false });
 
-  const resolvedCodeRef = useRef<string | null>(null);
+  const inviteRequestIdRef = useRef<number>(0);
+  const loadingInviteCodeRef = useRef<string | null>(null);
+  const resolvedInviteCodeRef = useRef<string | null>(null);
   const inviteDismissedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (inviteDismissedRef.current) return;
+
+    let cleanCode = '';
     try {
       const searchParams = new URLSearchParams(window.location.search);
       const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
-      if (!inviteParam) return;
+      if (inviteParam) {
+        cleanCode = inviteParam.trim().toUpperCase();
+      }
+    } catch {}
 
-      const cleanCode = inviteParam.trim().toUpperCase();
-      setActiveInviteCode(cleanCode);
+    if (!cleanCode) return;
+    setActiveInviteCode(cleanCode);
 
-      const localMatch = bridge.games.find(
-        (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || (g.id && g.id.toUpperCase() === cleanCode)
-      );
+    if (resolvedInviteCodeRef.current === cleanCode && inviteGame) {
+      return;
+    }
 
-      if (localMatch) {
-        if ((localMatch as any).status === 'cancelled') {
+    if (loadingInviteCodeRef.current === cleanCode) {
+      return;
+    }
+
+    loadingInviteCodeRef.current = cleanCode;
+    const currentRequestId = ++inviteRequestIdRef.current;
+
+    setIsInviteLoading(true);
+    setInviteError(null);
+
+    const resolveInvitation = async () => {
+      try {
+        const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
+
+        if (currentRequestId !== inviteRequestIdRef.current) return;
+        loadingInviteCodeRef.current = null;
+
+        if (res.status === 404) {
+          resolvedInviteCodeRef.current = cleanCode;
           setInviteGame(null);
-          setInviteError('Event No Longer Available');
+          setInviteError('Invitation Not Found');
           setIsInviteLoading(false);
           setCurrentScreen('invitation-landing');
           return;
         }
-        setInviteGame(localMatch);
-        setIsInviteLoading(false);
-        setInviteError(null);
-        setCurrentScreen('invitation-landing');
-        setScreenHistory(['social-home', 'invitation-landing']);
-        return;
-      }
 
-      if (resolvedCodeRef.current === cleanCode && inviteGame) {
-        return;
-      }
+        if (res.status === 410) {
+          resolvedInviteCodeRef.current = cleanCode;
+          const data = await res.json().catch(() => ({}));
+          setInviteGame(null);
+          setInviteError(data.error || 'Event No Longer Available');
+          setIsInviteLoading(false);
+          setCurrentScreen('invitation-landing');
+          return;
+        }
 
-      resolvedCodeRef.current = cleanCode;
-      setIsInviteLoading(true);
-      setInviteError(null);
+        if (res.ok) {
+          const data = await res.json();
+          if (currentRequestId !== inviteRequestIdRef.current) return;
 
-      const resolveInvitation = async () => {
-        try {
-          const inBridge = bridge.games.find(
-            (g) => (g.inviteCode && g.inviteCode.toUpperCase() === cleanCode) || g.id === cleanCode
-          );
-
-          let resolvedGame: CommunityGame | null = inBridge || null;
-
-          try {
-            const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanCode)}`);
-            if (res.status === 404) {
-              setInviteGame(null);
-              setInviteError('Invitation Not Found');
-              setIsInviteLoading(false);
-              setCurrentScreen('invitation-landing');
-              return;
-            }
-            if (res.status === 410) {
-              const data = await res.json().catch(() => ({}));
-              setInviteGame(null);
-              setInviteError(data.error || 'Event No Longer Available');
-              setIsInviteLoading(false);
-              setCurrentScreen('invitation-landing');
-              return;
-            }
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.game) {
-                resolvedGame = data.game;
-                bridge.addExternalGame(data.game);
-              } else if (data.deleted) {
-                setInviteGame(null);
-                setInviteError('Event No Longer Available');
-                setIsInviteLoading(false);
-                setCurrentScreen('invitation-landing');
-                return;
-              } else if (data.error) {
-                setInviteGame(null);
-                setInviteError(data.error);
-                setIsInviteLoading(false);
-                setCurrentScreen('invitation-landing');
-                return;
-              }
-            }
-          } catch {}
-
-          if (!resolvedGame) {
-            setInviteGame(null);
-            setInviteError('Invitation Not Found');
+          if (data.success && data.game) {
+            resolvedInviteCodeRef.current = cleanCode;
+            bridge.addExternalGame(data.game);
+            setInviteGame(data.game);
+            setInviteError(null);
             setIsInviteLoading(false);
             setCurrentScreen('invitation-landing');
+            setScreenHistory(['social-home', 'invitation-landing']);
             return;
           }
 
-          if ((resolvedGame as any).status === 'cancelled') {
+          if (data.deleted) {
+            resolvedInviteCodeRef.current = cleanCode;
             setInviteGame(null);
             setInviteError('Event No Longer Available');
             setIsInviteLoading(false);
@@ -294,21 +275,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             return;
           }
 
-          setInviteGame(resolvedGame);
-          setInviteError(null);
-          setIsInviteLoading(false);
-          setCurrentScreen('invitation-landing');
-          setScreenHistory(['social-home', 'invitation-landing']);
-        } catch (err: any) {
-          setInviteError(err?.message || 'Invitation Not Found');
-          setIsInviteLoading(false);
-          setCurrentScreen('invitation-landing');
+          if (data.error) {
+            resolvedInviteCodeRef.current = cleanCode;
+            setInviteGame(null);
+            setInviteError(data.error);
+            setIsInviteLoading(false);
+            setCurrentScreen('invitation-landing');
+            return;
+          }
         }
-      };
 
-      resolveInvitation();
-    } catch {}
-  }, [bridge.games]);
+        resolvedInviteCodeRef.current = cleanCode;
+        setInviteGame(null);
+        setInviteError('Invitation Not Found');
+        setIsInviteLoading(false);
+        setCurrentScreen('invitation-landing');
+      } catch (err: any) {
+        if (currentRequestId !== inviteRequestIdRef.current) return;
+        loadingInviteCodeRef.current = null;
+        setInviteError('Unable to load invitation. Please check your connection and try again.');
+        setIsInviteLoading(false);
+        setCurrentScreen('invitation-landing');
+      }
+    };
+
+    resolveInvitation();
+  }, []);
 
   useEffect(() => {
     if (initialScreen) {
@@ -329,16 +321,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           (selectedGame.sessionId && g.sessionId === selectedGame.sessionId) ||
           (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
       );
-      if (!match || (match as any).status === 'cancelled') {
-        if ((selectedGame as any).status !== 'cancelled') {
-          setSelectedGame({ ...selectedGame, status: 'cancelled' } as CommunityGame);
+      if (match) {
+        if ((match as any).status === 'cancelled') {
+          if ((selectedGame as any).status !== 'cancelled') {
+            setSelectedGame({ ...selectedGame, status: 'cancelled' } as CommunityGame);
+          }
+        } else if (
+          match.spotsJoined !== selectedGame.spotsJoined ||
+          match.members.length !== selectedGame.members.length ||
+          match.hostName !== selectedGame.hostName
+        ) {
+          setSelectedGame(match);
         }
-      } else if (
-        match.spotsJoined !== selectedGame.spotsJoined ||
-        match.members.length !== selectedGame.members.length ||
-        match.hostName !== selectedGame.hostName
-      ) {
-        setSelectedGame(match);
       }
     }
   }, [bridge.games, selectedGame]);
@@ -351,15 +345,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           (inviteGame.sessionId && g.sessionId === inviteGame.sessionId) ||
           (inviteGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === inviteGame.inviteCode.toUpperCase())
       );
-      if (!match || (match as any).status === 'cancelled') {
-        setInviteGame(null);
-        setInviteError('This event is no longer available.');
-      } else if (
-        match.spotsJoined !== inviteGame.spotsJoined ||
-        match.members.length !== inviteGame.members.length ||
-        match.hostName !== inviteGame.hostName
-      ) {
-        setInviteGame(match);
+      if (match) {
+        if ((match as any).status === 'cancelled') {
+          setInviteGame(null);
+          setInviteError('Event No Longer Available');
+        } else if (
+          match.spotsJoined !== inviteGame.spotsJoined ||
+          match.members.length !== inviteGame.members.length ||
+          match.hostName !== inviteGame.hostName
+        ) {
+          setInviteGame(match);
+        }
       }
     }
   }, [bridge.games, inviteGame]);
@@ -430,9 +426,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleCloseInvitation = useCallback(() => {
     inviteDismissedRef.current = true;
+    loadingInviteCodeRef.current = null;
+    resolvedInviteCodeRef.current = null;
     setActiveInviteCode(null);
     setInviteGame(null);
     setInviteError(null);
+    setIsInviteLoading(false);
 
     if (typeof window !== 'undefined') {
       try {
@@ -450,6 +449,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setCurrentScreen(fallbackScreen);
     onScreenChange?.(fallbackScreen);
   }, [isUserAuthenticated, onScreenChange]);
+
+  const handleSyncInvitation = useCallback(
+    (code: string) => {
+      bridge.syncSessionRoster(code, true);
+    },
+    [bridge.syncSessionRoster]
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -957,7 +963,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               setScreenHistory(['social-home', 'match-detail']);
               navigateTo('match-detail');
             }}
-            onSyncInvitation={(code) => bridge.syncSessionRoster(code, true)}
+            onSyncInvitation={handleSyncInvitation}
           />
         );
       }

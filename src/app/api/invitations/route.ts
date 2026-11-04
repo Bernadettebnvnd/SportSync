@@ -73,11 +73,23 @@ export async function GET(req: NextRequest) {
         const { data: byCode } = await supabase
           .from('sessions')
           .select('*')
-          .or(`invite_code.eq.${code},invite_code.eq.${rawClean}`)
+          .ilike('invite_code', rawClean)
           .limit(1)
           .maybeSingle();
         if (byCode) dbSession = byCode;
       } catch {}
+
+      if (!dbSession && code !== rawClean) {
+        try {
+          const { data: byCodeUpper } = await supabase
+            .from('sessions')
+            .select('*')
+            .eq('invite_code', code)
+            .limit(1)
+            .maybeSingle();
+          if (byCodeUpper) dbSession = byCodeUpper;
+        } catch {}
+      }
 
       // 2. Query by sessionId if matched has it
       if (!dbSession && matched?.sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(matched.sessionId)) {
