@@ -42,9 +42,16 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         if (!g.date.toLowerCase().includes('today')) return false;
       }
 
-      // Hide invite-only games from public search results and community listings
-      if (g.visibility === 'Invite' || g.isPublic === false) {
-        return false;
+      if (g.visibility === 'Invite') {
+        let hasUnlockedToken = false;
+        if (typeof window !== 'undefined' && g.inviteCode) {
+          try {
+            const raw = localStorage.getItem('sportsync_unlocked_invites');
+            const unlocked: string[] = raw ? JSON.parse(raw) : [];
+            hasUnlockedToken = unlocked.includes(g.inviteCode.toUpperCase()) || unlocked.includes(g.id);
+          } catch {}
+        }
+        if (!hasUnlockedToken) return false;
       }
 
       seenIds.add(g.id);

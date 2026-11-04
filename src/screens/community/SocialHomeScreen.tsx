@@ -101,9 +101,24 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
         if (!isHost) return false;
       }
 
-      // Hide invite-only games from public Discover tab and recommendations
-      if (activeTab === 'discover' && (game.visibility === 'Invite' || !game.isPublic)) {
-        return false;
+      if (activeTab === 'discover' && game.visibility === 'Invite') {
+        const name = (userName || '').trim().toLowerCase();
+        const id = user?.id;
+        const isHost = Boolean(
+          (game.hostName && name && game.hostName.trim().toLowerCase() === name) ||
+          (game.hostId && id && game.hostId === id)
+        );
+        const isMember = game.members?.some((m) => (name && m.name.trim().toLowerCase() === name) || (id && m.id && m.id === id));
+        const isInvited = game.invitedPlayers?.some((ip) => (name && ip.name.trim().toLowerCase() === name) || (id && ip.id && ip.id === id));
+        let hasUnlockedToken = false;
+        if (typeof window !== 'undefined' && game.inviteCode) {
+          try {
+            const raw = localStorage.getItem('sportsync_unlocked_invites');
+            const unlocked: string[] = raw ? JSON.parse(raw) : [];
+            hasUnlockedToken = unlocked.includes(game.inviteCode.toUpperCase()) || unlocked.includes(game.id);
+          } catch {}
+        }
+        if (!isHost && !isMember && !isInvited && !hasUnlockedToken) return false;
       }
 
       // Sport filter

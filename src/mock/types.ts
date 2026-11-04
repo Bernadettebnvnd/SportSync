@@ -167,7 +167,6 @@ export interface CommunityGame {
   visibility?: 'Public' | 'Friends' | 'Invite';
   inviteCode?: string;
   invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
-  invitedPlayerIds?: string[];
   members: Array<{ name: string; avatar: AvatarId; id?: string }>;
   hostId?: string;
   coordinates?: [number, number];
