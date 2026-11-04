@@ -146,6 +146,15 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
       title: `Live Match: ${newMatch.gameTitle}`,
       desc: `${newMatch.sport} scorekeeper active at ${newMatch.venueName}.`,
       linkScreen: 'scores',
+      recipientId: currentUser?.id,
+      recipientName: currentUser?.full_name,
+      senderName: currentUser?.full_name,
+      meta: {
+        event: 'live_score_initialized',
+        matchId: newMatch.id,
+        sport: newMatch.sport,
+        venueName: newMatch.venueName,
+      },
     });
   };
 
@@ -188,6 +197,15 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
         title: `Full Time: ${finished.gameTitle}`,
         desc: `Final Score: ${finished.teamA.name} ${finished.teamA.score} - ${finished.teamB.score} ${finished.teamB.name}.`,
         linkScreen: 'scores',
+        recipientId: currentUser?.id,
+        recipientName: currentUser?.full_name,
+        senderName: currentUser?.full_name,
+        meta: {
+          event: 'match_finished',
+          matchId: finished.id,
+          teamAScore: finished.teamA.score,
+          teamBScore: finished.teamB.score,
+        },
       });
     }
   };

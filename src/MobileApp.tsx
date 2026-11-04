@@ -43,6 +43,7 @@ import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 import { useChatUnread, isUserAuthorizedForChat } from './lib/services/chat';
+import { resetNotificationCache } from './lib/notifications';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -491,6 +492,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const handleLogout = async () => {
     await bridge.logout();
     await bridge.store.logoutUser();
+    resetNotificationCache();
     setAuthInitialMode('login');
     setCurrentScreen('auth');
     setScreenHistory(['auth']);
@@ -1126,8 +1128,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <NotificationsScreen
             onBack={goBack}
             onNavigate={(screenId) => navigateTo(screenId as ScreenId)}
-            currentUserId={bridge.userProfile.id}
-            currentUserName={bridge.userProfile.name}
+            currentUserId={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.id : undefined}
+            currentUserName={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : undefined}
           />
         );
       case 'search':

@@ -84,7 +84,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const isGuest = !user?.id || user?.isGuest || user?.name === 'Guest';
   const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
   const username = isGuest ? '@guest' : user?.username || '@player';
-  const { unreadCount } = useNotifications(user?.name || user?.id ? { id: user?.id, name: user?.name } : undefined);
+  const { unreadCount } = useNotifications(!isGuest && (user?.name || user?.id) ? { id: user?.id, name: user?.name } : undefined);
 
   // Local state for instant optimistic updates
   const initialCity = user?.city && user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';

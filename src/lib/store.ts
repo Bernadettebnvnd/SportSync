@@ -22,6 +22,7 @@ import {
   FacilityInventorySource,
 } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { resetNotificationCache } from './notifications';
 import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile, saveLocalStoredVenues } from './services/venues';
 import { getPlayerBookings, getFacilityBookings, updateBookingStatus as updateDbBookingStatus } from './services/bookings';
 import {
@@ -473,6 +474,7 @@ export function useMatchiStore() {
         await supabase.auth.signOut();
       } catch {}
     }
+    resetNotificationCache();
     globalState = {
       ...globalState,
       currentUser: GUEST_USER,

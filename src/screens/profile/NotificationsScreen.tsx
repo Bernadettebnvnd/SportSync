@@ -92,34 +92,41 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
       linkScreen?: string;
       recipientName?: string;
       recipientId?: string;
+      senderName?: string;
     }> = [
         {
           type: 'match',
           title: 'Player Joined Your Game',
-          desc: 'John Doe joined your game, Basketball Match.',
+          desc: 'Alex Johnson joined your game, Sunday Pickup Match.',
           linkScreen: 'social-home',
           recipientName: currentUserName,
           recipientId: currentUserId,
+          senderName: 'Alex Johnson',
         },
         {
           type: 'match',
-          title: 'Game Deleted',
-          desc: 'The host has deleted Basketball Match, a game you joined.',
-          linkScreen: 'social-home',
+          title: 'Game Details Updated',
+          desc: 'The host updated details for Friday Evening Basketball.',
+          linkScreen: 'match-detail',
           recipientName: currentUserName,
           recipientId: currentUserId,
+          senderName: 'Coach Ryan',
         },
         {
           type: 'booking',
           title: 'Court Booking Confirmed',
           desc: 'Metro Naga Sports Complex: Badminton Court 1 reserved for Saturday 09:00 AM.',
           linkScreen: 'my-bookings',
+          recipientName: currentUserName,
+          recipientId: currentUserId,
         },
         {
           type: 'achievement',
           title: 'Playmaker Streak Multiplier Active!',
           desc: '3-week playing streak maintained! Enjoy 1.5x XP bonus on your next game.',
           linkScreen: 'leaderboard',
+          recipientName: currentUserName,
+          recipientId: currentUserId,
         },
       ];
 
@@ -131,6 +138,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
       linkScreen: pick.linkScreen,
       recipientName: pick.recipientName,
       recipientId: pick.recipientId,
+      senderName: pick.senderName,
     });
   };
 
@@ -252,12 +260,17 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
-                        <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
+                          {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
+                            <span className="text-[10px] text-[#8FA392] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+                              <span>From: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                            </span>
+                          )}
                           {item.linkScreen && (
-                            <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
                               View <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
@@ -314,12 +327,17 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
-                        <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
+                          {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
+                            <span className="text-[10px] text-[#8FA392] bg-[#1C241E] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+                              <span>From: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                            </span>
+                          )}
                           {item.linkScreen && (
-                            <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
                               View <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}

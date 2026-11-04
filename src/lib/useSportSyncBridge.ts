@@ -15,7 +15,7 @@ import { SportType as DbSportType, SkillLevel } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
-import { addNotification } from './notifications';
+import { addNotification, resetNotificationCache } from './notifications';
 import { isGameExpired, isSessionExpired, filterActiveGames } from './utils/gameExpiration';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
@@ -1499,6 +1499,13 @@ export function useSportSyncBridge() {
           title: `Level Up! Reached Level ${newLevel}`,
           desc: `Congratulations! You unlocked the title "${newTitle}". Keep playing to climb the ranks!`,
           linkScreen: 'leaderboard',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'level_up',
+            newLevel,
+            newTitle,
+          },
         });
       }
 
@@ -1519,7 +1526,7 @@ export function useSportSyncBridge() {
         message,
       };
     },
-    [userProfile.streakMultiplier, userProfile.level, userProfile.levelTitle, userProfile.xp]
+    [userProfile.streakMultiplier, userProfile.level, userProfile.levelTitle, userProfile.xp, userProfile.id, userProfile.name]
   );
 
   // 10. Place Prediction Vote / Wager
@@ -1706,6 +1713,13 @@ export function useSportSyncBridge() {
           title: 'Prediction Wager Won!',
           desc: `Your call on "${wonWagers[0].matchTitle}" paid out +${totalPayout} Playmaker XP!`,
           linkScreen: 'scores',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'wager_won',
+            matchTitle: wonWagers[0].matchTitle,
+            payoutXp: totalPayout,
+          },
         });
         return {
           won: true,
@@ -1721,7 +1735,7 @@ export function useSportSyncBridge() {
         };
       }
     },
-    [awardXp]
+    [awardXp, userProfile.id, userProfile.name]
   );
 
   // 12. Claim Badge Reward
@@ -1758,6 +1772,13 @@ export function useSportSyncBridge() {
           title: `Achievement Claimed: ${item.title}`,
           desc: `You claimed "${item.title}" (+${xpRes.totalEarned} XP)!`,
           linkScreen: 'leaderboard',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'badge_claimed',
+            badgeId: item.id,
+            badgeTitle: item.title,
+          },
         });
         return {
           success: true,
@@ -1768,7 +1789,7 @@ export function useSportSyncBridge() {
 
       return { success: false, message: 'Badge already claimed or not unlocked yet' };
     },
-    [awardXp]
+    [awardXp, userProfile.id, userProfile.name]
   );
 
   // 13. Dynamic Leaderboard Players
@@ -1941,10 +1962,39 @@ export function useSportSyncBridge() {
 
       if (gameData.invitedPlayers && gameData.invitedPlayers.length > 0) {
         addNotification({
+          id: `notif_invites_sent_${newGame.id}`,
           type: 'match',
           title: `Invitations Sent (${gameData.invitedPlayers.length})`,
           desc: `Invited ${gameData.invitedPlayers.map((p) => p.name).join(', ')} to your match: ${gameData.title}.`,
           linkScreen: 'social-home',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'invitations_sent',
+            gameId: newGame.id,
+            gameTitle: gameData.title,
+          },
+        });
+
+        // Notify each invited player individually
+        gameData.invitedPlayers.forEach((p) => {
+          if (!p.name) return;
+          addNotification({
+            id: `notif_invite_${newGame.id}_${p.name.replace(/\s+/g, '_')}`,
+            type: 'match',
+            title: 'Match Invitation',
+            desc: `${userProfile.name} invited you to join their game, ${gameData.title}.`,
+            linkScreen: 'social-home',
+            recipientId: p.id,
+            recipientName: p.name,
+            meta: {
+              event: 'match_invitation',
+              gameId: newGame.id,
+              gameTitle: gameData.title,
+              hostName: userProfile.name,
+              hostId: userProfile.id,
+            },
+          });
         });
       }
 
@@ -1956,13 +2006,25 @@ export function useSportSyncBridge() {
         prev.map((b) => (b.id === 'squad_captain' ? { ...b, progress: 1, unlocked: true } : b))
       );
 
-      // Real-time Notification
-      addNotification({
-        type: 'match',
-        title: `Match Hosted: ${gameData.title}`,
-        desc: `Your ${gameData.sport} game at ${gameData.locationName} is now live and accepting players.`,
-        linkScreen: 'social-home',
-      });
+      // Real-time Notification strictly for the creating host
+      if (userProfile.id && !userProfile.isGuest && userProfile.name !== 'Guest Player') {
+        addNotification({
+          id: `notif_hosted_${newGame.id}`,
+          type: 'match',
+          title: `Match Hosted: ${gameData.title}`,
+          desc: `Your ${gameData.sport} game at ${gameData.locationName} is now live and accepting players.`,
+          linkScreen: 'social-home',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'game_created',
+            gameId: newGame.id,
+            gameTitle: gameData.title,
+            sport: gameData.sport,
+            location: gameData.locationName,
+          },
+        });
+      }
 
       return newGame;
     },
@@ -2089,6 +2151,34 @@ export function useSportSyncBridge() {
           });
         } catch {}
       }
+
+      // Notify joined players that the host updated the game
+      const nonHostMembers = (targetGame.members || []).filter((m) => {
+        const isHostMember = Boolean(
+          (targetGame.hostId && m.id && m.id === targetGame.hostId) ||
+          (targetGame.hostName && m.name && m.name.trim().toLowerCase() === targetGame.hostName.trim().toLowerCase())
+        );
+        return !isHostMember;
+      });
+
+      nonHostMembers.forEach((m) => {
+        if (!m.name) return;
+        addNotification({
+          id: `notif_update_${gameId}_${m.name.replace(/\s+/g, '_')}_${Date.now()}`,
+          type: 'match',
+          title: 'Game Details Updated',
+          desc: `${targetGame.hostName || 'The host'} updated details for ${updatedGame.title}.`,
+          linkScreen: 'match-detail',
+          recipientId: m.id,
+          recipientName: m.name,
+          meta: {
+            event: 'game_updated',
+            gameId: updatedGame.id,
+            gameTitle: updatedGame.title,
+            hostName: targetGame.hostName,
+          },
+        });
+      });
 
       return { success: true, game: updatedGame };
     },
@@ -2680,10 +2770,18 @@ export function useSportSyncBridge() {
 
       // 6. Notify the joining player
       addNotification({
+        id: `notif_joined_${targetGame.id}_${userProfile.id || userName.replace(/\s+/g, '_')}`,
         type: 'match',
         title: 'Match Roster Confirmed',
         desc: `You joined "${gameTitle}". Spot reserved!`,
         linkScreen: 'match-detail',
+        recipientId: userProfile.id,
+        recipientName: userName,
+        meta: {
+          event: 'match_joined',
+          gameId: targetGame.id,
+          gameTitle,
+        },
       });
 
       const xpResult = awardXp(30, 'joining a game roster', { applyStreakMultiplier: true });
@@ -2985,12 +3083,38 @@ export function useSportSyncBridge() {
       );
 
       if (updatedGame) {
+        const leftGame = updatedGame as CommunityGame;
         addNotification({
+          id: `notif_left_${gameId}_${userProfile.id || userProfile.name.replace(/\s+/g, '_')}`,
           type: 'match',
           title: 'Left Match Roster',
-          desc: `You have left the roster. Your spot was reopened for other players.`,
+          desc: `You have left ${leftGame.title || 'the game'}. Your spot was reopened for other players.`,
           linkScreen: 'social-home',
+          recipientId: userProfile.id,
+          recipientName: userProfile.name,
+          meta: {
+            event: 'left_match',
+            gameId,
+          },
         });
+
+        // Also notify the host that a player left
+        if (leftGame.hostName && leftGame.hostName !== userProfile.name) {
+          addNotification({
+            id: `notif_member_left_${gameId}_${userProfile.name.replace(/\s+/g, '_')}`,
+            type: 'match',
+            title: 'Player Left Game Lineup',
+            desc: `${userProfile.name} left your game, ${leftGame.title}. Their spot is now open.`,
+            linkScreen: 'social-home',
+            recipientId: leftGame.hostId,
+            recipientName: leftGame.hostName,
+            meta: {
+              event: 'member_left',
+              gameId,
+              leavingPlayerName: userProfile.name,
+            },
+          });
+        }
       }
 
       return {
@@ -2998,7 +3122,7 @@ export function useSportSyncBridge() {
         message: 'Successfully left game roster.',
       };
     },
-    [userProfile.name]
+    [userProfile.name, userProfile.id]
   );
 
   // 17. Reserve Court / Venue Booking
@@ -3027,10 +3151,21 @@ export function useSportSyncBridge() {
 
       // Real-time notification for court reservation
       addNotification({
+        id: `notif_bk_${bookingId}`,
         type: 'booking',
         title: 'Court Booking Confirmed',
         desc: `${details.venue.name}: ${details.court} reserved for ${details.date} at ${details.slot}.`,
         linkScreen: 'my-bookings',
+        recipientId: userProfile.id,
+        recipientName: userProfile.name,
+        meta: {
+          event: 'court_reserved',
+          bookingId,
+          venueName: details.venue.name,
+          court: details.court,
+          date: details.date,
+          slot: details.slot,
+        },
       });
 
       // Award XP (+60 XP base × 1.5x = +90 XP)
@@ -3073,7 +3208,7 @@ export function useSportSyncBridge() {
 
       return newBooking;
     },
-    [awardXp, store]
+    [awardXp, store, userProfile.id, userProfile.name]
   );
 
   const cancelReservation = useCallback((bookingId: string) => {
@@ -3081,12 +3216,19 @@ export function useSportSyncBridge() {
       prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
     );
     addNotification({
+      id: `notif_cancel_${bookingId}`,
       type: 'booking',
       title: 'Booking Cancelled',
       desc: 'Your court reservation was cancelled. Full refund issued.',
       linkScreen: 'my-bookings',
+      recipientId: userProfile.id,
+      recipientName: userProfile.name,
+      meta: {
+        event: 'booking_cancelled',
+        bookingId,
+      },
     });
-  }, []);
+  }, [userProfile.id, userProfile.name]);
 
   // 18. Complete Onboarding
   const completeOnboarding = useCallback(
@@ -3242,6 +3384,7 @@ export function useSportSyncBridge() {
         localStorage.removeItem('sportsync_onboarding_completed');
         localStorage.removeItem('matchi_onboarding_completed');
       }
+      resetNotificationCache();
       setUserProfile({
         ...INITIAL_USER_PROFILE,
         name: 'Guest Player',

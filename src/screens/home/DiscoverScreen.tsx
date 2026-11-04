@@ -82,10 +82,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onOpenChat,
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
+  const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const effectiveUserName = user?.name || currentUser.full_name;
   const effectiveUserId = user?.id || currentUser.id;
   const { unreadCount } = useNotifications(
-    effectiveUserName || effectiveUserId ? { id: effectiveUserId, name: effectiveUserName } : undefined
+    !effectiveIsGuest && (effectiveUserName || effectiveUserId)
+      ? { id: effectiveUserId, name: effectiveUserName }
+      : undefined
   );
   const [activeSport, setActiveSport] = useState<string>('All');
   const [courtSearchInput, setCourtSearchInput] = useState<string>('');
@@ -93,7 +96,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Fixed Naga City pilot location
   const userLocation = 'Naga City';
 
-  const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
 
   // Time-based greeting per Phase 8

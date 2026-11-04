@@ -23,6 +23,8 @@ export interface NotificationItem {
   linkScreen?: string;
   recipientId?: string;
   recipientName?: string;
+  senderName?: string;
+  senderAvatar?: string;
   meta?: Record<string, any>;
 }
 
@@ -54,13 +56,22 @@ function recordDeliveredNotificationKey(key: string): void {
   } catch {}
 }
 
-// Filter out any legacy mock items with fake IDs or teams
+/**
+ * Filter out legacy mock notifications, test items, or orphaned personal notifications
+ * that have no recipient, preventing newly registered users from seeing false notifications.
+ */
 function sanitizeNotifications(list: NotificationItem[]): NotificationItem[] {
   return list.filter((n) => {
     if (!n || !n.id) return false;
     // Strip old mock IDs from previous static mockups
     if (['n1', 'n2', 'n3', 'n4', 'n5'].includes(n.id)) return false;
     if (n.title.includes('Northgate FC') || n.title.includes('Kensington RFC')) return false;
+
+    // Strict rule: Strip any orphaned personal notifications (non-system) that have no recipient
+    if (n.type !== 'system' && !n.recipientId && !n.recipientName) {
+      return false;
+    }
+
     return true;
   });
 }
@@ -145,6 +156,11 @@ if (typeof window !== 'undefined') {
   });
 }
 
+export function resetNotificationCache(): void {
+  cachedNotifications = null;
+  notifyAll();
+}
+
 export function getNotifications(): NotificationItem[] {
   if (cachedNotifications !== null) {
     return cachedNotifications;
@@ -197,12 +213,80 @@ function persistNotifications(items: NotificationItem[]) {
   notifyAll();
 }
 
+/**
+ * Fetch authenticated user notifications directly from Supabase.
+ * Allows notifications to persist after refreshing, logging out, and logging back in.
+ */
+export async function fetchUserNotificationsFromSupabase(
+  userFilter?: { id?: string; name?: string }
+): Promise<NotificationItem[]> {
+  const sb = getSupabaseClient();
+  if (!sb || !isSupabaseConfigured || (!userFilter?.id && !userFilter?.name)) {
+    return [];
+  }
+  try {
+    const uId = userFilter.id;
+    const uName = userFilter.name;
+
+    let query = sb.from('notifications').select('*');
+    if (uId && uName) {
+      query = query.or(`user_id.eq.${uId},user_identifier.eq.${uName},type.eq.system`);
+    } else if (uId) {
+      query = query.or(`user_id.eq.${uId},type.eq.system`);
+    } else if (uName) {
+      query = query.or(`user_identifier.eq.${uName},type.eq.system`);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
+    if (error || !Array.isArray(data)) {
+      return [];
+    }
+
+    return data
+      .filter((row: any) => {
+        if (!row || !row.id) return false;
+        if (row.type !== 'system' && !row.user_id && !row.user_identifier) return false;
+        return true;
+      })
+      .map((row: any) => ({
+        id: row.id,
+        type: (row.type as NotificationType) || 'match',
+        title: row.title,
+        desc: row.description,
+        timestamp: new Date(row.created_at).getTime(),
+        time: formatRelativeTime(new Date(row.created_at).getTime()),
+        read: Boolean(row.read),
+        linkScreen: row.link_screen,
+        recipientId: row.user_id,
+        recipientName: row.user_identifier,
+        senderName:
+          row.metadata?.sender_name ||
+          row.metadata?.senderName ||
+          row.metadata?.host_name ||
+          row.metadata?.hostName ||
+          row.metadata?.joining_player_name ||
+          row.metadata?.joiningPlayerName ||
+          row.metadata?.leaving_player_name ||
+          row.metadata?.leavingPlayerName,
+        senderAvatar: row.metadata?.sender_avatar || row.metadata?.senderAvatar,
+        meta: row.metadata,
+      }));
+  } catch (err) {
+    console.warn('[Notifications] Exception fetching user notifications from Supabase:', err);
+    return [];
+  }
+}
+
 export async function persistNotificationToSupabase(item: NotificationItem): Promise<boolean> {
   const sb = getSupabaseClient();
   if (!sb || !isSupabaseConfigured) return false;
   try {
-    const recipientId = item.recipientId && item.recipientId.length === 36 ? item.recipientId : null;
+    const isUuid = (val?: string) =>
+      typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+    const recipientId = item.recipientId && isUuid(item.recipientId) ? item.recipientId : null;
     const { error } = await sb.from('notifications').insert({
+      id: item.id && isUuid(item.id) ? item.id : undefined,
       user_id: recipientId,
       user_identifier: item.recipientName || item.recipientId || null,
       type: item.type,
@@ -210,7 +294,11 @@ export async function persistNotificationToSupabase(item: NotificationItem): Pro
       description: item.desc,
       read: item.read ?? false,
       link_screen: item.linkScreen || null,
-      metadata: item.meta || {},
+      metadata: {
+        ...(item.meta || {}),
+        sender_name: item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName,
+        sender_avatar: item.senderAvatar || item.meta?.senderAvatar,
+      },
     });
     if (error) {
       console.warn('[Notifications] Supabase insert warning (falling back to local):', error.message);
@@ -231,6 +319,8 @@ export function addNotification(
     read?: boolean;
     recipientId?: string;
     recipientName?: string;
+    senderName?: string;
+    senderAvatar?: string;
   }
 ): NotificationItem {
   const current = getNotifications();
@@ -267,6 +357,8 @@ export function addNotification(
     linkScreen: input.linkScreen,
     recipientId: input.recipientId,
     recipientName: input.recipientName,
+    senderName: input.senderName,
+    senderAvatar: input.senderAvatar,
     meta: input.meta,
   };
 
@@ -289,46 +381,109 @@ export function addNotification(
   return newNotif;
 }
 
-export function markAsRead(id: string): void {
+export function markAsRead(id: string, userFilter?: { id?: string; name?: string }): void {
   const current = getNotifications();
   const updated = current.map((n) => (n.id === id ? { ...n, read: true } : n));
   persistNotifications(updated);
+
+  const sb = getSupabaseClient();
+  if (sb && isSupabaseConfigured) {
+    sb.from('notifications').update({ read: true }).eq('id', id).then();
+  }
 }
 
-export function markAllAsRead(): void {
+export function markAllAsRead(userFilter?: { id?: string; name?: string }): void {
   const current = getNotifications();
-  const updated = current.map((n) => ({ ...n, read: true }));
+  const currentId = userFilter?.id;
+  const currentName = userFilter?.name?.trim().toLowerCase();
+
+  const updated = current.map((n) => {
+    if (!userFilter || (!currentId && !currentName)) {
+      return { ...n, read: true };
+    }
+    const isForUser = Boolean(
+      (currentId && n.recipientId === currentId) ||
+      (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName) ||
+      (!n.recipientId && !n.recipientName && n.type === 'system')
+    );
+    return isForUser ? { ...n, read: true } : n;
+  });
   persistNotifications(updated);
+
+  const sb = getSupabaseClient();
+  if (sb && isSupabaseConfigured && (currentId || currentName)) {
+    if (currentId && currentName) {
+      sb.from('notifications').update({ read: true }).or(`user_id.eq.${currentId},user_identifier.eq.${currentName}`).then();
+    } else if (currentId) {
+      sb.from('notifications').update({ read: true }).eq('user_id', currentId).then();
+    } else if (currentName) {
+      sb.from('notifications').update({ read: true }).eq('user_identifier', currentName).then();
+    }
+  }
 }
 
 export function dismissNotification(id: string): void {
   const current = getNotifications();
   const updated = current.filter((n) => n.id !== id);
   persistNotifications(updated);
+
+  const sb = getSupabaseClient();
+  if (sb && isSupabaseConfigured) {
+    sb.from('notifications').delete().eq('id', id).then();
+  }
 }
 
-export function clearAllNotifications(): void {
-  persistNotifications([]);
+export function clearAllNotifications(userFilter?: { id?: string; name?: string }): void {
+  const currentId = userFilter?.id;
+  const currentName = userFilter?.name?.trim().toLowerCase();
+
+  if (!userFilter || (!currentId && !currentName)) {
+    persistNotifications([]);
+  } else {
+    const current = getNotifications();
+    const remaining = current.filter((n) => {
+      const isForUser = Boolean(
+        (currentId && n.recipientId === currentId) ||
+        (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName)
+      );
+      return !isForUser;
+    });
+    persistNotifications(remaining);
+  }
+
+  const sb = getSupabaseClient();
+  if (sb && isSupabaseConfigured) {
+    if (currentId && currentName) {
+      sb.from('notifications').delete().or(`user_id.eq.${currentId},user_identifier.eq.${currentName}`).then();
+    } else if (currentId) {
+      sb.from('notifications').delete().eq('user_id', currentId).then();
+    } else if (currentName) {
+      sb.from('notifications').delete().eq('user_identifier', currentName).then();
+    }
+  }
 }
 
 export function getUnreadCount(userFilter?: { id?: string; name?: string }): number {
   const all = getNotifications();
   if (!userFilter || (!userFilter.id && !userFilter.name)) {
-    return all.filter((n) => !n.read).length;
+    // Unauthenticated or guest: only system announcements without recipient
+    return all.filter((n) => !n.read && n.type === 'system' && !n.recipientId && !n.recipientName).length;
   }
   const currentName = userFilter.name?.trim().toLowerCase();
   const currentId = userFilter.id;
   return all.filter((n) => {
     if (n.read) return false;
-    if (!n.recipientName && !n.recipientId) return true;
-    if (currentId && n.recipientId === currentId) return true;
+    // Strict recipient match: personal notifications MUST match user
+    if (currentId && n.recipientId && n.recipientId === currentId) return true;
     if (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName) return true;
+    if (!n.recipientName && !n.recipientId && n.type === 'system') return true;
     return false;
   }).length;
 }
 
 /**
- * React Hook for real-time notification subscriptions with optional user recipient filtering
+ * React Hook for real-time notification subscriptions with authentic recipient filtering,
+ * automatic Supabase persistence, and live WebSocket updates.
  */
 export function useNotifications(userFilter?: { id?: string; name?: string }) {
   const [allNotifications, setAllNotifications] = useState<NotificationItem[]>(() => getNotifications());
@@ -338,6 +493,7 @@ export function useNotifications(userFilter?: { id?: string; name?: string }) {
     setAllNotifications(getNotifications());
   }, []);
 
+  // 1. Initial listener and relative time ticker
   useEffect(() => {
     listeners.add(refresh);
     refresh();
@@ -358,17 +514,125 @@ export function useNotifications(userFilter?: { id?: string; name?: string }) {
     };
   }, [refresh]);
 
+  // 2. Fetch authenticated user notifications from Supabase on mount / login
+  useEffect(() => {
+    if (!userFilter?.id && !userFilter?.name) return;
+
+    let isMounted = true;
+    fetchUserNotificationsFromSupabase(userFilter).then((remoteItems) => {
+      if (!isMounted || remoteItems.length === 0) return;
+
+      const current = getNotifications();
+      const existingIds = new Set(current.map((n) => n.id));
+      const newItemsFromRemote = remoteItems.filter((rn) => !existingIds.has(rn.id));
+
+      if (newItemsFromRemote.length > 0) {
+        const merged = [...newItemsFromRemote, ...current].sort((a, b) => b.timestamp - a.timestamp);
+        persistNotifications(merged);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userFilter?.id, userFilter?.name]);
+
+  // 3. Real-time updates via Supabase WebSocket for this user
+  useEffect(() => {
+    const sb = getSupabaseClient();
+    if (!sb || !isSupabaseConfigured || (!userFilter?.id && !userFilter?.name)) return;
+
+    const uId = userFilter.id;
+    const uName = userFilter.name?.trim().toLowerCase();
+    const channelName = `sportsync-notifs-${uId || uName || 'anon'}`;
+
+    const channel = sb
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row) return;
+
+          const isForUser = Boolean(
+            (uId && row.user_id && row.user_id === uId) ||
+            (uName && row.user_identifier && row.user_identifier.trim().toLowerCase() === uName) ||
+            (row.type === 'system' && !row.user_id && !row.user_identifier)
+          );
+
+          if (isForUser) {
+            addNotification({
+              id: row.id,
+              type: (row.type as NotificationType) || 'match',
+              title: row.title,
+              desc: row.description,
+              read: Boolean(row.read),
+              linkScreen: row.link_screen,
+              recipientId: row.user_id,
+              recipientName: row.user_identifier,
+              senderName:
+                row.metadata?.sender_name ||
+                row.metadata?.senderName ||
+                row.metadata?.host_name ||
+                row.metadata?.hostName ||
+                row.metadata?.joining_player_name ||
+                row.metadata?.joiningPlayerName ||
+                row.metadata?.leaving_player_name ||
+                row.metadata?.leavingPlayerName,
+              senderAvatar: row.metadata?.sender_avatar || row.metadata?.senderAvatar,
+              meta: row.metadata,
+              timestamp: new Date(row.created_at).getTime(),
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications' },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row || !row.id) return;
+          if (row.read) {
+            const current = getNotifications();
+            const updated = current.map((n) => (n.id === row.id ? { ...n, read: true } : n));
+            persistNotifications(updated);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'notifications' },
+        (payload: any) => {
+          const old = payload.old;
+          if (old?.id) {
+            dismissNotification(old.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        sb.removeChannel(channel);
+      } catch {}
+    };
+  }, [userFilter?.id, userFilter?.name]);
+
+  // 4. Strict recipient filtering to guarantee newly registered users never see false notifications
   const notifications = useMemo(() => {
     if (!userFilter || (!userFilter.id && !userFilter.name)) {
-      return allNotifications;
+      return allNotifications.filter((n) => n.type === 'system' && !n.recipientId && !n.recipientName);
     }
     const currentName = userFilter.name?.trim().toLowerCase();
     const currentId = userFilter.id;
     return allNotifications.filter((n: NotificationItem) => {
-      // Broadcast notifications (without recipient) are viewable by all
-      if (!n.recipientName && !n.recipientId) return true;
-      if (currentId && n.recipientId === currentId) return true;
+      // Direct recipient match by ID
+      if (currentId && n.recipientId && n.recipientId === currentId) return true;
+      // Direct recipient match by Name
       if (currentName && n.recipientName && n.recipientName.trim().toLowerCase() === currentName) return true;
+      // Only generic system announcements without recipients can be viewed by all
+      if (!n.recipientName && !n.recipientId && n.type === 'system') return true;
       return false;
     });
   }, [allNotifications, userFilter?.id, userFilter?.name]);
@@ -380,65 +644,10 @@ export function useNotifications(userFilter?: { id?: string; name?: string }) {
     allNotifications,
     unreadCount,
     addNotification,
-    markAsRead,
-    markAllAsRead,
+    markAsRead: (id: string) => markAsRead(id, userFilter),
+    markAllAsRead: () => markAllAsRead(userFilter),
     dismissNotification,
-    clearAllNotifications,
+    clearAllNotifications: () => clearAllNotifications(userFilter),
     isLive: true,
   };
 }
-
-// Connect Supabase Realtime when Supabase is active
-if (typeof window !== 'undefined') {
-  try {
-    const sb = getSupabaseClient();
-    if (sb && isSupabaseConfigured) {
-      // 1. Listen for new bookings
-      sb.channel('sportsync-live-notifications-bookings')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'bookings' },
-          (payload: any) => {
-            if (payload.eventType === 'INSERT') {
-              const b = payload.new;
-              addNotification({
-                type: 'booking',
-                title: 'New Booking Confirmed',
-                desc: `Reservation ${b.booking_reference || ''} is now active.`,
-                linkScreen: 'my-bookings',
-                recipientId: b.user_id,
-              });
-            }
-          }
-        )
-        .subscribe();
-
-      // 2. Listen for new notifications
-      sb.channel('sportsync-live-notifications-table')
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'notifications' },
-          (payload: any) => {
-            if (payload.new) {
-              const n = payload.new;
-              addNotification({
-                id: n.id,
-                type: (n.type as NotificationType) || 'match',
-                title: n.title,
-                desc: n.description,
-                linkScreen: n.link_screen,
-                recipientId: n.user_id,
-                recipientName: n.user_identifier,
-                meta: n.metadata,
-              });
-            }
-          }
-        )
-        .subscribe();
-    }
-  } catch (err) {
-    console.warn('[Notifications] Realtime listener initialization skipped:', err);
-  }
-}
-
-
