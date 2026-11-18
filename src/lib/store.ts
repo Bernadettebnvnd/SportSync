@@ -33,7 +33,7 @@ import {
   updateOpenPlaySession as updateDbOpenPlaySession,
   deleteOpenPlaySession as deleteDbOpenPlaySession,
 } from './services/sessions';
-import { getCurrentUser, updatePlayerProfile, resetOnboardingForTesting } from './services/auth';
+import { getCurrentUser, updatePlayerProfile, updateFacultyProfile, resetOnboardingForTesting } from './services/auth';
 import { getSportDisplayName } from './utils';
 
 export const GUEST_USER: User = {
@@ -181,11 +181,33 @@ async function initializeStore() {
     const user = isExplicitlyLoggedOut ? null : await getCurrentUser();
     if (user) {
       const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-      const isUserOnboarded = !hasPendingOnboarding && Boolean(
-        user.onboarding_completed ?? user.has_completed_onboarding ?? false
-      );
+      const isOwner = user.role === 'venue_owner' || user.role === 'organizer';
+
+      let isUserOnboarded = false;
+      if (!hasPendingOnboarding && user.onboarding_completed !== false && user.has_completed_onboarding !== false) {
+        const isExplicitlyComplete = Boolean(
+          user.onboarding_completed === true ||
+          user.has_completed_onboarding === true
+        );
+        const hasRequiredPlayerFields = !isOwner && Boolean(
+          user.full_name &&
+          !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
+          Array.isArray(user.preferred_sports) &&
+          user.preferred_sports.length > 0 &&
+          (user.city || user.skill_level)
+        );
+        isUserOnboarded = isExplicitlyComplete || hasRequiredPlayerFields;
+      }
+
       user.onboarding_completed = isUserOnboarded;
       user.has_completed_onboarding = isUserOnboarded;
+
+      if (isUserOnboarded && typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      } else if (!isUserOnboarded && typeof window !== 'undefined') {
+        localStorage.removeItem('matchi_onboarding_completed');
+        localStorage.removeItem('sportsync_onboarding_completed');
+      }
 
       const storedCity = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location')) : null;
       const storedSportsRaw = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_sports') : null;
@@ -197,19 +219,19 @@ async function initializeStore() {
       const hasCustomStoredSports = Boolean(storedSports && storedSports.length > 0);
       const isDefaultUserSports = !user.preferred_sports || (user.preferred_sports.length === 2 && user.preferred_sports.includes('pickleball') && user.preferred_sports.includes('badminton'));
 
-      const finalSports: SportType[] = (hasCustomStoredSports && isDefaultUserSports)
+      const finalSports: SportType[] = (hasCustomStoredSports && isDefaultUserSports && isUserOnboarded)
         ? (storedSports! as SportType[])
-        : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (['football'] as SportType[]));
+        : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (isUserOnboarded ? (['football'] as SportType[]) : []));
 
       user.city = 'Naga City';
       user.preferred_sports = finalSports;
-      user.primary_sport = (finalSports[0] || user.primary_sport || 'football') as SportType;
+      user.primary_sport = (finalSports[0] || user.primary_sport || (isUserOnboarded ? 'football' : '')) as SportType;
 
       const storedUserSkill = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
       if (storedUserSkill && storedUserSkill !== 'all_levels') {
         user.skill_level = storedUserSkill as SkillLevel;
       } else if (user.skill_level === 'all_levels' || !user.skill_level) {
-        user.skill_level = 'beginner';
+        user.skill_level = isUserOnboarded ? 'beginner' : ('' as any);
       }
 
       const storedUserAvail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null;
@@ -437,15 +459,44 @@ export function useMatchiStore() {
   }, [setUserRole]);
 
   const setAuthenticatedUser = useCallback((user: Partial<User>) => {
-    const explicitlyCompleted = user.onboarding_completed ?? user.has_completed_onboarding;
-    const storedCompleted = typeof window !== 'undefined'
-      ? (localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
-         localStorage.getItem('matchi_onboarding_completed') === 'true')
-      : false;
+    const isOwner =
+      user.role === 'venue_owner' ||
+      user.role === 'organizer' ||
+      globalState.currentUser.role === 'venue_owner' ||
+      globalState.currentUser.role === 'organizer';
 
-    const isOnboarded = explicitlyCompleted !== undefined
-      ? Boolean(explicitlyCompleted)
-      : Boolean(globalState.currentUser.onboarding_completed || storedCompleted);
+    const hasPendingOnboarding =
+      typeof window !== 'undefined' &&
+      localStorage.getItem('sportsync_pending_onboarding') === 'true';
+
+    let isOnboarded = false;
+
+    if (!hasPendingOnboarding && user.onboarding_completed !== false && user.has_completed_onboarding !== false) {
+      const explicitlyCompleted = Boolean(user.onboarding_completed === true || user.has_completed_onboarding === true);
+      const storedCompleted = typeof window !== 'undefined'
+        ? (localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+           localStorage.getItem('matchi_onboarding_completed') === 'true')
+        : false;
+
+      const effectiveName = (user.full_name || globalState.currentUser.full_name || '').trim();
+      const hasRequiredPlayerFields = !isOwner && Boolean(
+        effectiveName &&
+        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(effectiveName) &&
+        Array.isArray(user.preferred_sports) &&
+        user.preferred_sports.length > 0 &&
+        (user.city || user.skill_level)
+      );
+
+      isOnboarded = explicitlyCompleted || storedCompleted || hasRequiredPlayerFields;
+    }
+
+    const resolvedSports = user.preferred_sports !== undefined
+      ? user.preferred_sports
+      : (isOnboarded ? globalState.currentUser.preferred_sports : []);
+
+    const resolvedPrimarySport = user.primary_sport !== undefined
+      ? user.primary_sport
+      : (isOnboarded ? globalState.currentUser.primary_sport : ((Array.isArray(resolvedSports) && resolvedSports[0]) || ''));
 
     globalState = {
       ...globalState,
@@ -458,20 +509,21 @@ export function useMatchiStore() {
         full_name: user.full_name || globalState.currentUser.full_name,
         nickname: user.nickname || user.full_name?.split(' ')[0] || globalState.currentUser.nickname,
         role: user.role || globalState.currentUser.role,
-        primary_sport: user.primary_sport || globalState.currentUser.primary_sport,
-        preferred_sports: user.preferred_sports || globalState.currentUser.preferred_sports,
+        primary_sport: resolvedPrimarySport as any,
+        preferred_sports: resolvedSports,
         preferred_format: user.preferred_format || globalState.currentUser.preferred_format,
         skill_level: user.skill_level || globalState.currentUser.skill_level,
         city: user.city || globalState.currentUser.city,
         onboarding_completed: isOnboarded,
         has_completed_onboarding: isOnboarded,
-        active_mode: user.role === 'venue_owner' || user.role === 'organizer' ? 'manage' : 'play',
+        active_mode: (user.role === 'venue_owner' || user.role === 'organizer' || globalState.currentUser.role === 'venue_owner' || globalState.currentUser.role === 'organizer') ? 'manage' : 'play',
       },
     };
 
     if (typeof window !== 'undefined') {
       localStorage.removeItem('sportsync_logged_out');
       if (isOnboarded) {
+        localStorage.removeItem('sportsync_pending_onboarding');
         localStorage.setItem('matchi_onboarding_completed', 'true');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
       } else {
@@ -745,16 +797,45 @@ export function useMatchiStore() {
           }))
         );
 
+        // Always sync faculty profile to Supabase auth metadata and database
+        try {
+          await updateFacultyProfile({
+            fullName: data.ownerName,
+            phone: data.ownerPhone,
+            city: data.city || 'Naga City',
+          });
+        } catch (profileErr) {
+          console.warn('Faculty profile update in onboarding notice:', profileErr);
+        }
+
         if (result) {
           saveLocalStoredVenues(result.venue);
           if (typeof window !== 'undefined') {
             localStorage.removeItem('sportsync_pending_onboarding');
             localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
             localStorage.setItem('sportsync_user_role', 'venue_owner');
+            localStorage.setItem('sportsync_user_name', data.ownerName);
             localStorage.setItem('sportsync_facility_venue_id', result.venue.id);
             if (globalState.currentUser.id) {
               localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, result.venue.id);
             }
+            if (storedOwnerId) {
+              localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, result.venue.id);
+            }
+            localStorage.setItem(
+              'sportsync_user_profile',
+              JSON.stringify({
+                id: ownerId,
+                name: data.ownerName,
+                email: ownerEmail,
+                role: 'venue_owner',
+                city: data.city || 'Naga City',
+                phone: data.ownerPhone,
+                onboardingCompleted: true,
+                isGuest: false,
+              })
+            );
           }
           globalState.venues = [result.venue, ...globalState.venues.filter((v) => v.id !== result.venue.id)];
           globalState.courts = [...result.courts, ...globalState.courts.filter((c) => c.venue_id !== result.venue.id)];
@@ -772,6 +853,14 @@ export function useMatchiStore() {
         }
       } catch (err) {
         console.warn('Owner onboarding backend creation warning, using local state fallback:', err);
+        try {
+          await updateFacultyProfile({
+            fullName: data.ownerName,
+            phone: data.ownerPhone,
+            city: data.city || 'Naga City',
+          });
+        } catch {}
+
         const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
           ? `venue_${crypto.randomUUID()}`
           : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -821,7 +910,9 @@ export function useMatchiStore() {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
           localStorage.setItem('sportsync_user_role', 'venue_owner');
+          localStorage.setItem('sportsync_user_name', data.ownerName);
           localStorage.setItem('sportsync_facility_venue_id', fallbackVenueId);
           if (globalState.currentUser.id) {
             localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, fallbackVenueId);
@@ -829,6 +920,19 @@ export function useMatchiStore() {
           if (storedOwnerId) {
             localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, fallbackVenueId);
           }
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: fallbackOwnerId,
+              name: data.ownerName,
+              email: data.ownerEmail || globalState.currentUser.email,
+              role: 'venue_owner',
+              city: data.city || 'Naga City',
+              phone: data.ownerPhone,
+              onboardingCompleted: true,
+              isGuest: false,
+            })
+          );
         }
         globalState.venues = [fallbackVenue, ...globalState.venues.filter((v) => v.id !== fallbackVenueId)];
         globalState.courts = [...fallbackCourts, ...globalState.courts];

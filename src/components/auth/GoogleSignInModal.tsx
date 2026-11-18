@@ -125,6 +125,8 @@ export function GoogleSignInModal({
           localStorage.removeItem('matchi_onboarding_completed');
           localStorage.removeItem('sportsync_onboarding_completed');
           localStorage.removeItem('sportsync_user_profile');
+          localStorage.removeItem('sportsync_user_city');
+          localStorage.removeItem('sportsync_user_sports');
         } else {
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
@@ -139,7 +141,7 @@ export function GoogleSignInModal({
               city: data.user.city || 'Naga City',
               primarySport: data.user.primary_sport || 'football',
               preferredSports: data.user.preferred_sports || ['Football'],
-              skillLevel: data.user.skill_level || 'Intermediate',
+              skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
               onboardingCompleted: true,
               isGuest: false,
             })
@@ -153,7 +155,12 @@ export function GoogleSignInModal({
         onSuccess(!isComplete);
       } else if (typeof window !== 'undefined') {
         // Strict routing: Missing/incomplete profiles MUST go to Profile Setup screen
-        window.location.href = !isComplete ? '/onboarding' : '/';
+        const isOwner = data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
+        if (!isComplete) {
+          window.location.href = isOwner ? '/onboarding?role=owner' : '/onboarding';
+        } else {
+          window.location.href = isOwner ? '/organizer' : '/';
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Google sign in failed.';

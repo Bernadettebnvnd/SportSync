@@ -268,10 +268,10 @@ export async function serverRegister(data: {
           full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
           role: assignedRole,
           onboarding_completed: false,
-          primary_sport: 'pickleball',
-          preferred_sports: ['pickleball', 'badminton'],
-          preferred_format: 'doubles',
-          skill_level: 'intermediate',
+          primary_sport: null,
+          preferred_sports: [],
+          preferred_format: null,
+          skill_level: null,
           city: registrationCity || null,
         });
       }
@@ -286,17 +286,138 @@ export async function serverRegister(data: {
     full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
     nickname: normalizedEmail.split('@')[0],
     role: assignedRole,
-    primary_sport: 'pickleball',
-    preferred_sports: ['pickleball', 'badminton'],
-    preferred_format: 'doubles',
-    skill_level: 'intermediate',
-    city: registrationCity,
+    primary_sport: undefined,
+    preferred_sports: [],
+    preferred_format: undefined,
+    skill_level: undefined,
+    city: registrationCity || undefined,
     onboarding_completed: false,
     created_at: supaCreatedAt,
   };
 
   const token = createSessionToken(sanitized);
   return { user: sanitized, token };
+}
+
+/**
+ * Evaluates whether a user profile already exists and has completed setup.
+ * Existing users with complete required fields (or explicit completion flag)
+ * must proceed directly to their dashboard and never be redirected to setup.
+ */
+export async function isProfileCompleteInDb(
+  dbClient: any,
+  profile: any,
+  authMetadata: any,
+  role?: string
+): Promise<boolean> {
+  // 1. Explicit onboarding_completed flag on database profile or auth metadata
+  if (
+    profile?.onboarding_completed === true ||
+    profile?.onboarding_completed === 'true' ||
+    profile?.has_completed_onboarding === true ||
+    authMetadata?.onboarding_completed === true ||
+    authMetadata?.onboarding_completed === 'true' ||
+    authMetadata?.has_completed_onboarding === true
+  ) {
+    return true;
+  }
+
+  const effectiveRole = role || profile?.role || authMetadata?.role;
+
+  // 2. If venue owner / faculty, check if they already have registered venues
+  if (effectiveRole === 'venue_owner' || effectiveRole === 'organizer' || effectiveRole === 'facility_owner') {
+    if (dbClient) {
+      try {
+        const candidateUuids = [profile?.auth_id, profile?.id, authMetadata?.sub, authMetadata?.id]
+          .filter((id): id is string => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)));
+
+        if (candidateUuids.length > 0) {
+          const query = candidateUuids.map((id) => `owner_id.eq.${id}`).join(',');
+          const { count } = await dbClient
+            .from('venues')
+            .select('*', { count: 'exact', head: true })
+            .or(query);
+          if (count && count > 0) {
+            if (profile?.id && profile?.onboarding_completed !== true) {
+              dbClient
+                .from('users')
+                .update({ onboarding_completed: true, role: 'venue_owner', updated_at: new Date().toISOString() })
+                .eq('id', profile.id)
+                .then(() => {}, () => {});
+            }
+            return true;
+          }
+
+          const staffQuery = candidateUuids.map((id) => `user_id.eq.${id}`).join(',');
+          const { count: staffCount } = await dbClient
+            .from('facility_staff')
+            .select('*', { count: 'exact', head: true })
+            .or(staffQuery);
+          if (staffCount && staffCount > 0) {
+            if (profile?.id && profile?.onboarding_completed !== true) {
+              dbClient
+                .from('users')
+                .update({ onboarding_completed: true, role: 'venue_owner', updated_at: new Date().toISOString() })
+                .eq('id', profile.id)
+                .then(() => {}, () => {});
+            }
+            return true;
+          }
+        }
+
+        const candidateEmail = profile?.email || authMetadata?.email;
+        if (candidateEmail) {
+          const { count: emailCount } = await dbClient
+            .from('venues')
+            .select('*', { count: 'exact', head: true })
+            .ilike('description', `%${candidateEmail}%`);
+          if (emailCount && emailCount > 0) {
+            if (profile?.id && profile?.onboarding_completed !== true) {
+              dbClient
+                .from('users')
+                .update({ onboarding_completed: true, role: 'venue_owner', updated_at: new Date().toISOString() })
+                .eq('id', profile.id)
+                .then(() => {}, () => {});
+            }
+            return true;
+          }
+        }
+      } catch (venueErr) {
+        console.warn('[ServerAuth] Venue owner completion verification notice:', venueErr);
+      }
+    }
+  }
+
+  // 3. For players (and general profiles), check if required setup fields are complete
+  const fullName = (profile?.full_name || authMetadata?.full_name || '').trim();
+  const isGenericName =
+    !fullName ||
+    fullName.toLowerCase() === 'player' ||
+    fullName.toLowerCase() === 'guest player' ||
+    fullName.toLowerCase() === 'guest' ||
+    fullName.toLowerCase() === 'sportsync player' ||
+    fullName.toLowerCase() === 'google player';
+
+  const sports = profile?.preferred_sports || authMetadata?.preferred_sports;
+  const hasSports = Array.isArray(sports) && sports.length > 0;
+  const hasPrimarySport = Boolean(profile?.primary_sport || authMetadata?.primary_sport);
+  const hasCity = Boolean(profile?.city || authMetadata?.city);
+  const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
+
+  // If the user has a real name and sports selected, and has city or skill, their profile is complete
+  if (!isGenericName && (hasSports || hasPrimarySport) && (hasCity || hasSkill)) {
+    // If the database row has onboarding_completed as false, automatically heal it to true in the background
+    if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
+      dbClient
+        .from('users')
+        .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+        .eq('id', profile.id)
+        .then(() => {}, () => {});
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export async function serverLogin(data: {
@@ -425,7 +546,7 @@ export async function serverLogin(data: {
 
   const userMeta = supaData.user.user_metadata || {};
 
-  // Retrieve database profile from public.users table (match by auth_id or email)
+  // Retrieve database profile from public.users table (match by auth_id, id, or email)
   const dbClient = admin || supabase;
   let dbProfile: any = null;
   if (dbClient) {
@@ -433,11 +554,21 @@ export async function serverLogin(data: {
       const { data: profile } = await dbClient
         .from('users')
         .select('*')
-        .or(`auth_id.eq.${supaData.user.id},email.eq.${normalizedEmail}`)
+        .or(`auth_id.eq.${supaData.user.id},id.eq.${supaData.user.id},email.eq.${normalizedEmail}`)
         .maybeSingle();
       dbProfile = profile;
 
-      // If found by email but auth_id is not yet linked, link it now WITHOUT altering onboarding status
+      // Case-insensitive email fallback if not matched by exact query
+      if (!dbProfile) {
+        const { data: fallbackProfile } = await dbClient
+          .from('users')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .maybeSingle();
+        dbProfile = fallbackProfile;
+      }
+
+      // If found by email/id but auth_id is not yet linked, link it now WITHOUT altering onboarding status
       if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
         await dbClient
           .from('users')
@@ -448,7 +579,7 @@ export async function serverLogin(data: {
           .eq('id', dbProfile.id);
         dbProfile.auth_id = supaData.user.id;
       } else if (!dbProfile) {
-        // Auto-provision public.users row if missing, respecting user metadata or defaulting to false
+        // Auto-provision public.users row ONLY if no profile exists anywhere in the database
         const initialOnboardingCompleted = Boolean(userMeta?.onboarding_completed === true);
         const newProfile = {
           auth_id: supaData.user.id,
@@ -470,12 +601,13 @@ export async function serverLogin(data: {
     }
   }
 
-  // Bug fix: Respect actual persisted onboarding completion from public.users or user_metadata.
-  // Incomplete profiles must NEVER be mistakenly marked as completed during sign-in.
-  const resolvedOnboardingCompleted = Boolean(
-    dbProfile?.onboarding_completed !== undefined && dbProfile?.onboarding_completed !== null
-      ? (dbProfile.onboarding_completed === true || dbProfile.onboarding_completed === 'true')
-      : (userMeta?.onboarding_completed === true || userMeta?.onboarding_completed === 'true')
+  // Check whether the profile already exists and whether required setup fields are complete.
+  // Existing users with completed profiles proceed directly to their dashboard.
+  const resolvedOnboardingCompleted = await isProfileCompleteInDb(
+    dbClient,
+    dbProfile,
+    userMeta,
+    dbProfile?.role || userMeta?.role
   );
 
   const sanitized: SanitizedUser = {
@@ -517,11 +649,20 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
   try {
     const db = createAdminClient() || createServerClient();
     if (db) {
-      const { data: supaUser } = await db
+      let { data: supaUser } = await db
         .from('users')
         .select('*')
-        .or(`auth_id.eq.${userId},id.eq.${userId}`)
+        .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
         .maybeSingle();
+
+      if (!supaUser && userId.includes('@')) {
+        const { data: byEmail } = await db
+          .from('users')
+          .select('*')
+          .ilike('email', userId.trim().toLowerCase())
+          .maybeSingle();
+        supaUser = byEmail;
+      }
 
       const admin = createAdminClient();
       let authMetadata: any = null;
@@ -540,6 +681,13 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         const city = authMetadata?.city || supaUser.city || 'Naga City';
         const skillLevel = authMetadata?.skill_level || supaUser.skill_level || 'intermediate';
 
+        const isCompleted = await isProfileCompleteInDb(
+          db,
+          supaUser,
+          authMetadata,
+          supaUser.role
+        );
+
         return {
           id: supaUser.auth_id || supaUser.id,
           email: supaUser.email,
@@ -552,12 +700,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || 'doubles',
           skill_level: skillLevel,
           city: city,
-          onboarding_completed: Boolean(
-            supaUser.onboarding_completed !== undefined && supaUser.onboarding_completed !== null
-              ? (supaUser.onboarding_completed === true || supaUser.onboarding_completed === 'true')
-              : (authMetadata?.onboarding_completed === true || authMetadata?.onboarding_completed === 'true')
-          ),
-
+          onboarding_completed: isCompleted,
           created_at: supaUser.created_at,
         };
       }
@@ -607,6 +750,8 @@ export async function serverUpdateUserProfile(
     nickname?: string;
     avatarUrl?: string;
     avatar_url?: string;
+    role?: string;
+    phone?: string;
     primarySport?: string;
     primary_sport?: string;
     preferredSports?: string[];
@@ -638,6 +783,7 @@ export async function serverUpdateUserProfile(
           full_name: resolvedFullName || record.user.full_name,
           nickname: resolvedNickname || record.user.nickname,
           avatar_url: resolvedAvatarUrl || record.user.avatar_url,
+          role: (data.role as UserRole) || record.user.role,
           primary_sport: resolvedPrimarySport || record.user.primary_sport,
           preferred_sports: resolvedPreferredSports || record.user.preferred_sports,
           preferred_format: resolvedPreferredFormat || record.user.preferred_format,
@@ -656,7 +802,7 @@ export async function serverUpdateUserProfile(
       full_name: resolvedFullName || 'Player',
       nickname: resolvedNickname || 'Player',
       avatar_url: resolvedAvatarUrl,
-      role: 'player',
+      role: (data.role as UserRole) || 'player',
       primary_sport: resolvedPrimarySport || 'pickleball',
       preferred_sports: resolvedPreferredSports || ['pickleball', 'badminton'],
       preferred_format: resolvedPreferredFormat || 'doubles',
@@ -679,6 +825,8 @@ export async function serverUpdateUserProfile(
         updated_at: new Date().toISOString(),
       };
       if (rawOnboardingCompleted !== undefined) updatePayload.onboarding_completed = rawOnboardingCompleted;
+      if (data.role) updatePayload.role = data.role;
+      if (data.phone) updatePayload.phone = data.phone;
       if (resolvedFullName) updatePayload.full_name = resolvedFullName;
       if (resolvedNickname) updatePayload.nickname = resolvedNickname;
       if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
@@ -696,12 +844,17 @@ export async function serverUpdateUserProfile(
           if (resolvedFullName !== undefined) metaUpdate.full_name = resolvedFullName;
           if (resolvedNickname !== undefined) metaUpdate.nickname = resolvedNickname;
           if (resolvedAvatarUrl !== undefined) metaUpdate.avatar_url = resolvedAvatarUrl;
+          if (data.role !== undefined) metaUpdate.role = data.role;
+          if (data.phone !== undefined) metaUpdate.phone = data.phone;
           if (resolvedPrimarySport !== undefined) metaUpdate.primary_sport = resolvedPrimarySport;
           if (resolvedPreferredSports !== undefined) metaUpdate.preferred_sports = resolvedPreferredSports;
           if (resolvedPreferredFormat !== undefined) metaUpdate.preferred_format = resolvedPreferredFormat;
           if (resolvedCity !== undefined) metaUpdate.city = resolvedCity;
           if (resolvedSkillLevel !== undefined) metaUpdate.skill_level = resolvedSkillLevel;
-          if (rawOnboardingCompleted !== undefined) metaUpdate.onboarding_completed = rawOnboardingCompleted;
+          if (rawOnboardingCompleted !== undefined) {
+            metaUpdate.onboarding_completed = rawOnboardingCompleted;
+            metaUpdate.has_completed_onboarding = rawOnboardingCompleted;
+          }
 
           if (Object.keys(metaUpdate).length > 0) {
             await admin.auth.admin.updateUserById(userId, {
@@ -812,14 +965,23 @@ export async function serverSyncOAuthUser(data: {
 
     if (dbClient) {
       try {
-        const { data: profile } = await dbClient
+        let { data: profile } = await dbClient
           .from('users')
           .select('*')
-          .or(`auth_id.eq.${data.authId},email.eq.${normalizedEmail}`)
+          .or(`auth_id.eq.${data.authId},id.eq.${data.authId},email.eq.${normalizedEmail}`)
           .maybeSingle();
 
         let dbProfile = profile;
+        if (!dbProfile) {
+          const { data: fallbackProfile } = await dbClient
+            .from('users')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .maybeSingle();
+          dbProfile = fallbackProfile;
+        }
 
+        let isNewOAuthAccount = false;
         if (dbProfile) {
           const updates: Record<string, any> = { updated_at: new Date().toISOString() };
           let hasUpdates = false;
@@ -851,6 +1013,7 @@ export async function serverSyncOAuthUser(data: {
             if (updated) dbProfile = updated;
           }
         } else {
+          isNewOAuthAccount = true;
           // Missing profile: create new row with onboarding_completed explicitly false
           const newRecord = {
             auth_id: data.authId,
@@ -859,11 +1022,11 @@ export async function serverSyncOAuthUser(data: {
             nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
             avatar_url: data.avatarUrl || null,
             role: 'player' as UserRole,
-            primary_sport: 'pickleball',
-            preferred_sports: ['pickleball', 'badminton'],
-            preferred_format: 'doubles',
-            skill_level: 'intermediate',
-            city: 'Naga City',
+            primary_sport: null,
+            preferred_sports: [],
+            preferred_format: null,
+            skill_level: null,
+            city: null,
             onboarding_completed: false, // Incomplete until Profile Setup is finished
           };
 
@@ -879,10 +1042,16 @@ export async function serverSyncOAuthUser(data: {
           dbProfile = inserted || newRecord;
         }
 
-        // STRICT CHECK: An account is ONLY complete if onboarding_completed in the database is true.
-        const isComplete = Boolean(
-          dbProfile?.onboarding_completed === true || dbProfile?.onboarding_completed === 'true'
-        );
+        // Brand new Google Sign-In accounts must strictly complete Player Profile Setup first.
+        // Existing accounts with saved profiles proceed to Player Dashboard.
+        const isComplete = isNewOAuthAccount
+          ? false
+          : await isProfileCompleteInDb(
+              dbClient,
+              dbProfile,
+              null,
+              dbProfile?.role
+            );
 
         const sanitized: SanitizedUser = {
           id: dbProfile?.auth_id || dbProfile?.id || data.authId,

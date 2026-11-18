@@ -388,12 +388,12 @@ export function useSportSyncBridge() {
   // 1. Dynamic user profile with XP and Gamification
   const [userProfile, setUserProfile] = useState(() => {
     const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-    const isStoreCompleted = !hasPendingOnboarding && Boolean(
+    const isStoreCompleted = Boolean(
       store.currentUser.onboarding_completed || store.currentUser.has_completed_onboarding
     );
     let localCompleted = false;
     if (typeof window !== 'undefined') {
-      localCompleted = !hasPendingOnboarding && (
+      localCompleted = (
         localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
         localStorage.getItem('matchi_onboarding_completed') === 'true'
       );
@@ -434,7 +434,7 @@ export function useSportSyncBridge() {
             primarySport: finalSports[0]?.toLowerCase() || parsed.primarySport || 'football',
             skillLevel: finalSkill,
             availability: finalAvailability,
-            onboardingCompleted: Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
+            onboardingCompleted: !hasPendingOnboarding && Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
           };
         } catch {
           // ignore parsing error
@@ -442,7 +442,15 @@ export function useSportSyncBridge() {
       }
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
-    const completed = Boolean(isStoreCompleted || localCompleted);
+    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
+    const hasExplicitCompletion = !hasPendingOnboarding && Boolean(isStoreCompleted || localCompleted);
+    const hasRequiredPlayerFields = !hasPendingOnboarding && !isOwner && store.currentUser.onboarding_completed !== false && Boolean(
+      store.currentUser.full_name &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(store.currentUser.full_name.trim()) &&
+      Array.isArray(store.currentUser.preferred_sports) &&
+      store.currentUser.preferred_sports.length > 0
+    );
+    const completed = Boolean(hasExplicitCompletion || hasRequiredPlayerFields);
     return {
       id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
       name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
@@ -506,13 +514,11 @@ export function useSportSyncBridge() {
     const isGuest = !store.currentUser.id || store.currentUser.id === '' || store.currentUser.full_name === 'Guest Player';
     const isAuthenticated = !isGuest && Boolean(store.currentUser.id && store.currentUser.email);
     const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-    const isCompleted = !hasPendingOnboarding && Boolean(
+    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
+    const isCompleted = !hasPendingOnboarding && store.currentUser.onboarding_completed !== false && Boolean(
       store.currentUser.onboarding_completed ||
       store.currentUser.has_completed_onboarding ||
-      (!store.currentUser.id && typeof window !== 'undefined' && (
-        localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-        localStorage.getItem('sportsync_onboarding_completed') === 'true'
-      ))
+      (!isOwner && Array.isArray(store.currentUser.preferred_sports) && store.currentUser.preferred_sports.length > 0 && store.currentUser.full_name && !['Guest', 'Guest Player', 'Player'].includes(store.currentUser.full_name.trim()))
     );
 
     if (isAuthenticated) {
@@ -526,10 +532,10 @@ export function useSportSyncBridge() {
           : (store.currentUser.email ? `@${store.currentUser.email.split('@')[0]}` : prev.username),
         role: store.currentUser.role || prev.role,
         city: 'Naga City',
-        primarySport: store.currentUser.primary_sport || prev.primarySport || 'pickleball',
+        primarySport: store.currentUser.primary_sport || prev.primarySport || (isCompleted ? 'pickleball' : ''),
         preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
           ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-          : prev.preferredSports,
+          : (isCompleted ? prev.preferredSports : []),
         skillLevel: (store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels')
           ? formatSkillTier(store.currentUser.skill_level)
           : (prev.skillLevel && prev.skillLevel !== 'All_levels' ? prev.skillLevel : formatSkillTier(typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') || 'Beginner' : 'Beginner')),

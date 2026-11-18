@@ -145,6 +145,8 @@ export default function AuthCallbackPage() {
           localStorage.removeItem('matchi_onboarding_completed');
           localStorage.removeItem('sportsync_onboarding_completed');
           localStorage.removeItem('sportsync_user_profile');
+          localStorage.removeItem('sportsync_user_city');
+          localStorage.removeItem('sportsync_user_sports');
         } else {
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
@@ -168,11 +170,12 @@ export default function AuthCallbackPage() {
       }
 
       // STRICT ROUTING: If profile is missing or incomplete, MUST route to Profile Setup screen
+      const isOwner = syncResult.user.role === 'venue_owner' || syncResult.user.role === 'organizer';
       if (!isComplete) {
-        const target = syncResult.user.role === 'venue_owner' ? '/onboarding?role=owner' : '/onboarding';
+        const target = isOwner ? '/onboarding?role=owner' : '/onboarding';
         router.replace(target);
       } else {
-        const target = syncResult.user.role === 'venue_owner' ? '/organizer' : '/';
+        const target = isOwner ? '/organizer' : '/';
         router.replace(target);
       }
     };

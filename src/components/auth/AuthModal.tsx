@@ -129,17 +129,16 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             nickname: data.user.nickname || fullName.trim().split(' ')[0],
             avatar_url: data.user.avatar_url,
             role: assignedRole,
-            primary_sport: isFacility ? 'pickleball' : 'football',
-            preferred_sports: isFacility ? ['pickleball', 'badminton'] : ['football'],
+            primary_sport: '' as any,
+            preferred_sports: [],
             preferred_format: 'doubles',
-            skill_level: 'intermediate',
+            skill_level: '' as any,
             city: data.user.city || 'Naga City',
             onboarding_completed: false,
             has_completed_onboarding: false,
           });
 
           if (typeof window !== 'undefined') {
-            localStorage.removeItem('sportsync_pending_onboarding');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
             localStorage.setItem('sportsync_user_role', assignedRole);
@@ -147,6 +146,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             localStorage.setItem('sportsync_pending_onboarding', 'true');
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
+            localStorage.removeItem('sportsync_user_profile');
+            localStorage.removeItem('sportsync_user_city');
+            localStorage.removeItem('sportsync_user_sports');
           }
 
           setSuccessMsg(
@@ -159,12 +161,20 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
           }, 600);
         } else {
-          // Bug fix: Check actual database onboarding status.
+          // Check actual database onboarding status.
           // Incomplete profiles must NEVER be marked as onboarded during sign-in.
           const isOwnerRole = isFacility || data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
-          const actualOnboardingCompleted = Boolean(
+          const isExplicitlyCompleted = Boolean(
             data.user.onboarding_completed === true || data.user.has_completed_onboarding === true
           );
+          const hasRequiredPlayerFields = !isOwnerRole && Boolean(
+            data.user.full_name &&
+            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
+            Array.isArray(data.user.preferred_sports) &&
+            data.user.preferred_sports.length > 0 &&
+            (data.user.city || data.user.skill_level)
+          );
+          const actualOnboardingCompleted = isExplicitlyCompleted || hasRequiredPlayerFields;
 
           setAuthenticatedUser({
             id: data.user.id,
@@ -174,10 +184,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             nickname: data.user.nickname,
             avatar_url: data.user.avatar_url,
             role: isOwnerRole ? 'venue_owner' : (data.user.role || 'player'),
-            primary_sport: data.user.primary_sport || 'pickleball',
-            preferred_sports: data.user.preferred_sports || ['pickleball', 'badminton'],
+            primary_sport: data.user.primary_sport || (actualOnboardingCompleted ? 'football' : ('' as any)),
+            preferred_sports: data.user.preferred_sports || (actualOnboardingCompleted ? ['football'] : []),
             preferred_format: data.user.preferred_format || 'doubles',
-            skill_level: data.user.skill_level || 'intermediate',
+            skill_level: data.user.skill_level || (actualOnboardingCompleted ? 'intermediate' : ('' as any)),
             city: data.user.city || 'Naga City',
             onboarding_completed: actualOnboardingCompleted,
             has_completed_onboarding: actualOnboardingCompleted,
@@ -231,6 +241,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
               onClose();
               if (isOwnerRole) {
                 window.location.href = '/organizer';
+              } else if (typeof window !== 'undefined' && window.location.pathname.startsWith('/onboarding')) {
+                window.location.href = '/';
               }
             }, 600);
           }

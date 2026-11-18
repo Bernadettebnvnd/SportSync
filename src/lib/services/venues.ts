@@ -286,9 +286,17 @@ export async function createVenueWithCourts(
 
   try {
     const { data: userData } = await supabase.auth.getUser();
-    const rawOwnerId = userData?.user?.id || formattedVenue.owner_id;
+    const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_id') : null;
+    const storedOwnerEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
+    const rawOwnerId = userData?.user?.id || formattedVenue.owner_id || storedOwnerId;
     // UUID verification to avoid postgres foreign key syntax error
     const ownerId = isValidUuid(rawOwnerId) ? rawOwnerId : null;
+    const ownerEmail = userData?.user?.email || storedOwnerEmail || '';
+
+    // Embed owner email in description if not already present, ensuring ownership queries and email-based matching pass
+    const venueDescription = ownerEmail && !formattedVenue.description.includes(ownerEmail)
+      ? `${formattedVenue.description} [Owner: ${ownerEmail}]`
+      : formattedVenue.description;
 
     // Insert to Supabase venues table
     const { data: newVenue, error: venueError } = await supabase
@@ -297,7 +305,7 @@ export async function createVenueWithCourts(
         owner_id: ownerId,
         name: formattedVenue.name,
         slug: formattedVenue.slug,
-        description: formattedVenue.description,
+        description: venueDescription,
         address: formattedVenue.address,
         city: formattedVenue.city,
         latitude: formattedVenue.latitude,
@@ -329,6 +337,45 @@ export async function createVenueWithCourts(
       } catch (staffErr) {
         console.warn('Facility staff link error:', staffErr);
       }
+
+      // Mark the user's role as venue_owner and onboarding_completed = true in public.users
+      try {
+        await supabase
+          .from('users')
+          .update({
+            role: 'venue_owner',
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`auth_id.eq.${ownerId},id.eq.${ownerId}`);
+      } catch (userErr) {
+        console.warn('User onboarding status update error:', userErr);
+      }
+    }
+
+    if (ownerEmail) {
+      try {
+        await supabase
+          .from('users')
+          .update({
+            role: 'venue_owner',
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', ownerEmail);
+      } catch {}
+    }
+
+    if (userData?.user) {
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            role: 'venue_owner',
+            onboarding_completed: true,
+            has_completed_onboarding: true,
+          },
+        });
+      } catch {}
     }
 
     // Insert courts

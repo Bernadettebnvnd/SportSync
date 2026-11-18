@@ -18,11 +18,21 @@ export async function getCurrentUser(): Promise<User | null> {
       const { data: authData } = await supabase.auth.getUser();
       if (authData?.user) {
         const authUser = authData.user;
-        const { data: profile } = await supabase
+        const normalizedEmail = (authUser.email || '').trim().toLowerCase();
+        let { data: profile } = await supabase
           .from('users')
           .select('*')
-          .or(`auth_id.eq.${authUser.id},email.eq.${authUser.email}`)
+          .or(`auth_id.eq.${authUser.id},id.eq.${authUser.id},email.eq.${normalizedEmail}`)
           .maybeSingle();
+
+        if (!profile && normalizedEmail) {
+          const { data: fallbackProfile } = await supabase
+            .from('users')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .maybeSingle();
+          profile = fallbackProfile;
+        }
 
         const meta = authUser.user_metadata || {};
         const effectiveSports = (meta.preferred_sports && meta.preferred_sports.length > 0)
@@ -31,6 +41,34 @@ export async function getCurrentUser(): Promise<User | null> {
         const effectiveCity = meta.city || profile?.city || 'Naga City';
         const effectivePrimarySport = meta.primary_sport || profile?.primary_sport || (effectiveSports[0] || 'football');
         const effectiveSkill = meta.skill_level || profile?.skill_level || 'intermediate';
+
+        const isExplicitlyComplete = Boolean(
+          profile?.onboarding_completed === true ||
+          profile?.onboarding_completed === 'true' ||
+          profile?.has_completed_onboarding === true ||
+          meta.onboarding_completed === true ||
+          meta.onboarding_completed === 'true' ||
+          meta.has_completed_onboarding === true
+        );
+
+        const hasRequiredPlayerFields = Boolean(
+          profile &&
+          profile.full_name &&
+          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(profile.full_name.trim()) &&
+          Array.isArray(profile.preferred_sports) &&
+          profile.preferred_sports.length > 0 &&
+          Boolean(profile.city || profile.skill_level)
+        );
+
+        const isUserComplete = isExplicitlyComplete || hasRequiredPlayerFields;
+
+        if (isUserComplete && profile?.id && profile.onboarding_completed !== true) {
+          supabase
+            .from('users')
+            .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+            .eq('id', profile.id)
+            .then(() => {}, () => {});
+        }
 
         if (!profile) {
           return {
@@ -51,8 +89,8 @@ export async function getCurrentUser(): Promise<User | null> {
             win_streak: 0,
             highest_streak: 0,
             email_verified: Boolean(authUser.email_confirmed_at),
-            onboarding_completed: Boolean(meta.onboarding_completed === true),
-            has_completed_onboarding: Boolean(meta.onboarding_completed === true),
+            onboarding_completed: isUserComplete,
+            has_completed_onboarding: isUserComplete,
             created_at: authUser.created_at,
           };
         }
@@ -70,8 +108,8 @@ export async function getCurrentUser(): Promise<User | null> {
           city: effectiveCity,
 
           email_verified: Boolean(authUser.email_confirmed_at),
-          onboarding_completed: Boolean(profile.onboarding_completed ?? meta.onboarding_completed ?? false),
-          has_completed_onboarding: Boolean(profile.onboarding_completed ?? meta.onboarding_completed ?? false),
+          onboarding_completed: isUserComplete,
+          has_completed_onboarding: isUserComplete,
         };
       }
     } catch (err) {
@@ -208,7 +246,7 @@ export async function updatePlayerProfile(data: {
             onboarding_completed: true,
             updated_at: new Date().toISOString(),
           })
-          .or(`auth_id.eq.${authData.user.id},email.eq.${authData.user.email}`);
+          .or(`auth_id.eq.${authData.user.id},id.eq.${authData.user.id},email.eq.${authData.user.email}`);
 
         if (!error) {
           clientSuccess = true;
@@ -265,6 +303,86 @@ export async function updatePlayerProfile(data: {
       }
     } catch (err) {
       console.warn('Failed to call /api/auth/profile:', err);
+    }
+  }
+
+  return clientSuccess;
+}
+
+/**
+ * Update faculty onboarding preferences and completion status in Supabase.
+ */
+export async function updateFacultyProfile(data: {
+  fullName?: string;
+  phone?: string;
+  city?: string;
+}): Promise<boolean> {
+  let clientSuccess = false;
+  const supabase = getSupabaseClient();
+
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user) {
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              full_name: data.fullName,
+              phone: data.phone,
+              city: data.city || 'Naga City',
+              role: 'venue_owner',
+              onboarding_completed: true,
+              has_completed_onboarding: true,
+            },
+          });
+        } catch {}
+
+        const { error } = await supabase
+          .from('users')
+          .update({
+            full_name: data.fullName,
+            phone: data.phone,
+            city: data.city || 'Naga City',
+            role: 'venue_owner',
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`auth_id.eq.${authData.user.id},id.eq.${authData.user.id},email.eq.${authData.user.email}`);
+
+        if (!error) {
+          clientSuccess = true;
+        }
+      }
+    } catch (err) {
+      console.warn('Direct client faculty profile update notice:', err);
+    }
+  }
+
+  // Always sync with the server profile endpoint to ensure database & session persistence
+  if (typeof window !== 'undefined') {
+    try {
+      const storedId = localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id');
+      const res = await fetch('/api/auth/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: storedId,
+          fullName: data.fullName,
+          full_name: data.fullName,
+          phone: data.phone,
+          role: 'venue_owner',
+          city: data.city || 'Naga City',
+          onboardingCompleted: true,
+          onboarding_completed: true,
+        }),
+      });
+
+      if (res.ok) {
+        return true;
+      }
+    } catch (err) {
+      console.warn('Failed to call /api/auth/profile for faculty:', err);
     }
   }
 

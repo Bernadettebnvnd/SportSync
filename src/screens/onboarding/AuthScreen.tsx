@@ -132,11 +132,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         const isFacility = selectedRole === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
         const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
 
-        // Bug fix: Strictly resolve whether profile has actually completed onboarding.
-        // Incomplete profiles must NEVER be marked as onboarded during sign-in.
-        const actualOnboardingCompleted = Boolean(
+        // Check whether profile already exists and whether required setup fields are complete.
+        // Existing users with completed profiles must proceed directly to their Player Dashboard.
+        const isExplicitlyCompleted = Boolean(
           data.user.onboarding_completed === true || data.user.has_completed_onboarding === true
         );
+
+        const hasRequiredPlayerFields = !isFacility && Boolean(
+          data.user.full_name &&
+          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
+          Array.isArray(data.user.preferred_sports) &&
+          data.user.preferred_sports.length > 0 &&
+          Boolean(data.user.city || data.user.skill_level)
+        );
+
+        // For new signups, strictly require onboarding! For existing logins, proceed to dashboard if fields are complete.
+        const actualOnboardingCompleted = isSignUp
+          ? false
+          : (isExplicitlyCompleted || hasRequiredPlayerFields);
 
         setAuthenticatedUser({
           id: data.user.id,
@@ -146,10 +159,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           nickname: data.user.nickname,
           avatar_url: data.user.avatar_url,
           role: assignedRole,
-          primary_sport: data.user.primary_sport || (isFacility ? 'pickleball' : 'football'),
-          preferred_sports: data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football']),
+          primary_sport: isSignUp ? ('' as any) : (data.user.primary_sport || (isFacility ? 'pickleball' : 'football')),
+          preferred_sports: isSignUp ? [] : (data.user.preferred_sports || (isFacility ? ['pickleball', 'badminton'] : ['football'])),
           preferred_format: data.user.preferred_format || 'doubles',
-          skill_level: data.user.skill_level || 'intermediate',
+          skill_level: isSignUp ? ('' as any) : (data.user.skill_level || 'intermediate'),
           city: data.user.city || 'Naga City',
           onboarding_completed: actualOnboardingCompleted,
           has_completed_onboarding: actualOnboardingCompleted,

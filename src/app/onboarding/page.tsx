@@ -80,28 +80,10 @@ function OnboardingContent() {
     }
   }, []);
 
+  const storedUserId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id')) : null;
+  const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
   const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
-  const isGuest = isLoggedOut || !currentUser.id || currentUser.id === '' || currentUser.id === 'usr_guest_01' || currentUser.full_name === 'Guest Player' || !currentUser.email;
-
-  const isCompleted = !isGuest && !hasPendingOnboarding && Boolean(
-    currentUser.onboarding_completed === true ||
-    currentUser.has_completed_onboarding === true ||
-    (typeof window !== 'undefined' && (
-      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-      localStorage.getItem('sportsync_onboarding_completed') === 'true'
-    ))
-  );
-
-  React.useEffect(() => {
-    if (isGuest) {
-      router.replace('/');
-      return;
-    }
-    if (isCompleted) {
-      const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
-      router.replace(target);
-    }
-  }, [isGuest, isCompleted, currentUser.role, router]);
+  const isGuest = isLoggedOut || ((!currentUser.id && !storedUserId) || currentUser.id === 'usr_guest_01' || (!currentUser.email && !storedEmail));
 
   // Role: player or facility owner
   const [role, setRole] = useState<'player' | 'owner'>(() => {
@@ -116,6 +98,48 @@ function OnboardingContent() {
       ? 'owner'
       : 'player';
   });
+
+  const isOwner = isFacilityUrl || role === 'owner' || currentUser.role === 'venue_owner' || currentUser.role === 'organizer';
+  const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true');
+
+  const hasStoredCompletion = typeof window !== 'undefined' && (
+    localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+    localStorage.getItem('sportsync_onboarding_completed') === 'true'
+  );
+
+  const hasExplicitCompletion = !isPending && (
+    (currentUser.onboarding_completed === true && currentUser.has_completed_onboarding !== false) ||
+    hasStoredCompletion
+  );
+
+  // Existing player with completed profile
+  const hasRequiredPlayerFields = !isPending && !isOwner && currentUser.onboarding_completed !== false && Boolean(
+    currentUser.full_name &&
+    !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
+    Array.isArray(currentUser.preferred_sports) &&
+    currentUser.preferred_sports.length > 0 &&
+    (currentUser.skill_level || currentUser.city)
+  );
+
+  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields);
+
+  React.useEffect(() => {
+    if (isCompleted && typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+      localStorage.removeItem('sportsync_pending_onboarding');
+      setHasPendingOnboarding(false);
+    }
+  }, [isCompleted]);
+
+  React.useEffect(() => {
+    if (isGuest) {
+      router.replace('/');
+      return;
+    }
+    if (isCompleted) {
+      const target = isOwner ? '/organizer' : '/';
+      router.replace(target);
+    }
+  }, [isGuest, isCompleted, isOwner, router]);
 
   React.useEffect(() => {
     if (isFacilityUrl) {
@@ -423,6 +447,17 @@ function OnboardingContent() {
       setIsSubmitting(false);
     }
   };
+
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs font-semibold text-[#A5B0A6]">Loading setup...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isCompleted) {
     return (
@@ -1282,7 +1317,7 @@ function OnboardingContent() {
                   </div>
 
                   {/* Password if direct guest onboarding */}
-                  {!currentUser.email && !(typeof window !== 'undefined' && localStorage.getItem('sportsync_user_email')) && (
+                  {!currentUser.email && !ownerEmail && (
                     <div className="relative flex items-center pt-1">
                       <Lock className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
                       <input
