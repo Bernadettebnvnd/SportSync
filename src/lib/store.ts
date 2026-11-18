@@ -21,7 +21,7 @@ import {
   BookingStatus,
   FacilityInventorySource,
 } from '@/types';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured, getSupabaseClient } from './supabase';
 import { resetNotificationCache } from './notifications';
 import { getVenues, createVenueWithCourts, createCourt as createDbCourt, updateVenueProfile as updateDbVenueProfile, saveLocalStoredVenues } from './services/venues';
 import { getPlayerBookings, getFacilityBookings, updateBookingStatus as updateDbBookingStatus } from './services/bookings';
@@ -105,7 +105,13 @@ async function initializeStore() {
 
   try {
     // 1. Fetch current authenticated user or check local storage
-    if (typeof window !== 'undefined') {
+    const isExplicitlyLoggedOut =
+      typeof window !== 'undefined' &&
+      localStorage.getItem('sportsync_logged_out') === 'true';
+
+    if (isExplicitlyLoggedOut) {
+      globalState.currentUser = { ...GUEST_USER };
+    } else if (typeof window !== 'undefined') {
       const hasPendingOnboarding = localStorage.getItem('sportsync_pending_onboarding') === 'true';
       const storedCompleted = !hasPendingOnboarding && (
         localStorage.getItem('matchi_onboarding_completed') === 'true' ||
@@ -172,7 +178,7 @@ async function initializeStore() {
       }
     }
 
-    const user = await getCurrentUser();
+    const user = isExplicitlyLoggedOut ? null : await getCurrentUser();
     if (user) {
       const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
       const isUserOnboarded = !hasPendingOnboarding && Boolean(
@@ -270,7 +276,8 @@ function setupGlobalAuthListener() {
 
   try {
     supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
+      const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+      if (session?.user && !isLoggedOut) {
         const user = await getCurrentUser();
         if (user) {
           const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
@@ -463,6 +470,7 @@ export function useMatchiStore() {
     };
 
     if (typeof window !== 'undefined') {
+      localStorage.removeItem('sportsync_logged_out');
       if (isOnboarded) {
         localStorage.setItem('matchi_onboarding_completed', 'true');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
@@ -483,35 +491,73 @@ export function useMatchiStore() {
   }, []);
 
   const logoutUser = useCallback(async () => {
+    // 1. Immediately reset in-memory user and state to prevent any race condition
+    globalState = {
+      ...globalState,
+      currentUser: { ...GUEST_USER },
+      bookings: [],
+    };
+    notify();
+
+    // 2. Mark explicit logged-out state and clear all storage
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('sportsync_user_id');
-      localStorage.removeItem('matchi_user_id');
-      localStorage.removeItem('sportsync_user_email');
-      localStorage.removeItem('sportsync_user_role');
-      localStorage.removeItem('sportsync_user_name');
-      localStorage.removeItem('sportsync_user_profile');
-      localStorage.removeItem('sideline_user_profile');
-      localStorage.removeItem('matchi_onboarding_completed');
-      localStorage.removeItem('sportsync_onboarding_completed');
-      localStorage.removeItem('matchi_user_name');
-      localStorage.removeItem('matchi_user_nickname');
-      localStorage.removeItem('sportsync_pending_onboarding');
-      localStorage.removeItem('sportsync_auth_user');
-      localStorage.removeItem('sportsync_user_city');
-      localStorage.removeItem('sportsync_user_location');
-      localStorage.removeItem('sportsync_user_sports');
-      localStorage.removeItem('sportsync_user_skill');
-      localStorage.removeItem('sportsync_user_availability');
+      localStorage.setItem('sportsync_logged_out', 'true');
+
+      const authKeys = [
+        'sportsync_user_id',
+        'matchi_user_id',
+        'sportsync_user_email',
+        'sportsync_user_role',
+        'matchi_user_role',
+        'sportsync_user_name',
+        'matchi_user_name',
+        'sportsync_user_nickname',
+        'matchi_user_nickname',
+        'sportsync_user_profile',
+        'sideline_user_profile',
+        'sportsync_auth_user',
+        'sportsync_pending_onboarding',
+        'sportsync_onboarding_completed',
+        'matchi_onboarding_completed',
+        'sportsync_user_city',
+        'sportsync_user_location',
+        'sportsync_user_sports',
+        'sportsync_user_skill',
+        'sportsync_user_availability',
+        'sportsync_facility_venue_id',
+      ];
+      authKeys.forEach((k) => localStorage.removeItem(k));
+
+      // Clear all Supabase GoTrue tokens from localStorage and sessionStorage
+      try {
+        const sbKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sb-') || key.startsWith('supabase.'))) {
+            sbKeys.push(key);
+          }
+        }
+        sbKeys.forEach((k) => localStorage.removeItem(k));
+        sessionStorage.clear();
+      } catch {}
+
       try {
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch {}
     }
-    if (isSupabaseConfigured && supabase) {
+
+    // 3. Terminate Supabase cloud session
+    const client = getSupabaseClient();
+    if (client) {
       try {
-        await supabase.auth.signOut();
-      } catch {}
+        await client.auth.signOut({ scope: 'global' });
+      } catch (err) {
+        console.warn('[Store] Supabase signOut error:', err);
+      }
     }
+
     resetNotificationCache();
+
     globalState = {
       ...globalState,
       currentUser: { ...GUEST_USER },

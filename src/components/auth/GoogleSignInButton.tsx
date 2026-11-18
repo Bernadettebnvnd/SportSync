@@ -24,18 +24,22 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   const [isLoading, setIsLoading] = useState(false);
 
   const handleClick = async () => {
-    // If Supabase is configured with real cloud OAuth, check if user has active cloud session
-    // Otherwise open the Google Sign In popup modal matching the reference design
+    // If Supabase is configured with real cloud OAuth, initiate Google OAuth redirect
     if (isSupabaseConfigured) {
       try {
         setIsLoading(true);
         const supabase = getSupabaseClient();
         if (supabase) {
+          // Clear any stale logged out flags prior to attempting sign-in
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('sportsync_logged_out');
+          }
+
           const callbackUrl = typeof window !== 'undefined'
             ? `${window.location.origin}/auth/callback`
             : '/auth/callback';
 
-          const { error } = await supabase.auth.signInWithOAuth({
+          const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
               redirectTo: callbackUrl,
@@ -45,21 +49,34 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
               },
             },
           });
+
           if (error) {
-            // If cloud OAuth fails or is unconfigured on Supabase dashboard, fall back to Google popup modal
             setIsLoading(false);
+            const errorMsg = error.message || 'Google sign-in failed.';
+            onError?.(errorMsg);
+            // If OAuth provider is disabled or missing credentials in Supabase Dashboard,
+            // fall back to the interactive modal so the user can still proceed with authentication
             setIsModalOpen(true);
+            return;
+          }
+
+          // If Supabase returns a direct OAuth URL and did not automatically navigate
+          if (data?.url && typeof window !== 'undefined') {
+            window.location.href = data.url;
+            return;
           }
           return;
         }
-      } catch {
+      } catch (err: unknown) {
         setIsLoading(false);
+        const msg = err instanceof Error ? err.message : 'Google sign-in encountered an error.';
+        onError?.(msg);
         setIsModalOpen(true);
         return;
       }
     }
 
-    // Open authentic Google Accounts sign-in popup dialog
+    // Supabase not configured or in local mode: open authentic Google Accounts modal
     setIsModalOpen(true);
   };
 

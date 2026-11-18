@@ -485,16 +485,26 @@ export function useSportSyncBridge() {
   const userProfileRef = useRef(userProfile);
   userProfileRef.current = userProfile;
 
-  // Persist userProfile to localStorage
+  // Persist userProfile to localStorage (only for real authenticated users)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_user_profile', JSON.stringify(userProfile));
+      const isLoggedOut = localStorage.getItem('sportsync_logged_out') === 'true';
+      if (userProfile.isGuest || !userProfile.id || userProfile.name === 'Guest Player' || isLoggedOut) {
+        localStorage.removeItem('sportsync_user_profile');
+        localStorage.removeItem('sideline_user_profile');
+      } else {
+        localStorage.setItem('sportsync_user_profile', JSON.stringify(userProfile));
+      }
     }
   }, [userProfile]);
 
   // Sync complete profile when store user updates
   useEffect(() => {
-    const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
+    const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+    if (isLoggedOut) return;
+
+    const isGuest = !store.currentUser.id || store.currentUser.id === '' || store.currentUser.full_name === 'Guest Player';
+    const isAuthenticated = !isGuest && Boolean(store.currentUser.id && store.currentUser.email);
     const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
     const isCompleted = !hasPendingOnboarding && Boolean(
       store.currentUser.onboarding_completed ||
@@ -3472,29 +3482,59 @@ export function useSportSyncBridge() {
     resolveMatchPoll,
     claimBadge,
     logout: async () => {
-      const supabase = getSupabaseClient();
-      if (supabase && isSupabaseConfigured) {
-        try {
-          await supabase.auth.signOut();
-        } catch (err) {
-          console.warn('Sign out error:', err);
-        }
-      }
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_user_id');
-        localStorage.removeItem('matchi_user_id');
-        localStorage.removeItem('sportsync_user_profile');
-        localStorage.removeItem('sideline_user_profile');
-        localStorage.removeItem('sportsync_user_role');
-        localStorage.removeItem('sportsync_user_email');
-        localStorage.removeItem('sportsync_user_name');
-        localStorage.removeItem('sportsync_pending_onboarding');
-        localStorage.removeItem('sportsync_onboarding_completed');
-        localStorage.removeItem('matchi_onboarding_completed');
+        localStorage.setItem('sportsync_logged_out', 'true');
+        const authKeys = [
+          'sportsync_user_id',
+          'matchi_user_id',
+          'sportsync_user_profile',
+          'sideline_user_profile',
+          'sportsync_user_role',
+          'matchi_user_role',
+          'sportsync_user_email',
+          'sportsync_user_name',
+          'matchi_user_name',
+          'sportsync_user_nickname',
+          'matchi_user_nickname',
+          'sportsync_pending_onboarding',
+          'sportsync_onboarding_completed',
+          'matchi_onboarding_completed',
+          'sportsync_auth_user',
+          'sportsync_user_city',
+          'sportsync_user_location',
+          'sportsync_user_sports',
+          'sportsync_user_skill',
+          'sportsync_user_availability',
+          'sportsync_facility_venue_id',
+        ];
+        authKeys.forEach((k) => localStorage.removeItem(k));
+
+        try {
+          const sbKeys: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && (key.startsWith('sb-') || key.startsWith('supabase.'))) {
+              sbKeys.push(key);
+            }
+          }
+          sbKeys.forEach((k) => localStorage.removeItem(k));
+          sessionStorage.clear();
+        } catch {}
+
         try {
           await fetch('/api/auth/logout', { method: 'POST' });
         } catch {}
       }
+
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.auth.signOut({ scope: 'global' });
+        } catch (err) {
+          console.warn('Sign out error:', err);
+        }
+      }
+
       resetNotificationCache();
       setUserProfile({
         ...INITIAL_USER_PROFILE,
@@ -3506,6 +3546,7 @@ export function useSportSyncBridge() {
         xp: 0,
         matchesTotal: 0,
         wins: 0,
+        onboardingCompleted: false,
       });
     },
   };

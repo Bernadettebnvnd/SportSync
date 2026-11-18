@@ -114,6 +114,7 @@ export function GoogleSignInModal({
       });
 
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_logged_out');
         localStorage.setItem('sportsync_user_id', data.user.id);
         localStorage.setItem('sportsync_user_email', trimmedEmail);
         localStorage.setItem('sportsync_user_role', data.user.role || 'player');
@@ -128,6 +129,21 @@ export function GoogleSignInModal({
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_onboarding_completed', 'true');
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: data.user.id,
+              name: finalFullName,
+              username: `@${finalFullName.split(' ')[0] || trimmedEmail.split('@')[0]}`,
+              role: data.user.role || 'player',
+              city: data.user.city || 'Naga City',
+              primarySport: data.user.primary_sport || 'football',
+              preferredSports: data.user.preferred_sports || ['Football'],
+              skillLevel: data.user.skill_level || 'Intermediate',
+              onboardingCompleted: true,
+              isGuest: false,
+            })
+          );
         }
       }
 

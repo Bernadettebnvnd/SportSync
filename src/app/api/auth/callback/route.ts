@@ -4,14 +4,28 @@ import { serverSyncOAuthUser } from '@/lib/auth/serverAuth';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+  const error = searchParams.get('error');
+  const errorDesc = searchParams.get('error_description');
+
+  if (error) {
+    return NextResponse.redirect(
+      `${origin}/auth/callback?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDesc || '')}`
+    );
+  }
+
   const code = searchParams.get('code');
   const next = searchParams.get('next');
 
   if (code && isSupabaseConfigured) {
     const supabase = createServerClient();
     if (supabase) {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-      if (!error && data?.user) {
+      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) {
+        return NextResponse.redirect(
+          `${origin}/auth/callback?error=${encodeURIComponent(exchangeError.message)}`
+        );
+      }
+      if (data?.user) {
         const authUser = data.user;
         const meta = authUser.user_metadata || {};
 

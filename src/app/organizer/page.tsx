@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
@@ -57,11 +58,18 @@ export default function OrganizerDashboard() {
     addCourt,
     updateVenueProfile,
   } = useMatchiStore();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
 
   React.useEffect(() => {
     setMounted(true);
-  }, []);
+    const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+    const isGuest = isLoggedOut || !currentUser.id || currentUser.id === '' || currentUser.id === 'usr_guest_01' || currentUser.full_name === 'Guest Player';
+    if (isGuest && !storedRole) {
+      router.replace('/');
+    }
+  }, [currentUser.id, currentUser.full_name, storedRole, router]);
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -93,7 +101,6 @@ export default function OrganizerDashboard() {
   const [newGameFee, setNewGameFee] = useState('350');
   const [newGameRotation, setNewGameRotation] = useState('Open Pickup Rotation');
 
-  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
   const isOwner =
     currentUser.role === 'venue_owner' ||
     currentUser.role === 'organizer' ||

@@ -6,6 +6,11 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
  * Returns null if unauthenticated or Supabase is unconfigured.
  */
 export async function getCurrentUser(): Promise<User | null> {
+  // If user has explicitly logged out, do not restore previous session
+  if (typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true') {
+    return null;
+  }
+
   const supabase = getSupabaseClient();
   
   if (supabase && isSupabaseConfigured) {

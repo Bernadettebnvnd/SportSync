@@ -30,21 +30,27 @@ export function OnboardingGuard() {
 
     if (isExemptPath) return;
 
+    const isLoggedOut =
+      typeof window !== 'undefined' &&
+      localStorage.getItem('sportsync_logged_out') === 'true';
+
     const hasPendingOnboarding =
+      !isLoggedOut &&
       typeof window !== 'undefined' &&
       localStorage.getItem('sportsync_pending_onboarding') === 'true';
 
     const storedUserId =
-      typeof window !== 'undefined'
+      !isLoggedOut && typeof window !== 'undefined'
         ? localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id')
         : null;
 
     const storedEmail =
-      typeof window !== 'undefined'
+      !isLoggedOut && typeof window !== 'undefined'
         ? localStorage.getItem('sportsync_user_email')
         : null;
 
     const isGuest =
+      isLoggedOut ||
       !currentUser.id ||
       currentUser.id === '' ||
       currentUser.id === 'usr_guest_01' ||
@@ -60,6 +66,18 @@ export function OnboardingGuard() {
       storedEmail
     );
 
+    const isOnboardingPath = pathname === '/onboarding';
+    const isProtectedPath = pathname === '/organizer' || pathname === '/profile';
+
+    // CASE 0: Unauthenticated or Logged-Out user
+    // Strictly prevent access to profile setup or protected organizer/profile pages after logout
+    if (!isAuthenticated) {
+      if (isOnboardingPath || isProtectedPath) {
+        router.replace('/');
+      }
+      return;
+    }
+
     // Profile is ONLY complete if database / store explicitly marks it completed
     // and no pending onboarding flag is active.
     const isProfileComplete =
@@ -69,11 +87,9 @@ export function OnboardingGuard() {
         currentUser.has_completed_onboarding === true
       );
 
-    const isOnboardingPath = pathname === '/onboarding';
-
     // CASE 1: Authenticated user with MISSING or INCOMPLETE profile attempting to access dashboard
     // STRICT ROUTING: Under no circumstances allow access to dashboard until setup is done.
-    if (isAuthenticated && !isProfileComplete && !isOnboardingPath) {
+    if (!isProfileComplete && !isOnboardingPath) {
       const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
       const isOwner =
         currentUser.role === 'venue_owner' ||
@@ -87,7 +103,7 @@ export function OnboardingGuard() {
     }
 
     // CASE 2: Already onboarded user attempting to re-visit /onboarding
-    if (isAuthenticated && isProfileComplete && isOnboardingPath) {
+    if (isProfileComplete && isOnboardingPath) {
       const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
       const isOwner =
         currentUser.role === 'venue_owner' ||

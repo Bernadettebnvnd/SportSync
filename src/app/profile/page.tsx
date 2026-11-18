@@ -31,6 +31,14 @@ export default function ProfilePage() {
   const myBookings = bookings.filter((b) => b.user_id === currentUser.id);
   const isHost = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
 
+  React.useEffect(() => {
+    const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+    const isGuest = isLoggedOut || !currentUser.id || currentUser.id === '' || currentUser.id === 'usr_guest_01' || currentUser.full_name === 'Guest Player';
+    if (isGuest) {
+      router.replace('/');
+    }
+  }, [currentUser.id, currentUser.full_name, router]);
+
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6 pb-28 md:pb-12">
       {/* Page Title */}

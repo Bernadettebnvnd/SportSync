@@ -80,21 +80,28 @@ function OnboardingContent() {
     }
   }, []);
 
-  const isCompleted = !hasPendingOnboarding && Boolean(
+  const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+  const isGuest = isLoggedOut || !currentUser.id || currentUser.id === '' || currentUser.id === 'usr_guest_01' || currentUser.full_name === 'Guest Player' || !currentUser.email;
+
+  const isCompleted = !isGuest && !hasPendingOnboarding && Boolean(
     currentUser.onboarding_completed === true ||
     currentUser.has_completed_onboarding === true ||
-    (!currentUser.id && typeof window !== 'undefined' && (
+    (typeof window !== 'undefined' && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     ))
   );
 
   React.useEffect(() => {
+    if (isGuest) {
+      router.replace('/');
+      return;
+    }
     if (isCompleted) {
       const target = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' ? '/organizer' : '/';
       router.replace(target);
     }
-  }, [isCompleted, currentUser.role, router]);
+  }, [isGuest, isCompleted, currentUser.role, router]);
 
   // Role: player or facility owner
   const [role, setRole] = useState<'player' | 'owner'>(() => {

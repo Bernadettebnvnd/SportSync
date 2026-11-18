@@ -156,6 +156,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         });
 
         if (typeof window !== 'undefined') {
+          localStorage.removeItem('sportsync_logged_out');
           localStorage.setItem('sportsync_user_id', data.user.id);
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', assignedRole);

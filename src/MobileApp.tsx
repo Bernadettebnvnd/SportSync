@@ -101,7 +101,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const isLightMode = propIsLightMode !== undefined ? propIsLightMode : themeHook.isLightMode;
   const toggleTheme = onToggleTheme || themeHook.toggleTheme;
 
+  const isLoggingOutRef = useRef<boolean>(false);
+
   const isUserAuthenticated = (): boolean => {
+    if (isLoggingOutRef.current) return false;
+    if (typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true') {
+      return false;
+    }
     if (bridge.userProfile.id && !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player') {
       return true;
     }
@@ -128,6 +134,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const isUserOnboarded = (): boolean => {
+    if (isLoggingOutRef.current) return false;
     if (!isUserAuthenticated()) return false;
     if (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
       return false;
@@ -340,14 +347,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Strict Routing: Never allow an authenticated user with an incomplete profile
   // to stay on dashboard or main screens until Profile Setup is finished.
   useEffect(() => {
-    if (isUserAuthenticated() && !isUserOnboarded()) {
-      const allowedScreens: ScreenId[] = ['personalization', 'auth', 'invitation-landing', 'splash'];
-      if (!allowedScreens.includes(currentScreen)) {
-        if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-          window.location.href = '/onboarding';
-        } else {
-          setCurrentScreen('personalization');
-        }
+    if (isLoggingOutRef.current || !isUserAuthenticated() || isUserOnboarded()) {
+      return;
+    }
+    const allowedScreens: ScreenId[] = ['personalization', 'auth', 'invitation-landing', 'splash'];
+    if (!allowedScreens.includes(currentScreen)) {
+      if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+        window.location.href = '/onboarding';
+      } else {
+        setCurrentScreen('personalization');
       }
     }
   }, [bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, currentScreen]);
@@ -561,16 +569,33 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const handleLogout = async () => {
-    await bridge.logout();
-    await bridge.store.logoutUser();
-    resetNotificationCache();
+    isLoggingOutRef.current = true;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sportsync_logged_out', 'true');
+    }
     setAuthInitialMode('login');
     setCurrentScreen('auth');
     setScreenHistory(['auth']);
     onScreenChange?.('auth');
     setToastMessage('Signed out successfully.');
+
+    try {
+      await Promise.all([
+        bridge.logout(),
+        bridge.store.logoutUser(),
+      ]);
+    } catch (err) {
+      console.warn('Logout error:', err);
+    }
+
+    resetNotificationCache();
+
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.location.href = '/';
+    } else {
+      setTimeout(() => {
+        isLoggingOutRef.current = false;
+      }, 500);
     }
   };
 
@@ -659,6 +684,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             initialMode={authInitialMode}
             canGoBack={canGoBack}
             onSuccess={(role, isNewAccount) => {
+              isLoggingOutRef.current = false;
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('sportsync_logged_out');
+              }
               if (role === 'facility_owner') {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   if (isNewAccount) {

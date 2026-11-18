@@ -16,6 +16,33 @@ export default function AuthCallbackPage() {
 
     const processOAuthCallback = async () => {
       try {
+        if (typeof window !== 'undefined') {
+          const searchParams = new URLSearchParams(window.location.search);
+          let hashParams = new URLSearchParams();
+          if (window.location.hash) {
+            hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+          }
+
+          const oauthError = searchParams.get('error') || hashParams.get('error');
+          const oauthErrorDesc =
+            searchParams.get('error_description') ||
+            hashParams.get('error_description') ||
+            searchParams.get('error_code');
+
+          if (oauthError) {
+            const isUserCancelled =
+              oauthError === 'access_denied' ||
+              (oauthErrorDesc && oauthErrorDesc.toLowerCase().includes('cancel')) ||
+              (oauthErrorDesc && oauthErrorDesc.toLowerCase().includes('denied'));
+
+            const message = isUserCancelled
+              ? 'Sign in with Google was cancelled. You can return to sign in or use email.'
+              : (oauthErrorDesc || oauthError || 'Google authentication encountered an issue.');
+            setErrorMessage(message);
+            return;
+          }
+        }
+
         const supabase = getSupabaseClient();
         if (!supabase || !isSupabaseConfigured) {
           // If Supabase is unconfigured, redirect to home
@@ -23,7 +50,23 @@ export default function AuthCallbackPage() {
           return;
         }
 
-        // Wait for Supabase to resolve the session from URL hash or PKCE code
+        // Exchange code if PKCE code is in query params
+        if (typeof window !== 'undefined') {
+          const searchParams = new URLSearchParams(window.location.search);
+          const code = searchParams.get('code');
+          if (code) {
+            try {
+              const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+              if (exchangeError) {
+                console.warn('[OAuth] Code exchange note:', exchangeError.message);
+              }
+            } catch (exErr) {
+              console.warn('[OAuth] Code exchange exception:', exErr);
+            }
+          }
+        }
+
+        // Retrieve active session from Supabase client
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) {
           throw sessionError;
@@ -44,12 +87,12 @@ export default function AuthCallbackPage() {
             }
           );
 
-          // Timeout after 6 seconds if no session found
+          // Timeout after 5 seconds if no session found
           setTimeout(() => {
             if (!isCancelled) {
-              setErrorMessage('Authentication session could not be established. Please try logging in again.');
+              setErrorMessage('Google authentication session could not be established. Please try logging in again.');
             }
-          }, 6000);
+          }, 5000);
           return;
         }
 
@@ -91,6 +134,7 @@ export default function AuthCallbackPage() {
       });
 
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_logged_out');
         localStorage.setItem('sportsync_user_id', syncResult.user.id);
         localStorage.setItem('sportsync_user_email', syncResult.user.email);
         localStorage.setItem('sportsync_user_role', syncResult.user.role || 'player');
@@ -105,6 +149,21 @@ export default function AuthCallbackPage() {
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_onboarding_completed', 'true');
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: syncResult.user.id,
+              name: syncResult.user.full_name,
+              username: `@${syncResult.user.nickname || syncResult.user.email.split('@')[0]}`,
+              role: syncResult.user.role || 'player',
+              city: syncResult.user.city || 'Naga City',
+              primarySport: syncResult.user.primary_sport || 'football',
+              preferredSports: syncResult.user.preferred_sports || ['Football'],
+              skillLevel: syncResult.user.skill_level || 'Intermediate',
+              onboardingCompleted: true,
+              isGuest: false,
+            })
+          );
         }
       }
 
