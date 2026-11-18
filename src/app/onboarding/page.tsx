@@ -24,6 +24,11 @@ import {
   Lock,
   Mail,
   Clock,
+  Phone,
+  ShieldCheck,
+  Layers,
+  DollarSign,
+  CheckCircle2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
@@ -184,7 +189,7 @@ function OnboardingContent() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
   // =========================================================================
-  // FACILITY OWNER STATE (PRESERVED STEP-BY-STEP FLOW)
+  // FACILITY OWNER / FACULTY STATE (MULTI-STEP PROFILE SETUP)
   // =========================================================================
   const [ownerEmail, setOwnerEmail] = useState(() => {
     if (currentUser.email) return currentUser.email;
@@ -195,28 +200,34 @@ function OnboardingContent() {
   });
   const [ownerPassword, setOwnerPassword] = useState('');
   const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '');
-  const [ownerStep, setOwnerStep] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const hasEmail = Boolean(currentUser.email || localStorage.getItem('sportsync_user_email'));
-      if (hasEmail) return 2;
-    }
-    return currentUser.email ? 2 : 1;
-  });
+  const [ownerStep, setOwnerStep] = useState<number>(1);
   const totalOwnerSteps = 5;
   const [facilityName, setFacilityName] = useState('');
+  const [facilityType, setFacilityType] = useState<'university' | 'club' | 'public' | 'commercial'>('university');
   const [facilityAddress, setFacilityAddress] = useState('');
+  const [facilityDistrict, setFacilityDistrict] = useState('Bagumbayan Sur');
+  const [facilityLandmark, setFacilityLandmark] = useState('');
   const [facilityCity, setFacilityCity] = useState(FACILITY_LOCATIONS[0]);
-  const [facilitySports, setFacilitySports] = useState<SportType[]>(['pickleball']);
-  const [courtCount, setCourtCount] = useState(2);
+  const [facilitySports, setFacilitySports] = useState<SportType[]>(['pickleball', 'basketball', 'badminton']);
+  const [courtCount, setCourtCount] = useState(4);
+  const [courtSurface, setCourtSurface] = useState('Tournament Hardwood Parquet');
+  const [isIndoor, setIsIndoor] = useState(true);
   const [hourlyRatePhp, setHourlyRatePhp] = useState(500);
+  const [operatingHours, setOperatingHours] = useState('06:00 - 23:00');
+  const [facilityAmenities, setFacilityAmenities] = useState<string[]>([
+    'Air Conditioning',
+    'Free Parking',
+    'Shower & Locker Rooms',
+    'High-Speed Wi-Fi',
+  ]);
+  const [bookingMode, setBookingMode] = useState<'instant' | 'inquiry'>('instant');
   const [ownerValidationError, setOwnerValidationError] = useState<string | null>(null);
 
   React.useEffect(() => {
-    if (currentUser.email && ownerStep === 1) {
-      setOwnerStep(2);
+    if (currentUser.email && !ownerEmail) {
       setOwnerEmail(currentUser.email);
     }
-  }, [currentUser.email, ownerStep]);
+  }, [currentUser.email, ownerEmail]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -340,11 +351,13 @@ function OnboardingContent() {
         localStorage.removeItem('sportsync_pending_onboarding');
       }
       setHasPendingOnboarding(false);
+
       const generatedCourts = Array.from({ length: courtCount }).map((_, idx) => ({
         name: `Court ${idx + 1}`,
         sport: facilitySports[idx % facilitySports.length],
         hourlyRateCents: hourlyRatePhp * 100,
-        floorType: 'Tournament Standard Surface',
+        floorType: courtSurface,
+        isIndoor,
       }));
 
       const resolvedOwnerEmail =
@@ -359,24 +372,40 @@ function OnboardingContent() {
         (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') : '') ||
         'Facility Partner';
 
+      const typeLabels: Record<string, string> = {
+        university: 'University & Faculty Sports Complex',
+        club: 'Private Sports Club & Academy',
+        public: 'Municipal & Community Sports Arena',
+        commercial: 'Commercial Sports & Leisure Hub',
+      };
+
+      const fullAddressParts = [
+        facilityAddress.trim(),
+        facilityDistrict,
+        'Naga City',
+        facilityLandmark.trim() ? `(Landmark: ${facilityLandmark.trim()})` : '',
+      ].filter(Boolean);
+
+      const fullAddress = fullAddressParts.join(', ');
+
       await completeOwnerOnboarding({
         ownerName: resolvedOwnerName,
         ownerEmail: resolvedOwnerEmail,
-        ownerPhone: ownerPhone.trim(),
-        facilityName: facilityName.trim(),
-        description: 'Quality dedicated sports facility with tournament-standard courts.',
-        address: facilityAddress.trim(),
-        city: facilityCity,
+        ownerPhone: ownerPhone.trim() || '0917-555-0199',
+        facilityName: facilityName.trim() || 'Ateneo Sports Complex',
+        description: `${typeLabels[facilityType] || 'Sports Facility'} in Naga City featuring ${facilitySports.join(', ')} with tournament-grade courts.`,
+        address: fullAddress,
+        city: 'Naga City',
         featuredSports: facilitySports,
         courts: generatedCourts,
         inventorySource: 'manual',
       });
 
       confetti({
-        particleCount: 80,
-        spread: 70,
+        particleCount: 100,
+        spread: 80,
         origin: { y: 0.6 },
-        colors: ['#1E4A32', '#2D724E', '#E9C46A'],
+        colors: ['#C8FF2E', '#3DDC84', '#FFFFFF', '#FF8FC7'],
       });
 
       router.replace('/organizer');
@@ -873,290 +902,690 @@ function OnboardingContent() {
   }
 
   // ===========================================================================
-  // 2. FACILITY OWNER ONBOARDING: PRESERVED STEP-BY-STEP FLOW
+  // 2. FACULTY & FACILITY PROFILE SETUP: 5-STEP MULTI-SCREEN EXPERIENCE
   // ===========================================================================
-  return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1A241E] flex flex-col justify-between p-4 sm:p-8 max-w-xl mx-auto">
-      {/* Top Bar: Back & Progress Indicator */}
-      <div className="pt-2 sm:pt-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => {
-              if (ownerStep > 2) {
-                setOwnerStep((s) => s - 1);
-              } else if (ownerStep === 2 && !currentUser.email && (!ownerEmail || !ownerEmail.trim())) {
-                setOwnerStep(1);
-              } else {
-                router.push('/');
-              }
-            }}
-            className="inline-flex items-center gap-1 text-xs font-bold text-[#65756B] hover:text-[#1A241E] transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>{ownerStep > 1 ? 'Back' : 'Home'}</span>
-          </button>
+  const facilityTypeOptions: { id: 'university' | 'club' | 'public' | 'commercial'; label: string; badge: string; desc: string }[] = [
+    { id: 'university', label: 'University / Faculty', badge: 'Academic', desc: 'Campus gymnasiums, collegiate courts & faculty recreation centers' },
+    { id: 'club', label: 'Private Sports Club', badge: 'Club', desc: 'Member clubs, private training academies & competitive venues' },
+    { id: 'public', label: 'Public / Municipal Arena', badge: 'Civic', desc: 'City barangay gyms, municipal coliseums & community courts' },
+    { id: 'commercial', label: 'Commercial Sports Hub', badge: 'Commercial', desc: 'Dedicated pay-per-play sports complexes & indoor centers' },
+  ];
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#65756B]">
-              Facility Setup &bull; Step {ownerStep} of {totalOwnerSteps}
-            </span>
+  const surfaceOptions = [
+    'Tournament Hardwood Parquet',
+    'BWF Taraflex Rubber Cushion',
+    'Cushioned Acrylic Hard Court',
+    'Synthetic Turf / Polyurethane',
+  ];
+
+  const hourPresets = [
+    { label: 'Full Day (06:00 - 23:00)', value: '06:00 - 23:00' },
+    { label: 'Campus Hours (07:00 - 21:00)', value: '07:00 - 21:00' },
+    { label: 'Evening Prime (15:00 - 23:00)', value: '15:00 - 23:00' },
+    { label: 'Early Bird (05:00 - 18:00)', value: '05:00 - 18:00' },
+  ];
+
+  const ratePresets = [350, 450, 500, 600, 800, 1000];
+
+  const districtOptions = [
+    'Bagumbayan Sur',
+    'Pacol',
+    'Triangulo',
+    'Magsaysay Ave',
+    'San Felipe',
+    'Concepcion Pequeña',
+    'San Francisco (Downtown)',
+  ];
+
+  const amenityOptions = [
+    'Air Conditioning',
+    'Free Parking',
+    'Shower & Locker Rooms',
+    'Pro Shop & Equipment Rental',
+    'Player Lounge & Water Station',
+    'High-Speed Wi-Fi',
+    'Spectator Bleachers',
+    'Night Lighting',
+  ];
+
+  const toggleAmenity = (amenity: string) => {
+    if (facilityAmenities.includes(amenity)) {
+      setFacilityAmenities(facilityAmenities.filter((a) => a !== amenity));
+    } else {
+      setFacilityAmenities([...facilityAmenities, amenity]);
+    }
+  };
+
+  const handleNextStep = async () => {
+    setOwnerValidationError(null);
+
+    // STEP 1 VALIDATION
+    if (ownerStep === 1) {
+      if (!facilityName.trim()) {
+        setOwnerValidationError('Please enter your facility or campus athletic complex name.');
+        return;
+      }
+      if (!fullName.trim() && !currentUser.full_name) {
+        setOwnerValidationError('Please enter the management or contact person name.');
+        return;
+      }
+      const activeEmail = ownerEmail.trim() || currentUser.email || '';
+      const emailValidation = validateRealEmail(activeEmail);
+      if (!emailValidation.isValid) {
+        setOwnerValidationError(emailValidation.error || 'Please enter a valid official email address.');
+        return;
+      }
+
+      // If user is not yet logged in / registered, register them now
+      const isRegistered = Boolean(currentUser.id || currentUser.email || (typeof window !== 'undefined' && localStorage.getItem('sportsync_user_email')));
+      if (!isRegistered) {
+        if (!ownerPassword || ownerPassword.length < 6) {
+          setOwnerValidationError('Password must be at least 6 characters long.');
+          return;
+        }
+        setIsSubmitting(true);
+        try {
+          const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullName: fullName.trim() || 'Facility Partner',
+              email: activeEmail.toLowerCase(),
+              password: ownerPassword.trim(),
+              role: 'facility_owner',
+              city: 'Naga City',
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(data.error || 'Account registration failed.');
+          }
+          if (data.user) {
+            setAuthenticatedUser({
+              id: data.user.id,
+              auth_id: data.user.id,
+              email: data.user.email,
+              full_name: data.user.full_name,
+              role: 'venue_owner',
+              onboarding_completed: false,
+              has_completed_onboarding: false,
+            });
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('sportsync_user_id', data.user.id);
+              localStorage.setItem('sportsync_user_email', data.user.email);
+              localStorage.setItem('sportsync_user_role', 'venue_owner');
+              localStorage.setItem('sportsync_user_name', data.user.full_name);
+              localStorage.setItem('sportsync_pending_onboarding', 'true');
+            }
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Registration error.';
+          setOwnerValidationError(msg);
+          setIsSubmitting(false);
+          return;
+        } finally {
+          setIsSubmitting(false);
+        }
+      }
+
+      setOwnerStep(2);
+      return;
+    }
+
+    // STEP 2 VALIDATION
+    if (ownerStep === 2) {
+      if (!facilityAddress.trim()) {
+        setOwnerValidationError('Please enter your facility or campus street address.');
+        return;
+      }
+      setOwnerStep(3);
+      return;
+    }
+
+    // STEP 3 VALIDATION
+    if (ownerStep === 3) {
+      if (facilitySports.length === 0) {
+        setOwnerValidationError('Please select at least one sport available at your facility.');
+        return;
+      }
+      setOwnerStep(4);
+      return;
+    }
+
+    // STEP 4 VALIDATION
+    if (ownerStep === 4) {
+      setOwnerStep(5);
+      return;
+    }
+
+    // STEP 5: FINISH
+    if (ownerStep === 5) {
+      await handleFinishOwner();
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0B0F0C] text-[#F4F7F0] flex flex-col justify-center p-3 sm:p-6 md:p-8 select-none">
+      <div className="relative w-full max-w-xl mx-auto rounded-3xl bg-[#0B0F0C] border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col">
+        {/* Top Header: Progress & Role Switcher */}
+        <div className="p-4 sm:p-6 pb-4 border-b border-white/10 bg-[#0B0F0C] shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (ownerStep > 1) {
+                    setOwnerStep((s) => s - 1);
+                    setOwnerValidationError(null);
+                  } else {
+                    router.push('/');
+                  }
+                }}
+                className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#C8FF2E] block">
+                  Faculty Setup • Step {ownerStep} of {totalOwnerSteps}
+                </span>
+                <h1 className="font-display font-black text-lg sm:text-xl text-[#F4F7F0]">
+                  {ownerStep === 1 && 'Facility & Management Identity'}
+                  {ownerStep === 2 && 'Location & Campus Address'}
+                  {ownerStep === 3 && 'Sports & Court Inventory'}
+                  {ownerStep === 4 && 'Schedule, Rates & Amenities'}
+                  {ownerStep === 5 && 'Verify & Launch Portal'}
+                </h1>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={() => setRole('player')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-[#F2EFE9] border border-[#E8E5DF] text-[11px] font-semibold text-[#65756B] hover:text-[#1A241E] transition-all cursor-pointer shadow-2xs"
+              className="px-3 py-1.5 rounded-full bg-[#1C241E] hover:bg-[#253028] border border-white/10 text-[11px] font-semibold text-[#A5B0A6] hover:text-[#C8FF2E] transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <UserIcon className="w-3.5 h-3.5 text-[#2D724E]" />
-              <span>Player Setup?</span>
+              <UserIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Player Setup?</span>
             </button>
           </div>
+
+          {/* 5-Step Progress Pills Bar */}
+          <div className="flex items-center gap-1.5 pt-1">
+            {Array.from({ length: totalOwnerSteps }).map((_, i) => {
+              const stepIndex = i + 1;
+              const isPast = stepIndex < ownerStep;
+              const isCurrent = stepIndex === ownerStep;
+
+              return (
+                <div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                    isCurrent
+                      ? 'bg-[#C8FF2E] shadow-[0_0_10px_rgba(200,255,46,0.5)]'
+                      : isPast
+                      ? 'bg-[#C8FF2E]/40'
+                      : 'bg-white/10'
+                  }`}
+                />
+              );
+            })}
+          </div>
         </div>
 
-        {/* Step Indicator Bar */}
-        <div className="flex items-center gap-1.5">
-          {Array.from({ length: totalOwnerSteps }).map((_, i) => {
-            const isCompleted = i + 1 < ownerStep;
-            const isCurrent = i + 1 === ownerStep;
-
-            return (
-              <div
-                key={i}
-                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
-                  isCurrent
-                    ? 'bg-[#2D724E]'
-                    : isCompleted
-                    ? 'bg-[#2D724E]/40'
-                    : 'bg-[#E8E5DF]'
-                }`}
-              />
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main Facility Owner Flow Body */}
-      <div className="my-auto py-8">
-        {/* STEP 1: Facility Account Setup */}
-        {ownerStep === 1 && (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                Facility account setup
-              </h1>
-              <p className="text-xs sm:text-sm text-[#65756B]">
-                Enter contact and credentials for managing your sports facility portal.
-              </p>
+        {/* Multi-Step Body */}
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[calc(88vh-140px)] no-scrollbar">
+          {/* Validation Alert */}
+          {ownerValidationError && (
+            <div className="p-3.5 rounded-2xl bg-[#E0533C]/10 border border-[#E0533C]/30 text-[#FFA494] text-xs flex items-center gap-2.5 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#E0533C]" />
+              <span className="font-semibold">{ownerValidationError}</span>
             </div>
+          )}
 
-            <div className="space-y-4 pt-2">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  Contact / Owner Name
+          {/* ================================================================= */}
+          {/* STEP 1: FACILITY IDENTITY & MANAGEMENT CONTACTS */}
+          {/* ================================================================= */}
+          {ownerStep === 1 && (
+            <div className="space-y-5 animate-in fade-in">
+              {/* Facility Name & Preview Initials */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  1. Facility / Athletic Center Name
                 </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => {
-                    setFullName(e.target.value);
-                    if (ownerValidationError) setOwnerValidationError(null);
-                  }}
-                  placeholder="e.g. Alex Morgan"
-                  autoFocus
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                />
+
+                <div className="relative flex items-center">
+                  <Building2 className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                  <input
+                    type="text"
+                    value={facilityName}
+                    onChange={(e) => {
+                      setFacilityName(e.target.value);
+                      if (ownerValidationError) setOwnerValidationError(null);
+                    }}
+                    placeholder="e.g. Ateneo Sports Complex, Naga Active Arena"
+                    autoComplete="off"
+                    autoFocus
+                    className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                  />
+                </div>
+
+                {/* Circular Facility Initials Preview Badge */}
+                <div className="flex items-center gap-3 pt-1">
+                  <div className="w-12 h-12 rounded-2xl bg-[#141A15] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-lg flex items-center justify-center shadow-[0_0_14px_rgba(200,255,46,0.25)] shrink-0 select-none">
+                    {getPlayerInitials(facilityName || 'Sports Facility')}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-[#F4F7F0] block truncate">
+                      {facilityName.trim() || 'New Sports Facility'}
+                    </span>
+                    <span className="text-[10px] text-[#A5B0A6] block truncate">
+                      Official listing badge displayed on marketplace searches
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  Email Address
+              {/* Facility Category / Type */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  2. Facility Category
                 </label>
-                <input
-                  type="email"
-                  value={ownerEmail}
-                  onChange={(e) => {
-                    setOwnerEmail(e.target.value);
-                    if (ownerValidationError) setOwnerValidationError(null);
-                  }}
-                  placeholder="owner@facility.ph"
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {facilityTypeOptions.map((item) => {
+                    const isSelected = facilityType === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setFacilityType(item.id)}
+                        className={`p-3 rounded-2xl border text-left transition-all ${
+                          isSelected
+                            ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_16px_rgba(200,255,46,0.18)]'
+                            : 'bg-[#1C241E] border-white/5 hover:border-white/15'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs font-bold ${isSelected ? 'text-[#C8FF2E]' : 'text-[#F4F7F0]'}`}>
+                            {item.label}
+                          </span>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/5 text-[#A5B0A6] font-semibold">
+                            {item.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-[#A5B0A6] leading-tight">
+                          {item.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  Password
+              {/* Management Contacts */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  3. Management &amp; Desk Contact
                 </label>
-                <input
-                  type="password"
-                  value={ownerPassword}
-                  onChange={(e) => {
-                    setOwnerPassword(e.target.value);
-                    if (ownerValidationError) setOwnerValidationError(null);
-                  }}
-                  placeholder="Min. 6 characters"
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                />
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* STEP 2: Facility Name & Address */}
-        {ownerStep === 2 && (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                Facility details
-              </h1>
-              <p className="text-xs sm:text-sm text-[#65756B]">
-                Players look for your sports center on the marketplace.
-              </p>
-            </div>
+                <div className="space-y-2.5">
+                  <div className="relative flex items-center">
+                    <UserIcon className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => {
+                        setFullName(e.target.value);
+                        if (ownerValidationError) setOwnerValidationError(null);
+                      }}
+                      placeholder="Admin / Athletic Director Name (e.g. Coach Carlo Rivera)"
+                      autoComplete="name"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                    />
+                  </div>
 
-            <div className="space-y-4 pt-2">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  Facility Name
-                </label>
-                <input
-                  type="text"
-                  value={facilityName}
-                  onChange={(e) => {
-                    setFacilityName(e.target.value);
-                    if (ownerValidationError) setOwnerValidationError(null);
-                  }}
-                  placeholder="e.g. Metro Sports Hub"
-                  autoComplete="off"
-                  autoFocus
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                />
-              </div>
+                  <div className="relative flex items-center">
+                    <Mail className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="email"
+                      value={ownerEmail}
+                      onChange={(e) => {
+                        setOwnerEmail(e.target.value);
+                        if (ownerValidationError) setOwnerValidationError(null);
+                      }}
+                      placeholder="Official Contact Email (e.g. athletics@university.edu.ph)"
+                      autoComplete="email"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                    />
+                  </div>
 
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  Street Address
-                </label>
-                <input
-                  type="text"
-                  value={facilityAddress}
-                  onChange={(e) => {
-                    setFacilityAddress(e.target.value);
-                    if (ownerValidationError) setOwnerValidationError(null);
-                  }}
-                  placeholder="e.g. 123 Sports Ave"
-                  autoComplete="off"
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-white text-base font-bold text-[#1A241E] focus:border-[#2D724E] focus:outline-none shadow-xs"
-                />
-              </div>
+                  <div className="relative flex items-center">
+                    <Phone className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="tel"
+                      value={ownerPhone}
+                      onChange={(e) => {
+                        setOwnerPhone(e.target.value);
+                        if (ownerValidationError) setOwnerValidationError(null);
+                      }}
+                      placeholder="Mobile / Desk Telephone (e.g. 0917-123-4567)"
+                      autoComplete="tel"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                    />
+                  </div>
 
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-1.5">
-                  City / Area
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value="Naga City"
-                  className="w-full px-4 py-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] text-base font-bold text-[#1A241E] focus:outline-none cursor-default shadow-xs"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: Featured Sports */}
-        {ownerStep === 3 && (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                Featured sports
-              </h1>
-              <p className="text-xs sm:text-sm text-[#65756B]">
-                Select the sports your facility provides courts for.
-              </p>
-            </div>
-
-            <div className="space-y-2.5 pt-2">
-              {AVAILABLE_SPORTS.map((sport) => {
-                const isSelected = facilitySports.includes(sport.id);
-                return (
-                  <button
-                    key={sport.id}
-                    type="button"
-                    onClick={() => toggleFacilitySport(sport.id)}
-                    className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                      isSelected
-                        ? 'border-[#2D724E] bg-white shadow-sm ring-1 ring-[#2D724E]'
-                        : 'border-[#E8E5DF] bg-white/70 hover:border-[#2D724E]/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{sport.icon}</span>
-                      <span className="text-sm font-black text-[#1A241E]">{sport.label}</span>
+                  {/* Password if direct guest onboarding */}
+                  {!currentUser.email && !(typeof window !== 'undefined' && localStorage.getItem('sportsync_user_email')) && (
+                    <div className="relative flex items-center pt-1">
+                      <Lock className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                      <input
+                        type="password"
+                        value={ownerPassword}
+                        onChange={(e) => {
+                          setOwnerPassword(e.target.value);
+                          if (ownerValidationError) setOwnerValidationError(null);
+                        }}
+                        placeholder="Create Portal Password (Min. 6 characters)"
+                        className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                      />
                     </div>
-                    <div
-                      className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
-                        isSelected ? 'bg-[#2D724E] border-[#2D724E] text-white' : 'border-[#E8E5DF]'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5" />}
-                    </div>
-                  </button>
-                );
-              })}
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* STEP 4: Courts & Rates */}
-        {ownerStep === 4 && (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                Court setup &amp; rates
-              </h1>
-              <p className="text-xs sm:text-sm text-[#65756B]">
-                Configure court count and standard hourly rates.
-              </p>
-            </div>
+          {/* ================================================================= */}
+          {/* STEP 2: LOCATION & CAMPUS VENUE ADDRESS */}
+          {/* ================================================================= */}
+          {ownerStep === 2 && (
+            <div className="space-y-5 animate-in fade-in">
+              {/* Pilot Market Banner */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                    1. Operating City &amp; Market
+                  </label>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
+                    Pilot Market
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                  <input
+                    type="text"
+                    readOnly
+                    value="Naga City, Camarines Sur"
+                    className="w-full h-11 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none cursor-default font-semibold"
+                  />
+                </div>
+                <p className="text-[11px] text-[#A5B0A6]">
+                  SportSync facility portal is actively live across Naga City. All pilot bookings are zero commission during launch.
+                </p>
+              </div>
 
-            <div className="space-y-5 pt-2">
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                  Number of Courts
+              {/* Street & Campus Address */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  2. Street / Campus Address
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="relative flex items-center">
+                  <Navigation className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                  <input
+                    type="text"
+                    value={facilityAddress}
+                    onChange={(e) => {
+                      setFacilityAddress(e.target.value);
+                      if (ownerValidationError) setOwnerValidationError(null);
+                    }}
+                    placeholder="e.g. Ateneo Avenue, Bagumbayan Sur"
+                    autoComplete="street-address"
+                    autoFocus
+                    className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                  />
+                </div>
+              </div>
+
+              {/* Barangay / District Selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  3. Naga City District / Barangay
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {districtOptions.map((district) => {
+                    const isSelected = facilityDistrict === district;
+                    return (
+                      <button
+                        key={district}
+                        type="button"
+                        onClick={() => setFacilityDistrict(district)}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all truncate flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E]'
+                            : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white'
+                        }`}
+                      >
+                        <span className="truncate">{district}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Landmark & Gate Directions */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  4. Entrance Notes &amp; Landmarks (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={facilityLandmark}
+                  onChange={(e) => setFacilityLandmark(e.target.value)}
+                  placeholder="e.g. Enter via Gate 2, beside Student Activity Center"
+                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                />
+                <p className="text-[10px] text-[#A5B0A6]">
+                  Included in player digital QR tickets to assist court check-ins.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* STEP 3: SPORTS & COURT INVENTORY */}
+          {/* ================================================================= */}
+          {ownerStep === 3 && (
+            <div className="space-y-5 animate-in fade-in">
+              {/* Featured Sports */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
+                    1. Sports Hosted at Facility
+                  </label>
+                  <span className="text-[11px] text-[#C8FF2E] font-bold">
+                    {facilitySports.length} Selected
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {AVAILABLE_SPORTS.map((sport) => {
+                    const isSelected = facilitySports.includes(sport.id);
+                    return (
+                      <button
+                        key={sport.id}
+                        type="button"
+                        onClick={() => toggleFacilitySport(sport.id)}
+                        className={`p-3 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                          isSelected
+                            ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_16px_rgba(200,255,46,0.18)]'
+                            : 'bg-[#1C241E] border-white/5 hover:border-white/15'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">{sport.icon}</span>
+                          <span className={`text-xs font-semibold truncate ${isSelected ? 'text-[#C8FF2E]' : 'text-[#F4F7F0]'}`}>
+                            {sport.label}
+                          </span>
+                        </div>
+                        <div
+                          className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ml-1 ${
+                            isSelected ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'border border-white/20'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Number of Courts */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
+                    2. Active Courts Available
+                  </label>
+                  <span className="text-xs font-mono font-bold text-[#C8FF2E]">
+                    {courtCount} {courtCount === 1 ? 'Court' : 'Courts'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
                   {[1, 2, 4, 6, 8].map((num) => (
                     <button
                       key={num}
                       type="button"
                       onClick={() => setCourtCount(num)}
-                      className={`flex-1 py-3 rounded-xl border text-sm font-black transition-all cursor-pointer ${
+                      className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
                         courtCount === num
-                          ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
-                          : 'border-[#E8E5DF] bg-white text-[#1A241E]'
+                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
+                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/10 hover:text-white'
                       }`}
                     >
-                      {num}
+                      {num} {num === 1 ? 'Court' : 'Courts'}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-[#65756B] block mb-2">
-                  Hourly Court Rate (₱)
+              {/* Surface & Arena Environment */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  3. Court Playing Surface
                 </label>
-                <div className="flex items-center gap-2">
-                  {[350, 450, 500, 600, 800].map((rate) => (
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {surfaceOptions.map((surface) => {
+                    const isSelected = courtSurface === surface;
+                    return (
+                      <button
+                        key={surface}
+                        type="button"
+                        onClick={() => setCourtSurface(surface)}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                            : 'bg-[#141A15] border-white/5 text-[#A5B0A6] hover:text-white'
+                        }`}
+                      >
+                        <span>{surface}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#C8FF2E]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-xs text-[#A5B0A6] font-semibold">Environment:</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsIndoor(true)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        isIndoor ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'bg-[#1C241E] text-[#A5B0A6]'
+                      }`}
+                    >
+                      Indoor Covered
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsIndoor(false)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        !isIndoor ? 'bg-[#C8FF2E] text-[#0B0F0C]' : 'bg-[#1C241E] text-[#A5B0A6]'
+                      }`}
+                    >
+                      Outdoor Lighted
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* STEP 4: OPERATIONS, SCHEDULE, RATES & AMENITIES */}
+          {/* ================================================================= */}
+          {ownerStep === 4 && (
+            <div className="space-y-5 animate-in fade-in">
+              {/* Operating Hours */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
+                    1. Operating Schedule
+                  </label>
+                  <span className="text-xs font-mono font-bold text-[#C8FF2E]">
+                    {operatingHours}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {hourPresets.map((preset) => {
+                    const isSelected = operatingHours === preset.value;
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => setOperatingHours(preset.value)}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                            : 'bg-[#141A15] border-white/5 text-[#A5B0A6] hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className={`w-3.5 h-3.5 ${isSelected ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
+                          <span>{preset.label}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#C8FF2E]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Standard Hourly Rate */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
+                    2. Standard Hourly Rate (₱ / Hour)
+                  </label>
+                  <span className="text-sm font-mono font-black text-[#C8FF2E]">
+                    ₱{hourlyRatePhp} / hr
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {ratePresets.map((rate) => (
                     <button
                       key={rate}
                       type="button"
                       onClick={() => setHourlyRatePhp(rate)}
-                      className={`flex-1 py-3 rounded-xl border text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                      className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
                         hourlyRatePhp === rate
-                          ? 'border-[#2D724E] bg-[#2D724E] text-white shadow-xs'
-                          : 'border-[#E8E5DF] bg-white text-[#1A241E]'
+                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
+                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/10 hover:text-white'
                       }`}
                     >
                       ₱{rate}
@@ -1164,155 +1593,232 @@ function OnboardingContent() {
                   ))}
                 </div>
               </div>
+
+              {/* Amenities */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  3. Facility Amenities &amp; Conveniences
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {amenityOptions.map((amenity) => {
+                    const isSelected = facilityAmenities.includes(amenity);
+                    return (
+                      <button
+                        key={amenity}
+                        type="button"
+                        onClick={() => toggleAmenity(amenity)}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E]'
+                            : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white'
+                        }`}
+                      >
+                        <span className="truncate">{amenity}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Booking Confirmation Mode */}
+              <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  4. Booking Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBookingMode('instant')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      bookingMode === 'instant'
+                        ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                        : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
+                    }`}
+                  >
+                    <span className="text-xs font-bold block">Instant Booking</span>
+                    <span className="text-[10px] opacity-80 block">Direct reservations via GCash / Maya</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBookingMode('inquiry')}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      bookingMode === 'inquiry'
+                        ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                        : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
+                    }`}
+                  >
+                    <span className="text-xs font-bold block">Desk Approval</span>
+                    <span className="text-[10px] opacity-80 block">Requires manual review before confirm</span>
+                  </button>
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* STEP 5: REVIEW & VERIFY SUMMARY */}
+          {/* ================================================================= */}
+          {ownerStep === 5 && (
+            <div className="space-y-5 animate-in fade-in">
+              <div className="text-center space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#C8FF2E]">
+                  Ready to Launch
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-[#F4F7F0]">
+                  Review Your Facility Profile
+                </h2>
+                <p className="text-xs text-[#A5B0A6] max-w-sm mx-auto">
+                  Confirm your details below. Once activated, your management console and bookings ledger will be ready.
+                </p>
+              </div>
+
+              {/* Full Facility Card Preview */}
+              <div className="p-5 rounded-3xl bg-[#141A15] border border-[#C8FF2E]/30 space-y-4 shadow-[0_0_24px_rgba(200,255,46,0.1)]">
+                <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#0B0F0C] border-2 border-[#C8FF2E] text-[#C8FF2E] font-display font-black text-lg flex items-center justify-center shrink-0">
+                      {getPlayerInitials(facilityName || 'Sports Facility')}
+                    </div>
+                    <div>
+                      <h3 className="font-display font-black text-base sm:text-lg text-[#F4F7F0]">
+                        {facilityName || 'Ateneo Sports Complex'}
+                      </h3>
+                      <span className="text-xs text-[#A5B0A6] capitalize">
+                        {facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="px-2.5 py-1 rounded-full bg-[#C8FF2E]/15 border border-[#C8FF2E]/30 text-[#C8FF2E] text-[10px] font-bold flex items-center gap-1 shrink-0">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#C8FF2E]" />
+                    <span>Verified Partner</span>
+                  </span>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-[#1C241E] border border-white/5 space-y-1">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                      Location
+                    </span>
+                    <p className="text-white font-medium truncate">{facilityAddress || 'Ateneo Ave'}</p>
+                    <p className="text-[11px] text-[#C8FF2E]">{facilityDistrict}, Naga City</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-[#1C241E] border border-white/5 space-y-1">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                      Desk Contact
+                    </span>
+                    <p className="text-white font-medium truncate">{fullName || currentUser.full_name || 'Facility Admin'}</p>
+                    <p className="text-[11px] text-[#A5B0A6] truncate">{ownerEmail || currentUser.email}</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-[#1C241E] border border-white/5 space-y-1">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                      Court Setup
+                    </span>
+                    <p className="text-white font-medium">{courtCount} Courts ({isIndoor ? 'Indoor' : 'Outdoor'})</p>
+                    <p className="text-[11px] text-[#A5B0A6] truncate">{courtSurface}</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-[#1C241E] border border-white/5 space-y-1">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                      Operations &amp; Rate
+                    </span>
+                    <p className="text-[#C8FF2E] font-bold font-mono">₱{hourlyRatePhp} / hour</p>
+                    <p className="text-[11px] text-[#A5B0A6]">{operatingHours}</p>
+                  </div>
+                </div>
+
+                {/* Sports Chips */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                    Featured Sports
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {facilitySports.map((s) => (
+                      <span
+                        key={s}
+                        className="px-2.5 py-1 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-semibold text-[#F4F7F0] capitalize flex items-center gap-1"
+                      >
+                        <span>{AVAILABLE_SPORTS.find((asp) => asp.id === s)?.icon}</span>
+                        <span>{s}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Amenities Tags */}
+                {facilityAmenities.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
+                      Facility Amenities
+                    </span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {facilityAmenities.map((amenity) => (
+                        <span
+                          key={amenity}
+                          className="px-2 py-0.5 rounded-md bg-white/5 text-[10px] text-[#A5B0A6] font-medium"
+                        >
+                          ✓ {amenity}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sticky Action Footer */}
+        <div className="p-4 sm:p-6 pt-3 border-t border-white/10 bg-[#0B0F0C] shrink-0 space-y-2">
+          <div className="flex items-center gap-3">
+            {ownerStep > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOwnerStep((s) => s - 1);
+                  setOwnerValidationError(null);
+                }}
+                className="h-12 px-5 rounded-2xl bg-[#1C241E] hover:bg-[#253028] text-xs font-bold text-[#F4F7F0] transition-colors cursor-pointer"
+              >
+                Back
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={handleNextStep}
+              className="flex-1 h-12 rounded-2xl bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] font-display font-bold text-sm px-6 flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(200,255,46,0.3)] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.99]"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#0B0F0C]" />
+                  <span>{ownerStep === 5 ? 'Activating Facility Portal...' : 'Processing...'}</span>
+                </>
+              ) : ownerStep === 5 ? (
+                <>
+                  <Building2 className="w-4 h-4 text-[#0B0F0C]" />
+                  <span>Complete Setup &bull; Launch Faculty Portal</span>
+                </>
+              ) : (
+                <>
+                  <span>Continue to Step {ownerStep + 1}</span>
+                  <ArrowRight className="w-4 h-4 text-[#0B0F0C] stroke-[2.5]" />
+                </>
+              )}
+            </button>
           </div>
-        )}
 
-        {/* STEP 5: Facility Ready */}
-        {ownerStep === 5 && (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#EBF4EE] text-[#2D724E]">
-              <Building2 className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1A241E]">
-                Your facility is ready.
-              </h1>
-              <p className="text-xs sm:text-sm text-[#65756B] max-w-sm mx-auto">
-                Manage court schedules, view today&apos;s bookings, and host open play sessions from your console.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-[#E8E5DF] bg-white p-4 max-w-xs mx-auto text-left space-y-1">
-              <span className="text-sm font-black text-[#1A241E] block">
-                {facilityName || 'Metro Sports Hub'}
-              </span>
-              <span className="text-xs text-[#65756B] block">
-                {courtCount} courts &bull; ₱{hourlyRatePhp}/hr
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Action Area: Facility Flow */}
-      <div className="pb-4 sm:pb-6 space-y-2.5">
-        {ownerValidationError && (
-          <div className="p-3.5 rounded-2xl bg-[#E0533C]/10 border border-[#E0533C]/30 text-[#A82B17] text-xs flex items-center gap-2.5 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 shrink-0 text-[#E0533C]" />
-            <span className="font-semibold">{ownerValidationError}</span>
-          </div>
-        )}
-
-        {ownerStep < totalOwnerSteps ? (
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={async () => {
-              if (ownerStep === 1) {
-                if (!fullName.trim()) {
-                  setOwnerValidationError('Please enter contact / owner name.');
-                  return;
-                }
-                const emailValidation = validateRealEmail(ownerEmail);
-                if (!emailValidation.isValid) {
-                  setOwnerValidationError(emailValidation.error || 'Please enter a real, valid email address. Disposable or dummy accounts are forbidden.');
-                  return;
-                }
-                if (!ownerPassword || ownerPassword.length < 6) {
-                  setOwnerValidationError('Password must be at least 6 characters long.');
-                  return;
-                }
-                setIsSubmitting(true);
-                setOwnerValidationError(null);
-                try {
-                  const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      fullName: fullName.trim(),
-                      email: ownerEmail.trim().toLowerCase(),
-                      password: ownerPassword.trim(),
-                      role: 'facility_owner',
-                    }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (!res.ok) {
-                    throw new Error(data.error || 'Registration failed.');
-                  }
-                  if (data.user) {
-                    setAuthenticatedUser({
-                      id: data.user.id,
-                      auth_id: data.user.id,
-                      email: data.user.email,
-                      full_name: data.user.full_name,
-                      nickname: data.user.nickname,
-                      role: 'venue_owner',
-                      onboarding_completed: false,
-                      has_completed_onboarding: false,
-                    });
-                    if (typeof window !== 'undefined') {
-                      localStorage.setItem('sportsync_user_id', data.user.id);
-                      localStorage.setItem('sportsync_user_email', data.user.email);
-                      localStorage.setItem('sportsync_user_role', 'venue_owner');
-                      localStorage.setItem('sportsync_user_name', data.user.full_name);
-                      localStorage.setItem('sportsync_pending_onboarding', 'true');
-                    }
-                  }
-                  setOwnerStep(2);
-                } catch (err) {
-                  setOwnerValidationError(err instanceof Error ? err.message : 'Registration failed.');
-                } finally {
-                  setIsSubmitting(false);
-                }
-                return;
-              }
-
-              if (ownerStep === 2) {
-                if (!facilityName.trim()) {
-                  setOwnerValidationError('Please enter your sports facility name.');
-                  return;
-                }
-                if (!facilityAddress.trim()) {
-                  setOwnerValidationError('Please enter your facility street address.');
-                  return;
-                }
-                setOwnerValidationError(null);
-                setOwnerStep(3);
-                return;
-              }
-
-              if (ownerStep === 3) {
-                if (facilitySports.length === 0) {
-                  setOwnerValidationError('Please select at least one sport your facility provides.');
-                  return;
-                }
-                setOwnerValidationError(null);
-                setOwnerStep(4);
-                return;
-              }
-
-              if (ownerStep === 4) {
-                setOwnerValidationError(null);
-                setOwnerStep(5);
-                return;
-              }
-            }}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] cursor-pointer disabled:opacity-50"
-          >
-            {isSubmitting ? 'Registering Account...' : 'Continue'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled={isSubmitting}
-            onClick={handleFinishOwner}
-            className="w-full py-3.5 rounded-2xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-sm font-bold shadow-xs transition-all active:scale-[0.99] text-center min-h-[50px] disabled:opacity-50 cursor-pointer"
-          >
-            {isSubmitting ? 'Creating Facility...' : 'Open Facility Console'}
-          </button>
-        )}
+          <p className="text-[10px] text-[#65756B] text-center">
+            {ownerStep === 5
+              ? 'Synchronizes your facility profile and courts with the SportSync management console.'
+              : `Step ${ownerStep} of ${totalOwnerSteps} • Instant court setup for Naga City pilot.`}
+          </p>
+        </div>
       </div>
     </div>
   );

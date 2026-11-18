@@ -186,21 +186,32 @@ export async function updateBookingStatus(
   status: BookingStatus
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured) return false;
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', bookingId);
 
-  try {
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', bookingId);
-
-    if (error) {
-      console.error('Failed to update booking status:', error);
-      return false;
+      if (!error) return true;
+    } catch (err) {
+      console.error('Error updating booking status via Supabase:', err);
     }
-    return true;
-  } catch (err) {
-    console.error('Error updating booking status:', err);
-    return false;
   }
+
+  // Fallback to API route
+  if (typeof window !== 'undefined') {
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId, status }),
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('API updateBookingStatus fallback notice:', err);
+    }
+  }
+
+  return false;
 }

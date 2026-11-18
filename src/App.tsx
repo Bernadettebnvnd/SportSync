@@ -17,6 +17,7 @@ const StandaloneMobileView: React.FC = () => {
     { id: 'carousel', label: '2. 3-Slide Carousel', group: 'Onboarding' },
     { id: 'auth', label: '3. Sign In / Auth', group: 'Onboarding' },
     { id: 'personalization', label: '4. Personalization', group: 'Onboarding' },
+    { id: 'faculty-setup', label: '4b. Faculty Setup', group: 'Onboarding' },
 
     // Home
     { id: 'home', label: '5. Home / Discover', group: 'Home' },

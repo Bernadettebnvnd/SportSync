@@ -137,7 +137,8 @@ export async function serverRegister(data: {
     throw new Error(emailValidation.error || 'Please provide a real, valid email address. Fake or disposable accounts are restricted.');
   }
   const normalizedEmail = emailValidation.normalizedEmail || data.email.trim().toLowerCase();
-  const assignedRole: UserRole = data.role === 'facility_owner' ? 'venue_owner' : 'player';
+  const isFacilityRole = data.role === 'facility_owner' || data.role === 'faculty' || data.role === 'facility' || data.role === 'faculty_owner' || data.role === 'venue_owner';
+  const assignedRole: UserRole = isFacilityRole ? 'venue_owner' : 'player';
   const registrationCity = data.city ? data.city.trim() : 'Naga City';
 
   // 1. Fallback for Local Development / Offline MVP when Supabase is not configured

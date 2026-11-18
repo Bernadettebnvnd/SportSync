@@ -28,12 +28,20 @@ function resolveUserFromRequest(request: Request): { userId: string; email?: str
   return null;
 }
 
+// In-memory dev bookings storage across Next.js Route Handler workers & module re-evaluations
+const localDevBookings: any[] =
+  (globalThis as any).__sportsync_local_bookings ||
+  ((globalThis as any).__sportsync_local_bookings = []);
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const venueId = url.searchParams.get('venueId');
     const courtId = url.searchParams.get('courtId');
     const bookingDate = url.searchParams.get('date');
+    const userId = url.searchParams.get('userId');
+
+    let results: any[] = [];
 
     if (isSupabaseConfigured) {
       const dbClient = createAdminClient() || createServerClient();
@@ -53,17 +61,75 @@ export async function GET(request: Request) {
         if (bookingDate) {
           query = query.eq('booking_date', bookingDate);
         }
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
 
         const { data, error } = await query;
         if (!error && data) {
-          return NextResponse.json({ success: true, bookings: data });
+          results = data;
         }
       }
     }
 
-    return NextResponse.json({ success: true, bookings: [] });
+    // Merge or fallback to local in-memory bookings for development & offline prototypes
+    const filteredLocal = localDevBookings.filter((b) => {
+      if (venueId && b.venue_id !== venueId && b.venueId !== venueId) return false;
+      if (courtId && b.court_id !== courtId && b.courtId !== courtId) return false;
+      if (bookingDate && b.booking_date !== bookingDate && b.bookingDate !== bookingDate) return false;
+      if (userId && b.user_id !== userId && b.userId !== userId) return false;
+      return true;
+    });
+
+    const seenIds = new Set(results.map((r) => r.id || r.booking_reference));
+    for (const item of filteredLocal) {
+      const key = item.id || item.booking_reference;
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
+        results.push(item);
+      }
+    }
+
+    return NextResponse.json({ success: true, bookings: results });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to retrieve bookings.';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { bookingId, status } = body;
+
+    if (!bookingId || !status) {
+      return NextResponse.json(
+        { error: 'Missing required parameters (bookingId, status).' },
+        { status: 400 }
+      );
+    }
+
+    if (isSupabaseConfigured) {
+      const dbClient = createAdminClient() || createServerClient();
+      if (dbClient) {
+        await dbClient
+          .from('bookings')
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq('id', bookingId);
+      }
+    }
+
+    const localIndex = localDevBookings.findIndex(
+      (b) => b.id === bookingId || b.booking_reference === bookingId || b.bookingReference === bookingId
+    );
+    if (localIndex !== -1) {
+      localDevBookings[localIndex].status = status;
+      localDevBookings[localIndex].updated_at = new Date().toISOString();
+    }
+
+    return NextResponse.json({ success: true, bookingId, status });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update booking status.';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -310,6 +376,9 @@ export async function POST(request: Request) {
       notes,
       created_at: new Date().toISOString(),
     };
+
+    // Persist in local dev cache for facility management dashboard queries
+    localDevBookings.unshift(bookingResponse);
 
     return NextResponse.json({
       success: true,

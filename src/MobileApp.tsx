@@ -9,6 +9,7 @@ import { SplashScreen } from './screens/onboarding/SplashScreen';
 import { CarouselScreen } from './screens/onboarding/CarouselScreen';
 import { AuthScreen } from './screens/onboarding/AuthScreen';
 import { PersonalizationScreen } from './screens/onboarding/PersonalizationScreen';
+import { FacultySetupScreen } from './screens/onboarding/FacultySetupScreen';
 import { DiscoverScreen } from './screens/home/DiscoverScreen';
 import { LiveScoresHubScreen } from './screens/scores/LiveScoresHubScreen';
 import { MatchCenterScreen } from './screens/scores/MatchCenterScreen';
@@ -53,6 +54,7 @@ export type ScreenId =
   | 'carousel'
   | 'auth'
   | 'personalization'
+  | 'faculty-setup'
   | 'home'
   | 'scores'
   | 'match-center'
@@ -619,12 +621,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             canGoBack={canGoBack}
             onSuccess={(role, isNewAccount) => {
               if (role === 'facility_owner') {
-                if (typeof window !== 'undefined') {
+                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   if (isNewAccount) {
                     window.location.href = '/onboarding?role=owner';
                   } else {
                     window.location.href = '/organizer';
                   }
+                } else {
+                  navigateTo('faculty-setup');
                 }
               } else if (isNewAccount) {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
@@ -697,6 +701,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       }
+
+      case 'faculty-setup':
+        return (
+          <FacultySetupScreen
+            onBack={goBack}
+            onComplete={(_data) => {
+              setToastMessage('Facility profile created successfully!');
+              navigateTo('home');
+            }}
+          />
+        );
 
       // Flow 2: Home
       case 'home':

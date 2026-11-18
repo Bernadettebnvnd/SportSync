@@ -14,6 +14,12 @@ import {
   ExternalLink,
   ShieldCheck,
   Check,
+  User as UserIcon,
+  Mail,
+  Phone,
+  MapPin,
+  Clock,
+  Loader2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -107,10 +113,16 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
   const [courts, setCourts] = useState<NewCourtInput[]>([
     {
-      name: '',
+      name: 'Court 1',
       sport: 'pickleball',
       hourlyRateCents: 50000,
-      floorType: '',
+      floorType: 'Tournament Hardwood Parquet',
+    },
+    {
+      name: 'Court 2',
+      sport: 'badminton',
+      hourlyRateCents: 45000,
+      floorType: 'BWF Taraflex Rubber Cushion',
     },
   ]);
 
@@ -136,10 +148,10 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
     setCourts([
       ...courts,
       {
-        name: '',
+        name: `Court ${courts.length + 1}`,
         sport: defaultSport,
-        hourlyRateCents: 45000,
-        floorType: '',
+        hourlyRateCents: 50000,
+        floorType: 'Tournament Standard Surface',
       },
     ]);
   };
@@ -171,7 +183,7 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
         ownerEmail: ownerEmail.trim(),
         ownerPhone: ownerPhone.trim(),
         facilityName: facilityName.trim(),
-        description: description.trim(),
+        description: description.trim() || 'Quality dedicated sports facility with tournament-standard courts in Naga City.',
         address: address.trim(),
         city: city.trim(),
         featuredSports: selectedSports,
@@ -187,15 +199,14 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
         particleCount: 80,
         spread: 75,
         origin: { y: 0.6 },
-        colors: ['#2D724E', '#C87D43', '#E9C46A'],
+        colors: ['#C8FF2E', '#3DDC84', '#FFFFFF'],
       });
 
       onClose();
-      // Redirect to Facility Dashboard per specification
       if (typeof window !== 'undefined') {
         setTimeout(() => {
           window.location.href = '/organizer';
-        }, 500);
+        }, 400);
       }
     } catch (err: unknown) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to register facility.');
@@ -205,130 +216,121 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-xl rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in select-none">
+      <div className="relative w-full max-w-xl rounded-3xl bg-[#0B0F0C] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-[#E8E5DF] bg-[#FAF8F5] flex items-center justify-between shrink-0">
+        <div className="p-4 sm:p-5 border-b border-white/10 bg-[#141A15] flex items-center justify-between shrink-0">
           <div>
             <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-[#2D724E]" />
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#2D724E]">
-                Business Facility Onboarding
+              <Building2 className="w-4 h-4 text-[#C8FF2E]" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#C8FF2E]">
+                Faculty &amp; Facility Setup
               </span>
             </div>
-            <h3 className="font-display text-base sm:text-lg font-black text-black mt-0.5">
-              List Your Facility on SportSync
+            <h3 className="font-display text-base sm:text-lg font-black text-[#F4F7F0] mt-0.5">
+              List Facility on SportSync
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-black hover:bg-[#E8E5DF] transition-colors"
+            className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
             aria-label="Close modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Stepper Progress Bar */}
-        <div className="bg-[#FAF8F5] px-3 sm:px-6 py-2.5 border-b border-[#E8E5DF] flex items-center justify-between text-xs font-bold text-black shrink-0 overflow-x-auto no-scrollbar gap-1 sm:gap-0">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 1 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
-              }`}
-            >
-              1
-            </span>
-            <span className={step === 1 ? 'text-black font-black' : 'text-black/80 font-bold'}>Contact</span>
-          </div>
-          <div className="h-0.5 w-6 bg-[#E8E5DF]" />
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 2 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
-              }`}
-            >
-              2
-            </span>
-            <span className={step === 2 ? 'text-black font-black' : 'text-black/80 font-bold'}>Facility</span>
-          </div>
-          <div className="h-0.5 w-6 bg-[#E8E5DF]" />
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 3 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
-              }`}
-            >
-              3
-            </span>
-            <span className={step === 3 ? 'text-black font-black' : 'text-black/80 font-bold'}>Courts</span>
-          </div>
-          <div className="h-0.5 w-6 bg-[#E8E5DF]" />
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                step >= 4 ? 'bg-[#2D724E] text-white' : 'bg-[#E8E5DF] text-black font-black'
-              }`}
-            >
-              4
-            </span>
-            <span className={step === 4 ? 'text-black font-black' : 'text-black/80 font-bold'}>Model</span>
-          </div>
+        <div className="bg-[#141A15] px-4 sm:px-6 py-2.5 border-b border-white/5 flex items-center justify-between text-xs font-semibold text-[#A5B0A6] shrink-0 gap-2">
+          {[
+            { stepNum: 1, label: 'Contact' },
+            { stepNum: 2, label: 'Facility' },
+            { stepNum: 3, label: 'Courts' },
+            { stepNum: 4, label: 'Model' },
+          ].map((item, idx) => (
+            <React.Fragment key={item.stepNum}>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                    step >= item.stepNum
+                      ? 'bg-[#C8FF2E] text-[#0B0F0C]'
+                      : 'bg-[#1C241E] text-[#A5B0A6]'
+                  }`}
+                >
+                  {item.stepNum}
+                </span>
+                <span className={`text-[11px] ${step === item.stepNum ? 'text-[#C8FF2E] font-bold' : 'text-[#A5B0A6]'}`}>
+                  {item.label}
+                </span>
+              </div>
+              {idx < 3 && <div className="h-0.5 flex-1 bg-white/5" />}
+            </React.Fragment>
+          ))}
         </div>
 
         {/* Form Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 no-scrollbar">
           {submitError && step < 4 && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-700">
+            <div className="p-3.5 rounded-2xl bg-[#E0533C]/10 border border-[#E0533C]/30 text-[#FFA494] text-xs font-semibold">
               {submitError}
             </div>
           )}
+
           {/* STEP 1: Owner Contact */}
           {step === 1 && (
-            <div className="space-y-3.5">
+            <div className="space-y-4 animate-in fade-in">
               <div>
-                <h4 className="font-display text-sm font-black text-black">Owner / Representative Details</h4>
-                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
-                  Used for verified booking notifications, payout confirmations, and court ops access.
+                <h4 className="font-display text-sm font-bold text-[#F4F7F0]">Management &amp; Contact Details</h4>
+                <p className="text-xs text-[#A5B0A6] mt-0.5 leading-relaxed">
+                  Used for verified court booking notifications, payout confirmations, and management desk operations.
                 </p>
               </div>
 
-              <div className="space-y-2.5">
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={ownerName}
-                    onChange={(e) => setOwnerName(e.target.value)}
-                    placeholder="e.g. Carlos Tan"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    required
-                  />
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Full Contact Name</label>
+                  <div className="relative flex items-center">
+                    <UserIcon className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="text"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      placeholder="e.g. Coach Carlo Rivera"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Business Email</label>
-                  <input
-                    type="email"
-                    value={ownerEmail}
-                    onChange={(e) => setOwnerEmail(e.target.value)}
-                    placeholder="e.g. carlos@upperdecksports.ph"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    required
-                  />
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Official Email Address</label>
+                  <div className="relative flex items-center">
+                    <Mail className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="email"
+                      value={ownerEmail}
+                      onChange={(e) => setOwnerEmail(e.target.value)}
+                      placeholder="e.g. athletics@university.edu.ph"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Contact Phone (GCash / SMS)</label>
-                  <input
-                    type="text"
-                    value={ownerPhone}
-                    onChange={(e) => setOwnerPhone(e.target.value)}
-                    placeholder="e.g. 0917-888-0000"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    required
-                  />
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Contact Phone (GCash / SMS)</label>
+                  <div className="relative flex items-center">
+                    <Phone className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="text"
+                      value={ownerPhone}
+                      onChange={(e) => setOwnerPhone(e.target.value)}
+                      placeholder="e.g. 0917-888-0000"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -336,243 +338,166 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
 
           {/* STEP 2: Facility Information */}
           {step === 2 && (
-            <div className="space-y-3.5">
+            <div className="space-y-4 animate-in fade-in">
               <div>
-                <h4 className="font-display text-sm font-black text-black">Facility Profile</h4>
-                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
-                  Tell players where you are located and what sports you host.
+                <h4 className="font-display text-sm font-bold text-[#F4F7F0]">Facility Profile &amp; Location</h4>
+                <p className="text-xs text-[#A5B0A6] mt-0.5 leading-relaxed">
+                  Provide your facility name and campus/street location in Naga City.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Facility Name</label>
+                  <div className="relative flex items-center">
+                    <Building2 className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="text"
+                      value={facilityName}
+                      onChange={(e) => setFacilityName(e.target.value)}
+                      placeholder="e.g. Ateneo Sports Pavilion"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Campus / Street Address</label>
+                  <div className="relative flex items-center">
+                    <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="e.g. Ateneo Avenue, Bagumbayan Sur"
+                      className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Pilot City</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value="Naga City, Camarines Sur"
+                    className="w-full h-10 px-3.5 rounded-xl bg-[#141A15] border border-white/5 text-xs text-[#F4F7F0] font-semibold cursor-default"
+                  />
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Featured Sports</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {AVAILABLE_SPORTS.map((sport) => {
+                      const isSelected = selectedSports.includes(sport.id);
+                      return (
+                        <button
+                          key={sport.id}
+                          type="button"
+                          onClick={() => toggleSport(sport.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                              : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
+                          }`}
+                        >
+                          <span>{sport.label}</span>
+                          {isSelected && <Check className="w-3 h-3 text-[#C8FF2E]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: Court Setup */}
+          {step === 3 && (
+            <div className="space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-display text-sm font-bold text-[#F4F7F0]">Courts &amp; Pricing Setup</h4>
+                  <p className="text-xs text-[#A5B0A6] mt-0.5">
+                    Define the courts, surfaces, and hourly rates available at your venue.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddCourt}
+                  className="px-3 py-1.5 rounded-xl bg-[#1C241E] border border-[#C8FF2E]/30 text-[#C8FF2E] text-xs font-bold flex items-center gap-1.5 hover:bg-[#253028]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Court</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {courts.map((court, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-2xl bg-[#141A15] border border-white/10 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#F4F7F0]">Court #{idx + 1}</span>
+                      {courts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCourt(idx)}
+                          className="text-[#E0533C] hover:text-[#FFA494] text-xs flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        value={court.name}
+                        onChange={(e) => handleUpdateCourt(idx, 'name', e.target.value)}
+                        placeholder="Court Name e.g. Court 1"
+                        className="h-10 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      />
+                      <select
+                        value={court.sport}
+                        onChange={(e) => handleUpdateCourt(idx, 'sport', e.target.value as SportType)}
+                        className="h-10 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none capitalize"
+                      >
+                        {selectedSports.map((s) => (
+                          <option key={s} value={s}>
+                            {getSportDisplayName(s)}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        value={court.hourlyRateCents / 100}
+                        onChange={(e) => handleUpdateCourt(idx, 'hourlyRateCents', Number(e.target.value) * 100)}
+                        placeholder="Hourly Rate (₱)"
+                        className="h-10 px-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Inventory Model */}
+          {step === 4 && (
+            <div className="space-y-4 animate-in fade-in">
+              <div>
+                <h4 className="font-display text-sm font-bold text-[#F4F7F0]">Booking Model</h4>
+                <p className="text-xs text-[#A5B0A6] mt-0.5">
+                  Choose how court reservations are received and confirmed.
                 </p>
               </div>
 
               <div className="space-y-2.5">
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Facility Name</label>
-                  <input
-                    type="text"
-                    value={facilityName}
-                    onChange={(e) => setFacilityName(e.target.value)}
-                    placeholder="e.g. BGC Center Court & Smash Hub"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Full Street Address</label>
-                  <input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="e.g. 32nd St cor 9th Ave, Bonifacio Global City"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] font-black text-black block mb-1">City / Municipality</label>
-                    <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Naga City"
-                      className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-black text-black block mb-1">Hours</label>
-                    <div className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] text-xs font-semibold text-black bg-[#FAF8F5] flex items-center">
-                      06:00 AM - 11:00 PM
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black text-black block mb-1">Short Description</label>
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Mention flooring quality, air conditioning, parking, racket stringing, etc..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none resize-none transition-all"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: Sports & Playing Areas */}
-          {step === 3 && (
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-display text-sm font-black text-black">Sports &amp; Playing Areas</h4>
-                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
-                  Select the sports your facility supports and define court rates.
-                </p>
-              </div>
-
-              {/* Multi-Sport selector */}
-              <div>
-                <label className="text-[11px] font-black text-black block mb-1.5">
-                  Supported Sports (Hybrid Facilities Supported)
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {AVAILABLE_SPORTS.map((sport) => {
-                    const isSelected = selectedSports.includes(sport.id);
-                    return (
-                      <button
-                        key={sport.id}
-                        type="button"
-                        onClick={() => toggleSport(sport.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
-                          isSelected
-                            ? 'bg-[#2D724E] text-white border-[#2D724E] shadow-xs'
-                            : 'bg-white border-[#E8E5DF] text-black font-bold hover:border-[#2D724E]'
-                        }`}
-                      >
-                        {sport.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Courts list */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-black text-black">
-                    Courts &amp; Pricing ({courts.length})
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddCourt}
-                    className="text-xs font-black text-[#2D724E] hover:text-[#1E4A32] flex items-center gap-1 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Court</span>
-                  </button>
-                </div>
-
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {courts.map((court, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] space-y-2.5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={court.name}
-                          onChange={(e) => handleUpdateCourt(idx, 'name', e.target.value)}
-                          placeholder="Court Name"
-                          className="flex-1 px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
-                        />
-                        <select
-                          value={court.sport}
-                          onChange={(e) => handleUpdateCourt(idx, 'sport', e.target.value as SportType)}
-                          className="px-3 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none"
-                        >
-                          {selectedSports.map((s) => (
-                            <option key={s} value={s}>
-                              {getSportDisplayName(s)}
-                            </option>
-                          ))}
-                        </select>
-                        {courts.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCourt(idx)}
-                            className="p-2 text-[#DC2626] hover:bg-[#FEE2E2] rounded-xl transition-colors"
-                            title="Remove court"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-bold uppercase text-[#65756B]">Floor Surface</span>
-                            <span className="text-xs font-bold text-[#2D724E]">{court.floorType || 'Select'}</span>
-                          </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {['Cushioned Acrylic', 'BWF Taraflex Rubber', 'Hard Court', 'Wood Parquet', 'Synthetic Turf'].map((surf) => (
-                              <button
-                                key={surf}
-                                type="button"
-                                aria-pressed={court.floorType === surf}
-                                onClick={() => handleUpdateCourt(idx, 'floorType', surf)}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
-                                  court.floorType === surf
-                                    ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold shadow-xs'
-                                    : 'bg-white text-black border-[#E8E5DF] hover:border-[#2D724E]'
-                                }`}
-                              >
-                                {surf}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="pt-1 flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold uppercase text-[#65756B]">Hourly Rate</span>
-                          <div className="flex items-center gap-1.5">
-                            <div className="inline-flex items-center gap-1 bg-white border border-[#E8E5DF] px-2 py-0.5 rounded-lg">
-                              <button
-                                type="button"
-                                aria-label="Decrease court hourly rate"
-                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', Math.max(10000, court.hourlyRateCents - 5000))}
-                                className="w-6 h-6 rounded bg-[#FAF8F5] text-xs font-bold text-black flex items-center justify-center"
-                              >
-                                -
-                              </button>
-                              <span className="font-mono text-xs font-bold text-[#2D724E] px-1">₱{court.hourlyRateCents / 100}/hr</span>
-                              <button
-                                type="button"
-                                aria-label="Increase court hourly rate"
-                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', court.hourlyRateCents + 5000)}
-                                className="w-6 h-6 rounded bg-[#2D724E] text-xs font-bold text-white flex items-center justify-center"
-                              >
-                                +
-                              </button>
-                            </div>
-                            {[350, 450, 500, 600, 800].map((rateVal) => (
-                              <button
-                                key={rateVal}
-                                type="button"
-                                aria-pressed={court.hourlyRateCents === rateVal * 100}
-                                onClick={() => handleUpdateCourt(idx, 'hourlyRateCents', rateVal * 100)}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-semibold border transition-all ${
-                                  court.hourlyRateCents === rateVal * 100
-                                    ? 'bg-[#2D724E] text-white border-[#2D724E] font-bold'
-                                    : 'bg-white text-black border-[#E8E5DF] hover:border-[#2D724E]'
-                                }`}
-                              >
-                                ₱{rateVal}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 4: Inventory & Monetization Model */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-display text-sm font-black text-black">Marketplace Inventory Model</h4>
-                <p className="text-xs text-black font-normal mt-0.5 leading-relaxed">
-                  Choose how SportSync connects to your courts. We do not force you to replace your existing POS.
-                </p>
-              </div>
-
-              <div className="space-y-2">
                 {INVENTORY_OPTIONS.map((opt) => {
                   const isSelected = inventorySource === opt.id;
                   return (
@@ -580,25 +505,24 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                       key={opt.id}
                       type="button"
                       onClick={() => setInventorySource(opt.id)}
-                      className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-start justify-between gap-3 ${
+                      className={`w-full p-4 rounded-2xl border text-left transition-all flex items-center justify-between ${
                         isSelected
-                          ? 'border-[#2D724E] bg-[#EBF4EE] shadow-xs'
-                          : 'border-[#E8E5DF] bg-white hover:border-[#D4CEBE]'
+                          ? 'bg-[#141A15] border-[#C8FF2E] shadow-[0_0_16px_rgba(200,255,46,0.15)]'
+                          : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
                       }`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-black text-black">{opt.title}</div>
-                        <p className="text-[11px] text-black font-medium mt-0.5 leading-relaxed">
-                          {opt.desc}
-                        </p>
+                      <div className="space-y-0.5 pr-2">
+                        <span className={`text-xs font-bold block ${isSelected ? 'text-[#C8FF2E]' : 'text-[#F4F7F0]'}`}>
+                          {opt.title}
+                        </span>
+                        <p className="text-[11px] text-[#A5B0A6]">{opt.desc}</p>
                       </div>
-
                       <div
-                        className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
-                          isSelected ? 'border-[#2D724E] bg-[#2D724E]' : 'border-[#D4CEBE]'
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected ? 'bg-[#C8FF2E] border-[#C8FF2E] text-[#0B0F0C]' : 'border-white/20'
                         }`}
                       >
-                        {isSelected && <Check className="w-3 h-3 text-white" />}
+                        {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
                     </button>
                   );
@@ -606,9 +530,9 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               </div>
 
               {inventorySource === 'external_link' && (
-                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1.5 animate-in fade-in">
-                  <label className="text-xs font-black text-black flex items-center gap-1">
-                    <ExternalLink className="w-3.5 h-3.5 text-[#2D724E]" />
+                <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/10 space-y-1.5 animate-in fade-in">
+                  <label className="text-xs font-bold text-[#F4F7F0] flex items-center gap-1">
+                    <ExternalLink className="w-3.5 h-3.5 text-[#C8FF2E]" />
                     External Booking URL
                   </label>
                   <input
@@ -616,11 +540,8 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                     value={externalUrl}
                     onChange={(e) => setExternalUrl(e.target.value)}
                     placeholder="https://yourfacilitybooking.com/reserve"
-                    className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
+                    className="w-full h-10 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
                   />
-                  <p className="text-[10px] text-black font-medium">
-                    Players will see a direct link to your existing booking system.
-                  </p>
                 </div>
               )}
             </div>
@@ -628,18 +549,18 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
         </div>
 
         {/* Footer Navigation */}
-        <div className="p-4 bg-[#FAF8F5] border-t border-[#E8E5DF] flex items-center justify-between gap-3 shrink-0">
+        <div className="p-4 bg-[#141A15] border-t border-white/10 flex items-center justify-between gap-3 shrink-0">
           {step > 1 ? (
             <button
               type="button"
               onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3 | 4)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-black hover:bg-[#FAF8F5] transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl bg-[#1C241E] text-xs font-bold text-[#F4F7F0] hover:bg-[#253028] transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
           ) : (
-            <span className="text-[11px] text-black font-bold">Step 1 of 4</span>
+            <span className="text-[11px] text-[#A5B0A6] font-bold">Step 1 of 4</span>
           )}
 
           {step < 4 ? (
@@ -647,11 +568,11 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               type="button"
               onClick={() => {
                 if (step === 1 && (!ownerName.trim() || !ownerEmail.trim())) {
-                  setSubmitError('Please enter your name and business email.');
+                  setSubmitError('Please enter contact name and email.');
                   return;
                 }
-                if (step === 2 && (!facilityName.trim() || !address.trim() || !city.trim())) {
-                  setSubmitError('Please enter facility name, address, and city.');
+                if (step === 2 && (!facilityName.trim() || !address.trim())) {
+                  setSubmitError('Please enter facility name and address.');
                   return;
                 }
                 if (step === 3 && courts.some((c) => !c.name.trim())) {
@@ -661,24 +582,30 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
                 setSubmitError(null);
                 setStep((s) => (s + 1) as 1 | 2 | 3 | 4);
               }}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 min-h-[44px] rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 min-h-[42px] rounded-xl bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] text-xs font-bold shadow-[0_4px_16px_rgba(200,255,46,0.3)] transition-all cursor-pointer"
             >
               <span>Continue</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           ) : (
-            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2">
-              {submitError && (
-                <span className="text-xs font-bold text-red-600">{submitError}</span>
-              )}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={isSubmitting}
                 onClick={handleFinish}
-                className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[44px] rounded-xl bg-[#1E4A32] hover:bg-[#153423] text-[#E9C46A] text-xs font-black shadow-md transition-all active:scale-95 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 min-h-[42px] rounded-xl bg-[#C8FF2E] hover:bg-[#BCEE26] text-[#0B0F0C] text-xs font-bold shadow-[0_4px_20px_rgba(200,255,46,0.3)] transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
               >
-                <ShieldCheck className="w-4 h-4 text-[#E9C46A]" />
-                <span>{isSubmitting ? 'Publishing...' : 'Publish Facility'}</span>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#0B0F0C]" />
+                    <span>Publishing...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-[#0B0F0C]" />
+                    <span>Publish &amp; Open Portal</span>
+                  </>
+                )}
               </button>
             </div>
           )}
