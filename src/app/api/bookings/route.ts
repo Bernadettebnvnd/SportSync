@@ -112,6 +112,47 @@ export async function PATCH(request: Request) {
     if (isSupabaseConfigured) {
       const dbClient = createAdminClient() || createServerClient();
       if (dbClient) {
+        // Retrieve current booking info
+        const { data: currentBooking } = await dbClient
+          .from('bookings')
+          .select('*')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (status === 'confirmed' && currentBooking) {
+          // Double-booking prevention check: check for any other confirmed booking on same court/time
+          const { data: conflicts } = await dbClient
+            .from('bookings')
+            .select('id, booking_reference')
+            .eq('court_id', currentBooking.court_id)
+            .eq('booking_date', currentBooking.booking_date)
+            .eq('status', 'confirmed')
+            .neq('id', currentBooking.id)
+            .or(`and(start_time.lte.${currentBooking.start_time},end_time.gt.${currentBooking.start_time}),and(start_time.lt.${currentBooking.end_time},end_time.gte.${currentBooking.end_time})`);
+
+          if (conflicts && conflicts.length > 0) {
+            return NextResponse.json(
+              { error: 'Cannot confirm: Court slot has already been booked by another confirmed reservation.' },
+              { status: 409 }
+            );
+          }
+
+          // Lock court_availability upon confirmation
+          await dbClient.from('court_availability').insert({
+            court_id: currentBooking.court_id,
+            start_time: currentBooking.start_time,
+            end_time: currentBooking.end_time,
+            block_type: 'booked',
+            booking_id: currentBooking.id,
+          });
+        } else if (status === 'rejected' || status === 'cancelled') {
+          // Unlock court_availability if booking is rejected or cancelled
+          await dbClient
+            .from('court_availability')
+            .delete()
+            .eq('booking_id', bookingId);
+        }
+
         await dbClient
           .from('bookings')
           .update({ status, updated_at: new Date().toISOString() })
@@ -123,6 +164,24 @@ export async function PATCH(request: Request) {
       (b) => b.id === bookingId || b.booking_reference === bookingId || b.bookingReference === bookingId
     );
     if (localIndex !== -1) {
+      const localBooking = localDevBookings[localIndex];
+      if (status === 'confirmed') {
+        const conflict = localDevBookings.find(
+          (b) =>
+            b !== localBooking &&
+            (b.id !== localBooking.id) &&
+            (b.court_id === localBooking.court_id || b.courtId === localBooking.court_id) &&
+            (b.booking_date === localBooking.booking_date || b.bookingDate === localBooking.booking_date) &&
+            b.status === 'confirmed' &&
+            (b.start_time === localBooking.start_time || b.startTime === localBooking.startTime)
+        );
+        if (conflict) {
+          return NextResponse.json(
+            { error: 'Cannot confirm: Court slot has already been booked by another confirmed reservation.' },
+            { status: 409 }
+          );
+        }
+      }
       localDevBookings[localIndex].status = status;
       localDevBookings[localIndex].updated_at = new Date().toISOString();
     }
@@ -241,11 +300,30 @@ export async function POST(request: Request) {
     const hourlyRate = 45000; // ₱450.00
     const fees = calculateBookingFees(hourlyRate, duration);
 
-    const initialStatus = isCash ? 'confirmed' : 'pending';
-    const initialPaymentStatus = isCash ? 'cash_at_venue' : 'pending';
+    // Initial booking status is ALWAYS pending until faculty approves.
+    // Payment status is handled independently.
+    const initialStatus = 'pending';
+    const initialPaymentStatus = isCash
+      ? 'cash_at_venue'
+      : (referenceCode && referenceCode.trim().length >= 6 ? 'approved' : 'pending');
     const finalReference = (referenceCode || '').trim() || bookingRef;
 
     let createdBooking: any = null;
+
+    // Check conflict in local dev cache against confirmed reservations
+    const localConflict = localDevBookings.find(
+      (b) =>
+        (b.court_id === courtId || b.courtId === courtId) &&
+        (b.booking_date === bookingDate || b.bookingDate === bookingDate) &&
+        b.status === 'confirmed' &&
+        (b.start_time === startTime || b.startTime === startTime)
+    );
+    if (localConflict) {
+      return NextResponse.json(
+        { error: 'This court slot has already been reserved by a confirmed booking. Please select another time.' },
+        { status: 409 }
+      );
+    }
 
     // 5. Database Insertion if Supabase is active
     if (isSupabaseConfigured) {
@@ -262,24 +340,26 @@ export async function POST(request: Request) {
           const actualRate = court?.hourly_rate_cents || hourlyRate;
           const actualFees = calculateBookingFees(actualRate, duration);
 
-          // Overlap check
+          // Overlap check against confirmed bookings only (pending requests do NOT block slots)
           const startIso = new Date(`${bookingDate}T${startTime}:00Z`).toISOString();
           const endIso = new Date(`${bookingDate}T${endTime}:00Z`).toISOString();
 
-          const { data: existingBlocks } = await dbClient
-            .from('court_availability')
+          const { data: confirmedConflicts } = await dbClient
+            .from('bookings')
             .select('id')
             .eq('court_id', courtId)
+            .eq('booking_date', bookingDate)
+            .eq('status', 'confirmed')
             .or(`and(start_time.lte.${startIso},end_time.gt.${startIso}),and(start_time.lt.${endIso},end_time.gte.${endIso})`);
 
-          if (existingBlocks && existingBlocks.length > 0) {
+          if (confirmedConflicts && confirmedConflicts.length > 0) {
             return NextResponse.json(
-              { error: 'This court slot has already been reserved. Please select another time.' },
+              { error: 'This court slot has already been reserved by a confirmed booking. Please select another time.' },
               { status: 409 }
             );
           }
 
-          const { data: newBooking, error: bookingInsertError } = await dbClient
+          const { data: newBooking } = await dbClient
             .from('bookings')
             .insert({
               booking_reference: bookingRef,
@@ -307,15 +387,7 @@ export async function POST(request: Request) {
           if (newBooking) {
             createdBooking = newBooking;
 
-            // Lock court availability
-            await dbClient.from('court_availability').insert({
-              court_id: courtId,
-              start_time: startIso,
-              end_time: endIso,
-              block_type: 'booked',
-              booking_id: newBooking.id,
-            });
-
+            // Note: Court availability is NOT locked until faculty confirms the reservation.
             // Create payment record
             await dbClient.from('payments').insert({
               booking_id: newBooking.id,
@@ -325,7 +397,7 @@ export async function POST(request: Request) {
               payment_method: normalizedMethod,
               reference_code: finalReference,
               status: initialPaymentStatus,
-              notes: `Court reservation: ${court?.name || courtId} | Date: ${bookingDate} ${startTime}`,
+              notes: `Court reservation request: ${court?.name || courtId} | Date: ${bookingDate} ${startTime}`,
             });
           }
         }
@@ -382,7 +454,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Court reserved successfully.',
+      message: 'Booking request submitted. Awaiting venue confirmation.',
       booking: bookingResponse,
     });
   } catch (error: unknown) {

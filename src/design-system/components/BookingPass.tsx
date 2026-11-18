@@ -12,6 +12,7 @@ interface BookingPassProps {
   timeSlot?: string;
   durationHours?: number;
   totalPaid?: number;
+  status?: string;
   onAddToCalendar?: () => void;
   onShare?: () => void;
   onGetDirections?: () => void;
@@ -26,11 +27,15 @@ export const BookingPass: React.FC<BookingPassProps> = ({
   timeSlot = '10:00 - 11:30 AM',
   durationHours = 1.5,
   totalPaid = 54,
+  status = 'pending',
   onAddToCalendar,
   onShare,
   onGetDirections,
   className = '',
 }) => {
+  const isConfirmed = status === 'confirmed';
+  const isRejected = status === 'rejected';
+
   return (
     <div className={`w-full max-w-sm mx-auto select-none ${className}`}>
       {/* Ticket Container */}
@@ -38,8 +43,16 @@ export const BookingPass: React.FC<BookingPassProps> = ({
         {/* Top Header Section (Forest Green Tint) */}
         <div className="bg-[#0F2A22] p-5 border-b border-white/5 relative">
           <div className="flex items-center justify-between mb-3">
-            <span className="px-2.5 py-0.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-display font-bold text-[10px] uppercase tracking-wider">
-              Confirmed Pass
+            <span
+              className={`px-2.5 py-0.5 rounded-full font-display font-bold text-[10px] uppercase tracking-wider ${
+                isConfirmed
+                  ? 'bg-[#C8FF2E] text-[#0B0F0C]'
+                  : isRejected
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-amber-400 text-amber-950'
+              }`}
+            >
+              {isConfirmed ? 'Confirmed Pass' : isRejected ? 'Declined' : 'Pending Approval'}
             </span>
             <span className="font-mono text-xs text-[#A5B0A6]">{bookingId}</span>
           </div>
@@ -123,10 +136,14 @@ export const BookingPass: React.FC<BookingPassProps> = ({
           </div>
 
           <span className="text-[11px] text-[#A5B0A6] uppercase tracking-wider font-semibold">
-            Scan at entry terminal or gate
+            {isConfirmed
+              ? 'Scan at entry terminal or gate'
+              : isRejected
+              ? 'Booking request was declined by venue'
+              : 'Pass active upon faculty confirmation'}
           </span>
           <span className="text-xs font-bold text-[#C8FF2E] mt-1">
-            Total Paid: {APP_CONFIG.currency}{totalPaid}
+            {isConfirmed ? 'Total Paid' : 'Amount'}: {APP_CONFIG.currency}{totalPaid}
           </span>
         </div>
       </div>

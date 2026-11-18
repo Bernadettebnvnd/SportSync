@@ -120,7 +120,7 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
           venueId,
           courtId,
           sport: bookingDetails?.sport || 'pickleball',
-          bookingDate: bookingDetails?.date || '2026-10-17',
+          bookingDate: bookingDetails?.date || new Date().toISOString().split('T')[0],
           startTime,
           durationMinutes: Math.round((bookingDetails?.duration || 1) * 60),
           paymentMethod: selectedMethod,
@@ -136,7 +136,7 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
         throw new Error(data.error || 'Failed to process court reservation.');
       }
 
-      // Success: pass confirmed booking to caller
+      // Success: pass booking to caller
       onPaymentSuccess(data.booking);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Payment confirmation failed. Please try again.';
@@ -187,8 +187,8 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
             </span>
           </div>
 
-          <span className="text-xs text-[#3DDC84] font-semibold bg-[#3DDC84]/15 px-3 py-1.5 rounded-full border border-[#3DDC84]/30">
-            Instant Confirmation
+          <span className="text-xs text-amber-400 font-semibold bg-amber-400/15 px-3 py-1.5 rounded-full border border-amber-400/30">
+            Awaiting Venue Approval
           </span>
         </div>
 
@@ -510,10 +510,10 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
             className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)] text-base press-scale"
           >
             {isProcessing
-              ? 'Verifying & Confirming...'
+              ? 'Submitting Booking Request...'
               : isCash
-              ? `Confirm Court Reservation (${APP_CONFIG.currency}${finalTotal})`
-              : `Pay ${APP_CONFIG.currency}${finalTotal} & Confirm Court`}
+              ? `Submit Booking Request (${APP_CONFIG.currency}${finalTotal})`
+              : `Submit Request • Pay ${APP_CONFIG.currency}${finalTotal}`}
           </Button>
         </div>
       </div>

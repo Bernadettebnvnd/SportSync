@@ -40,13 +40,13 @@ export async function getCourtDailyAvailability(
   }
 
   try {
-    // Query active bookings on this court for the requested date
+    // Query confirmed reservations on this court for the requested date (pending requests do NOT block slots)
     const { data: bookedSlots, error } = await supabase
       .from('bookings')
       .select('start_time, end_time, status')
       .eq('court_id', courtId)
       .eq('booking_date', bookingDate)
-      .neq('status', 'cancelled');
+      .in('status', ['confirmed', 'completed']);
 
     if (error) {
       console.error('Error querying court availability:', error);

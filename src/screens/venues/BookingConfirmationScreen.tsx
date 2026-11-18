@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, CheckCircle2, Home } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Home, Clock } from 'lucide-react';
 import { BookingPass } from '../../design-system/components/BookingPass';
 import { VENUES } from '../../mock/mockData';
 import { Venue } from '../../mock/types';
@@ -14,6 +14,8 @@ interface BookingConfirmationScreenProps {
     dateStr?: string;
     timeSlot?: string;
     totalPaid?: number;
+    bookingId?: string;
+    status?: string;
   };
   onGoHome: () => void;
   onViewMyBookings: () => void;
@@ -28,6 +30,7 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
   onToast,
 }) => {
   const [feedback, setFeedback] = useState<string | null>(null);
+  const isConfirmed = booking?.status === 'confirmed';
 
   const showFeedback = (msg: string) => {
     if (onToast) {
@@ -39,14 +42,14 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
   };
 
   useEffect(() => {
-    // Celebratory micro-animation confetti in electric lime and cream
+    // Celebratory micro-animation confetti
     confetti({
       particleCount: 70,
       spread: 60,
       origin: { y: 0.5 },
-      colors: ['#C8FF2E', '#FF8FC7', '#FFFFFF', '#3DDC84'],
+      colors: isConfirmed ? ['#C8FF2E', '#FFFFFF', '#3DDC84'] : ['#F59E0B', '#C8FF2E', '#FFFFFF'],
     });
-  }, []);
+  }, [isConfirmed]);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] p-5 pt-4 pb-28 select-none overflow-y-auto no-scrollbar relative">
@@ -62,28 +65,43 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
 
       {/* 1. Header */}
       <div className="text-center mb-4">
-        <div className="w-14 h-14 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center mx-auto mb-2 shadow-[0_0_24px_rgba(200,255,46,0.35)] animate-scaleUp">
-          <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
-        </div>
-        <span className="text-[11px] font-bold text-[#FF8FC7] uppercase tracking-widest block mb-0.5">
-          Court Reserved
+        {isConfirmed ? (
+          <div className="w-14 h-14 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center mx-auto mb-2 shadow-[0_0_24px_rgba(200,255,46,0.35)] animate-scaleUp">
+            <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+          </div>
+        ) : (
+          <div className="w-14 h-14 rounded-full bg-[#F59E0B] text-[#0B0F0C] flex items-center justify-center mx-auto mb-2 shadow-[0_0_24px_rgba(245,158,11,0.35)] animate-scaleUp">
+            <Clock className="w-8 h-8 stroke-[2.5]" />
+          </div>
+        )}
+
+        <span
+          className={`text-[11px] font-bold uppercase tracking-widest block mb-0.5 ${
+            isConfirmed ? 'text-[#FF8FC7]' : 'text-[#F59E0B]'
+          }`}
+        >
+          {isConfirmed ? 'Court Reserved' : 'Booking Request Submitted'}
         </span>
         <h1 className="font-display font-black text-2xl text-[#F4F7F0]">
-          You're Ready to Play!
+          {isConfirmed ? "You're Ready to Play!" : 'Awaiting Venue Approval'}
         </h1>
-        <p className="text-xs text-[#A5B0A6] mt-0.5">
-          Digital entry pass generated and stored in your wallet.
+        <p className="text-xs text-[#A5B0A6] mt-0.5 max-w-xs mx-auto">
+          {isConfirmed
+            ? 'Digital entry pass confirmed and stored in your wallet.'
+            : 'Your booking request has been sent to the faculty. You will be notified as soon as it is confirmed.'}
         </p>
       </div>
 
       {/* 2. Ticket Pass Component with Perforated Edge & QR */}
       <div className="py-2">
         <BookingPass
+          bookingId={booking?.bookingId}
           venue={venue}
           courtName={booking?.courtName || 'Court 2 (Clay)'}
           dateStr={booking?.dateStr || 'Saturday, 17 Oct'}
           timeSlot={booking?.timeSlot || '10:00 – 11:30 AM'}
           totalPaid={booking?.totalPaid || 54}
+          status={booking?.status || 'pending'}
           onAddToCalendar={() => showFeedback('Court slot added to calendar!')}
           onShare={async () => {
             const url = typeof window !== 'undefined'

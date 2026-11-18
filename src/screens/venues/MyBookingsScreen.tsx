@@ -98,9 +98,26 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
               className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3"
             >
               <div className="flex items-center justify-between">
-                <span className="px-2.5 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] font-display font-bold text-[10px] uppercase">
-                  {item.id}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-[#F4F7F0] font-display font-bold text-[10px] uppercase font-mono">
+                    {item.id}
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      item.status === 'confirmed'
+                        ? 'bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30'
+                        : item.status === 'rejected'
+                        ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                        : 'bg-amber-400/15 text-amber-400 border border-amber-400/30'
+                    }`}
+                  >
+                    {item.status === 'confirmed'
+                      ? 'Confirmed'
+                      : item.status === 'rejected'
+                      ? 'Declined'
+                      : 'Pending Approval'}
+                  </span>
+                </div>
                 <button
                   onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
                   className="text-[#6F7B71] hover:text-white p-1"

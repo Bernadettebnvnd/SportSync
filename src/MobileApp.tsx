@@ -230,6 +230,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     courtId?: string;
     slot: string;
     date?: string;
+    formattedDate?: string;
+    bookingReference?: string;
+    status?: string;
     sport?: string;
     totalPrice: number;
     duration?: number;
@@ -1201,7 +1204,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 slot: details.slot,
                 totalPrice: details.totalPrice,
                 duration: details.duration,
-                date: '2026-10-17',
+                date: details.date,
+                formattedDate: details.formattedDate,
                 sport: (selectedVenue as any)?.sport || 'pickleball',
               });
               navigateTo('payment');
@@ -1215,17 +1219,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             bookingDetails={activeBookingDetails || undefined}
             onBack={goBack}
             onPaymentSuccess={(confirmedBooking) => {
+              const bookingRef = confirmedBooking?.bookingReference || confirmedBooking?.booking_reference || `BK-${Math.floor(10000 + Math.random() * 90000)}`;
               if (activeBookingDetails) {
                 bridge.createReservation({
                   venue: activeBookingDetails.venue,
                   court: activeBookingDetails.court,
-                  date: 'Sat, 17 Oct',
+                  date: activeBookingDetails.formattedDate || activeBookingDetails.date || 'Today',
                   slot: activeBookingDetails.slot,
                   price: activeBookingDetails.totalPrice,
-                  bookingReference: confirmedBooking?.bookingReference || confirmedBooking?.booking_reference,
+                  bookingReference: bookingRef,
+                  status: 'pending',
                 });
+                setActiveBookingDetails((prev) => prev ? { ...prev, bookingReference: bookingRef, status: 'pending' } : null);
               }
-              setToastMessage('Court booking confirmed! +60 Playmaker XP');
+              setToastMessage('Booking request submitted! Awaiting venue confirmation.');
               navigateTo('booking-confirmation');
             }}
           />
@@ -1238,9 +1245,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               activeBookingDetails
                 ? {
                     courtName: activeBookingDetails.court,
-                    dateStr: 'Saturday, 17 Oct',
+                    dateStr: activeBookingDetails.formattedDate || activeBookingDetails.date || 'Today',
                     timeSlot: activeBookingDetails.slot,
                     totalPaid: activeBookingDetails.totalPrice,
+                    bookingId: activeBookingDetails.bookingReference,
+                    status: activeBookingDetails.status || 'pending',
                   }
                 : undefined
             }

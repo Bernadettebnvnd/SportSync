@@ -55,6 +55,7 @@ export type BookingStatus =
   | 'confirmed'
   | 'completed'
   | 'cancelled'
+  | 'rejected'
   | 'no_show';
 
 export type PaymentMethod =

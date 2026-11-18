@@ -7,7 +7,8 @@ import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
-import { Payment, Match, EmptyCourtOpportunity, SportType, Court } from '@/types';
+import { Payment, Match, EmptyCourtOpportunity, SportType, Court, Booking } from '@/types';
+import { addNotification } from '@/lib/notifications';
 import {
   formatCurrency,
   formatTimeAgo,
@@ -37,6 +38,7 @@ import {
   User,
   Edit3,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function OrganizerDashboard() {
@@ -78,6 +80,15 @@ export default function OrganizerDashboard() {
   const [walkInFormat, setWalkInFormat] = useState<'doubles' | 'singles'>('doubles');
   const [activeTab, setActiveTab] = useState<'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments'>('overview');
   const [monetizeSuccessMessage, setMonetizeSuccessMessage] = useState<string | null>(null);
+
+  // Bookings management state
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'rejected'>('all');
+  const [selectedBookingForReview, setSelectedBookingForReview] = useState<Booking | null>(null);
+  const [reviewActionError, setReviewActionError] = useState<string | null>(null);
+  const [isProcessingBookingAction, setIsProcessingBookingAction] = useState(false);
+  const [rejectReasonPrompt, setRejectReasonPrompt] = useState<string>('');
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [bookingToReject, setBookingToReject] = useState<Booking | null>(null);
 
   React.useEffect(() => {
     refreshBookings();
@@ -230,6 +241,28 @@ export default function OrganizerDashboard() {
   const facilityBookings = bookings.filter((b) =>
     primaryVenue ? (b.venue_id === primaryVenue.id || b.venue_id === primaryVenue.slug || !b.venue_id) : true
   );
+
+  const pendingBookings = useMemo(
+    () => facilityBookings.filter((b) => b.status === 'pending'),
+    [facilityBookings]
+  );
+  const confirmedBookings = useMemo(
+    () => facilityBookings.filter((b) => b.status === 'confirmed'),
+    [facilityBookings]
+  );
+  const completedBookings = useMemo(
+    () => facilityBookings.filter((b) => b.status === 'completed'),
+    [facilityBookings]
+  );
+  const rejectedBookings = useMemo(
+    () => facilityBookings.filter((b) => b.status === 'rejected'),
+    [facilityBookings]
+  );
+
+  const displayedBookings = useMemo(() => {
+    if (bookingStatusFilter === 'all') return facilityBookings;
+    return facilityBookings.filter((b) => b.status === bookingStatusFilter);
+  }, [facilityBookings, bookingStatusFilter]);
   const totalGrossCents =
     verifiedPayments.reduce((acc, curr) => acc + curr.amount_cents, 0) +
     facilityBookings.filter((b) => b.status === 'confirmed').reduce((acc, b) => acc + b.total_amount_cents, 0);
@@ -413,6 +446,104 @@ export default function OrganizerDashboard() {
     updateBookingStatus(bookingId, 'completed');
   };
 
+  const handleConfirmBooking = async (b: Booking) => {
+    setReviewActionError(null);
+    setIsProcessingBookingAction(true);
+    try {
+      // 1. Conflict check against existing confirmed bookings to prevent double-booking
+      const conflicting = facilityBookings.find(
+        (other) =>
+          other.id !== b.id &&
+          other.court_id === b.court_id &&
+          other.booking_date === b.booking_date &&
+          other.status === 'confirmed' &&
+          (other.start_time === b.start_time ||
+            (other.start_time < b.end_time && other.end_time > b.start_time))
+      );
+
+      if (conflicting) {
+        setReviewActionError(
+          `Double-Booking Conflict: ${b.court?.name || 'This court'} is already reserved by confirmed booking ${conflicting.booking_reference} for ${conflicting.start_time} - ${conflicting.end_time}. Please resolve the conflict.`
+        );
+        return;
+      }
+
+      await updateBookingStatus(b.id, 'confirmed');
+
+      // 2. Notify player immediately
+      addNotification({
+        id: `notif_appr_${b.id}_${Date.now()}`,
+        type: 'booking',
+        title: 'Booking Approved! 🎉',
+        desc: `${primaryVenue?.name || 'Venue'} has confirmed your reservation for ${b.court?.name || 'Court'} on ${b.booking_date} (${b.start_time} - ${b.end_time}). See you on the court!`,
+        linkScreen: 'my-bookings',
+        recipientId: b.user_id,
+        recipientName: b.user?.full_name,
+        meta: {
+          event: 'booking_approved',
+          bookingId: b.id,
+          reference: b.booking_reference,
+          status: 'confirmed',
+        },
+      });
+
+      setSelectedBookingForReview(null);
+      setMonetizeSuccessMessage(`Booking ${b.booking_reference} confirmed successfully! Player has been notified.`);
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+      refreshBookings();
+    } catch (err: any) {
+      setReviewActionError(err?.message || 'Failed to confirm booking.');
+    } finally {
+      setIsProcessingBookingAction(false);
+    }
+  };
+
+  const handleOpenRejectModal = (b: Booking) => {
+    setBookingToReject(b);
+    setRejectReasonPrompt('');
+    setReviewActionError(null);
+    setIsRejectModalOpen(true);
+  };
+
+  const handleConfirmReject = async () => {
+    if (!bookingToReject) return;
+    const b = bookingToReject;
+    setReviewActionError(null);
+    setIsProcessingBookingAction(true);
+    try {
+      await updateBookingStatus(b.id, 'rejected');
+
+      // Notify player immediately
+      addNotification({
+        id: `notif_rej_${b.id}_${Date.now()}`,
+        type: 'booking',
+        title: 'Booking Request Declined',
+        desc: `Your booking request at ${primaryVenue?.name || 'Venue'} for ${b.court?.name || 'Court'} on ${b.booking_date} (${b.start_time}) was declined by the venue.${rejectReasonPrompt ? ` Reason: ${rejectReasonPrompt}` : ''}`,
+        linkScreen: 'my-bookings',
+        recipientId: b.user_id,
+        recipientName: b.user?.full_name,
+        meta: {
+          event: 'booking_rejected',
+          bookingId: b.id,
+          reference: b.booking_reference,
+          status: 'rejected',
+          reason: rejectReasonPrompt,
+        },
+      });
+
+      setIsRejectModalOpen(false);
+      setBookingToReject(null);
+      setSelectedBookingForReview(null);
+      setMonetizeSuccessMessage(`Booking ${b.booking_reference} rejected. Player has been notified.`);
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+      refreshBookings();
+    } catch (err: any) {
+      setReviewActionError(err?.message || 'Failed to reject booking.');
+    } finally {
+      setIsProcessingBookingAction(false);
+    }
+  };
+
   const handleConvertEmptyOpportunity = (opp: EmptyCourtOpportunity) => {
     createOpenPlaySession({
       venueId: primaryVenue?.id || 'venue_upper_deck',
@@ -509,13 +640,18 @@ export default function OrganizerDashboard() {
           <button
             type="button"
             onClick={() => setActiveTab('bookings')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`relative px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
               activeTab === 'bookings'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
             }`}
           >
-            Bookings ({facilityBookings.length})
+            <span>Bookings ({facilityBookings.length})</span>
+            {pendingBookings.length > 0 && (
+              <span className="flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-amber-500 text-[9px] font-black text-white animate-pulse">
+                {pendingBookings.length}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -601,6 +737,86 @@ export default function OrganizerDashboard() {
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Pending Booking Requests Action Card */}
+          {pendingBookings.length > 0 && (
+            <div className="lg:col-span-3 rounded-3xl border border-amber-300 bg-amber-50/60 p-5 shadow-xs space-y-3 animate-in fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-[#1A241E]">
+                        Pending Booking Requests ({pendingBookings.length})
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-bold uppercase tracking-wider">
+                        Action Required
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#65756B] mt-0.5">
+                      Players have submitted booking requests that require faculty review and confirmation.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('bookings');
+                    setBookingStatusFilter('pending');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shrink-0 self-start sm:self-auto shadow-sm"
+                >
+                  Review Pending Bookings ({pendingBookings.length}) &rarr;
+                </button>
+              </div>
+
+              {/* Quick glance list of pending bookings */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                {pendingBookings.slice(0, 3).map((pb) => (
+                  <div
+                    key={pb.id}
+                    className="p-3.5 rounded-2xl bg-white border border-amber-200 shadow-xs flex flex-col justify-between space-y-2"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-black text-[#1A241E]">{pb.booking_reference}</span>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md capitalize">
+                          {pb.payment_method || 'Online'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-[#1A241E] mt-1">{pb.user?.full_name || 'Customer'}</div>
+                      <div className="text-[11px] text-[#65756B]">
+                        {pb.court?.name || 'Court'} &bull; {pb.booking_date} &bull; {pb.start_time} - {pb.end_time}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-[#E8E5DF]">
+                      <span className="text-xs font-black text-[#1A241E]">{formatCurrency(pb.total_amount_cents)}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmBooking(pb)}
+                          disabled={isProcessingBookingAction}
+                          className="px-2.5 py-1 rounded-lg bg-[#2D724E] hover:bg-[#1E4A32] text-white text-[11px] font-bold transition-all shadow-xs"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRejectModal(pb)}
+                          disabled={isProcessingBookingAction}
+                          className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition-all"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Today's Court Timeline & Schedule Grid */}
           <div className="lg:col-span-3 rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8E5DF] pb-3">
@@ -867,14 +1083,21 @@ export default function OrganizerDashboard() {
 
       {/* TAB 2: BOOKINGS LEDGER */}
       {activeTab === 'bookings' && (
-        <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E8E5DF] pb-4">
             <div>
-              <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
-                All Court Reservations
-              </h2>
-              <p className="text-xs text-[#65756B]">
-                Confirmed player reservations, court assignments, and check-in statuses.
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-[#1A241E]">
+                  Court Bookings &amp; Reservations
+                </h2>
+                {pendingBookings.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">
+                    {pendingBookings.length} Pending Approval
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[#65756B] mt-0.5">
+                Review pending booking requests, confirm court assignments, prevent double bookings, and check in players.
               </p>
             </div>
             <span className="text-xs font-bold text-[#2D724E] bg-[#EBF4EE] px-3 py-1 rounded-full self-start sm:self-auto">
@@ -882,81 +1105,229 @@ export default function OrganizerDashboard() {
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-[#E8E5DF] text-[#65756B] font-semibold">
-                  <th className="pb-3 pr-4">Reference</th>
-                  <th className="pb-3 pr-4">Customer</th>
-                  <th className="pb-3 pr-4">Sport &amp; Court</th>
-                  <th className="pb-3 pr-4">Date &amp; Time</th>
-                  <th className="pb-3 pr-4">Payment</th>
-                  <th className="pb-3 pr-4 text-right">Amount</th>
-                  <th className="pb-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E8E5DF]">
-                {facilityBookings.map((b) => (
-                  <tr key={b.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                    <td className="py-3 pr-4 font-mono font-bold text-[#1A241E]">
-                      {b.booking_reference}
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className="font-bold text-[#1A241E] block">
-                        {b.user?.full_name || 'Customer'}
-                      </span>
-                      <span className="text-[10px] text-[#65756B]">
-                        {b.user?.phone || 'No phone'}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span className="font-semibold text-[#1A241E] block capitalize">
-                        {b.sport}
-                      </span>
-                      <span className="text-[10px] text-[#65756B]">
-                        {b.court?.name || 'Court'}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-[#65756B]">
-                      <div className="font-medium text-[#1A241E]">{b.booking_date}</div>
-                      <div className="text-[10px]">{b.start_time} - {b.end_time}</div>
-                    </td>
-                    <td className="py-3 pr-4">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold capitalize ${
-                          b.payment_status === 'approved' || b.status === 'confirmed'
-                            ? 'bg-[#EBF4EE] text-[#1E4A32]'
-                            : b.payment_status === 'cash_at_venue'
-                            ? 'bg-amber-100 text-amber-900'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {b.payment_status.replace(/_/g, ' ')}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-4 text-right font-bold text-[#1A241E]">
-                      {formatCurrency(b.total_amount_cents)}
-                    </td>
-                    <td className="py-3 text-right">
-                      {b.status !== 'completed' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCheckInBooking(b.id)}
-                          className="px-3 py-1 rounded-lg bg-[#2D724E] hover:bg-[#1E4A32] text-white text-[11px] font-bold shadow-sm transition-all"
-                        >
-                          Check In
-                        </button>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-[#2D724E] inline-flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Checked In
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Status Filter Tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'all', label: 'All Bookings', count: facilityBookings.length },
+              { id: 'pending', label: 'Pending Requests', count: pendingBookings.length, isAmber: true },
+              { id: 'confirmed', label: 'Confirmed', count: confirmedBookings.length },
+              { id: 'completed', label: 'Completed', count: completedBookings.length },
+              { id: 'rejected', label: 'Declined', count: rejectedBookings.length },
+            ].map((tab) => {
+              const isActive = bookingStatusFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setBookingStatusFilter(tab.id as any)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    isActive
+                      ? tab.isAmber && tab.count > 0
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-[#1E4A32] text-white shadow-xs'
+                      : 'bg-[#FAF8F5] text-[#65756B] border border-[#E8E5DF] hover:border-[#1E4A32] hover:text-[#1A241E]'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      isActive
+                        ? 'bg-white/20 text-white'
+                        : tab.isAmber && tab.count > 0
+                        ? 'bg-amber-100 text-amber-800 font-black'
+                        : 'bg-[#E8E5DF] text-[#1A241E]'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+
+          {reviewActionError && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-semibold">{reviewActionError}</span>
+            </div>
+          )}
+
+          {displayedBookings.length === 0 ? (
+            <div className="py-12 text-center text-xs text-[#65756B] space-y-2 border border-dashed border-[#E8E5DF] rounded-2xl">
+              <Calendar className="w-8 h-8 text-[#65756B]/40 mx-auto" />
+              <p className="font-bold text-[#1A241E] text-sm">
+                No {bookingStatusFilter !== 'all' ? bookingStatusFilter : ''} bookings found
+              </p>
+              <p className="text-[11px] max-w-sm mx-auto">
+                {bookingStatusFilter === 'pending'
+                  ? 'All pending reservation requests have been processed. Great job!'
+                  : 'New reservations submitted by players will appear in this ledger.'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[#E8E5DF] text-[#65756B] font-semibold">
+                    <th className="pb-3 pr-3">Reference</th>
+                    <th className="pb-3 pr-3">Customer</th>
+                    <th className="pb-3 pr-3">Sport &amp; Court</th>
+                    <th className="pb-3 pr-3">Date &amp; Time</th>
+                    <th className="pb-3 pr-3">Booking Status</th>
+                    <th className="pb-3 pr-3">Payment</th>
+                    <th className="pb-3 pr-3 text-right">Amount</th>
+                    <th className="pb-3 text-right min-w-[150px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E8E5DF]">
+                  {displayedBookings.map((b) => {
+                    const isPending = b.status === 'pending';
+                    const isConfirmed = b.status === 'confirmed';
+                    const isCompleted = b.status === 'completed';
+                    const isRejected = b.status === 'rejected';
+
+                    return (
+                      <tr key={b.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
+                        <td className="py-3.5 pr-3 font-mono font-bold text-[#1A241E]">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBookingForReview(b)}
+                            className="underline underline-offset-2 hover:text-[#2D724E] text-left"
+                          >
+                            {b.booking_reference}
+                          </button>
+                        </td>
+                        <td className="py-3.5 pr-3">
+                          <span className="font-bold text-[#1A241E] block">
+                            {b.user?.full_name || 'Customer'}
+                          </span>
+                          <span className="text-[10px] text-[#65756B] block">
+                            {b.user?.email || b.user?.phone || 'Player'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 pr-3">
+                          <span className="font-semibold text-[#1A241E] block capitalize">
+                            {b.sport}
+                          </span>
+                          <span className="text-[10px] text-[#65756B]">
+                            {b.court?.name || 'Court'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 pr-3 text-[#65756B]">
+                          <div className="font-medium text-[#1A241E]">{b.booking_date}</div>
+                          <div className="text-[10px]">{b.start_time} - {b.end_time}</div>
+                        </td>
+                        <td className="py-3.5 pr-3">
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              isPending
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : isConfirmed
+                                ? 'bg-[#EBF4EE] text-[#1E4A32] border border-[#2D724E]/30'
+                                : isCompleted
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : isRejected
+                                ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {isPending
+                              ? 'Pending Approval'
+                              : isConfirmed
+                              ? 'Confirmed'
+                              : isCompleted
+                              ? 'Completed'
+                              : isRejected
+                              ? 'Declined'
+                              : b.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 pr-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold capitalize ${
+                              b.payment_status === 'approved'
+                                ? 'bg-[#EBF4EE] text-[#1E4A32]'
+                                : b.payment_status === 'cash_at_venue'
+                                ? 'bg-amber-100 text-amber-900'
+                                : 'bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            {b.payment_method ? `${b.payment_method} &bull; ` : ''}
+                            {b.payment_status.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td className="py-3.5 pr-3 text-right font-bold text-[#1A241E]">
+                          {formatCurrency(b.total_amount_cents)}
+                        </td>
+                        <td className="py-3.5 text-right">
+                          {isPending ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmBooking(b)}
+                                disabled={isProcessingBookingAction}
+                                className="px-3 py-1 rounded-lg bg-[#2D724E] hover:bg-[#1E4A32] text-white text-[11px] font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRejectModal(b)}
+                                disabled={isProcessingBookingAction}
+                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition-all disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBookingForReview(b)}
+                                className="text-[11px] font-bold text-[#65756B] hover:text-[#1A241E] underline ml-1"
+                              >
+                                Review
+                              </button>
+                            </div>
+                          ) : isConfirmed ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleCheckInBooking(b.id)}
+                                className="px-3 py-1 rounded-lg bg-[#FAF8F5] hover:bg-[#EBF4EE] border border-[#E8E5DF] hover:border-[#2D724E] text-[#1E4A32] text-[11px] font-bold shadow-xs transition-all"
+                              >
+                                Check In
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBookingForReview(b)}
+                                className="text-[11px] font-bold text-[#65756B] hover:text-[#1A241E] underline"
+                              >
+                                Details
+                              </button>
+                            </div>
+                          ) : isCompleted ? (
+                            <span className="text-[11px] font-semibold text-[#2D724E] inline-flex items-center gap-1">
+                              <Check className="w-3.5 h-3.5" /> Checked In
+                            </span>
+                          ) : isRejected ? (
+                            <span className="text-[11px] font-semibold text-rose-600 inline-flex items-center gap-1">
+                              <X className="w-3.5 h-3.5" /> Declined
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBookingForReview(b)}
+                              className="text-[11px] font-bold text-[#65756B] underline"
+                            >
+                              Details
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -1999,12 +2370,246 @@ export default function OrganizerDashboard() {
         />
       )}
 
-      {selectedScoreMatch && (
-        <ScoreModal
-          isOpen={Boolean(selectedScoreMatch)}
-          onClose={() => setSelectedScoreMatch(null)}
-          match={selectedScoreMatch}
-        />
+      {/* Booking Details Review Modal */}
+      {selectedBookingForReview && (() => {
+        const b = selectedBookingForReview;
+        const isPending = b.status === 'pending';
+        const isConfirmed = b.status === 'confirmed';
+
+        // Live conflict check against other confirmed bookings
+        const conflictBooking = facilityBookings.find(
+          (other) =>
+            other.id !== b.id &&
+            other.court_id === b.court_id &&
+            other.booking_date === b.booking_date &&
+            other.status === 'confirmed' &&
+            (other.start_time === b.start_time ||
+              (other.start_time < b.end_time && other.end_time > b.start_time))
+        );
+
+        return (
+          <div className="fixed inset-0 z-[800] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="w-full max-w-lg rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-base font-black text-[#1A241E]">
+                      {b.booking_reference}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        isPending
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : isConfirmed
+                          ? 'bg-[#EBF4EE] text-[#1E4A32] border border-[#2D724E]/30'
+                          : b.status === 'rejected'
+                          ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                          : 'bg-emerald-100 text-emerald-900'
+                      }`}
+                    >
+                      {isPending
+                        ? 'Pending Approval'
+                        : isConfirmed
+                        ? 'Confirmed'
+                        : b.status === 'rejected'
+                        ? 'Declined'
+                        : 'Completed'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#65756B] mt-0.5">Court Reservation Details</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookingForReview(null)}
+                  className="w-8 h-8 rounded-full bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center text-[#65756B] hover:text-[#1A241E]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Conflict Warning */}
+              {conflictBooking && isPending && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-300 text-rose-800 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Double-Booking Conflict Detected</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    This court is already reserved by confirmed booking <strong>{conflictBooking.booking_reference}</strong> ({conflictBooking.user?.full_name || 'Player'}) for {conflictBooking.start_time} - {conflictBooking.end_time}. You cannot confirm this booking without overlap.
+                  </p>
+                </div>
+              )}
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-3.5 text-xs">
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Customer</span>
+                  <div className="font-bold text-[#1A241E]">{b.user?.full_name || 'Customer'}</div>
+                  <div className="text-[11px] text-[#65756B]">{b.user?.email || 'No email'}</div>
+                  <div className="text-[11px] text-[#65756B]">{b.user?.phone || 'No phone'}</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Court &amp; Sport</span>
+                  <div className="font-bold text-[#1A241E]">{b.court?.name || 'Court'}</div>
+                  <div className="text-[11px] text-[#2D724E] font-semibold capitalize">{b.sport}</div>
+                  <div className="text-[11px] text-[#65756B]">{b.court?.floor_type || 'Standard surface'}</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Schedule</span>
+                  <div className="font-bold text-[#1A241E]">{b.booking_date}</div>
+                  <div className="text-[11px] text-[#65756B]">{b.start_time} - {b.end_time}</div>
+                  <div className="text-[11px] text-[#65756B]">{b.duration_minutes || 60} mins duration</div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Payment</span>
+                  <div className="font-black text-sm text-[#1A241E]">{formatCurrency(b.total_amount_cents)}</div>
+                  <div className="text-[11px] font-semibold capitalize text-[#2D724E]">
+                    {b.payment_method || 'Online'} &bull; {b.payment_status.replace(/_/g, ' ')}
+                  </div>
+                  {(b as any).reference_code && (
+                    <div className="text-[10px] font-mono text-[#65756B] truncate">
+                      Ref: {(b as any).reference_code}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {b.notes && (
+                <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] text-xs space-y-0.5">
+                  <span className="text-[10px] font-bold text-[#65756B] uppercase tracking-wider block">Notes from Player</span>
+                  <p className="text-[#1A241E] italic">&ldquo;{b.notes}&rdquo;</p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#E8E5DF]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookingForReview(null)}
+                  className="px-4 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-[#1A241E] hover:bg-[#FAF8F5] transition-all"
+                >
+                  Close
+                </button>
+
+                {isPending && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRejectModal(b)}
+                      disabled={isProcessingBookingAction}
+                      className="px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all disabled:opacity-50"
+                    >
+                      Reject Request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmBooking(b)}
+                      disabled={isProcessingBookingAction || Boolean(conflictBooking)}
+                      className="px-6 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isProcessingBookingAction ? 'Confirming...' : 'Confirm Booking'}
+                    </button>
+                  </>
+                )}
+
+                {isConfirmed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCheckInBooking(b.id);
+                      setSelectedBookingForReview(null);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm transition-all"
+                  >
+                    Check In Player
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Reject Reason Modal */}
+      {isRejectModalOpen && bookingToReject && (
+        <div className="fixed inset-0 z-[850] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl p-6 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
+                  <X className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-black text-[#1A241E]">
+                  Decline Booking Request
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRejectModalOpen(false);
+                  setBookingToReject(null);
+                }}
+                className="w-7 h-7 rounded-full bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center text-[#65756B] hover:text-[#1A241E]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#65756B]">
+              Are you sure you want to decline booking <strong>{bookingToReject.booking_reference}</strong> ({bookingToReject.user?.full_name || 'Customer'} on {bookingToReject.booking_date} at {bookingToReject.start_time})? The player will be notified immediately.
+            </p>
+
+            <div>
+              <label className="text-[11px] font-black text-[#1A241E] block mb-1">
+                Reason for Declining (Optional)
+              </label>
+              <textarea
+                rows={3}
+                value={rejectReasonPrompt}
+                onChange={(e) => setRejectReasonPrompt(e.target.value)}
+                placeholder="e.g., Court scheduled for emergency maintenance, invalid payment reference number, or double booking conflict..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-[#1A241E] placeholder:text-[#65756B]/60 focus:border-[#2D724E] focus:outline-none resize-none transition-all"
+              />
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {['Court under maintenance', 'Time slot conflict', 'Payment unverified'].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setRejectReasonPrompt(reason)}
+                    className="px-2 py-0.5 rounded-md bg-[#FAF8F5] border border-[#E8E5DF] text-[10px] text-[#65756B] hover:text-[#1A241E] hover:border-[#1A241E]"
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#E8E5DF] flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRejectModalOpen(false);
+                  setBookingToReject(null);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-[#1A241E] hover:bg-[#FAF8F5] transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={isProcessingBookingAction}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-sm transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isProcessingBookingAction ? 'Declining...' : 'Decline Booking'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

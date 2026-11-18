@@ -78,7 +78,7 @@ export interface SportSyncBookingItem {
   date: string;
   time: string;
   price: number;
-  status: 'confirmed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'rejected' | 'no_show';
   createdAt: string;
 }
 
@@ -3253,58 +3253,85 @@ export function useSportSyncBridge() {
       slot: string;
       price: number;
       bookingReference?: string;
+      status?: 'pending' | 'confirmed';
     }) => {
       const bookingId = details.bookingReference || `BK-${Math.floor(10000 + Math.random() * 90000)}`;
+      const bookingStatus = details.status || 'pending';
+      const cleanDate = details.date || new Date().toISOString().split('T')[0];
+
       const newBooking: SportSyncBookingItem = {
         id: bookingId,
         venue: details.venue,
         court: details.court,
-        date: details.date,
+        date: cleanDate,
         time: details.slot,
         price: details.price,
-        status: 'confirmed',
+        status: bookingStatus,
         createdAt: new Date().toISOString(),
       };
 
       setBookings((prev) => [newBooking, ...prev]);
 
-      // Real-time notification for court reservation
+      // Real-time notification for court reservation request (sent to player)
       addNotification({
         id: `notif_bk_${bookingId}`,
         type: 'booking',
-        title: 'Court Booking Confirmed',
-        desc: `${details.venue.name}: ${details.court} reserved for ${details.date} at ${details.slot}.`,
+        title: bookingStatus === 'confirmed' ? 'Court Booking Confirmed' : 'Booking Request Submitted',
+        desc: bookingStatus === 'confirmed'
+          ? `${details.venue.name}: ${details.court} reserved for ${cleanDate} at ${details.slot}.`
+          : `${details.venue.name}: ${details.court} request submitted for ${cleanDate} at ${details.slot}. Awaiting venue confirmation.`,
         linkScreen: 'my-bookings',
         recipientId: userProfile.id,
         recipientName: userProfile.name,
         meta: {
-          event: 'court_reserved',
+          event: bookingStatus === 'confirmed' ? 'court_reserved' : 'booking_requested',
           bookingId,
           venueName: details.venue.name,
           court: details.court,
-          date: details.date,
+          date: cleanDate,
           slot: details.slot,
+          status: bookingStatus,
         },
       });
 
-      // Award XP (+60 XP base × 1.5x = +90 XP)
-      awardXp(60, 'reserving a verified court', { applyStreakMultiplier: true });
+      // Also notify the venue owner / faculty of the pending request
+      if (bookingStatus === 'pending') {
+        addNotification({
+          id: `notif_faculty_bk_${bookingId}`,
+          type: 'booking',
+          title: 'New Booking Request',
+          desc: `Player ${userProfile.name} requested ${details.court} on ${cleanDate} (${details.slot}). Action required in Faculty Portal.`,
+          linkScreen: 'organizer',
+          recipientId: (details.venue as any)?.owner_id || 'faculty',
+          meta: {
+            event: 'new_pending_booking',
+            bookingId,
+            venueId: details.venue.id,
+            court: details.court,
+            date: cleanDate,
+            slot: details.slot,
+          },
+        });
+      }
+
+      // Award XP
+      awardXp(60, 'submitting court reservation', { applyStreakMultiplier: true });
 
       try {
         const venueObj = store.venues.find((v) => v.id === details.venue.id) || details.venue;
         store.createBooking({
           id: bookingId,
           booking_reference: bookingId,
-          user_id: store.currentUser.id || 'sportsync_player',
+          user_id: store.currentUser.id || userProfile.id || 'sportsync_player',
           user: {
-            id: store.currentUser.id || 'sportsync_player',
+            id: store.currentUser.id || userProfile.id || 'sportsync_player',
             full_name: store.currentUser.full_name || userProfile.name,
             email: store.currentUser.email || '',
           } as any,
           venue_id: details.venue.id,
           court_id: `${details.venue.id}_c1`,
           sport: (details.venue as any)?.sport || 'pickleball',
-          booking_date: '2026-10-17',
+          booking_date: cleanDate.includes('-') ? cleanDate : new Date().toISOString().split('T')[0],
           start_time: details.slot.split('–')[0]?.trim() || details.slot.split('-')[0]?.trim() || '10:00',
           end_time: details.slot.split('–')[1]?.trim() || details.slot.split('-')[1]?.trim() || '11:30',
           duration_minutes: 90,
@@ -3312,7 +3339,7 @@ export function useSportSyncBridge() {
           booking_amount_cents: details.price * 100,
           platform_fee_cents: 0,
           total_amount_cents: details.price * 100,
-          status: 'confirmed',
+          status: bookingStatus as any,
           payment_status: 'approved',
           created_at: new Date().toISOString(),
           venue: venueObj as any,
@@ -3330,10 +3357,72 @@ export function useSportSyncBridge() {
     [awardXp, store, userProfile.id, userProfile.name]
   );
 
+  const confirmReservation = useCallback(
+    (bookingId: string) => {
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: 'confirmed' } : b))
+      );
+      store.updateBookingStatus(bookingId, 'confirmed');
+
+      const existing = bookings.find((b) => b.id === bookingId);
+      const venueName = existing?.venue?.name || 'Venue';
+      const courtName = existing?.court || 'Court';
+      const dateStr = existing?.date || 'Date';
+      const timeStr = existing?.time || 'Time';
+
+      addNotification({
+        id: `notif_approved_${bookingId}_${Date.now()}`,
+        type: 'booking',
+        title: 'Booking Approved! 🎉',
+        desc: `${venueName} has approved your booking for ${courtName} on ${dateStr} (${timeStr}). See you on the court!`,
+        linkScreen: 'my-bookings',
+        recipientId: userProfile.id,
+        recipientName: userProfile.name,
+        meta: {
+          event: 'booking_approved',
+          bookingId,
+          status: 'confirmed',
+        },
+      });
+    },
+    [bookings, store, userProfile.id, userProfile.name]
+  );
+
+  const rejectReservation = useCallback(
+    (bookingId: string, reason?: string) => {
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: 'rejected' } : b))
+      );
+      store.updateBookingStatus(bookingId, 'rejected');
+
+      const existing = bookings.find((b) => b.id === bookingId);
+      const venueName = existing?.venue?.name || 'Venue';
+      const dateStr = existing?.date || 'Date';
+
+      addNotification({
+        id: `notif_rejected_${bookingId}_${Date.now()}`,
+        type: 'booking',
+        title: 'Booking Request Declined',
+        desc: `Your booking request at ${venueName} for ${dateStr} was declined by the venue.${reason ? ` Reason: ${reason}` : ''}`,
+        linkScreen: 'my-bookings',
+        recipientId: userProfile.id,
+        recipientName: userProfile.name,
+        meta: {
+          event: 'booking_rejected',
+          bookingId,
+          status: 'rejected',
+          reason,
+        },
+      });
+    },
+    [bookings, store, userProfile.id, userProfile.name]
+  );
+
   const cancelReservation = useCallback((bookingId: string) => {
     setBookings((prev) =>
       prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
     );
+    store.updateBookingStatus(bookingId, 'cancelled');
     addNotification({
       id: `notif_cancel_${bookingId}`,
       type: 'booking',
@@ -3347,7 +3436,7 @@ export function useSportSyncBridge() {
         bookingId,
       },
     });
-  }, [userProfile.id, userProfile.name]);
+  }, [store, userProfile.id, userProfile.name]);
 
   // 18. Complete Onboarding
   const completeOnboarding = useCallback(
@@ -3473,6 +3562,8 @@ export function useSportSyncBridge() {
     declineGameInvitation,
     syncSessionRoster,
     createReservation,
+    confirmReservation,
+    rejectReservation,
     cancelReservation,
     completeOnboarding,
     setAsGuest: () => {

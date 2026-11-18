@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowLeft, Clock, Calendar, Check, Users, ArrowRight } from 'lucide-react';
 import { Venue } from '../../mock/types';
 import { DateStrip, generateUpcomingDates, DateItem } from '../../design-system/components/DateStrip';
@@ -7,6 +7,7 @@ import { Button } from '../../design-system/components/Button';
 import { FRIENDS } from '../../mock/mockData';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { APP_CONFIG } from '../../config/appConfig';
+import { useMatchiStore } from '../../lib/store';
 
 interface BookingFlowScreenProps {
   venue: Venue;
@@ -26,19 +27,45 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   onBack,
   onProceedToPayment,
 }) => {
+  const { bookings } = useMatchiStore();
   const [upcomingDates] = useState<DateItem[]>(() => generateUpcomingDates(14));
   const [selectedDateId, setSelectedDateId] = useState<string>(() => upcomingDates[0]?.id || new Date().toISOString().split('T')[0]);
   const [selectedDateItem, setSelectedDateItem] = useState<DateItem>(() => upcomingDates[0]);
 
+  const courts = venue.courts && venue.courts.length > 0
+    ? venue.courts.map((c) => c.name)
+    : ['Court 1 (Clay)', 'Court 2 (Clay)', 'Court 3 (Clay Lighted)', 'Court 4 (Hardcourt)'];
+  const [selectedCourt, setSelectedCourt] = useState(courts[0] || 'Court 1 (Clay)');
+
+  const selectedDateStr = selectedDateItem?.fullDate || selectedDateId;
+
+  // Real confirmed reservations (pending requests do NOT block slots)
+  const confirmedBookingSlots = useMemo(() => {
+    const bookedTimes = new Set<string>();
+    bookings.forEach((b) => {
+      const matchesVenue = b.venue_id === venue.id || b.venue_id === (venue as any).slug;
+      const matchesDate = b.booking_date === selectedDateStr || b.booking_date === selectedDateId;
+      const matchesCourt = !b.court?.name || b.court?.name === selectedCourt || (b as any).courtName === selectedCourt;
+      // Only confirmed reservations block slots! Pending bookings do NOT block slots.
+      const isConfirmed = b.status === 'confirmed' || b.status === 'completed';
+
+      if (matchesVenue && matchesDate && matchesCourt && isConfirmed) {
+        const timePrefix = (b.start_time || '').substring(0, 5);
+        if (timePrefix) bookedTimes.add(timePrefix);
+      }
+    });
+    return bookedTimes;
+  }, [bookings, venue.id, selectedDateStr, selectedDateId, selectedCourt]);
+
   const rawTimeSlots = [
-    { time: '08:30', status: 'available', price: venue.pricePerHour },
-    { time: '10:00', status: 'available', price: venue.pricePerHour, isPeak: true },
-    { time: '11:30', status: 'booked', price: venue.pricePerHour },
-    { time: '13:00', status: 'available', price: venue.pricePerHour },
-    { time: '15:30', status: 'available', price: venue.pricePerHour },
-    { time: '17:00', status: 'booked', price: venue.pricePerHour },
-    { time: '18:30', status: 'available', price: venue.pricePerHour + 8, isPeak: true },
-    { time: '20:00', status: 'available', price: venue.pricePerHour + 8, isPeak: true },
+    { time: '08:30', price: venue.pricePerHour },
+    { time: '10:00', price: venue.pricePerHour, isPeak: true },
+    { time: '11:30', price: venue.pricePerHour },
+    { time: '13:00', price: venue.pricePerHour },
+    { time: '15:30', price: venue.pricePerHour },
+    { time: '17:00', price: venue.pricePerHour },
+    { time: '18:30', price: venue.pricePerHour + 8, isPeak: true },
+    { time: '20:00', price: venue.pricePerHour + 8, isPeak: true },
   ];
 
   // Restrict past time slots if booking for today
@@ -50,10 +77,11 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   const timeSlots = rawTimeSlots.map((slot) => {
     const [h, m] = slot.time.split(':').map(Number);
     const isPastSlot = isSelectedDateToday && (h < currentHour || (h === currentHour && m <= currentMin));
+    const isBooked = confirmedBookingSlots.has(slot.time);
     return {
       ...slot,
       isPast: isPastSlot,
-      status: isPastSlot ? 'past' : slot.status,
+      status: isPastSlot ? 'past' : isBooked ? 'booked' : 'available',
     };
   });
 
@@ -71,10 +99,6 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   }, [selectedDateId, isSelectedDateToday]);
 
   const [durationHours, setDurationHours] = useState(1.5);
-  const courts = venue.courts && venue.courts.length > 0
-    ? venue.courts.map((c) => c.name)
-    : ['Court 1 (Clay)', 'Court 2 (Clay)', 'Court 3 (Clay Lighted)', 'Court 4 (Hardcourt)'];
-  const [selectedCourt, setSelectedCourt] = useState(courts[0] || 'Court 1 (Clay)');
   const [invitedFriends, setInvitedFriends] = useState<string[]>(['f1', 'f3']);
 
   const toggleFriend = (id: string) => {
