@@ -6,6 +6,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useMatchiStore } from '@/lib/store';
 import { SportType } from '@/types';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import {
   X,
   Mail,
@@ -158,8 +159,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             window.location.href = isFacility ? '/onboarding?role=owner' : '/onboarding';
           }, 600);
         } else {
-          // EXISTING / ALREADY REGISTERED USER: Must NOT show onboarding!
+          // Bug fix: Check actual database onboarding status.
+          // Incomplete profiles must NEVER be marked as onboarded during sign-in.
           const isOwnerRole = isFacility || data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
+          const actualOnboardingCompleted = Boolean(
+            data.user.onboarding_completed === true || data.user.has_completed_onboarding === true
+          );
+
           setAuthenticatedUser({
             id: data.user.id,
             auth_id: data.user.id,
@@ -173,45 +179,61 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             preferred_format: data.user.preferred_format || 'doubles',
             skill_level: data.user.skill_level || 'intermediate',
             city: data.user.city || 'Naga City',
-            onboarding_completed: true,
-            has_completed_onboarding: true,
+            onboarding_completed: actualOnboardingCompleted,
+            has_completed_onboarding: actualOnboardingCompleted,
           });
 
           if (typeof window !== 'undefined') {
-            localStorage.removeItem('sportsync_pending_onboarding');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
             localStorage.setItem('sportsync_user_role', isOwnerRole ? 'venue_owner' : (data.user.role || 'player'));
             localStorage.setItem('sportsync_user_name', data.user.full_name);
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-            const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
-              ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
-              : ['Football'];
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                id: data.user.id,
-                name: data.user.full_name,
-                username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-                role: data.user.role,
-                city: data.user.city || 'Naga City',
-                primarySport: data.user.primary_sport || 'football',
-                preferredSports: userSports,
-                skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
+
+            if (!actualOnboardingCompleted) {
+              localStorage.setItem('sportsync_pending_onboarding', 'true');
+              localStorage.removeItem('matchi_onboarding_completed');
+              localStorage.removeItem('sportsync_onboarding_completed');
+              localStorage.removeItem('sportsync_user_profile');
+            } else {
+              localStorage.removeItem('sportsync_pending_onboarding');
+              localStorage.setItem('matchi_onboarding_completed', 'true');
+              localStorage.setItem('sportsync_onboarding_completed', 'true');
+              const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
+                ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+                : ['Football'];
+              localStorage.setItem(
+                'sportsync_user_profile',
+                JSON.stringify({
+                  id: data.user.id,
+                  name: data.user.full_name,
+                  username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
+                  role: data.user.role,
+                  city: data.user.city || 'Naga City',
+                  primarySport: data.user.primary_sport || 'football',
+                  preferredSports: userSports,
+                  skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
+                  onboardingCompleted: true,
+                  isGuest: false,
+                })
+              );
+            }
           }
 
-          setSuccessMsg('Welcome back! Signed in.');
-          setTimeout(() => {
-            onClose();
-            if (isOwnerRole) {
-              window.location.href = '/organizer';
-            }
-          }, 600);
+          if (!actualOnboardingCompleted) {
+            setSuccessMsg('Account verified. Redirecting to Profile Setup...');
+            setTimeout(() => {
+              onClose();
+              window.location.href = isOwnerRole ? '/onboarding?role=owner' : '/onboarding';
+            }, 600);
+          } else {
+            setSuccessMsg('Welcome back! Signed in.');
+            setTimeout(() => {
+              onClose();
+              if (isOwnerRole) {
+                window.location.href = '/organizer';
+              }
+            }, 600);
+          }
         }
       }
     } catch (err: unknown) {
@@ -394,6 +416,27 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                 >
                   Create Account
                 </button>
+              </div>
+
+              {/* Primary OAuth Method: Continue with Google */}
+              <div className="mb-3 space-y-2.5">
+                <GoogleSignInButton
+                  label={mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'}
+                  onError={(err) => setErrorMsg(err)}
+                  onSuccess={(isNewUser) => {
+                    onClose();
+                    if (typeof window !== 'undefined') {
+                      window.location.href = isNewUser ? '/onboarding' : '/';
+                    }
+                  }}
+                />
+                <div className="relative flex items-center justify-center my-2">
+                  <div className="border-t border-[#E8E5DF] w-full" />
+                  <span className="bg-white px-2.5 text-[10px] font-bold uppercase tracking-wider text-[#65756B] shrink-0">
+                    or continue with email
+                  </span>
+                  <div className="border-t border-[#E8E5DF] w-full" />
+                </div>
               </div>
 
               {mode === 'magic_link' ? (

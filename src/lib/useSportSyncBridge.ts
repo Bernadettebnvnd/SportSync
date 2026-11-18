@@ -3481,15 +3481,24 @@ export function useSportSyncBridge() {
         }
       }
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_user_id');
+        localStorage.removeItem('matchi_user_id');
         localStorage.removeItem('sportsync_user_profile');
+        localStorage.removeItem('sideline_user_profile');
         localStorage.removeItem('sportsync_user_role');
         localStorage.removeItem('sportsync_user_email');
+        localStorage.removeItem('sportsync_user_name');
+        localStorage.removeItem('sportsync_pending_onboarding');
         localStorage.removeItem('sportsync_onboarding_completed');
         localStorage.removeItem('matchi_onboarding_completed');
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+        } catch {}
       }
       resetNotificationCache();
       setUserProfile({
         ...INITIAL_USER_PROFILE,
+        id: undefined,
         name: 'Guest Player',
         username: '@guest',
         isGuest: true,

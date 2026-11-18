@@ -470,11 +470,12 @@ export async function serverLogin(data: {
     }
   }
 
-  // Respect actual persisted onboarding completion from public.users or user_metadata
+  // Bug fix: Respect actual persisted onboarding completion from public.users or user_metadata.
+  // Incomplete profiles must NEVER be mistakenly marked as completed during sign-in.
   const resolvedOnboardingCompleted = Boolean(
     dbProfile?.onboarding_completed !== undefined && dbProfile?.onboarding_completed !== null
-      ? dbProfile.onboarding_completed
-      : userMeta?.onboarding_completed ?? false
+      ? (dbProfile.onboarding_completed === true || dbProfile.onboarding_completed === 'true')
+      : (userMeta?.onboarding_completed === true || userMeta?.onboarding_completed === 'true')
   );
 
   const sanitized: SanitizedUser = {
@@ -553,8 +554,8 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           city: city,
           onboarding_completed: Boolean(
             supaUser.onboarding_completed !== undefined && supaUser.onboarding_completed !== null
-              ? supaUser.onboarding_completed
-              : authMetadata?.onboarding_completed ?? false
+              ? (supaUser.onboarding_completed === true || supaUser.onboarding_completed === 'true')
+              : (authMetadata?.onboarding_completed === true || authMetadata?.onboarding_completed === 'true')
           ),
 
           created_at: supaUser.created_at,
@@ -774,4 +775,146 @@ export async function serverUpdateUserProfile(
   }
 
   return null;
+}
+
+/**
+ * Synchronize a Google OAuth / SSO authenticated user with public.users.
+ * Strict Profile Check: If the user's profile is missing or incomplete,
+ * onboarding_completed is strictly set to false so the user is forced
+ * into Profile Setup and cannot access the main dashboard.
+ */
+export async function serverSyncOAuthUser(data: {
+  authId: string;
+  email: string;
+  fullName?: string;
+  avatarUrl?: string;
+  provider?: string;
+  mock?: boolean;
+}): Promise<{ user: SanitizedUser; token: string; isComplete: boolean }> {
+  const normalizedEmail = data.email.trim().toLowerCase();
+
+  // 1. Fallback for Local Development / Offline MVP
+  if (!isSupabaseConfigured || data.mock) {
+    const existing = localDevUsers.get(normalizedEmail);
+    if (existing) {
+      const isComplete = Boolean(existing.user.onboarding_completed === true);
+      const token = createSessionToken(existing.user);
+      return { user: existing.user, token, isComplete };
+    }
+
+    const localId = data.authId || `usr_google_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const sanitized: SanitizedUser = {
+      id: localId,
+      email: normalizedEmail,
+      full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
+      nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
+      avatar_url: data.avatarUrl,
+      role: 'player',
+      primary_sport: 'pickleball',
+      preferred_sports: ['pickleball', 'badminton'],
+      preferred_format: 'doubles',
+      skill_level: 'intermediate',
+      city: 'Naga City',
+      onboarding_completed: false, // New Google SSO users must complete Profile Setup!
+      created_at: new Date().toISOString(),
+    };
+
+    localDevUsers.set(normalizedEmail, {
+      user: sanitized,
+      passwordHash: '',
+    });
+
+    const token = createSessionToken(sanitized);
+    return { user: sanitized, token, isComplete: false };
+  }
+
+  // 2. Production Supabase OAuth Sync
+  const admin = createAdminClient();
+  const serverClient = createServerClient();
+  const dbClient = admin || serverClient;
+
+  if (!dbClient) {
+    throw new Error('Supabase client unavailable for OAuth synchronization.');
+  }
+
+  let dbProfile: any = null;
+  try {
+    const { data: profile } = await dbClient
+      .from('users')
+      .select('*')
+      .or(`auth_id.eq.${data.authId},email.eq.${normalizedEmail}`)
+      .maybeSingle();
+
+    dbProfile = profile;
+
+    if (dbProfile) {
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+      let hasUpdates = false;
+
+      if (!dbProfile.auth_id || dbProfile.auth_id !== data.authId) {
+        updates.auth_id = data.authId;
+        hasUpdates = true;
+      }
+      if (!dbProfile.avatar_url && data.avatarUrl) {
+        updates.avatar_url = data.avatarUrl;
+        hasUpdates = true;
+      }
+      if (hasUpdates) {
+        await dbClient.from('users').update(updates).eq('id', dbProfile.id);
+      }
+    } else {
+      // Missing profile: create new row with onboarding_completed explicitly false
+      const newRecord = {
+        auth_id: data.authId,
+        email: normalizedEmail,
+        full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
+        nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
+        avatar_url: data.avatarUrl || null,
+        role: 'player' as UserRole,
+        primary_sport: 'pickleball',
+        preferred_sports: ['pickleball', 'badminton'],
+        preferred_format: 'doubles',
+        skill_level: 'intermediate',
+        city: 'Naga City',
+        onboarding_completed: false, // Incomplete until Profile Setup is finished
+      };
+
+      const { data: inserted, error: insertErr } = await dbClient
+        .from('users')
+        .insert(newRecord)
+        .select('*')
+        .maybeSingle();
+
+      if (insertErr) {
+        console.warn('[ServerAuth] OAuth user insert warning:', insertErr.message);
+      }
+      dbProfile = inserted || newRecord;
+    }
+  } catch (dbErr) {
+    console.warn('[ServerAuth] OAuth database sync error:', dbErr);
+  }
+
+  // STRICT CHECK: An account is ONLY complete if onboarding_completed in the database is true.
+  const isComplete = Boolean(
+    dbProfile?.onboarding_completed === true || dbProfile?.onboarding_completed === 'true'
+  );
+
+  const sanitized: SanitizedUser = {
+    id: data.authId,
+    email: normalizedEmail,
+    full_name: dbProfile?.full_name || data.fullName?.trim() || normalizedEmail.split('@')[0],
+    nickname: dbProfile?.nickname || data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
+    avatar_url: dbProfile?.avatar_url || data.avatarUrl,
+    role: (dbProfile?.role || 'player') as UserRole,
+    primary_sport: dbProfile?.primary_sport || 'pickleball',
+    preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
+    preferred_format: dbProfile?.preferred_format || 'doubles',
+    skill_level: dbProfile?.skill_level || 'intermediate',
+    city: dbProfile?.city || 'Naga City',
+    onboarding_completed: isComplete,
+    created_at: dbProfile?.created_at || new Date().toISOString(),
+  };
+
+  const token = createSessionToken(sanitized);
+  return { user: sanitized, token, isComplete };
 }

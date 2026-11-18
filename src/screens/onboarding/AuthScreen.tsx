@@ -5,6 +5,7 @@ import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
 import { useMatchiStore } from '../../lib/store';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 
 export type AuthRole = 'player' | 'facility_owner';
 
@@ -128,9 +129,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       // Update store user state with real authenticated session
       if (data.user) {
-        const isNewUser = isSignUp;
         const isFacility = selectedRole === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
         const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
+
+        // Bug fix: Strictly resolve whether profile has actually completed onboarding.
+        // Incomplete profiles must NEVER be marked as onboarded during sign-in.
+        const actualOnboardingCompleted = Boolean(
+          data.user.onboarding_completed === true || data.user.has_completed_onboarding === true
+        );
 
         setAuthenticatedUser({
           id: data.user.id,
@@ -145,8 +151,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           preferred_format: data.user.preferred_format || 'doubles',
           skill_level: data.user.skill_level || 'intermediate',
           city: data.user.city || 'Naga City',
-          onboarding_completed: !isNewUser,
-          has_completed_onboarding: !isNewUser,
+          onboarding_completed: actualOnboardingCompleted,
+          has_completed_onboarding: actualOnboardingCompleted,
         });
 
         if (typeof window !== 'undefined') {
@@ -154,7 +160,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', assignedRole);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
-          if (isNewUser) {
+          if (!actualOnboardingCompleted) {
             localStorage.setItem('sportsync_pending_onboarding', 'true');
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
@@ -185,20 +191,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             );
           }
         }
+
+        const userRole = data.user?.role;
+        const detectedRole: AuthRole =
+          userRole === 'venue_owner' || userRole === 'organizer' || selectedRole === 'facility_owner'
+            ? 'facility_owner'
+            : 'player';
+
+        setSuccessMessage(
+          isSignUp
+            ? `Account registered successfully! Welcome to SportSync.`
+            : 'Welcome back! Signed in.'
+        );
+        setTimeout(() => onSuccess(detectedRole, !actualOnboardingCompleted), 800);
       }
-
-      const userRole = data.user?.role;
-      const detectedRole: AuthRole =
-        userRole === 'venue_owner' || userRole === 'organizer' || selectedRole === 'facility_owner'
-          ? 'facility_owner'
-          : 'player';
-
-      setSuccessMessage(
-        isSignUp
-          ? `Account registered successfully! Welcome to SportSync.`
-          : 'Welcome back! Signed in.'
-      );
-      setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
       if (message === 'Failed to fetch') {
@@ -266,6 +272,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <div className="p-3.5 rounded-2xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 text-[#C8FF2E] text-xs flex items-center gap-2 mb-4 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMessage}</span>
+          </div>
+        )}
+
+        {/* Primary OAuth Method: Continue with Google (Clean pill design matching reference) */}
+        {!isPasswordReset && (
+          <div className="mb-5 space-y-3">
+            <GoogleSignInButton
+              label={isSignUp ? 'Sign up with Google' : 'Continue with Google'}
+              onError={(err) => setErrorMessage(err)}
+              onSuccess={(isNewUser) => {
+                onSuccess('player', Boolean(isNewUser));
+              }}
+            />
+            <div className="relative flex items-center justify-center">
+              <div className="border-t border-white/10 w-full" />
+              <span className="bg-[#0B0F0C] px-3 text-[11px] font-semibold uppercase tracking-wider text-[#6F7B71] shrink-0">
+                or continue with email
+              </span>
+              <div className="border-t border-white/10 w-full" />
+            </div>
           </div>
         )}
 

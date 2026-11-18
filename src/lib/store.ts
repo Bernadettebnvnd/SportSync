@@ -484,15 +484,24 @@ export function useMatchiStore() {
 
   const logoutUser = useCallback(async () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.removeItem('sportsync_user_id');
+      localStorage.removeItem('matchi_user_id');
       localStorage.removeItem('sportsync_user_email');
       localStorage.removeItem('sportsync_user_role');
       localStorage.removeItem('sportsync_user_name');
       localStorage.removeItem('sportsync_user_profile');
+      localStorage.removeItem('sideline_user_profile');
       localStorage.removeItem('matchi_onboarding_completed');
       localStorage.removeItem('sportsync_onboarding_completed');
       localStorage.removeItem('matchi_user_name');
       localStorage.removeItem('matchi_user_nickname');
+      localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.removeItem('sportsync_auth_user');
+      localStorage.removeItem('sportsync_user_city');
+      localStorage.removeItem('sportsync_user_location');
+      localStorage.removeItem('sportsync_user_sports');
+      localStorage.removeItem('sportsync_user_skill');
+      localStorage.removeItem('sportsync_user_availability');
       try {
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch {}
@@ -505,7 +514,7 @@ export function useMatchiStore() {
     resetNotificationCache();
     globalState = {
       ...globalState,
-      currentUser: GUEST_USER,
+      currentUser: { ...GUEST_USER },
       bookings: [],
     };
     notify();

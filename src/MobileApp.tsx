@@ -105,7 +105,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (bridge.userProfile.id && !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player') {
       return true;
     }
-    if (bridge.store.currentUser.id && bridge.store.currentUser.email) {
+    if (bridge.store.currentUser.id && bridge.store.currentUser.email && bridge.store.currentUser.full_name !== 'Guest Player') {
       return true;
     }
     if (typeof window !== 'undefined') {
@@ -117,10 +117,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             return true;
           }
         }
-        if (localStorage.getItem('sportsync_user_email')) {
+        const email = localStorage.getItem('sportsync_user_email');
+        const id = localStorage.getItem('sportsync_user_id');
+        if (email && id) {
           return true;
         }
       } catch {}
+    }
+    return false;
+  };
+
+  const isUserOnboarded = (): boolean => {
+    if (!isUserAuthenticated()) return false;
+    if (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+      return false;
+    }
+    if (bridge.userProfile.onboardingCompleted === true) return true;
+    if (bridge.store.currentUser.onboarding_completed === true || bridge.store.currentUser.has_completed_onboarding === true) {
+      return true;
     }
     return false;
   };
@@ -135,7 +149,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         }
       } catch {}
     }
-    return isUserAuthenticated() ? 'home' : 'auth';
+    if (!isUserAuthenticated()) {
+      return 'auth';
+    }
+    // Strict Routing: Incomplete profiles MUST be routed directly to Profile Setup
+    if (!isUserOnboarded()) {
+      return 'personalization';
+    }
+    return 'home';
   };
 
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(resolveInitialScreen);
@@ -315,6 +336,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       else if (initialScreen === 'profile') setActiveTab('profile');
     }
   }, [initialScreen]);
+
+  // Strict Routing: Never allow an authenticated user with an incomplete profile
+  // to stay on dashboard or main screens until Profile Setup is finished.
+  useEffect(() => {
+    if (isUserAuthenticated() && !isUserOnboarded()) {
+      const allowedScreens: ScreenId[] = ['personalization', 'auth', 'invitation-landing', 'splash'];
+      if (!allowedScreens.includes(currentScreen)) {
+        if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+          window.location.href = '/onboarding';
+        } else {
+          setCurrentScreen('personalization');
+        }
+      }
+    }
+  }, [bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, currentScreen]);
 
   useEffect(() => {
     if (currentScreen === 'match-detail' && selectedGame) {
@@ -533,6 +569,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setScreenHistory(['auth']);
     onScreenChange?.('auth');
     setToastMessage('Signed out successfully.');
+    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+      window.location.href = '/';
+    }
   };
 
   // Real-time unread messages tracking across authorized match chats
@@ -630,7 +669,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 } else {
                   navigateTo('faculty-setup');
                 }
-              } else if (isNewAccount) {
+              } else if (isNewAccount || !isUserOnboarded()) {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
                 } else {
@@ -666,7 +705,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
             isEditing={isEditing}
             initialValues={personalizationDraft || {
-              displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name) ? bridge.userProfile.name : '',
+              displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name)
+                ? bridge.userProfile.name
+                : (bridge.store.currentUser.full_name && !['Guest', 'Guest Player', 'Player'].includes(bridge.store.currentUser.full_name)
+                    ? bridge.store.currentUser.full_name
+                    : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
               preferredArea: bridge.userProfile.city || 'Naga City',
               availability: bridge.userProfile.availability || 'Weekday Evenings & Weekends',
