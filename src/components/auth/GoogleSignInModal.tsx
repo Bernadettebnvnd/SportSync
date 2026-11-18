@@ -93,7 +93,7 @@ export function GoogleSignInModal({
           email: trimmedEmail,
           fullName: finalFullName,
           avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(finalFullName)}&backgroundColor=0f2a22&textColor=c8ff2e`,
-          mock: true,
+          mock: false,
         }),
       });
 
