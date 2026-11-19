@@ -223,7 +223,7 @@ async function initializeStore() {
         ? (storedSports! as SportType[])
         : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (isUserOnboarded ? (['football'] as SportType[]) : []));
 
-      user.city = 'Naga City';
+      user.city = storedCity || user.city || (isUserOnboarded ? 'Naga City' : '');
       user.preferred_sports = finalSports;
       user.primary_sport = (finalSports[0] || user.primary_sport || (isUserOnboarded ? 'football' : '')) as SportType;
 

@@ -146,6 +146,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onLogout();
               } else {
                 if (typeof window !== 'undefined') {
+                  localStorage.setItem('sportsync_logged_out', 'true');
                   localStorage.removeItem('sportsync_user_id');
                   localStorage.removeItem('matchi_user_id');
                   localStorage.removeItem('sportsync_user_role');

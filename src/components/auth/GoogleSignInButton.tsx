@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { GoogleSignInModal } from './GoogleSignInModal';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useMatchiStore } from '@/lib/store';
+import { Loader2 } from 'lucide-react';
 
 interface GoogleSignInButtonProps {
   label?: string;
@@ -18,27 +19,85 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   onError,
   onSuccess,
 }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { setAuthenticatedUser } = useMatchiStore();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleClick = () => {
-    // Open authentic Google Accounts sign-in popup dialog directly.
-    // This provides the in-app Google login window where users enter their Gmail,
-    // avoiding raw 400 "Unsupported provider: provider is not enabled" errors when
-    // Google OAuth is not enabled in the cloud Supabase project dashboard.
-    setIsModalOpen(true);
-  };
+  // Listen for authentication completion postMessage from popup window
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (typeof window !== 'undefined' && event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        const { user, isComplete } = event.data;
+        setIsLoading(false);
+
+        if (user) {
+          setAuthenticatedUser({
+            ...user,
+            onboarding_completed: isComplete,
+            has_completed_onboarding: isComplete,
+          });
+        }
+
+        if (onSuccess) {
+          onSuccess(!isComplete);
+        } else if (typeof window !== 'undefined') {
+          // Strict routing: incomplete profiles must complete Profile Setup
+          window.location.href = !isComplete ? '/onboarding' : '/';
+        }
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
+  }, [onSuccess, setAuthenticatedUser]);
+
+  // Handle Google Sign In click: opens standard native browser popup window
+  const handleClick = useCallback(() => {
+    setIsLoading(true);
+
+    const width = 500;
+    const height = 620;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+
+    const popupUrl = '/auth/google-popup';
+    const popup = window.open(
+      popupUrl,
+      'google_signin_popup',
+      `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      // In case browser strictly blocks popups, fallback to same-tab navigation
+      window.location.href = popupUrl;
+      return;
+    }
+
+    // Monitor popup lifecycle to reset loading state if closed manually
+    const timer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer);
+        setIsLoading(false);
+      }
+    }, 500);
+  }, []);
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={disabled}
-        aria-label="Continue with Google"
-        className={`group relative w-full h-12 sm:h-13 px-6 rounded-full bg-white hover:bg-[#F9FAFB] active:bg-[#F3F4F6] border border-[#D1D5DB] hover:border-[#9CA3AF] text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)] hover:shadow-md transition-all duration-200 active:scale-[0.99] flex items-center justify-center select-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className}`}
-      >
-        {/* Google "G" Brand Icon anchored to left, exactly matching the reference design */}
-        <div className="absolute left-4 sm:left-6 flex items-center justify-center shrink-0">
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled || isLoading}
+      aria-label="Continue with Google"
+      className={`group relative w-full h-12 sm:h-13 px-6 rounded-full bg-white hover:bg-[#F9FAFB] active:bg-[#F3F4F6] border border-[#D1D5DB] hover:border-[#9CA3AF] text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)] hover:shadow-md transition-all duration-200 active:scale-[0.99] flex items-center justify-center select-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className}`}
+    >
+      {/* Google "G" Brand Icon anchored to left */}
+      <div className="absolute left-4 sm:left-6 flex items-center justify-center shrink-0">
+        {isLoading ? (
+          <Loader2 className="w-5 h-5 text-neutral-600 animate-spin" />
+        ) : (
           <svg
             className="w-5 h-5"
             viewBox="0 0 24 24"
@@ -62,21 +121,13 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
               fill="#EA4335"
             />
           </svg>
-        </div>
+        )}
+      </div>
 
-        {/* Centered label matching reference pill button typography */}
-        <span className="font-semibold text-sm sm:text-[15px] text-[#111827] tracking-tight">
-          {label}
-        </span>
-      </button>
-
-      {/* Google Accounts Sign-In Window Modal matching image_a4d81c1e */}
-      <GoogleSignInModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={onSuccess}
-        onError={onError}
-      />
-    </>
+      {/* Centered label matching reference pill button typography */}
+      <span className="font-semibold text-sm sm:text-[15px] text-[#111827] tracking-tight">
+        {isLoading ? 'Opening Google...' : label}
+      </span>
+    </button>
   );
 };

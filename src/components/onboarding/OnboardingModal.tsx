@@ -58,22 +58,28 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
   const [name, setName] = useState(currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.full_name !== 'Guest' ? currentUser.full_name : '');
   const [nickname, setNickname] = useState(currentUser.nickname && currentUser.nickname !== 'Guest' ? currentUser.nickname : '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
-    if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
+    if (currentUser.onboarding_completed && currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
       return currentUser.preferred_sports;
     }
-    return ['pickleball', 'basketball'];
+    return [];
   });
-  const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
-  const [selectedArea, setSelectedArea] = useState('Naga City');
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => {
-    if (currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
+  const [preferredFormat, setPreferredFormat] = useState<MatchFormat | ''>(() => {
+    if (currentUser.onboarding_completed && currentUser.preferred_format) {
+      return currentUser.preferred_format;
+    }
+    return '';
+  });
+  const [selectedArea, setSelectedArea] = useState<string>(() => {
+    if (currentUser.onboarding_completed && currentUser.city) {
+      return currentUser.city;
+    }
+    return '';
+  });
+  const [skillLevel, setSkillLevel] = useState<SkillLevel | ''>(() => {
+    if (currentUser.onboarding_completed && currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
       return currentUser.skill_level;
     }
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sportsync_user_skill');
-      if (stored && stored !== 'all_levels') return stored as SkillLevel;
-    }
-    return 'beginner';
+    return '';
   });
   const AVAILABILITY_OPTIONS = [
     'Weekday Evenings & Weekends',
@@ -82,12 +88,10 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
     'Flexible / Anytime',
   ];
   const [availability, setAvailability] = useState<string>(() => {
-    if (currentUser.availability) return currentUser.availability;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sportsync_user_availability');
-      if (stored) return stored;
+    if (currentUser.onboarding_completed && currentUser.availability) {
+      return currentUser.availability;
     }
-    return 'Weekday Evenings & Weekends';
+    return '';
   });
   const [notifyBookings, setNotifyBookings] = useState(true);
 
@@ -100,11 +104,7 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
   const toggleSport = (sport: SportType) => {
     if (validationError) setValidationError(null);
     if (selectedSports.includes(sport)) {
-      if (selectedSports.length > 1) {
-        setSelectedSports(selectedSports.filter((s) => s !== sport));
-      } else {
-        setValidationError('Please keep at least one favorite sport selected.');
-      }
+      setSelectedSports(selectedSports.filter((s) => s !== sport));
     } else {
       setSelectedSports([...selectedSports, sport]);
     }
@@ -124,6 +124,22 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
       setValidationError('Please select at least one sport category.');
       return;
     }
+    if (!preferredFormat) {
+      setValidationError('Please choose your preferred match format (Doubles or Singles).');
+      return;
+    }
+    if (!skillLevel) {
+      setValidationError('Please select your experience & skill tier.');
+      return;
+    }
+    if (!selectedArea) {
+      setValidationError('Please choose your preferred location / home hub.');
+      return;
+    }
+    if (!availability) {
+      setValidationError('Please select your general playing availability.');
+      return;
+    }
 
     setValidationError(null);
     setIsSubmitting(true);
@@ -137,9 +153,9 @@ export function OnboardingModal({ isOpen, onClose, onComplete }: OnboardingModal
         fullName: finalFullName,
         nickname: finalNickname,
         preferredSports: selectedSports,
-        preferredFormat,
+        preferredFormat: (preferredFormat || 'doubles') as MatchFormat,
         city: cleanCity,
-        skillLevel,
+        skillLevel: (skillLevel || 'beginner') as SkillLevel,
         availability,
       });
 

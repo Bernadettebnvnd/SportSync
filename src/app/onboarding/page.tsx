@@ -179,22 +179,28 @@ function OnboardingContent() {
 
   const [nickname, setNickname] = useState(currentUser.nickname && currentUser.nickname !== 'Guest' ? currentUser.nickname : '');
   const [selectedSports, setSelectedSports] = useState<SportType[]>(() => {
-    if (currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
+    if (currentUser.onboarding_completed && currentUser.preferred_sports && currentUser.preferred_sports.length > 0) {
       return currentUser.preferred_sports;
     }
-    return ['pickleball', 'basketball'];
+    return [];
   });
-  const [preferredFormat, setPreferredFormat] = useState<MatchFormat>(currentUser.preferred_format || 'doubles');
-  const [selectedArea, setSelectedArea] = useState('Naga City');
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => {
-    if (currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
+  const [preferredFormat, setPreferredFormat] = useState<MatchFormat | ''>(() => {
+    if (currentUser.onboarding_completed && currentUser.preferred_format) {
+      return currentUser.preferred_format;
+    }
+    return '';
+  });
+  const [selectedArea, setSelectedArea] = useState<string>(() => {
+    if (currentUser.onboarding_completed && currentUser.city) {
+      return currentUser.city;
+    }
+    return '';
+  });
+  const [skillLevel, setSkillLevel] = useState<SkillLevel | ''>(() => {
+    if (currentUser.onboarding_completed && currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
       return currentUser.skill_level;
     }
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sportsync_user_skill');
-      if (stored && stored !== 'all_levels') return stored as SkillLevel;
-    }
-    return 'beginner';
+    return '';
   });
   const AVAILABILITY_OPTIONS = [
     'Weekday Evenings & Weekends',
@@ -203,12 +209,10 @@ function OnboardingContent() {
     'Flexible / Anytime',
   ];
   const [availability, setAvailability] = useState<string>(() => {
-    if (currentUser.availability) return currentUser.availability;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('sportsync_user_availability');
-      if (stored) return stored;
+    if (currentUser.onboarding_completed && currentUser.availability) {
+      return currentUser.availability;
     }
-    return 'Weekday Evenings & Weekends';
+    return '';
   });
   const [notifyBookings, setNotifyBookings] = useState(true);
   const [playerValidationError, setPlayerValidationError] = useState<string | null>(null);
@@ -234,24 +238,19 @@ function OnboardingContent() {
   const [ownerStep, setOwnerStep] = useState<number>(1);
   const totalOwnerSteps = 5;
   const [facilityName, setFacilityName] = useState('');
-  const [facilityType, setFacilityType] = useState<'university' | 'club' | 'public' | 'commercial'>('university');
+  const [facilityType, setFacilityType] = useState<'university' | 'club' | 'public' | 'commercial' | ''>('');
   const [facilityAddress, setFacilityAddress] = useState('');
-  const [facilityDistrict, setFacilityDistrict] = useState('Bagumbayan Sur');
+  const [facilityDistrict, setFacilityDistrict] = useState('');
   const [facilityLandmark, setFacilityLandmark] = useState('');
   const [facilityCity, setFacilityCity] = useState(FACILITY_LOCATIONS[0]);
-  const [facilitySports, setFacilitySports] = useState<SportType[]>(['pickleball', 'basketball', 'badminton']);
-  const [courtCount, setCourtCount] = useState(4);
-  const [courtSurface, setCourtSurface] = useState('Tournament Hardwood Parquet');
+  const [facilitySports, setFacilitySports] = useState<SportType[]>([]);
+  const [courtCount, setCourtCount] = useState<number | ''>('');
+  const [courtSurface, setCourtSurface] = useState('');
   const [isIndoor, setIsIndoor] = useState(true);
-  const [hourlyRatePhp, setHourlyRatePhp] = useState(500);
+  const [hourlyRatePhp, setHourlyRatePhp] = useState<number | ''>('');
   const [operatingHours, setOperatingHours] = useState('06:00 - 23:00');
-  const [facilityAmenities, setFacilityAmenities] = useState<string[]>([
-    'Air Conditioning',
-    'Free Parking',
-    'Shower & Locker Rooms',
-    'High-Speed Wi-Fi',
-  ]);
-  const [bookingMode, setBookingMode] = useState<'instant' | 'inquiry'>('instant');
+  const [facilityAmenities, setFacilityAmenities] = useState<string[]>([]);
+  const [bookingMode, setBookingMode] = useState<'instant' | 'inquiry' | ''>('');
   const [ownerValidationError, setOwnerValidationError] = useState<string | null>(null);
 
   React.useEffect(() => {
@@ -265,11 +264,7 @@ function OnboardingContent() {
   const toggleSport = (sport: SportType) => {
     if (playerValidationError) setPlayerValidationError(null);
     if (selectedSports.includes(sport)) {
-      if (selectedSports.length > 1) {
-        setSelectedSports(selectedSports.filter((s) => s !== sport));
-      } else {
-        setPlayerValidationError('Please keep at least one favorite sport selected.');
-      }
+      setSelectedSports(selectedSports.filter((s) => s !== sport));
     } else {
       setSelectedSports([...selectedSports, sport]);
     }
@@ -277,9 +272,7 @@ function OnboardingContent() {
 
   const toggleFacilitySport = (sport: SportType) => {
     if (facilitySports.includes(sport)) {
-      if (facilitySports.length > 1) {
-        setFacilitySports(facilitySports.filter((s) => s !== sport));
-      }
+      setFacilitySports(facilitySports.filter((s) => s !== sport));
     } else {
       setFacilitySports([...facilitySports, sport]);
     }
@@ -331,6 +324,22 @@ function OnboardingContent() {
       setPlayerValidationError('Please select at least one sport category.');
       return;
     }
+    if (!preferredFormat) {
+      setPlayerValidationError('Please choose your preferred match format (Doubles or Singles).');
+      return;
+    }
+    if (!skillLevel) {
+      setPlayerValidationError('Please choose your experience & skill tier.');
+      return;
+    }
+    if (!selectedArea) {
+      setPlayerValidationError('Please choose your preferred location / playing hub.');
+      return;
+    }
+    if (!availability) {
+      setPlayerValidationError('Please choose your general playing availability.');
+      return;
+    }
 
     setPlayerValidationError(null);
     setIsSubmitting(true);
@@ -352,9 +361,9 @@ function OnboardingContent() {
         fullName: finalFullName,
         nickname: finalNickname,
         preferredSports: selectedSports,
-        preferredFormat,
+        preferredFormat: (preferredFormat || 'doubles') as MatchFormat,
         city: cleanCity,
-        skillLevel,
+        skillLevel: (skillLevel || 'beginner') as SkillLevel,
         availability,
       });
 
@@ -383,10 +392,13 @@ function OnboardingContent() {
       }
       setHasPendingOnboarding(false);
 
-      const generatedCourts = Array.from({ length: courtCount }).map((_, idx) => ({
+      const parsedCourtCount = typeof courtCount === 'number' ? courtCount : (parseInt(String(courtCount), 10) || 1);
+      const parsedRate = typeof hourlyRatePhp === 'number' ? hourlyRatePhp : (parseFloat(String(hourlyRatePhp)) || 0);
+
+      const generatedCourts = Array.from({ length: parsedCourtCount }).map((_, idx) => ({
         name: `Court ${idx + 1}`,
-        sport: facilitySports[idx % facilitySports.length],
-        hourlyRateCents: hourlyRatePhp * 100,
+        sport: facilitySports[idx % facilitySports.length] || 'pickleball',
+        hourlyRateCents: Math.round(parsedRate * 100),
         floorType: courtSurface,
         isIndoor,
       }));
@@ -552,7 +564,7 @@ function OnboardingContent() {
                       {fullName.trim() || 'Court Player'}
                     </span>
                     <span className="text-[11px] text-[#A5B0A6] block truncate" suppressHydrationWarning>
-                      &ldquo;{nickname.trim() || 'Moniker'}&rdquo; &bull; {selectedArea}
+                      &ldquo;{nickname.trim() || 'Moniker'}&rdquo; &bull; {selectedArea || 'Select Hub'}
                     </span>
                   </div>
                 </div>
@@ -624,7 +636,7 @@ function OnboardingContent() {
                   2. Select Sport Categories <span className="text-[#C8FF2E]">*</span>
                 </label>
                 <span className="text-[10px] font-bold text-[#C8FF2E]">
-                  {selectedSports.length} Selected
+                  {selectedSports.length > 0 ? `${selectedSports.length} Selected` : 'Tap to choose'}
                 </span>
               </div>
 
@@ -758,7 +770,7 @@ function OnboardingContent() {
                 onClick={handleUseCurrentLocation}
                 disabled={isLocating}
                 className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                  selectedArea.includes('Naga City') || selectedArea === 'Current Location' || isLocating
+                  selectedArea === 'Current Location' || isLocating
                     ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.2)]'
                     : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
                 }`}
@@ -829,18 +841,27 @@ function OnboardingContent() {
                   onClick={() => {
                     setSelectedArea('Naga City');
                     setLocationSearch('Naga City');
+                    if (playerValidationError) setPlayerValidationError(null);
                   }}
-                  className="w-full px-4 py-3 rounded-2xl border bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)] flex items-center justify-between"
+                  className={`w-full px-4 py-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
+                    selectedArea === 'Naga City'
+                      ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-[0_0_12px_rgba(200,255,46,0.2)]'
+                      : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:border-white/20 hover:text-white'
+                  }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <MapPin className="w-4 h-4 shrink-0 text-[#C8FF2E]" />
+                    <MapPin className={`w-4 h-4 shrink-0 ${selectedArea === 'Naga City' ? 'text-[#C8FF2E]' : 'text-[#65756B]'}`} />
                     <div className="text-left">
                       <span className="text-sm font-bold block text-[#F4F7F0]">Naga City</span>
                       <span className="text-[11px] text-[#A5B0A6]">Camarines Sur, Bicol &bull; Exclusive Pilot Market</span>
                     </div>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0 ml-1">
-                    Pilot Hub
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ml-1 ${
+                    selectedArea === 'Naga City'
+                      ? 'bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30'
+                      : 'bg-white/5 text-[#A5B0A6] border border-white/10'
+                  }`}>
+                    {selectedArea === 'Naga City' ? 'Selected Hub' : 'Select Hub'}
                   </span>
                 </button>
               </div>

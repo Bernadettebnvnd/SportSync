@@ -155,11 +155,11 @@ export async function serverRegister(data: {
       full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
       nickname: normalizedEmail.split('@')[0],
       role: assignedRole,
-      primary_sport: 'pickleball',
-      preferred_sports: ['pickleball', 'badminton'],
-      preferred_format: 'doubles',
-      skill_level: 'intermediate',
-      city: registrationCity,
+      primary_sport: undefined,
+      preferred_sports: [],
+      preferred_format: undefined,
+      skill_level: undefined,
+      city: undefined,
       onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
@@ -586,11 +586,11 @@ export async function serverLogin(data: {
           email: normalizedEmail,
           full_name: userMeta?.full_name || normalizedEmail.split('@')[0],
           role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
-          primary_sport: 'pickleball',
-          preferred_sports: ['pickleball', 'badminton'],
-          preferred_format: 'doubles',
-          skill_level: 'intermediate',
-          city: userMeta?.city || 'Naga City',
+          primary_sport: null,
+          preferred_sports: [],
+          preferred_format: null,
+          skill_level: null,
+          city: null,
           onboarding_completed: initialOnboardingCompleted,
         };
         await dbClient.from('users').insert(newProfile);
@@ -617,11 +617,11 @@ export async function serverLogin(data: {
     nickname: dbProfile?.nickname || userMeta?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
     avatar_url: dbProfile?.avatar_url,
     role: (dbProfile?.role || (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player')) as UserRole,
-    primary_sport: dbProfile?.primary_sport || 'pickleball',
-    preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
-    preferred_format: dbProfile?.preferred_format || 'doubles',
-    skill_level: dbProfile?.skill_level || 'intermediate',
-    city: dbProfile?.city || userMeta?.city || 'Naga City',
+    primary_sport: dbProfile?.primary_sport || undefined,
+    preferred_sports: dbProfile?.preferred_sports || [],
+    preferred_format: dbProfile?.preferred_format || undefined,
+    skill_level: dbProfile?.skill_level || undefined,
+    city: dbProfile?.city || userMeta?.city || undefined,
     onboarding_completed: resolvedOnboardingCompleted,
     created_at: supaData.user.created_at,
   };
@@ -674,12 +674,12 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
       }
 
       if (supaUser) {
-        const primarySport = authMetadata?.primary_sport || supaUser.primary_sport || 'football';
+        const primarySport = authMetadata?.primary_sport || supaUser.primary_sport || undefined;
         const preferredSports = (authMetadata?.preferred_sports && authMetadata.preferred_sports.length > 0)
           ? authMetadata.preferred_sports
-          : (supaUser.preferred_sports || ['football']);
-        const city = authMetadata?.city || supaUser.city || 'Naga City';
-        const skillLevel = authMetadata?.skill_level || supaUser.skill_level || 'intermediate';
+          : (supaUser.preferred_sports || []);
+        const city = authMetadata?.city || supaUser.city || undefined;
+        const skillLevel = authMetadata?.skill_level || supaUser.skill_level || undefined;
 
         const isCompleted = await isProfileCompleteInDb(
           db,
@@ -697,7 +697,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           role: supaUser.role as UserRole,
           primary_sport: primarySport,
           preferred_sports: preferredSports,
-          preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || 'doubles',
+          preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || undefined,
           skill_level: skillLevel,
           city: city,
           onboarding_completed: isCompleted,
@@ -713,11 +713,11 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
           nickname: authMetadata.nickname || authMetadata.full_name?.split(' ')[0] || 'Player',
           avatar_url: authMetadata.avatar_url,
           role: (authMetadata.role as UserRole) || 'player',
-          primary_sport: authMetadata.primary_sport || 'football',
-          preferred_sports: authMetadata.preferred_sports || ['football'],
-          preferred_format: authMetadata.preferred_format || 'doubles',
-          skill_level: authMetadata.skill_level || 'intermediate',
-          city: authMetadata.city || 'Naga City',
+          primary_sport: authMetadata.primary_sport || undefined,
+          preferred_sports: authMetadata.preferred_sports || [],
+          preferred_format: authMetadata.preferred_format || undefined,
+          skill_level: authMetadata.skill_level || undefined,
+          city: authMetadata.city || undefined,
           onboarding_completed: Boolean(authMetadata.onboarding_completed === true),
           created_at: new Date().toISOString(),
         };
@@ -1060,11 +1060,11 @@ export async function serverSyncOAuthUser(data: {
           nickname: dbProfile?.nickname || data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
           avatar_url: dbProfile?.avatar_url || data.avatarUrl,
           role: (dbProfile?.role || 'player') as UserRole,
-          primary_sport: dbProfile?.primary_sport || 'pickleball',
-          preferred_sports: dbProfile?.preferred_sports || ['pickleball', 'badminton'],
-          preferred_format: dbProfile?.preferred_format || 'doubles',
-          skill_level: dbProfile?.skill_level || 'intermediate',
-          city: dbProfile?.city || 'Naga City',
+          primary_sport: dbProfile?.primary_sport || undefined,
+          preferred_sports: dbProfile?.preferred_sports || [],
+          preferred_format: dbProfile?.preferred_format || undefined,
+          skill_level: dbProfile?.skill_level || undefined,
+          city: dbProfile?.city || undefined,
           onboarding_completed: isComplete,
           created_at: dbProfile?.created_at || new Date().toISOString(),
         };
@@ -1106,11 +1106,11 @@ export async function serverSyncOAuthUser(data: {
     nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
     avatar_url: data.avatarUrl,
     role: 'player',
-    primary_sport: 'pickleball',
-    preferred_sports: ['pickleball', 'badminton'],
-    preferred_format: 'doubles',
-    skill_level: 'intermediate',
-    city: 'Naga City',
+    primary_sport: undefined,
+    preferred_sports: [],
+    preferred_format: undefined,
+    skill_level: undefined,
+    city: undefined,
     onboarding_completed: false, // New Google SSO users must complete Profile Setup!
     created_at: new Date().toISOString(),
   };

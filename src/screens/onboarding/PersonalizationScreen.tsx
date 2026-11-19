@@ -44,16 +44,16 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 
   const [displayName, setDisplayName] = useState(initialValues?.displayName ?? '');
   const [selectedAvatar, setSelectedAvatar] = useState<string>(initialValues?.selectedAvatar ?? 'alex');
-  const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? ['Basketball', 'Pickleball']);
+  const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? []);
   const [customSportInput, setCustomSportInput] = useState<string>(initialValues?.customSportInput ?? '');
-  const [skillLevel, setSkillLevel] = useState(() => {
+  const [skillLevel, setSkillLevel] = useState<number | null>(() => {
     if (typeof initialValues?.skillLevel === 'number') {
       return Math.min(Math.max(initialValues.skillLevel, 0), skillLabels.length - 1);
     }
-    return 1; // 0: Beginner, 1: Intermediate, 2: Advanced
+    return null;
   });
   const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Naga City');
-  const [availability, setAvailability] = useState(initialValues?.availability ?? 'Weekday Evenings & Weekends');
+  const [availability, setAvailability] = useState(initialValues?.availability ?? '');
 
   const handleBack = () => {
     if (onDraftChange) {
@@ -62,7 +62,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
         selectedAvatar,
         selectedSports,
         customSportInput,
-        skillLevel,
+        skillLevel: skillLevel ?? 0,
         preferredArea,
         availability,
       });
@@ -85,9 +85,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 
   const toggleSport = (sport: string) => {
     if (selectedSports.includes(sport)) {
-      if (selectedSports.length > 1) {
-        setSelectedSports(selectedSports.filter((s) => s !== sport));
-      }
+      setSelectedSports(selectedSports.filter((s) => s !== sport));
     } else {
       setSelectedSports([...selectedSports, sport]);
     }
@@ -96,6 +94,19 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   const hasOther = selectedSports.includes('Other');
 
   const handleFinish = () => {
+    if (selectedSports.length === 0) {
+      alert('Please select at least one sport to continue.');
+      return;
+    }
+    if (skillLevel === null) {
+      alert('Please choose your skill level.');
+      return;
+    }
+    if (!availability) {
+      alert('Please select your general availability.');
+      return;
+    }
+
     let finalSports = [...selectedSports];
     if (hasOther && customSportInput.trim()) {
       const normalizedCustom = customSportInput.trim();
@@ -239,7 +250,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
               3. Self-Assessed Skill Level
             </label>
             <span className="text-xs font-bold text-[#C8FF2E]">
-              {skillLabels[skillLevel]}
+              {skillLevel !== null ? skillLabels[skillLevel] : 'Tap to select'}
             </span>
           </div>
 

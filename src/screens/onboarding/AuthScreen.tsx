@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, ArrowLeft, ArrowRight, ShieldCheck, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, ArrowRight, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
@@ -517,16 +517,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       Create an account
                     </button>
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('test.player@sportsync.ph');
-                      setPassword('password123');
-                    }}
-                    className="text-[11px] text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors py-1 font-medium inline-block"
-                  >
-                    ⚡ Use Demo Account (test.player@sportsync.ph)
-                  </button>
                 </div>
               )}
             </div>
@@ -542,14 +532,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </button>
           )}
         </form>
-      </div>
-
-      {/* Security badge at bottom */}
-      <div className="py-4 text-center">
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-[#6F7B71]">
-          <ShieldCheck className="w-3.5 h-3.5 text-[#3DDC84]" />
-          256-bit secure player data encryption • SportSync
-        </span>
       </div>
     </div>
   );
