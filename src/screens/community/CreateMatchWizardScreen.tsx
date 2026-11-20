@@ -1487,7 +1487,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <span className="text-xs text-[#A5B0A6] block font-semibold">Fee per attendee:</span>
-                      <span className="text-[10px] text-[#6F7B71]">Philippine Pesos (₱)</span>
+                      <span className="text-[10px] text-[#6F7B71]">Philippine Pesos (₱) • Type or select</span>
                     </div>
                     <Stepper
                       value={pricePerPlayer}
@@ -1519,6 +1519,42 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                       );
                     })}
                   </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-[#A5B0A6] shrink-0 font-medium">Or type exact:</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#C8FF2E] pointer-events-none">
+                        {APP_CONFIG.currency}
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={pricePerPlayer === 0 ? '' : pricePerPlayer}
+                        onChange={(e) => {
+                          const cleaned = e.target.value.replace(/[^0-9]/g, '');
+                          if (cleaned === '') {
+                            setPricePerPlayer(0);
+                          } else {
+                            const val = parseInt(cleaned, 10);
+                            if (!isNaN(val) && val <= 5000) {
+                              setPricePerPlayer(val);
+                            }
+                          }
+                        }}
+                        placeholder="e.g. 210 (Free: 0)"
+                        aria-label="Custom price per attendee"
+                        className="w-full h-8 pl-7 pr-3 rounded-lg bg-[#1C241E] border border-white/10 hover:border-white/20 focus:border-[#C8FF2E] text-xs font-mono font-semibold text-[#F4F7F0] focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/40 transition-all placeholder:text-[#6F7B71]"
+                      />
+                    </div>
+                  </div>
+                  {![50, 100, 150, 200, 250, 350].includes(pricePerPlayer) && (
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/30 text-xs text-[#A5B0A6] animate-in fade-in">
+                      <span className="text-[11px]">Custom price applied:</span>
+                      <span className="font-mono font-bold text-[#C8FF2E]">
+                        {pricePerPlayer === 0 ? 'Free' : `${APP_CONFIG.currency}${pricePerPlayer} / attendee`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

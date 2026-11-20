@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 // 1. Segmented Control
 export interface SegmentOption<T extends string = string> {
@@ -111,43 +111,132 @@ export const Stepper: React.FC<{
   prefix?: string;
   ariaLabel?: string;
   className?: string;
-}> = ({ value, onChange, min = 1, max = 22, step = 1, unit = '', prefix = '', ariaLabel = 'value', className = '' }) => {
+  allowInput?: boolean;
+}> = ({
+  value,
+  onChange,
+  min = 1,
+  max = 22,
+  step = 1,
+  unit = '',
+  prefix = '',
+  ariaLabel = 'value',
+  className = '',
+  allowInput = true,
+}) => {
+  const [localVal, setLocalVal] = useState<string>(String(value));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setLocalVal(String(value));
+    }
+  }, [value, isFocused]);
+
   const handleDecrement = () => {
-    if (value > min) onChange(Math.max(min, value - step));
+    const next = Math.max(min, Number((value - step).toFixed(2)));
+    onChange(next);
+    setLocalVal(String(next));
   };
 
   const handleIncrement = () => {
-    if (value < max) onChange(Math.min(max, value + step));
+    const next = Math.min(max, Number((value + step).toFixed(2)));
+    onChange(next);
+    setLocalVal(String(next));
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const isDecimalAllowed = step % 1 !== 0;
+    const sanitized = isDecimalAllowed ? raw.replace(/[^0-9.]/g, '') : raw.replace(/[^0-9]/g, '');
+    setLocalVal(sanitized);
+
+    if (sanitized !== '' && sanitized !== '.') {
+      const parsed = parseFloat(sanitized);
+      if (!isNaN(parsed) && parsed <= max) {
+        onChange(parsed);
+      }
+    }
+  };
+
+  const handleInputBlur = () => {
+    setIsFocused(false);
+    if (!localVal || localVal === '' || localVal === '.') {
+      onChange(min);
+      setLocalVal(String(min));
+      return;
+    }
+    const parsed = parseFloat(localVal);
+    if (isNaN(parsed) || parsed < min) {
+      onChange(min);
+      setLocalVal(String(min));
+    } else if (parsed > max) {
+      onChange(max);
+      setLocalVal(String(max));
+    } else {
+      const finalVal = Number(parsed.toFixed(step % 1 !== 0 ? 1 : 0));
+      onChange(finalVal);
+      setLocalVal(String(finalVal));
+    }
   };
 
   return (
     <div
-      className={`inline-flex items-center bg-[#1C241E] border border-white/10 rounded-2xl p-1 gap-2 select-none ${className}`}
+      className={`inline-flex items-center bg-[#1C241E] border border-white/10 rounded-2xl p-1 gap-1 select-none ${className}`}
     >
       <button
         type="button"
         aria-label={`Decrease ${ariaLabel}`}
         onClick={handleDecrement}
         disabled={value <= min}
-        className="w-9 h-9 rounded-xl bg-[#263028] text-[#F4F7F0] hover:bg-[#323e34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all"
+        className="w-9 h-9 rounded-xl bg-[#263028] text-[#F4F7F0] hover:bg-[#323e34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
       >
         -
       </button>
-      <div className="min-w-[56px] px-1 text-center">
-        <span className="font-display font-bold text-base text-[#F4F7F0] tabular-nums">
-          {prefix}{value}
-        </span>
-        {unit && <span className="text-xs text-[#A5B0A6] ml-1">{unit}</span>}
+      <div className="min-w-[70px] px-1 text-center flex items-center justify-center">
+        {prefix && (
+          <span className="font-display font-bold text-base text-[#C8FF2E] mr-0.5 select-none shrink-0">
+            {prefix}
+          </span>
+        )}
+        {allowInput ? (
+          <input
+            type="text"
+            inputMode={step % 1 !== 0 ? 'decimal' : 'numeric'}
+            pattern={step % 1 !== 0 ? '[0-9.]*' : '[0-9]*'}
+            value={localVal}
+            onChange={handleInputChange}
+            onFocus={(e) => {
+              setIsFocused(true);
+              e.target.select();
+            }}
+            onBlur={handleInputBlur}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
+            aria-label={ariaLabel}
+            title="Click or tap to type custom amount"
+            className="w-16 bg-white/5 border border-white/10 hover:border-white/25 focus:border-[#C8FF2E] rounded-lg px-1.5 py-0.5 text-center font-display font-bold text-base text-[#F4F7F0] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/50 transition-all cursor-text select-text"
+          />
+        ) : (
+          <span className="font-display font-bold text-base text-[#F4F7F0] tabular-nums">
+            {value}
+          </span>
+        )}
+        {unit && <span className="text-xs text-[#A5B0A6] ml-1 select-none shrink-0">{unit}</span>}
       </div>
       <button
         type="button"
         aria-label={`Increase ${ariaLabel}`}
         onClick={handleIncrement}
         disabled={value >= max}
-        className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all"
+        className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
       >
         +
       </button>
     </div>
   );
 };
+

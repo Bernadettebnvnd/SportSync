@@ -835,6 +835,42 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
                   );
                 })}
               </div>
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="text-[10px] text-[#A5B0A6] shrink-0 font-medium">Or type exact:</span>
+                <div className="relative flex-1">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-[#C8FF2E] pointer-events-none">
+                    {APP_CONFIG.currency}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={pricePerPlayer === 0 ? '' : pricePerPlayer}
+                    onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^0-9]/g, '');
+                      if (cleaned === '') {
+                        setPricePerPlayer(0);
+                      } else {
+                        const val = parseInt(cleaned, 10);
+                        if (!isNaN(val) && val <= 5000) {
+                          setPricePerPlayer(val);
+                        }
+                      }
+                    }}
+                    placeholder="e.g. 210 (Free: 0)"
+                    aria-label="Custom cost share per player"
+                    className="w-full h-7 pl-6 pr-2.5 rounded-lg bg-[#1C241E] border border-white/10 hover:border-white/20 focus:border-[#C8FF2E] text-[11px] font-mono font-semibold text-[#F4F7F0] focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/40 transition-all placeholder:text-[#6F7B71]"
+                  />
+                </div>
+              </div>
+              {![0, 100, 150, 200, 300].includes(pricePerPlayer) && (
+                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#1C241E]/80 border border-[#C8FF2E]/30 text-[10px] text-[#A5B0A6]">
+                  <span>Custom cost share:</span>
+                  <span className="font-mono font-bold text-[#C8FF2E]">
+                    {APP_CONFIG.currency}{pricePerPlayer} / player
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
