@@ -364,10 +364,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         {/* Explore All Courts Quick Link Banner */}
         <div
           onClick={() => onNavigateToVenues()}
-          className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-[#141A15] to-[#1C241E] border border-white/10 flex items-center justify-between cursor-pointer hover:border-[#C8FF2E]/40 transition-all press-scale"
+          className="mt-3.5 p-4 rounded-2xl bg-[#141A15] border border-white/10 flex items-center justify-between cursor-pointer hover:border-[#C8FF2E]/40 transition-all press-scale shadow-sm"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 flex items-center justify-center text-[#C8FF2E]">
+            <div className="w-10 h-10 rounded-xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 flex items-center justify-center text-[#C8FF2E] shrink-0">
               <Compass className="w-5 h-5" />
             </div>
             <div>
@@ -375,7 +375,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               <p className="text-[10px] text-[#A5B0A6]">Filter by 9 sports, metro cities &amp; court availability</p>
             </div>
           </div>
-          <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-[#C8FF2E]">
+          <div className="w-7 h-7 rounded-full bg-[#1C241E] flex items-center justify-center text-[#C8FF2E] shrink-0">
             <ArrowRight className="w-3.5 h-3.5" />
           </div>
         </div>

@@ -243,7 +243,7 @@ export function BookingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
-      <div className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col my-0 sm:my-8 animate-in slide-in-from-bottom sm:zoom-in-95">
+      <div className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-[#E8E5DF] text-[#1A241E] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col my-0 sm:my-8 animate-in slide-in-from-bottom sm:zoom-in-95">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#E8E5DF] bg-[#FAF8F5] shrink-0">
           <div>

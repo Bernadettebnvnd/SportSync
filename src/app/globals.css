@@ -382,6 +382,66 @@ textarea::placeholder {
   color: #68766C !important;
 }
 
+/* Translucent Highlights & Subtle Badges in Light Mode */
+.light .bg-white\/5 {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+.light .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+}
+.light .bg-white\/15,
+.light .bg-white\/20 {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+.light .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+.light .hover\:bg-white\/10:hover {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Elevated Containers & Background Opacity Variants in Light Mode */
+.light .bg-\[\#141A15\]\/90,
+.light .bg-\[\#141A15\]\/95,
+.light .bg-\[\#141A15\]\/80 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+.light .bg-\[\#1C241E\]\/90,
+.light .bg-\[\#1C241E\]\/80,
+.light .bg-\[\#1C241E\]\/60 {
+  background-color: rgba(232, 236, 229, 0.9) !important;
+}
+
+/* Gradient Surface Overrides for Light Mode (Prevents dark-on-dark contrast failure) */
+.light .from-\[\#141A15\],
+.light .to-\[\#1C241E\],
+.light .from-\[\#1C241E\],
+.light .to-\[\#141A15\],
+.light .from-\[\#090D0A\],
+.light .to-\[\#070A08\],
+.light .via-\[\#0F1E16\] {
+  --tw-gradient-from: #FFFFFF var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: #F4F6F2 var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.light .from-\[\#0B0F0C\],
+.light .via-\[\#0B0F0C\]\/95,
+.light .via-\[\#0B0F0C\]\/80,
+.light .to-\[\#0B0F0C\] {
+  --tw-gradient-from: #F4F6F2 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(244, 246, 242, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(244, 246, 242, 0.95) 50%, var(--tw-gradient-to) !important;
+}
+
+.light .from-\[\#0F2A22\],
+.light .via-\[\#0F2A22\]\/70,
+.light .to-\[\#0F2A22\] {
+  --tw-gradient-from: #E5EFE9 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(229, 239, 233, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(229, 239, 233, 0.7) 50%, var(--tw-gradient-to) !important;
+}
+
 /* Google Sign-In Button Protection (Always authentic light appearance) */
 .google-signin-btn,
 .google-signin-btn:hover,

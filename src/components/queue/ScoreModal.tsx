@@ -37,7 +37,7 @@ export function ScoreModal({ isOpen, onClose, match }: ScoreModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
-      <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl p-5 sm:p-6 space-y-5 my-0 sm:my-8 animate-in slide-in-from-bottom sm:zoom-in-95">
+      <div className="relative w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white border border-[#E8E5DF] text-[#1A241E] shadow-2xl p-5 sm:p-6 space-y-5 my-0 sm:my-8 animate-in slide-in-from-bottom sm:zoom-in-95">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
           <div>
