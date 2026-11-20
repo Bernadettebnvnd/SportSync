@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useMatchiStore } from '@/lib/store';
-import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 
 interface GoogleSignInButtonProps {
@@ -56,7 +55,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   }, [onSuccess, setAuthenticatedUser]);
 
   // Handle Google Sign In click: opens standard native browser popup window
-  const handleClick = useCallback(async () => {
+  const handleClick = useCallback(() => {
     setIsLoading(true);
 
     const width = 500;
@@ -67,8 +66,8 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     const callbackUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '/auth/callback';
 
-    // 1. If direct Google Client ID is configured, open official Google Accounts OAuth directly
-    if (googleClientId) {
+    // 1. If direct Google Client ID is explicitly configured, open official Google Accounts OAuth
+    if (googleClientId && googleClientId !== 'placeholder') {
       const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
         googleClientId
       )}&redirect_uri=${encodeURIComponent(
@@ -97,49 +96,9 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       return;
     }
 
-    // 2. If Supabase is configured with Google provider, use Supabase OAuth
-    if (isSupabaseConfigured) {
-      try {
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          const { data, error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-              redirectTo: callbackUrl,
-              queryParams: {
-                access_type: 'offline',
-                prompt: 'consent',
-              },
-            },
-          });
-
-          if (!error && data?.url) {
-            const popup = window.open(
-              data.url,
-              'google_signin_popup',
-              `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
-            );
-
-            if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-              window.location.href = data.url;
-              return;
-            }
-
-            const timer = setInterval(() => {
-              if (popup.closed) {
-                clearInterval(timer);
-                setIsLoading(false);
-              }
-            }, 500);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('[GoogleSignIn] Supabase OAuth attempt failed, falling back:', err);
-      }
-    }
-
-    // 3. Fallback: In-app popup flow
+    // 2. Open SportSync Google Sign-In Popup directly.
+    // Avoids raw Supabase 400 "Unsupported provider: provider is not enabled" when
+    // Google OAuth is not enabled in the cloud Supabase project dashboard.
     const popupUrl = '/auth/google-popup';
     const popup = window.open(
       popupUrl,
