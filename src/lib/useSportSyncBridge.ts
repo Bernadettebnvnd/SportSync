@@ -878,7 +878,7 @@ export function useSportSyncBridge() {
 
       try {
         const res = await fetch(`/api/invitations?code=${encodeURIComponent(cleanKey)}`);
-        if (res.status === 404 || res.status === 410) {
+        if (res.status === 410) {
           rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: true });
           setGames((prev) => prev.filter((g) => g.id !== cleanKey && g.sessionId !== cleanKey && g.inviteCode?.toUpperCase() !== cleanKey.toUpperCase()));
           if (typeof window !== 'undefined') {
@@ -904,9 +904,17 @@ export function useSportSyncBridge() {
           }
           return;
         }
+
+        if (res.status === 404) {
+          // 404 indicates invitation record not matched by this specific key.
+          // NEVER mark as cancelled or deleted on 404; keep local active game intact.
+          rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: false });
+          return;
+        }
+
         if (res.ok) {
           const data = await res.json();
-          if (data.deleted) {
+          if (data.deleted || data.session?.status === 'cancelled' || data.game?.status === 'cancelled') {
             rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: true });
             setGames((prev) => prev.filter((g) => g.id !== cleanKey && g.sessionId !== cleanKey && g.inviteCode?.toUpperCase() !== cleanKey.toUpperCase()));
             if (typeof window !== 'undefined') {
@@ -2555,6 +2563,28 @@ export function useSportSyncBridge() {
         return { success: false, message: 'Game not found.' };
       }
 
+      // 0. Prevent hosts from joining their own games as regular participants
+      if (isGameHost(targetGame)) {
+        return {
+          success: false,
+          message: 'You are the host of this match and are already managing this game.',
+        };
+      }
+
+      // 0b. Game status validation: only active games with slots can be joined
+      if ((targetGame as any).status === 'cancelled') {
+        return {
+          success: false,
+          message: 'This match was cancelled or deleted by the organizer.',
+        };
+      }
+      if ((targetGame as any).status === 'completed') {
+        return {
+          success: false,
+          message: 'This match has already completed.',
+        };
+      }
+
       const userName = userProfile.name || 'Player';
 
       if (targetGame.visibility === 'Invite' || !targetGame.isPublic) {
@@ -2588,12 +2618,29 @@ export function useSportSyncBridge() {
         }
       }
 
-      // 1. Check if user is already a participant
-      const isAlreadyParticipant = targetGame.members.some(
-        (m) =>
-          (userName && m.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
-          (userProfile.id && m.id && m.id === userProfile.id)
-      );
+      // 1. Check if user is already a participant (in memory or localStorage)
+      let hasLocalJoined = false;
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_joined_games');
+          const list = raw ? JSON.parse(raw) : [];
+          if (
+            list.includes(targetGame.id) ||
+            (targetGame.sessionId && list.includes(targetGame.sessionId)) ||
+            (targetGame.inviteCode && list.includes(targetGame.inviteCode.toUpperCase()))
+          ) {
+            hasLocalJoined = true;
+          }
+        } catch {}
+      }
+
+      const isAlreadyParticipant =
+        hasLocalJoined ||
+        targetGame.members.some(
+          (m) =>
+            (userName && m.name.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+            (userProfile.id && m.id && m.id === userProfile.id)
+        );
 
       if (isAlreadyParticipant) {
         // Do not notify the host if the player is already a participant
@@ -2618,26 +2665,43 @@ export function useSportSyncBridge() {
         typeof val === 'string' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-      let sessionIdForDb: string | undefined = undefined;
-      if (targetGame.sessionId && isUuid(targetGame.sessionId)) {
-        sessionIdForDb = targetGame.sessionId;
-      } else if (isUuid(targetGame.id)) {
-        sessionIdForDb = targetGame.id;
-      }
+      const extractUuid = (val?: string) => {
+        if (!val) return null;
+        const m = val.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        return m ? m[0] : null;
+      };
+
+      let sessionIdForDb: string | undefined =
+        extractUuid(targetGame.sessionId) || extractUuid(targetGame.id) || undefined;
 
       if (supabase && isSupabaseConfigured && !sessionIdForDb) {
-        try {
-          const { data: dbSession } = await supabase
-            .from('sessions')
-            .select('id')
-            .ilike('title', targetGame.title.trim())
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (dbSession?.id && isUuid(dbSession.id)) {
-            sessionIdForDb = dbSession.id;
-          }
-        } catch {}
+        if (targetGame.inviteCode) {
+          try {
+            const { data: dbSession } = await supabase
+              .from('sessions')
+              .select('id')
+              .ilike('invite_code', targetGame.inviteCode.trim())
+              .limit(1)
+              .maybeSingle();
+            if (dbSession?.id && isUuid(dbSession.id)) {
+              sessionIdForDb = dbSession.id;
+            }
+          } catch {}
+        }
+        if (!sessionIdForDb) {
+          try {
+            const { data: dbSession } = await supabase
+              .from('sessions')
+              .select('id')
+              .ilike('title', targetGame.title.trim())
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (dbSession?.id && isUuid(dbSession.id)) {
+              sessionIdForDb = dbSession.id;
+            }
+          } catch {}
+        }
       }
 
       if (supabase && isSupabaseConfigured && sessionIdForDb) {
@@ -2649,10 +2713,17 @@ export function useSportSyncBridge() {
               const { data: pubUser } = await supabase
                 .from('users')
                 .select('id')
-                .eq('auth_id', authData.user.id)
+                .or(`id.eq.${authData.user.id},auth_id.eq.${authData.user.id}`)
                 .maybeSingle();
               if (pubUser?.id) userDbId = pubUser.id;
             }
+          } else if (isUuid(userDbId)) {
+            const { data: pubUser } = await supabase
+              .from('users')
+              .select('id')
+              .or(`id.eq.${userDbId},auth_id.eq.${userDbId}`)
+              .maybeSingle();
+            if (pubUser?.id) userDbId = pubUser.id;
           }
 
           if (!userDbId || userDbId.startsWith('usr_')) {

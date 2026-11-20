@@ -71,14 +71,15 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   onSyncRoster,
 }) => {
   useEffect(() => {
-    if (game?.id) {
-      onSyncRoster?.(game.id);
+    const syncKey = game?.sessionId || game?.inviteCode || game?.id;
+    if (syncKey) {
+      onSyncRoster?.(syncKey);
       const interval = setInterval(() => {
-        onSyncRoster?.(game.id);
+        onSyncRoster?.(syncKey);
       }, 4000);
       return () => clearInterval(interval);
     }
-  }, [game?.id, onSyncRoster]);
+  }, [game?.id, game?.sessionId, game?.inviteCode, onSyncRoster]);
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -701,15 +702,18 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           </div>
         ) : (
           <Button
-            variant={effectiveIsJoined ? 'secondary' : 'primary'}
+            variant={effectiveIsJoined ? 'secondary' : (spotsLeft === 0 ? 'secondary' : 'primary')}
             size="lg"
-            onClick={handleJoinClick}
+            onClick={effectiveIsJoined ? handleJoinClick : (spotsLeft === 0 ? undefined : handleJoinClick)}
+            disabled={!effectiveIsJoined && spotsLeft === 0}
             className="flex-1 h-14 font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)]"
           >
             {effectiveIsJoined
               ? 'Joined • Open Team Chat'
               : !hasUnlockedInviteToken
               ? 'Join Match (Invite Only)'
+              : spotsLeft === 0
+              ? 'Game Roster Full'
               : 'Join Match Now'}
           </Button>
         )}

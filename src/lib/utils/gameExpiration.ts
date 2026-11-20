@@ -182,11 +182,26 @@ export function isSessionExpired(session: Session): boolean {
   const now = new Date();
   const currentTimestamp = now.getTime();
 
-  // 1. Check end_time
+  // Active or upcoming sessions must remain visible and not be discarded prematurely
+  if (session.status === 'active' || session.status === 'upcoming') {
+    const rawDate = ((session as any).date || (session as any).scheduled_date || '').toLowerCase();
+    if (rawDate.includes('today') || rawDate.includes('tomorrow')) {
+      return false;
+    }
+    if (session.created_at) {
+      const createdTime = new Date(session.created_at).getTime();
+      if (!isNaN(createdTime) && currentTimestamp - createdTime < 24 * 60 * 60 * 1000) {
+        return false;
+      }
+    }
+  }
+
+  // 1. Check end_time (with 2-hour grace period for active play)
   if (session.end_time) {
     const end = new Date(session.end_time);
     if (!isNaN(end.getTime())) {
-      return end.getTime() <= currentTimestamp;
+      const gracePeriodMs = session.status === 'active' ? 2 * 60 * 60 * 1000 : 0;
+      return end.getTime() + gracePeriodMs <= currentTimestamp;
     }
     // If end_time is HH:mm
     const parsedEnd = parseTimeComponents(session.end_time);
@@ -202,16 +217,17 @@ export function isSessionExpired(session: Session): boolean {
         parsedEnd.minute,
         0
       );
-      return exp.getTime() <= currentTimestamp;
+      const gracePeriodMs = session.status === 'active' ? 2 * 60 * 60 * 1000 : 0;
+      return exp.getTime() + gracePeriodMs <= currentTimestamp;
     }
   }
 
-  // 2. Check start_time with default duration
+  // 2. Check start_time with default duration (with grace period for active pickup games)
   if (session.start_time) {
     const start = new Date(session.start_time);
     if (!isNaN(start.getTime())) {
-      // Assume 2-hour max session if end_time not set
-      const sessionEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+      // Allow 4-hour window for active session
+      const sessionEnd = new Date(start.getTime() + 4 * 60 * 60 * 1000);
       return sessionEnd.getTime() <= currentTimestamp;
     }
     const parsedStart = parseTimeComponents(session.start_time);
@@ -223,7 +239,7 @@ export function isSessionExpired(session: Session): boolean {
         refDate.getFullYear(),
         refDate.getMonth(),
         refDate.getDate(),
-        parsedStart.hour + 2,
+        parsedStart.hour + 4,
         parsedStart.minute,
         0
       );

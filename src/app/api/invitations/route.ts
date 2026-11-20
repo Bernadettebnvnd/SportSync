@@ -89,68 +89,73 @@ export async function GET(req: NextRequest) {
 
   const code = rawCode.trim().toUpperCase();
   const rawClean = rawCode.trim();
+  const uuidMatch = rawClean.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  const extractedUuid = uuidMatch ? uuidMatch[0] : null;
 
   const diskCache = loadCache();
   const combined = { ...memoryStore, ...diskCache };
 
-  const matched = combined[code] || combined[rawClean] || Object.values(combined).find((g) => {
-    if (!g) return false;
-    const matchInvite = g.inviteCode && g.inviteCode.trim().toUpperCase() === code;
-    const matchId = g.id && (g.id.trim().toUpperCase() === code || g.id === rawClean);
-    return matchInvite || matchId;
-  });
+  const matched =
+    combined[code] ||
+    combined[rawClean] ||
+    (extractedUuid ? combined[extractedUuid.toUpperCase()] || combined[extractedUuid.toLowerCase()] : null) ||
+    Object.values(combined).find((g) => {
+      if (!g) return false;
+      const matchInvite = g.inviteCode && g.inviteCode.trim().toUpperCase() === code;
+      const matchId =
+        g.id &&
+        (g.id.trim().toUpperCase() === code ||
+          g.id === rawClean ||
+          (extractedUuid && g.id.toLowerCase().includes(extractedUuid.toLowerCase())));
+      const matchSessionId =
+        g.sessionId &&
+        (g.sessionId.trim().toUpperCase() === code ||
+          g.sessionId === rawClean ||
+          (extractedUuid && g.sessionId.toLowerCase().includes(extractedUuid.toLowerCase())));
+      return matchInvite || matchId || matchSessionId;
+    });
 
   const supabase = getServerSupabaseClient();
   if (supabase) {
     try {
       let dbSession: any = null;
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawClean);
 
       // 1. Query base session by invite_code
       try {
         const { data: byCode } = await supabase
           .from('sessions')
           .select('*')
-          .ilike('invite_code', rawClean)
+          .or(`invite_code.ilike.${rawClean},invite_code.ilike.${code}`)
           .limit(1)
           .maybeSingle();
         if (byCode) dbSession = byCode;
       } catch {}
 
-      if (!dbSession && code !== rawClean) {
+      // 2. Query by extracted UUID if available
+      if (!dbSession && extractedUuid) {
         try {
-          const { data: byCodeUpper } = await supabase
+          const { data: byUuid } = await supabase
             .from('sessions')
             .select('*')
-            .eq('invite_code', code)
-            .limit(1)
+            .eq('id', extractedUuid)
             .maybeSingle();
-          if (byCodeUpper) dbSession = byCodeUpper;
+          if (byUuid) dbSession = byUuid;
         } catch {}
       }
 
-      // 2. Query by sessionId if matched has it
-      if (!dbSession && matched?.sessionId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(matched.sessionId)) {
-        try {
-          const { data: bySessionId } = await supabase
-            .from('sessions')
-            .select('*')
-            .eq('id', matched.sessionId)
-            .maybeSingle();
-          if (bySessionId) dbSession = bySessionId;
-        } catch {}
-      }
-
-      // 3. Query by UUID id if code is valid UUID
-      if (!dbSession && isUuid) {
-        try {
-          const { data: byId } = await supabase
-            .from('sessions')
-            .select('*')
-            .eq('id', rawClean)
-            .maybeSingle();
-          if (byId) dbSession = byId;
-        } catch {}
+      // 3. Query by sessionId if matched has it
+      if (!dbSession && matched?.sessionId) {
+        const matchUuid = matched.sessionId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+        if (matchUuid) {
+          try {
+            const { data: bySessionId } = await supabase
+              .from('sessions')
+              .select('*')
+              .eq('id', matchUuid)
+              .maybeSingle();
+            if (bySessionId) dbSession = bySessionId;
+          } catch {}
+        }
       }
 
       // 4. Query invitations table if it exists
@@ -397,14 +402,30 @@ export async function POST(req: NextRequest) {
           .maybeSingle();
         if (byCode) dbSession = byCode;
       }
-      if (!dbSession && (game.sessionId || (game.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.id)))) {
-        const sId = game.sessionId || game.id;
-        const { data: byId } = await supabase
-          .from('sessions')
-          .select('*')
-          .eq('id', sId)
-          .maybeSingle();
-        if (byId) dbSession = byId;
+      if (!dbSession) {
+        const potentialId = game.sessionId || game.id || '';
+        const matchUuid = potentialId.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+        if (matchUuid) {
+          const { data: byId } = await supabase
+            .from('sessions')
+            .select('*')
+            .eq('id', matchUuid)
+            .maybeSingle();
+          if (byId) dbSession = byId;
+        }
+      }
+
+      if (!dbSession && game.title) {
+        try {
+          const { data: byTitle } = await supabase
+            .from('sessions')
+            .select('*')
+            .ilike('title', game.title.trim())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (byTitle) dbSession = byTitle;
+        } catch {}
       }
 
       if (!dbSession && (action === 'create_game' || !action)) {
@@ -564,7 +585,11 @@ export async function POST(req: NextRequest) {
       let participantUserId: string | null = null;
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(participant.id || '');
       if (isUUID) {
-        const { data: byId } = await supabase.from('users').select('id').eq('id', participant.id).maybeSingle();
+        const { data: byId } = await supabase
+          .from('users')
+          .select('id')
+          .or(`id.eq.${participant.id},auth_id.eq.${participant.id}`)
+          .maybeSingle();
         if (byId?.id) participantUserId = byId.id;
       }
       if (!participantUserId && participant.email) {
@@ -663,28 +688,6 @@ export async function POST(req: NextRequest) {
         } catch {}
       }
 
-      let activeCount = 0;
-      try {
-        const { count: c } = await supabase
-          .from('queues')
-          .select('*', { count: 'exact', head: true })
-          .eq('session_id', dbSession.id)
-          .neq('status', 'cancelled');
-        activeCount = c || 0;
-      } catch {}
-
-      const finalSpotsJoined = Math.min(dbSession.max_players || 10, activeCount || 0);
-
-      try {
-        await supabase
-          .from('sessions')
-          .update({
-            current_players_count: finalSpotsJoined,
-            updated_at: nowIso,
-          })
-          .eq('id', dbSession.id);
-      } catch {}
-
       const updatedMembers = [
         ...(game.members || []),
         { id: participantUserId, name: participant.name, avatar: (participant.avatar as any) || 'alex' },
@@ -695,6 +698,33 @@ export async function POST(req: NextRequest) {
         if (!dedupedMap.has(key)) dedupedMap.set(key, m);
       });
       const finalMembers = Array.from(dedupedMap.values());
+
+      let activeCount = finalMembers.length;
+      try {
+        const { count: qc } = await supabase
+          .from('queues')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+        const { count: pc } = await supabase
+          .from('session_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+        activeCount = Math.max(qc || 0, pc || 0, finalMembers.length);
+      } catch {}
+
+      const finalSpotsJoined = Math.min(dbSession.max_players || 10, Math.max(activeCount, finalMembers.length));
+
+      try {
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: finalSpotsJoined,
+            updated_at: nowIso,
+          })
+          .eq('id', dbSession.id);
+      } catch {}
 
       const updatedGame: CommunityGame = {
         ...game,
