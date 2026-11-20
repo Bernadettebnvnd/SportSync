@@ -19,28 +19,56 @@ export async function getCurrentUser(): Promise<User | null> {
       if (authData?.user) {
         const authUser = authData.user;
         const normalizedEmail = (authUser.email || '').trim().toLowerCase();
+
+        // 1. Retrieve the profile using the authenticated user's actual Supabase user ID (auth_id)
         let { data: profile } = await supabase
           .from('users')
           .select('*')
-          .or(`auth_id.eq.${authUser.id},id.eq.${authUser.id},email.eq.${normalizedEmail}`)
+          .eq('auth_id', authUser.id)
           .maybeSingle();
 
+        // 2. Fallback: check if public.users.id equals the auth user ID
+        if (!profile) {
+          const { data: profileById } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .maybeSingle();
+          profile = profileById;
+        }
+
+        // 3. Fallback: match by email if auth_id was not yet linked
         if (!profile && normalizedEmail) {
           const { data: fallbackProfile } = await supabase
             .from('users')
             .select('*')
             .ilike('email', normalizedEmail)
+            .order('onboarding_completed', { ascending: false })
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
           profile = fallbackProfile;
+
+          // If found by email, link auth_id immediately so future lookups succeed directly
+          if (profile && !profile.auth_id) {
+            supabase
+              .from('users')
+              .update({ auth_id: authUser.id, updated_at: new Date().toISOString() })
+              .eq('id', profile.id)
+              .then(() => {}, () => {});
+            profile.auth_id = authUser.id;
+          }
         }
 
         const meta = authUser.user_metadata || {};
-        const effectiveSports = (meta.preferred_sports && meta.preferred_sports.length > 0)
-          ? meta.preferred_sports
-          : (profile?.preferred_sports && profile.preferred_sports.length > 0 ? profile.preferred_sports : ['football']);
-        const effectiveCity = meta.city || profile?.city || '';
-        const effectivePrimarySport = meta.primary_sport || profile?.primary_sport || (effectiveSports[0] || 'football');
-        const effectiveSkill = meta.skill_level || profile?.skill_level || 'intermediate';
+        const effectiveSports = (Array.isArray(profile?.preferred_sports) && profile.preferred_sports.length > 0)
+          ? profile.preferred_sports
+          : (Array.isArray(meta.preferred_sports) && meta.preferred_sports.length > 0
+              ? meta.preferred_sports
+              : (profile?.primary_sport ? [profile.primary_sport] : ['football']));
+        const effectiveCity = profile?.city || meta.city || '';
+        const effectivePrimarySport = profile?.primary_sport || meta.primary_sport || effectiveSports[0] || 'football';
+        const effectiveSkill = profile?.skill_level || meta.skill_level || 'intermediate';
 
         const isExplicitlyComplete = Boolean(
           profile?.onboarding_completed === true ||
@@ -51,16 +79,29 @@ export async function getCurrentUser(): Promise<User | null> {
           meta.has_completed_onboarding === true
         );
 
-        const hasRequiredPlayerFields = Boolean(
+        const isOwner =
+          profile?.role === 'venue_owner' ||
+          profile?.role === 'organizer' ||
+          meta.role === 'venue_owner' ||
+          meta.role === 'organizer';
+
+        // Check whether existing player profile has required setup fields filled
+        const hasRequiredPlayerFields = !isOwner && Boolean(
           profile &&
           profile.full_name &&
           !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(profile.full_name.trim()) &&
-          Array.isArray(profile.preferred_sports) &&
-          profile.preferred_sports.length > 0 &&
+          ((Array.isArray(profile.preferred_sports) && profile.preferred_sports.length > 0) || profile.primary_sport) &&
           Boolean(profile.city || profile.skill_level)
         );
 
-        const isUserComplete = isExplicitlyComplete || hasRequiredPlayerFields;
+        const hasRequiredOwnerFields = isOwner && Boolean(
+          profile &&
+          profile.full_name &&
+          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(profile.full_name.trim()) &&
+          Boolean(profile.city || profile.phone)
+        );
+
+        const isUserComplete = isExplicitlyComplete || hasRequiredPlayerFields || hasRequiredOwnerFields;
 
         if (isUserComplete) {
           if (typeof window !== 'undefined') {
@@ -104,7 +145,7 @@ export async function getCurrentUser(): Promise<User | null> {
 
         return {
           ...profile,
-          id: profile.auth_id || authUser.id,
+          id: profile.auth_id || profile.id || authUser.id,
           auth_id: profile.auth_id || authUser.id,
           full_name: profile.full_name || meta.full_name || 'Player',
           nickname: profile.nickname || meta.nickname || 'Player',
@@ -239,7 +280,7 @@ export async function updatePlayerProfile(data: {
         } catch {}
 
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .update({
             full_name: data.fullName,
@@ -253,7 +294,26 @@ export async function updatePlayerProfile(data: {
             onboarding_completed: true,
             updated_at: new Date().toISOString(),
           })
-          .or(`auth_id.eq.${authData.user.id},id.eq.${authData.user.id},email.eq.${authData.user.email}`);
+          .eq('auth_id', authData.user.id);
+
+        if (error) {
+          const retry = await supabase
+            .from('users')
+            .update({
+              full_name: data.fullName,
+              nickname: data.nickname,
+              avatar_url: data.avatarUrl,
+              primary_sport: data.primarySport,
+              preferred_sports: data.preferredSports,
+              preferred_format: data.preferredFormat,
+              skill_level: data.skillLevel,
+              city: data.city,
+              onboarding_completed: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', authData.user.id);
+          error = retry.error;
+        }
 
         if (!error) {
           clientSuccess = true;
@@ -288,11 +348,13 @@ export async function updatePlayerProfile(data: {
   // Always sync with the server profile endpoint to ensure database & session persistence
   if (typeof window !== 'undefined') {
     try {
+      const storedId = localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id');
       const res = await fetch('/api/auth/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          userId: storedId,
           fullName: data.fullName,
           nickname: data.nickname,
           avatarUrl: data.avatarUrl,
@@ -344,7 +406,7 @@ export async function updateFacultyProfile(data: {
           });
         } catch {}
 
-        const { error } = await supabase
+        let { error } = await supabase
           .from('users')
           .update({
             full_name: data.fullName,
@@ -354,7 +416,22 @@ export async function updateFacultyProfile(data: {
             onboarding_completed: true,
             updated_at: new Date().toISOString(),
           })
-          .or(`auth_id.eq.${authData.user.id},id.eq.${authData.user.id},email.eq.${authData.user.email}`);
+          .eq('auth_id', authData.user.id);
+
+        if (error) {
+          const retry = await supabase
+            .from('users')
+            .update({
+              full_name: data.fullName,
+              phone: data.phone,
+              city: data.city || 'Naga City',
+              role: 'venue_owner',
+              onboarding_completed: true,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', authData.user.id);
+          error = retry.error;
+        }
 
         if (!error) {
           clientSuccess = true;

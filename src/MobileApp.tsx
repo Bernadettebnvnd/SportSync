@@ -139,6 +139,65 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (isLoggingOutRef.current) return false;
     if (!isUserAuthenticated()) return false;
 
+    const userRoleStr = (bridge.store.currentUser.role as string) || '';
+    const isOwner =
+      userRoleStr === 'venue_owner' ||
+      userRoleStr === 'organizer' ||
+      userRoleStr === 'facility_owner' ||
+      userRoleStr === 'faculty' ||
+      (typeof window !== 'undefined' && (
+        localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+        localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
+        localStorage.getItem('sportsync_user_role') === 'organizer'
+      ));
+
+    // Check explicit profile completion flags
+    const hasStoredCompletion = typeof window !== 'undefined' && (
+      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+      localStorage.getItem('sportsync_onboarding_completed') === 'true'
+    );
+
+    const isExplicitlyComplete = Boolean(
+      bridge.userProfile.onboardingCompleted === true ||
+      bridge.store.currentUser.onboarding_completed === true ||
+      bridge.store.currentUser.has_completed_onboarding === true ||
+      hasStoredCompletion
+    );
+
+    // Check whether existing profile has required setup fields filled
+    const effectiveName = (bridge.store.currentUser.full_name || bridge.userProfile.name || '').trim();
+    const hasValidName = Boolean(
+      effectiveName &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(effectiveName)
+    );
+    const sports = bridge.store.currentUser.preferred_sports || bridge.userProfile.preferredSports;
+    const hasSports = (Array.isArray(sports) && sports.length > 0) || Boolean(bridge.store.currentUser.primary_sport);
+    const hasLocationOrSkill = Boolean(
+      bridge.store.currentUser.city ||
+      bridge.userProfile.city ||
+      bridge.store.currentUser.skill_level ||
+      bridge.userProfile.skillLevel
+    );
+
+    const hasRequiredOwnerFields = Boolean(
+      isOwner && hasValidName && (hasLocationOrSkill || bridge.venues.length > 0 || isExplicitlyComplete)
+    );
+
+    const hasRequiredPlayerFields = Boolean(
+      !isOwner && hasValidName && hasSports && hasLocationOrSkill
+    );
+
+    const isComplete = isExplicitlyComplete || hasRequiredPlayerFields || hasRequiredOwnerFields;
+
+    if (isComplete) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        localStorage.setItem('matchi_onboarding_completed', 'true');
+      }
+      return true;
+    }
+
     if (typeof window !== 'undefined') {
       if (localStorage.getItem('sportsync_skipped_onboarding') === 'true') {
         return true;
@@ -148,48 +207,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       }
     }
 
-    const hasStoredCompletion = typeof window !== 'undefined' && (
-      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-      localStorage.getItem('sportsync_onboarding_completed') === 'true'
-    );
-
-    if (
-      !hasStoredCompletion &&
-      (bridge.store.currentUser.onboarding_completed === false || bridge.store.currentUser.has_completed_onboarding === false)
-    ) {
-      return false;
-    }
-
-    const isOwner =
-      bridge.store.currentUser.role === 'venue_owner' ||
-      bridge.store.currentUser.role === 'organizer' ||
-      (typeof window !== 'undefined' && (
-        localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
-        localStorage.getItem('sportsync_user_role') === 'facility_owner'
-      ));
-
-    // Check explicit profile completion flags
-    const isExplicitlyComplete = Boolean(
-      bridge.userProfile.onboardingCompleted === true ||
-      bridge.store.currentUser.onboarding_completed === true ||
-      bridge.store.currentUser.has_completed_onboarding === true ||
-      hasStoredCompletion
-    );
-
-    if (isOwner) {
-      return isExplicitlyComplete;
-    }
-
-    // Check whether existing profile has required setup fields filled
-    const hasRequiredFields = Boolean(
-      bridge.store.currentUser.full_name &&
-      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(bridge.store.currentUser.full_name.trim()) &&
-      Array.isArray(bridge.store.currentUser.preferred_sports) &&
-      bridge.store.currentUser.preferred_sports.length > 0 &&
-      (bridge.store.currentUser.city || bridge.store.currentUser.skill_level)
-    );
-
-    return isExplicitlyComplete || hasRequiredFields;
+    return false;
   };
 
   const resolveInitialScreen = (): ScreenId => {
@@ -438,18 +456,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
   }, [initialScreen]);
 
-  // Strict Routing: Never allow an authenticated user with an incomplete profile
-  // to stay on dashboard or main screens until Profile Setup is finished.
+  // Strict Routing: Route newly registered users with incomplete profiles to setup.
+  // Existing accounts logging in must proceed directly to their dashboard.
   useEffect(() => {
     if (bridge.store.isLoading || isLoggingOutRef.current || !isUserAuthenticated() || isUserOnboarded()) {
       return;
     }
+    // Only force redirect to setup if user genuinely just registered in this session AND has not completed or skipped setup
+    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
+    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
+
+    if (!isJustRegistered || hasSkipped) {
+      return;
+    }
+
+    const userRoleStr = (bridge.store.currentUser.role as string) || '';
     const isOwner =
-      bridge.store.currentUser.role === 'venue_owner' ||
-      bridge.store.currentUser.role === 'organizer' ||
+      userRoleStr === 'venue_owner' ||
+      userRoleStr === 'organizer' ||
+      userRoleStr === 'facility_owner' ||
+      userRoleStr === 'faculty' ||
       (typeof window !== 'undefined' && (
         localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
-        localStorage.getItem('sportsync_user_role') === 'facility_owner'
+        localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
+        localStorage.getItem('sportsync_user_role') === 'organizer'
       ));
     const setupScreen: ScreenId = isOwner ? 'faculty-setup' : 'personalization';
     const allowedScreens: ScreenId[] = ['personalization', 'faculty-setup', 'auth', 'invitation-landing', 'splash'];
@@ -843,13 +873,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   navigateTo(isAlreadyComplete ? 'home' : 'faculty-setup');
                 }
               } else if (isNewAccount && !isAlreadyComplete) {
+                // Newly registered Player account -> Player Profile Setup
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
                 } else {
                   navigateTo('personalization');
                 }
               } else {
-                // Returning user logging in: ALWAYS proceed directly to dashboard!
+                // Existing Player account with completed profile -> Directly to Player Dashboard
+                if (typeof window !== 'undefined') {
+                  sessionStorage.removeItem('sportsync_just_registered');
+                  localStorage.removeItem('sportsync_pending_onboarding');
+                  localStorage.setItem('sportsync_onboarding_completed', 'true');
+                  localStorage.setItem('matchi_onboarding_completed', 'true');
+                  if (!window.location.port.includes('5173') && window.location.pathname.includes('/onboarding')) {
+                    window.location.href = '/';
+                    return;
+                  }
+                }
                 if (guestPrompt.pendingAction) {
                   const act = guestPrompt.pendingAction;
                   setGuestPrompt({ isOpen: false });

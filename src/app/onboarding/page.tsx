@@ -138,38 +138,42 @@ function OnboardingContent() {
     localStorage.getItem('sportsync_onboarding_completed') === 'true'
   );
 
-  const hasExplicitCompletion = !isPending && (
+  const hasExplicitCompletion = Boolean(
     (currentUser.onboarding_completed === true && currentUser.has_completed_onboarding !== false) ||
     hasStoredCompletion
   );
 
   // Existing player with completed profile
-  const hasRequiredPlayerFields = !isPending && !isOwner && currentUser.onboarding_completed !== false && Boolean(
+  const hasRequiredPlayerFields = !isOwner && Boolean(
     currentUser.full_name &&
     !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-    Array.isArray(currentUser.preferred_sports) &&
-    currentUser.preferred_sports.length > 0 &&
+    ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
     (currentUser.skill_level || currentUser.city)
   );
 
-  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields);
+  const hasRequiredOwnerFields = isOwner && Boolean(
+    currentUser.full_name &&
+    !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
+    (currentUser.city || (currentUser as any).phone || hasExplicitCompletion)
+  );
+
+  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
   React.useEffect(() => {
-    if (isCompleted && typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+    if (isCompleted && typeof window !== 'undefined') {
       localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.setItem('sportsync_onboarding_completed', 'true');
+      localStorage.setItem('matchi_onboarding_completed', 'true');
       setHasPendingOnboarding(false);
     }
   }, [isCompleted]);
 
-  const isLocalDevOrPreview =
+  const isExplicitPreview =
     typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      searchParams.get('preview') === 'true' ||
-      searchParams.get('demo') === 'true');
+    (searchParams.get('preview') === 'true' || searchParams.get('demo') === 'true');
 
   React.useEffect(() => {
-    if (isLocalDevOrPreview) return;
+    if (isExplicitPreview) return;
     if (isGuest) {
       router.replace('/');
       return;
@@ -178,7 +182,7 @@ function OnboardingContent() {
       const target = isOwner ? '/organizer' : '/';
       router.replace(target);
     }
-  }, [isGuest, isCompleted, isOwner, isLocalDevOrPreview, router]);
+  }, [isGuest, isCompleted, isOwner, isExplicitPreview, router]);
 
   React.useEffect(() => {
     if (isFacilityUrl) {

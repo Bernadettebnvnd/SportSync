@@ -192,12 +192,17 @@ async function initializeStore() {
       const hasRequiredPlayerFields = !isOwner && Boolean(
         user.full_name &&
         !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
-        Array.isArray(user.preferred_sports) &&
-        user.preferred_sports.length > 0 &&
+        ((Array.isArray(user.preferred_sports) && user.preferred_sports.length > 0) || user.primary_sport) &&
         (user.city || user.skill_level)
       );
 
-      const isUserOnboarded = isExplicitlyCompleteInDb || hasRequiredPlayerFields;
+      const hasRequiredOwnerFields = isOwner && Boolean(
+        user.full_name &&
+        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
+        Boolean(user.city || user.phone)
+      );
+
+      const isUserOnboarded = isExplicitlyCompleteInDb || hasRequiredPlayerFields || hasRequiredOwnerFields;
 
       user.onboarding_completed = isUserOnboarded;
       user.has_completed_onboarding = isUserOnboarded;
@@ -466,29 +471,41 @@ export function useMatchiStore() {
       globalState.currentUser.role === 'venue_owner' ||
       globalState.currentUser.role === 'organizer';
 
+    const explicitlyCompleted = Boolean(user.onboarding_completed === true || user.has_completed_onboarding === true);
+    const storedCompleted = typeof window !== 'undefined'
+      ? (localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
+         localStorage.getItem('matchi_onboarding_completed') === 'true')
+      : false;
+
+    const effectiveName = (user.full_name || globalState.currentUser.full_name || '').trim();
+    const hasValidName = Boolean(
+      effectiveName &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(effectiveName)
+    );
+    const sports = user.preferred_sports || globalState.currentUser.preferred_sports;
+    const hasSports = (Array.isArray(sports) && sports.length > 0) || Boolean(user.primary_sport || globalState.currentUser.primary_sport);
+    const hasLocationOrSkill = Boolean(
+      user.city ||
+      user.skill_level ||
+      globalState.currentUser.city ||
+      globalState.currentUser.skill_level
+    );
+
+    const hasRequiredPlayerFields = !isOwner && hasValidName && hasSports && hasLocationOrSkill;
+    const hasRequiredOwnerFields = isOwner && hasValidName && (hasLocationOrSkill || globalState.venues.length > 0 || explicitlyCompleted);
+
+    let isOnboarded = explicitlyCompleted || storedCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields;
+
     const hasPendingOnboarding =
       typeof window !== 'undefined' &&
       localStorage.getItem('sportsync_pending_onboarding') === 'true';
 
-    let isOnboarded = false;
-
-    if (!hasPendingOnboarding && user.onboarding_completed !== false && user.has_completed_onboarding !== false) {
-      const explicitlyCompleted = Boolean(user.onboarding_completed === true || user.has_completed_onboarding === true);
-      const storedCompleted = typeof window !== 'undefined'
-        ? (localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
-           localStorage.getItem('matchi_onboarding_completed') === 'true')
-        : false;
-
-      const effectiveName = (user.full_name || globalState.currentUser.full_name || '').trim();
-      const hasRequiredPlayerFields = !isOwner && Boolean(
-        effectiveName &&
-        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(effectiveName) &&
-        Array.isArray(user.preferred_sports) &&
-        user.preferred_sports.length > 0 &&
-        (user.city || user.skill_level)
-      );
-
-      isOnboarded = explicitlyCompleted || storedCompleted || hasRequiredPlayerFields;
+    if (isOnboarded && typeof window !== 'undefined') {
+      localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.setItem('sportsync_onboarding_completed', 'true');
+      localStorage.setItem('matchi_onboarding_completed', 'true');
+    } else if (hasPendingOnboarding) {
+      isOnboarded = false;
     }
 
     const resolvedSports = user.preferred_sports !== undefined

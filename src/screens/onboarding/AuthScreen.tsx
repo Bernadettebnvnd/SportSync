@@ -174,10 +174,34 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         throw new Error(data.error || (isSignUp ? 'Registration failed.' : 'Login failed. Please check credentials.'));
       }
 
+      // Also sync client-side Supabase session if configured
+      if (getSupabaseClient() && isSupabaseConfigured) {
+        try {
+          const client = getSupabaseClient();
+          if (client) {
+            await client.auth.signInWithPassword({
+              email: trimmedEmail,
+              password: cleanPassword,
+            });
+          }
+        } catch (clientAuthErr) {
+          console.warn('[AuthScreen] Client session sync notice:', clientAuthErr);
+        }
+      }
+
       // Update store user state with real authenticated session
       if (data.user) {
-        const isFacility = selectedRole === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
-        const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
+        // Role determination:
+        // For existing login (!isSignUp): strictly use the existing account's database role
+        // For new registration (isSignUp): use the selectedRole from UI
+        const isDbOwner = Boolean(
+          data.user.role === 'venue_owner' ||
+          data.user.role === 'organizer' ||
+          data.user.role === 'facility_owner' ||
+          data.user.role === 'faculty'
+        );
+        const isFacility = isSignUp ? (selectedRole === 'facility_owner') : isDbOwner;
+        const assignedRole = (isFacility ? 'venue_owner' : 'player') as any;
 
         // Check whether profile already exists and whether required setup fields are complete.
         // Existing users with completed profiles must proceed directly to their Player Dashboard.
@@ -188,15 +212,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         const hasRequiredPlayerFields = !isFacility && Boolean(
           data.user.full_name &&
           !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
-          Array.isArray(data.user.preferred_sports) &&
-          data.user.preferred_sports.length > 0 &&
+          ((Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0) || data.user.primary_sport) &&
           Boolean(data.user.city || data.user.skill_level)
+        );
+
+        const hasRequiredOwnerFields = isFacility && Boolean(
+          data.user.full_name &&
+          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim())
         );
 
         // For new signups, strictly require onboarding! For existing logins, proceed to dashboard if fields are complete.
         const actualOnboardingCompleted = isSignUp
           ? false
-          : (isExplicitlyCompleted || hasRequiredPlayerFields || data.user.onboarding_completed !== false);
+          : (isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed === true || data.user.has_completed_onboarding === true || data.user.onboarding_completed !== false);
 
         setAuthenticatedUser({
           id: data.user.id,
@@ -249,7 +277,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               id: data.user.id,
               name: data.user.full_name,
               username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-              role: data.user.role,
+              role: assignedRole,
               city: data.user.city || 'Naga City',
               primarySport: data.user.primary_sport || 'football',
               preferredSports: userSports,
@@ -260,11 +288,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           );
         }
 
-        const userRole = data.user?.role;
-        const detectedRole: AuthRole =
-          userRole === 'venue_owner' || userRole === 'organizer' || selectedRole === 'facility_owner'
-            ? 'facility_owner'
-            : 'player';
+        const detectedRole: AuthRole = isFacility ? 'facility_owner' : 'player';
 
         setSuccessMessage(
           isSignUp

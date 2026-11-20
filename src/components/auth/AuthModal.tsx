@@ -163,18 +163,28 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
         } else {
           // Check actual database onboarding status.
           // Incomplete profiles must NEVER be marked as onboarded during sign-in.
-          const isOwnerRole = isFacility || data.user.role === 'venue_owner' || data.user.role === 'organizer' || data.user.role === 'facility_owner';
+          const isDbOwner = Boolean(
+            data.user.role === 'venue_owner' ||
+            data.user.role === 'organizer' ||
+            data.user.role === 'facility_owner' ||
+            data.user.role === 'faculty'
+          );
+          const isOwnerRole = isDbOwner;
           const isExplicitlyCompleted = Boolean(
             data.user.onboarding_completed === true || data.user.has_completed_onboarding === true
           );
           const hasRequiredPlayerFields = !isOwnerRole && Boolean(
             data.user.full_name &&
             !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
-            Array.isArray(data.user.preferred_sports) &&
-            data.user.preferred_sports.length > 0 &&
+            ((Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0) || data.user.primary_sport) &&
             (data.user.city || data.user.skill_level)
           );
-          const actualOnboardingCompleted = isExplicitlyCompleted || hasRequiredPlayerFields;
+          const hasRequiredOwnerFields = isOwnerRole && Boolean(
+            data.user.full_name &&
+            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
+            (data.user.city || (data.user as any).phone || isExplicitlyCompleted)
+          );
+          const actualOnboardingCompleted = isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed !== false;
 
           setAuthenticatedUser({
             id: data.user.id,

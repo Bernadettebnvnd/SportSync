@@ -75,17 +75,14 @@ export function OnboardingGuard() {
     const isOnboardingPath = pathname === '/onboarding';
     const isProtectedPath = pathname === '/organizer' || pathname === '/profile';
 
-    const isLocalDevOrPreview =
+    const isExplicitPreview =
       typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.search.includes('preview=true') ||
-        window.location.search.includes('demo=true'));
+      (window.location.search.includes('preview=true') || window.location.search.includes('demo=true'));
 
     // CASE 0: Unauthenticated or Logged-Out user
     // Strictly prevent access to profile setup or protected organizer/profile pages after logout
     if (!isAuthenticated) {
-      if ((isOnboardingPath && !isLocalDevOrPreview) || isProtectedPath) {
+      if ((isOnboardingPath && !isExplicitPreview) || isProtectedPath) {
         router.replace('/');
       }
       return;
@@ -113,12 +110,17 @@ export function OnboardingGuard() {
     const hasRequiredPlayerFields = !isOwner && Boolean(
       currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-      Array.isArray(currentUser.preferred_sports) &&
-      currentUser.preferred_sports.length > 0 &&
+      ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
       (currentUser.city || currentUser.skill_level)
     );
 
-    const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields;
+    const hasRequiredOwnerFields = isOwner && Boolean(
+      currentUser.full_name &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
+      (currentUser.city || (currentUser as any).phone || hasExplicitCompletion)
+    );
+
+    const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields;
 
     // Clean up stale pending onboarding flag when genuinely complete
     if (isProfileComplete && typeof window !== 'undefined') {
@@ -127,7 +129,7 @@ export function OnboardingGuard() {
     }
 
     // CASE 1: Already completed user visiting /onboarding -> Redirect to Dashboard
-    if (isProfileComplete && isOnboardingPath && !isLocalDevOrPreview) {
+    if (isProfileComplete && isOnboardingPath && !isExplicitPreview) {
       const target = isOwner ? '/organizer' : '/';
       router.replace(target);
       return;

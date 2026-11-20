@@ -427,6 +427,21 @@ export function useSportSyncBridge() {
           const finalSkill = formatSkillTier(storedSkill || parsed.skillLevel || store.currentUser.skill_level);
           const finalAvailability = parsed.availability || storedAvailability || store.currentUser.availability || 'Weekday Evenings & Weekends';
 
+          const isExplicitlyDone = Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted);
+          const hasStoredProfileInfo = Boolean(
+            finalSports && finalSports.length > 0 &&
+            finalCity &&
+            parsed.name &&
+            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(parsed.name.trim())
+          );
+          const isProfileFinished = isExplicitlyDone || (!hasPendingOnboarding && hasStoredProfileInfo);
+          if (isProfileFinished && typeof window !== 'undefined') {
+            try {
+              localStorage.removeItem('sportsync_pending_onboarding');
+              localStorage.setItem('sportsync_onboarding_completed', 'true');
+            } catch {}
+          }
+
           return {
             ...parsed,
             city: finalCity,
@@ -434,7 +449,7 @@ export function useSportSyncBridge() {
             primarySport: finalSports[0]?.toLowerCase() || parsed.primarySport || 'football',
             skillLevel: finalSkill,
             availability: finalAvailability,
-            onboardingCompleted: !hasPendingOnboarding && Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted),
+            onboardingCompleted: isProfileFinished,
           };
         } catch {
           // ignore parsing error
@@ -443,14 +458,20 @@ export function useSportSyncBridge() {
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
     const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
-    const hasExplicitCompletion = !hasPendingOnboarding && Boolean(isStoreCompleted || localCompleted);
-    const hasRequiredPlayerFields = !hasPendingOnboarding && !isOwner && store.currentUser.onboarding_completed !== false && Boolean(
+    const hasExplicitCompletion = Boolean(isStoreCompleted || localCompleted);
+    const hasRequiredPlayerFields = !isOwner && Boolean(
       store.currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(store.currentUser.full_name.trim()) &&
       Array.isArray(store.currentUser.preferred_sports) &&
       store.currentUser.preferred_sports.length > 0
     );
-    const completed = Boolean(hasExplicitCompletion || hasRequiredPlayerFields);
+    const completed = Boolean(hasExplicitCompletion || (!hasPendingOnboarding && hasRequiredPlayerFields));
+    if (completed && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('sportsync_pending_onboarding');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+      } catch {}
+    }
     return {
       id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
       name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
@@ -513,11 +534,24 @@ export function useSportSyncBridge() {
     const isAuthenticated = !isGuest && Boolean(store.currentUser.id && store.currentUser.email);
     const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
     const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
-    const isCompleted = !hasPendingOnboarding && store.currentUser.onboarding_completed !== false && Boolean(
+    const hasExplicitCompleted = Boolean(
       store.currentUser.onboarding_completed ||
       store.currentUser.has_completed_onboarding ||
-      (!isOwner && Array.isArray(store.currentUser.preferred_sports) && store.currentUser.preferred_sports.length > 0 && store.currentUser.full_name && !['Guest', 'Guest Player', 'Player'].includes(store.currentUser.full_name.trim()))
+      (typeof window !== 'undefined' && localStorage.getItem('sportsync_onboarding_completed') === 'true')
     );
+    const hasRequiredPlayerFields = !isOwner && Boolean(
+      store.currentUser.full_name &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(store.currentUser.full_name.trim()) &&
+      Array.isArray(store.currentUser.preferred_sports) &&
+      store.currentUser.preferred_sports.length > 0
+    );
+    const isCompleted = hasExplicitCompleted || (!hasPendingOnboarding && hasRequiredPlayerFields);
+    if (isCompleted && typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('sportsync_pending_onboarding');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+      } catch {}
+    }
 
     if (isAuthenticated) {
       setUserProfile((prev: any) => ({

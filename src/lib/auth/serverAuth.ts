@@ -364,8 +364,13 @@ export async function isProfileCompleteInDb(
 
   const effectiveRole = role || profile?.role || authMetadata?.role;
 
-  // 2. If venue owner / faculty, check if they already have registered venues
-  if (effectiveRole === 'venue_owner' || effectiveRole === 'organizer' || effectiveRole === 'facility_owner') {
+  // 2. If venue owner / faculty, check if they already have registered venues or staff profile
+  if (
+    effectiveRole === 'venue_owner' ||
+    effectiveRole === 'organizer' ||
+    effectiveRole === 'facility_owner' ||
+    effectiveRole === 'faculty'
+  ) {
     if (dbClient) {
       try {
         const candidateUuids = [profile?.auth_id, profile?.id, authMetadata?.sub, authMetadata?.id]
@@ -426,6 +431,20 @@ export async function isProfileCompleteInDb(
         console.warn('[ServerAuth] Venue owner completion verification notice:', venueErr);
       }
     }
+
+    // Check if faculty profile has required fields saved
+    const facultyName = (profile?.full_name || authMetadata?.full_name || '').trim();
+    const isGenericFacultyName = !facultyName || ['player', 'guest player', 'guest'].includes(facultyName.toLowerCase());
+    if (!isGenericFacultyName && (profile?.city || profile?.phone || authMetadata?.city || authMetadata?.phone)) {
+      if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
+        dbClient
+          .from('users')
+          .update({ onboarding_completed: true, role: 'venue_owner', updated_at: new Date().toISOString() })
+          .eq('id', profile.id)
+          .then(() => {}, () => {});
+      }
+      return true;
+    }
   }
 
   // 3. For players (and general profiles), check if required setup fields are complete
@@ -438,14 +457,25 @@ export async function isProfileCompleteInDb(
     fullName.toLowerCase() === 'sportsync player' ||
     fullName.toLowerCase() === 'google player';
 
-  const sports = profile?.preferred_sports || authMetadata?.preferred_sports;
-  const hasSports = Array.isArray(sports) && sports.length > 0;
-  const hasPrimarySport = Boolean(profile?.primary_sport || authMetadata?.primary_sport);
+  const rawSports = profile?.preferred_sports || authMetadata?.preferred_sports;
+  let parsedSports: string[] = [];
+  if (Array.isArray(rawSports)) {
+    parsedSports = rawSports;
+  } else if (typeof rawSports === 'string' && rawSports.trim()) {
+    try {
+      const parsed = JSON.parse(rawSports);
+      if (Array.isArray(parsed)) parsedSports = parsed;
+    } catch {
+      parsedSports = rawSports.replace(/[{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
+  const hasSports = parsedSports.length > 0 || Boolean(profile?.primary_sport || authMetadata?.primary_sport);
   const hasCity = Boolean(profile?.city || authMetadata?.city);
   const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
 
   // If the user has a real name and sports selected, and has city or skill, their profile is complete
-  if (!isGenericName && (hasSports || hasPrimarySport) && (hasCity || hasSkill)) {
+  if (!isGenericName && hasSports && (hasCity || hasSkill)) {
     // If the database row has onboarding_completed as false, automatically heal it to true in the background
     if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
       dbClient
@@ -655,27 +685,47 @@ export async function serverLogin(data: {
 
   const userMeta = supaData.user.user_metadata || {};
 
-  // Retrieve database profile from public.users table (match by auth_id, id, or email)
-  const dbClient = admin || supabase;
+  // Retrieve database profile from public.users table using the authenticated user's actual Supabase user ID (auth_id)
+  const authenticatedServerClient = createServerClient(supaData.session?.access_token);
+  const dbClient = admin || authenticatedServerClient || supabase;
   let dbProfile: any = null;
   if (dbClient) {
     try {
-      const { data: profile } = await dbClient
+      // 1. Primary lookup: Authenticated user's actual Supabase user ID (auth_id)
+      let { data: profile } = await dbClient
         .from('users')
         .select('*')
-        .or(`auth_id.eq.${supaData.user.id},id.eq.${supaData.user.id},email.eq.${normalizedEmail}`)
+        .eq('auth_id', supaData.user.id)
+        .order('onboarding_completed', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
-      dbProfile = profile;
 
-      // Case-insensitive email fallback if not matched by exact query
-      if (!dbProfile) {
+      // 2. Secondary lookup: public.users.id matching the auth user ID
+      if (!profile) {
+        const { data: profileById } = await dbClient
+          .from('users')
+          .select('*')
+          .eq('id', supaData.user.id)
+          .order('onboarding_completed', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        profile = profileById;
+      }
+
+      // 3. Fallback: match by email if auth_id was not yet linked
+      if (!profile && normalizedEmail) {
         const { data: fallbackProfile } = await dbClient
           .from('users')
           .select('*')
           .ilike('email', normalizedEmail)
+          .order('onboarding_completed', { ascending: false })
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
-        dbProfile = fallbackProfile;
+        profile = fallbackProfile;
       }
+      dbProfile = profile;
 
       // If found by email/id but auth_id is not yet linked, link it now WITHOUT altering onboarding status
       if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
@@ -719,6 +769,19 @@ export async function serverLogin(data: {
     dbProfile?.role || userMeta?.role
   );
 
+  const rawDbSports = dbProfile?.preferred_sports || userMeta?.preferred_sports;
+  let parsedDbSports: string[] = [];
+  if (Array.isArray(rawDbSports)) {
+    parsedDbSports = rawDbSports;
+  } else if (typeof rawDbSports === 'string' && rawDbSports.trim()) {
+    try {
+      const p = JSON.parse(rawDbSports);
+      if (Array.isArray(p)) parsedDbSports = p;
+    } catch {
+      parsedDbSports = rawDbSports.replace(/[{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
   const sanitized: SanitizedUser = {
     id: supaData.user.id,
     email: supaData.user.email || normalizedEmail,
@@ -726,10 +789,10 @@ export async function serverLogin(data: {
     nickname: dbProfile?.nickname || userMeta?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
     avatar_url: dbProfile?.avatar_url,
     role: (dbProfile?.role || (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player')) as UserRole,
-    primary_sport: dbProfile?.primary_sport || undefined,
-    preferred_sports: dbProfile?.preferred_sports || [],
-    preferred_format: dbProfile?.preferred_format || undefined,
-    skill_level: dbProfile?.skill_level || undefined,
+    primary_sport: dbProfile?.primary_sport || userMeta?.primary_sport || undefined,
+    preferred_sports: parsedDbSports.length > 0 ? parsedDbSports : (dbProfile?.primary_sport ? [dbProfile.primary_sport] : []),
+    preferred_format: dbProfile?.preferred_format || userMeta?.preferred_format || undefined,
+    skill_level: dbProfile?.skill_level || userMeta?.skill_level || undefined,
     city: dbProfile?.city || userMeta?.city || undefined,
     onboarding_completed: resolvedOnboardingCompleted,
     created_at: supaData.user.created_at,
@@ -758,17 +821,37 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
   try {
     const db = createAdminClient() || createServerClient();
     if (db) {
+      // 1. Retrieve by actual Supabase user ID (auth_id)
       let { data: supaUser } = await db
         .from('users')
         .select('*')
-        .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
+        .eq('auth_id', userId)
+        .order('onboarding_completed', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
+      // 2. Fallback: check if public.users.id equals the userId
+      if (!supaUser) {
+        const { data: userById } = await db
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .order('onboarding_completed', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        supaUser = userById;
+      }
+
+      // 3. Fallback: check by email if passed or if available
       if (!supaUser && userId.includes('@')) {
         const { data: byEmail } = await db
           .from('users')
           .select('*')
           .ilike('email', userId.trim().toLowerCase())
+          .order('onboarding_completed', { ascending: false })
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         supaUser = byEmail;
       }
@@ -779,6 +862,20 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         try {
           const { data: authData } = await admin.auth.admin.getUserById(userId);
           authMetadata = authData?.user?.user_metadata || null;
+          if (!supaUser && authData?.user?.email) {
+            const { data: byAuthEmail } = await db
+              .from('users')
+              .select('*')
+              .ilike('email', authData.user.email.trim().toLowerCase())
+              .order('onboarding_completed', { ascending: false })
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (byAuthEmail) {
+              supaUser = byAuthEmail;
+              db.from('users').update({ auth_id: userId, updated_at: new Date().toISOString() }).eq('id', byAuthEmail.id).then(() => {}, () => {});
+            }
+          }
         } catch {}
       }
 
@@ -975,13 +1072,35 @@ export async function serverUpdateUserProfile(
         }
       }
 
-      // 2. Update public.users table
+      // 2. Update public.users table (target auth_id first, then id)
       let { data: updatedUser, error } = await db
         .from('users')
         .update(updatePayload)
-        .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
+        .eq('auth_id', userId)
         .select('*')
         .maybeSingle();
+
+      if (!updatedUser) {
+        const retryById = await db
+          .from('users')
+          .update(updatePayload)
+          .eq('id', userId)
+          .select('*')
+          .maybeSingle();
+        updatedUser = retryById.data;
+        if (!error && retryById.error) error = retryById.error;
+      }
+
+      if (!updatedUser && userId.includes('@')) {
+        const retryByEmail = await db
+          .from('users')
+          .update(updatePayload)
+          .ilike('email', userId.trim().toLowerCase())
+          .select('*')
+          .maybeSingle();
+        updatedUser = retryByEmail.data;
+        if (!error && retryByEmail.error) error = retryByEmail.error;
+      }
 
       // If Postgres rejected update due to enum constraint (e.g. remote DB hasn't run ALTER TYPE for football)
       if (error) {
@@ -999,12 +1118,22 @@ export async function serverUpdateUserProfile(
         const retryRes = await db
           .from('users')
           .update(fallbackPayload)
-          .or(`auth_id.eq.${userId},id.eq.${userId},email.eq.${userId}`)
+          .eq('auth_id', userId)
           .select('*')
           .maybeSingle();
 
         if (retryRes.data) {
           updatedUser = retryRes.data;
+        } else {
+          const retryResId = await db
+            .from('users')
+            .update(fallbackPayload)
+            .eq('id', userId)
+            .select('*')
+            .maybeSingle();
+          if (retryResId.data) {
+            updatedUser = retryResId.data;
+          }
         }
       }
 
@@ -1077,12 +1206,16 @@ export async function serverSyncOAuthUser(data: {
         const isValidUuid = (val?: string): boolean =>
           Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 
-        // 1. Look up existing profile by email first (the canonical cross-provider key), case-insensitively
         let dbProfile: any = null;
+
+        // 1. Look up existing profile by email first (the canonical cross-provider key), case-insensitively
         const { data: byEmail, error: emailLookupErr } = await dbClient
           .from('users')
           .select('*')
           .ilike('email', normalizedEmail)
+          .order('onboarding_completed', { ascending: false })
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (emailLookupErr) {
@@ -1096,9 +1229,18 @@ export async function serverSyncOAuthUser(data: {
           const { data: byAuthId } = await dbClient
             .from('users')
             .select('*')
-            .or(`auth_id.eq.${data.authId},id.eq.${data.authId}`)
+            .eq('auth_id', data.authId)
             .maybeSingle();
           dbProfile = byAuthId;
+
+          if (!dbProfile) {
+            const { data: byId } = await dbClient
+              .from('users')
+              .select('*')
+              .eq('id', data.authId)
+              .maybeSingle();
+            dbProfile = byId;
+          }
         }
 
         let isNewOAuthAccount = false;
