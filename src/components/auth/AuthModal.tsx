@@ -184,7 +184,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
             (data.user.city || (data.user as any).phone || isExplicitlyCompleted)
           );
-          const actualOnboardingCompleted = isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed !== false;
+          // For facility owners signing in, treat as completed so they are routed directly to /organizer
+          const actualOnboardingCompleted = isOwnerRole
+            ? true
+            : (isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed !== false);
 
           setAuthenticatedUser({
             id: data.user.id,

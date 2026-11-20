@@ -45,9 +45,17 @@ export function Navbar() {
   }, []);
 
   const isFacilityView = pathname.startsWith('/organizer');
-  const isAuthenticated = Boolean(currentUser.id && currentUser.email);
+  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
+  const isAuthenticated = Boolean(currentUser.id && currentUser.email) || Boolean(storedRole);
   const isOnboarded = Boolean(currentUser.onboarding_completed || currentUser.has_completed_onboarding);
-  const isOwnerOrAdmin = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
+  const isOwnerOrAdmin =
+    currentUser.role === 'venue_owner' ||
+    currentUser.role === 'organizer' ||
+    currentUser.role === 'admin' ||
+    (currentUser.role as string) === 'facility_owner' ||
+    storedRole === 'venue_owner' ||
+    storedRole === 'facility_owner' ||
+    storedRole === 'organizer';
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -154,7 +162,7 @@ export function Navbar() {
                 {isOwnerOrAdmin && (
                   <Link
                     href="/organizer"
-                    className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-[#C8FF2E] bg-[#1C241E] border border-[#C8FF2E]/30 hover:bg-[#263028] transition-all"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-[#C8FF2E] bg-[#1C241E] border border-[#C8FF2E]/30 hover:bg-[#263028] transition-all"
                   >
                     <Building2 className="w-3.5 h-3.5" />
                     <span>Facility Mode</span>

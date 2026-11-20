@@ -16,6 +16,7 @@ import {
   Crown,
   Edit3,
   MessageSquare,
+  Building2,
 } from 'lucide-react';
 import { StadiumScene } from '../../illustrations/Scenes';
 import { MatchCard } from '../../design-system/components/MatchCard';
@@ -64,6 +65,16 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
       ? { id: user?.id, name: user?.name }
       : undefined
   );
+
+  const isFacilityOwner =
+    !effectiveIsGuest &&
+    ((user as any)?.role === 'venue_owner' ||
+      (user as any)?.role === 'organizer' ||
+      (user as any)?.role === 'facility_owner' ||
+      (typeof window !== 'undefined' &&
+        (localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+          localStorage.getItem('sportsync_user_role') === 'organizer' ||
+          localStorage.getItem('sportsync_user_role') === 'facility_owner')));
 
   const [activeTab, setActiveTab] = useState<'discover' | 'my_games' | 'hosting'>('discover');
   const [selectedSport, setSelectedSport] = useState<string>('All');
@@ -207,6 +218,20 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Facility Portal Switcher Button for Facility Owners */}
+            {isFacilityOwner && (
+              <a
+                href="/organizer"
+                aria-label="Switch to Facility Portal"
+                className="h-10 px-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#b8f022] flex items-center gap-1.5 font-display font-black text-xs transition-all press-scale shadow-[0_0_16px_rgba(200,255,46,0.35)] shrink-0"
+                title="Switch to Facility Portal"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Facility Portal</span>
+                <span className="sm:hidden">Portal</span>
+              </a>
+            )}
+
             {/* Message Icon Button with Real-time Unread Badge */}
             {onOpenChat && (
               <button

@@ -303,7 +303,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             ? `Account registered successfully! Welcome to SportSync.`
             : 'Welcome back! Signed in.'
         );
-        setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
+        setTimeout(() => onSuccess(detectedRole, isSignUp, data.user), 800);
       }
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';

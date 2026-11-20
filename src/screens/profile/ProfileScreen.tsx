@@ -19,6 +19,8 @@ import {
   Sun,
   Bell,
   Clock,
+  Building2,
+  ArrowRight,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
 import { StatTile, RatingChip } from '../../design-system/components/StatTile';
@@ -81,6 +83,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onEditPreferences,
 }) => {
   const isGuest = !user?.id || user?.isGuest || user?.name === 'Guest';
+  const isFacilityOwner =
+    !isGuest &&
+    ((user as any)?.role === 'venue_owner' ||
+      (user as any)?.role === 'organizer' ||
+      (user as any)?.role === 'facility_owner' ||
+      (typeof window !== 'undefined' &&
+        (localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+          localStorage.getItem('sportsync_user_role') === 'organizer' ||
+          localStorage.getItem('sportsync_user_role') === 'facility_owner')));
   const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
   const username = isGuest ? '@guest' : user?.username || '@player';
   const { unreadCount } = useNotifications(!isGuest && (user?.name || user?.id) ? { id: user?.id, name: user?.name } : undefined);
@@ -513,6 +524,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
 
           <div className="space-y-2">
+            {isFacilityOwner && (
+              <a
+                href="/organizer"
+                className="w-full min-h-[50px] px-4 py-3 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#b8f022] flex items-center justify-between gap-3 text-xs font-black transition-all shadow-[0_0_20px_rgba(200,255,46,0.3)] press-scale"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Building2 className="w-4 h-4 text-[#0B0F0C]" />
+                  <span>Switch to Facility Portal</span>
+                </div>
+                <ArrowRight className="w-4 h-4 text-[#0B0F0C]" />
+              </a>
+            )}
+
             {isGuest && onRequireAuth && (
               <button
                 type="button"

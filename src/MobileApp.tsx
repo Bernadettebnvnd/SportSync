@@ -971,10 +971,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 isUserOnboarded();
 
               if (isOwner) {
+                const ownerProceedToDashboard = !isNewAccount || isAlreadyComplete;
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                  window.location.href = isAlreadyComplete ? '/organizer' : '/onboarding?role=owner';
+                  window.location.href = ownerProceedToDashboard ? '/organizer' : '/onboarding?role=owner';
                 } else {
-                  navigateTo(isAlreadyComplete ? 'home' : 'faculty-setup');
+                  navigateTo(ownerProceedToDashboard ? 'home' : 'faculty-setup');
                 }
               } else if (isNewAccount && !isAlreadyComplete) {
                 // Newly registered Player account -> Player Profile Setup

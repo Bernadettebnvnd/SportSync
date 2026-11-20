@@ -7,7 +7,8 @@ import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
-import { Payment, Match, EmptyCourtOpportunity, SportType, Court, Booking } from '@/types';
+import { getLocalStoredVenues } from '@/lib/services/venues';
+import { Venue, Payment, Match, EmptyCourtOpportunity, SportType, Court, Booking } from '@/types';
 import { addNotification } from '@/lib/notifications';
 import {
   formatCurrency,
@@ -36,6 +37,7 @@ import {
   MapPin,
   Building2,
   User,
+  Users,
   Edit3,
   X,
   AlertTriangle,
@@ -57,6 +59,7 @@ export default function OrganizerDashboard() {
     updateBookingStatus,
     createOpenPlaySession,
     refreshBookings,
+    refreshVenues,
     addCourt,
     updateVenueProfile,
   } = useMatchiStore();
@@ -92,7 +95,8 @@ export default function OrganizerDashboard() {
 
   React.useEffect(() => {
     refreshBookings();
-  }, [refreshBookings, activeTab]);
+    refreshVenues();
+  }, [refreshBookings, refreshVenues, activeTab]);
 
   // Facility courts & added courts
   const [isAddCourtOpen, setIsAddCourtOpen] = useState(false);
@@ -134,14 +138,31 @@ export default function OrganizerDashboard() {
   const storedOwnerEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
   const targetEmail = currentUser.email || storedOwnerEmail;
 
-  const primaryVenue =
-    (currentUser.id
-      ? venues.find((v) => v.owner_id === currentUser.id || v.owner_id === currentUser.auth_id)
-      : null) ||
-    (storedVenueId ? venues.find((v) => v.id === storedVenueId) : null) ||
-    (fallbackVenueId ? venues.find((v) => v.id === fallbackVenueId) : null) ||
-    (targetEmail ? venues.find((v) => (v as any).owner_email === targetEmail) : null) ||
-    null;
+  // Real-time local fallback for instant dashboard loading across reloads
+  const localVenues = useMemo(() => {
+    return typeof window !== 'undefined' ? getLocalStoredVenues() : [];
+  }, [mounted]);
+
+  const allVenues = useMemo<Venue[]>(() => {
+    const map = new Map<string, Venue>();
+    venues.forEach((v) => { if (v && v.id) map.set(v.id, v); });
+    localVenues.forEach((v) => { if (v && v.id && !map.has(v.id)) map.set(v.id, v); });
+    return Array.from(map.values());
+  }, [venues, localVenues]);
+
+  const primaryVenue = useMemo<Venue | null>(() => {
+    return (
+      (currentUser.id
+        ? allVenues.find((v) => v.owner_id === currentUser.id || v.owner_id === currentUser.auth_id)
+        : null) ||
+      (storedVenueId ? allVenues.find((v) => v.id === storedVenueId) : null) ||
+      (fallbackVenueId ? allVenues.find((v) => v.id === fallbackVenueId) : null) ||
+      (targetEmail ? allVenues.find((v) => (v as any).owner_email === targetEmail) : null) ||
+      (localVenues.length > 0 ? localVenues[0] : null) ||
+      (isOwner && allVenues.length > 0 ? allVenues[0] : null) ||
+      null
+    );
+  }, [allVenues, currentUser.id, currentUser.auth_id, storedVenueId, fallbackVenueId, targetEmail, localVenues, isOwner]);
 
   const facilitySessions = useMemo(() => {
     if (!primaryVenue) return [];
@@ -154,12 +175,12 @@ export default function OrganizerDashboard() {
     });
   }, [sessions, primaryVenue]);
 
-  // Auto-prompt facility owner to configure venue before accessing dashboard
+  // Auto-prompt facility owner to configure venue before accessing dashboard ONLY if no facility exists anywhere
   React.useEffect(() => {
-    if (isOwner && !primaryVenue) {
+    if (mounted && isOwner && !primaryVenue && localVenues.length === 0 && !storedVenueId && !fallbackVenueId) {
       setIsOwnerModalOpen(true);
     }
-  }, [isOwner, primaryVenue]);
+  }, [mounted, isOwner, primaryVenue, localVenues.length, storedVenueId, fallbackVenueId]);
 
   // Edit Facility Profile state
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -180,7 +201,7 @@ export default function OrganizerDashboard() {
     setEditCity(primaryVenue.city || '');
     setEditHours(
       primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
-        ? Object.values(primaryVenue.operating_hours)[0] || ''
+        ? String(Object.values(primaryVenue.operating_hours)[0] || '')
         : ''
     );
     setEditPhone((primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '');
@@ -353,9 +374,10 @@ export default function OrganizerDashboard() {
             </button>
             <Link
               href="/"
-              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center"
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center flex items-center justify-center gap-2"
             >
-              Return to Home
+              <Users className="w-3.5 h-3.5 text-[#C8FF2E]" />
+              <span>Switch to Player Hub</span>
             </Link>
           </div>
         </div>
@@ -366,7 +388,7 @@ export default function OrganizerDashboard() {
     );
   }
 
-  const allFacilityCourts = primaryVenue
+  const allFacilityCourts: Court[] = primaryVenue
     ? (primaryVenue.courts && primaryVenue.courts.length > 0
         ? primaryVenue.courts
         : courts.filter((c) => c.venue_id === primaryVenue.id))
@@ -591,8 +613,18 @@ export default function OrganizerDashboard() {
           </p>
         </div>
 
-        {/* Action / Tab Bar */}
-        <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar self-start lg:self-auto max-w-full">
+        {/* Switcher to Player Hub + Action / Tab Bar */}
+        <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <Link
+            href="/"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1A241E] bg-[#E8F0E6] hover:bg-[#D5E5D2] border border-[#1E4A32]/20 flex items-center gap-1.5 transition-all shadow-xs"
+            title="Switch to Player Hub"
+          >
+            <Users className="w-3.5 h-3.5 text-[#1E4A32]" />
+            <span>Switch to Player Hub</span>
+          </Link>
+
+          <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar max-w-full">
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
@@ -669,6 +701,7 @@ export default function OrganizerDashboard() {
               </span>
             )}
           </button>
+        </div>
         </div>
       </div>
 
@@ -858,7 +891,7 @@ export default function OrganizerDashboard() {
                     { id: 'c2', name: 'Court 2', sport: 'pickleball', hourly_rate_cents: 50000 },
                     { id: 'c3', name: 'Court 3', sport: 'badminton', hourly_rate_cents: 45000 },
                   ]
-              ).map((court, idx) => {
+              ).map((court: any, idx: number) => {
                 const courtBookings = bookings.filter(
                   (b) => b.court_id === court.id || b.court?.name === court.name
                 );
@@ -2173,7 +2206,7 @@ export default function OrganizerDashboard() {
                 </span>
                 <p className="text-[#1A241E] font-medium">
                   {primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
-                    ? Object.values(primaryVenue.operating_hours)[0] || 'Monday – Sunday: 06:00 – 23:00'
+                    ? String(Object.values(primaryVenue.operating_hours)[0] || 'Monday – Sunday: 06:00 – 23:00')
                     : 'Monday – Sunday: 06:00 – 23:00'}
                 </p>
                 <p className="text-[#65756B]">Online court booking open 24/7 on SportSync.</p>
@@ -2184,7 +2217,7 @@ export default function OrganizerDashboard() {
                   Supported Sports
                 </span>
                 <div className="flex gap-1.5 flex-wrap pt-1">
-                  {primaryVenue.featured_sports.map((s) => (
+                  {primaryVenue.featured_sports.map((s: SportType) => (
                     <span
                       key={s}
                       className="px-2.5 py-1 rounded-lg bg-white border border-[#E8E5DF] text-[11px] font-semibold text-[#1A241E] capitalize"
