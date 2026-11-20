@@ -36,11 +36,9 @@ export function GuestPromptModal({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Brand Icon */}
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-[#0F2A22] border border-[#C8FF2E]/30 flex items-center justify-center shadow-lg">
-          <div className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-sm">
-            {APP_CONFIG.appName.slice(0, 2)}
-          </div>
+        {/* Brand Logo */}
+        <div className="mx-auto h-12 flex items-center justify-center">
+          <img src="/sportsync-name.svg" alt="SportSync" className="h-full w-auto object-contain" />
         </div>
 
         {/* Copy */}

@@ -373,7 +373,7 @@ export function addNotification(
     try {
       new Notification(newNotif.title, {
         body: newNotif.desc,
-        icon: '/favicon.ico',
+        icon: '/icon-192.png',
       });
     } catch {}
   }

@@ -9,14 +9,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   // The main SportSync application (at '/' and '/sideline') handles its own mobile navigation dock.
   const isMainApp = pathname === '/' || pathname === '/sideline';
-  const isOnboarding = pathname === '/onboarding';
+  const isOnboarding = pathname.startsWith('/onboarding');
   const isPrototype = pathname.startsWith('/prototype');
+  const isAuth = pathname.startsWith('/auth');
 
   return (
     <>
       <OnboardingGuard />
       <main className="flex-1 flex flex-col w-full min-h-screen">{children}</main>
-      {!isMainApp && !isOnboarding && !isPrototype && <BottomDock />}
+      {!isMainApp && !isOnboarding && !isPrototype && !isAuth && <BottomDock />}
     </>
   );
 }

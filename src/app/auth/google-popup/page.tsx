@@ -170,9 +170,7 @@ export default function GoogleOAuthPopupPage() {
 
         {/* Target App Brand Logo & Name */}
         <div className="mb-5 flex items-center gap-2">
-          <span className="text-xl font-black italic tracking-wide text-[#0F2A22]">
-            Sport<span className="text-[#365314]">Sync</span>
-          </span>
+          <img src="/sportsync-name.svg" alt="SportSync" className="h-6 w-auto object-contain" />
         </div>
 
         {/* Main Heading & Subtitle */}

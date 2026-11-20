@@ -245,33 +245,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </button>
         )}
 
-        {/* Brand Banner Header */}
-        <div className="p-4 rounded-3xl bg-[#0F2A22] border border-white/10 mb-6 flex items-center gap-3">
-          <div className="w-12 h-12 shrink-0 flex items-center justify-center">
-            <img src="/sportsync-logo.svg" alt="SportSync Logo" className="w-full h-full object-contain" />
+        {/* Brand Header - Centered In The Middle, Not In A Pill */}
+        <div className="flex flex-col items-center text-center mb-6 pt-1">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center mb-3">
+            <img
+              src="/sportsync-logo.svg"
+              alt="SportSync Logo"
+              className="w-full h-full object-contain select-none pointer-events-none"
+            />
           </div>
-          <div>
-            <h2 className="font-display font-bold text-lg text-[#F4F7F0]">
-              {isPasswordReset
-                ? 'Reset your password'
-                : isSignUp
-                  ? 'Create Account'
-                  : 'Welcome back'}
-            </h2>
-            <div className="text-xs text-[#A5B0A6]">
-              {isPasswordReset ? (
-                <span>Enter your email to receive a recovery link</span>
-              ) : isSignUp ? (
-                <div>
-                  <span className="font-display font-black text-[11px] uppercase tracking-wider text-[#C8FF2E] block">
-                    SportSync
-                  </span>
-                  <span>Find Players. Play Together.</span>
-                </div>
-              ) : (
-                <span>Log in to access your Player Hub</span>
-              )}
-            </div>
+          <h2 className="font-display font-bold text-2xl text-[#F4F7F0] tracking-tight">
+            {isPasswordReset
+              ? 'Reset your password'
+              : isSignUp
+                ? 'Create Account'
+                : 'Welcome back'}
+          </h2>
+          <div className="text-xs text-[#A5B0A6] mt-1 font-medium">
+            {isPasswordReset ? (
+              <span>Enter your email to receive a recovery link</span>
+            ) : isSignUp ? (
+              <span>Find Players. Play Together.</span>
+            ) : (
+              <span>Log in to access your Player Hub</span>
+            )}
           </div>
         </div>
 

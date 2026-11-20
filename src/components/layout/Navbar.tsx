@@ -22,12 +22,12 @@ import { APP_CONFIG } from '@/config/appConfig';
 
 export function SportSyncLogo({ size = 32 }: { size?: number }) {
   return (
-    <div
-      style={{ width: size, height: size }}
-      className="rounded-xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-xs sm:text-sm shadow-[0_0_14px_rgba(200,255,46,0.35)] shrink-0 select-none"
-    >
-      SS
-    </div>
+    <img
+      src="/sportsync-name.svg"
+      alt="SportSync"
+      style={{ height: size }}
+      className="w-auto object-contain select-none"
+    />
   );
 }
 
@@ -67,22 +67,16 @@ export function Navbar() {
           {/* SportSync Brand Logo & Context */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2.5 select-none shrink-0 group">
-              <SportSyncLogo size={32} />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base font-black tracking-tight text-[#F4F7F0] font-display leading-none">
-                    {APP_CONFIG.appName}
-                  </span>
-                  {isFacilityView && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-[#1C241E] text-[#C8FF2E] px-2 py-0.5 rounded-md border border-[#C8FF2E]/30">
-                      Facility Console
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] text-[#A5B0A6] hidden sm:block mt-0.5">
-                  {APP_CONFIG.tagline}
+              <img
+                src="/sportsync-name.svg"
+                alt="SportSync"
+                className="h-8 w-auto object-contain select-none"
+              />
+              {isFacilityView && (
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-[#1C241E] text-[#C8FF2E] px-2 py-0.5 rounded-md border border-[#C8FF2E]/30">
+                  Facility Console
                 </span>
-              </div>
+              )}
             </Link>
           </div>
 

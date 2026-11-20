@@ -15,6 +15,18 @@ interface NavItem {
 
 export function BottomDock() {
   const pathname = usePathname();
+
+  // Never render bottom dock on auth routes, onboarding, prototypes, or main home app
+  if (
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/onboarding') ||
+    pathname === '/' ||
+    pathname === '/sideline' ||
+    pathname.startsWith('/prototype')
+  ) {
+    return null;
+  }
+
   const isFacility = pathname.startsWith('/organizer');
 
   const playerItems: NavItem[] = [

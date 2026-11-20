@@ -26,6 +26,18 @@ export const metadata: Metadata = {
   title: 'SportSync | Find Players. Play Together.',
   description: 'Find players, complete incomplete rosters, and join local recreational games.',
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/sportsync-icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    shortcut: '/sportsync-icon.svg',
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '192x192', type: 'image/png' },
+      { url: '/sportsync-icon.svg' },
+    ],
+  },
   keywords: [
     'SportSync',
     'sports matchmaking',
