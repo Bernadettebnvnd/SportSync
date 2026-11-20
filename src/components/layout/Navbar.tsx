@@ -13,6 +13,8 @@ import {
   Sparkles,
   Moon,
   Sun,
+  ChevronDown,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/theme';
@@ -33,12 +35,13 @@ export function SportSyncLogo({ size = 32 }: { size?: number }) {
 
 export function Navbar() {
   const pathname = usePathname();
-  const { currentUser } = useMatchiStore();
+  const { currentUser, logoutUser } = useMatchiStore();
   const { isLightMode, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
   React.useEffect(() => {
     setMounted(true);
@@ -143,19 +146,54 @@ export function Navbar() {
                   )}
                 >
                   <Building2 className="w-3.5 h-3.5" />
-                  <span>Facility Console</span>
+                  <span>Dashboard</span>
+                </Link>
+                <Link
+                  href="/organizer?tab=games"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <span>Games</span>
                 </Link>
                 <Link
                   href="/organizer?tab=courts"
                   className={cn(
                     'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                    pathname.includes('tab=courts')
-                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                    'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
                   )}
                 >
                   <Calendar className="w-3.5 h-3.5" />
-                  <span>Courts & Schedule</span>
+                  <span>Courts</span>
+                </Link>
+                <Link
+                  href="/organizer?tab=bookings"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <span>Bookings</span>
+                </Link>
+                <Link
+                  href="/organizer?tab=payments"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <span>Payment Desk</span>
+                </Link>
+                <Link
+                  href="/organizer?tab=profile"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <UserIcon className="w-3.5 h-3.5" />
+                  <span>Profile</span>
                 </Link>
               </>
             )}
@@ -182,15 +220,91 @@ export function Navbar() {
             </button>
 
             {isFacilityView ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsOwnerModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#C8FF2E] bg-[#1C241E] border border-[#C8FF2E]/30 hover:bg-[#263028] transition-all press-scale flex items-center gap-1"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#b8f022] transition-all press-scale flex items-center gap-1.5 shadow-[0_0_14px_rgba(200,255,46,0.25)]"
+                  title="Configure Facility & Courts Setup"
                 >
-                  <Building2 className="w-3.5 h-3.5" />
+                  <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
                   <span>Facility Setup</span>
                 </button>
+
+                {/* Faculty Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-[#141A15] border border-white/10 hover:border-[#C8FF2E]/40 transition-all cursor-pointer shadow-sm"
+                    title="Faculty Account & Menu"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-black text-[10px]">
+                      {currentUser.nickname?.[0] || currentUser.full_name?.[0] || 'F'}
+                    </div>
+                    <span className="hidden sm:inline text-xs font-bold text-[#F4F7F0] max-w-[120px] truncate">
+                      {currentUser.nickname || currentUser.full_name || 'Faculty Partner'}
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 text-[#A5B0A6]" />
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141A15] border border-white/10 shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                      <div className="px-4 py-3 border-b border-white/5 space-y-1">
+                        <div className="text-xs font-bold text-[#F4F7F0] truncate">
+                          {currentUser.full_name || 'Faculty Partner'}
+                        </div>
+                        <div className="text-[11px] text-[#A5B0A6] truncate">
+                          {currentUser.email || 'faculty@sportsync.ph'}
+                        </div>
+                        <div className="pt-1">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 px-2 py-0.5 rounded-md inline-block">
+                            Verified Faculty
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="py-1">
+                        <Link
+                          href="/organizer?tab=profile"
+                          onClick={() => setIsProfileDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors"
+                        >
+                          <UserIcon className="w-4 h-4 text-[#C8FF2E]" />
+                          <span>Faculty Profile &amp; Account</span>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProfileDropdownOpen(false);
+                            setIsOwnerModalOpen(true);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors text-left"
+                        >
+                          <Building2 className="w-4 h-4 text-[#C8FF2E]" />
+                          <span>Facility &amp; Courts Setup</span>
+                        </button>
+                      </div>
+
+                      <div className="pt-1 border-t border-white/5">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setIsProfileDropdownOpen(false);
+                            try {
+                              await logoutUser();
+                            } catch {}
+                            window.location.href = '/?auth=signin';
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left"
+                        >
+                          <LogOut className="w-4 h-4 text-rose-400" />
+                          <span>Log Out</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <>

@@ -38,10 +38,10 @@ export function BottomDock() {
   ];
 
   const facilityItems: NavItem[] = [
-    { href: '/organizer', label: 'Console', icon: Building2 },
-    { href: '/organizer?tab=bookings', label: 'Bookings', icon: Calendar },
-    { href: '/organizer?tab=queue_ops', label: 'Queue', icon: Compass },
+    { href: '/organizer', label: 'Dashboard', icon: Building2 },
     { href: '/organizer?tab=courts', label: 'Courts', icon: Layers },
+    { href: '/organizer?tab=bookings', label: 'Bookings', icon: Calendar },
+    { href: '/organizer?tab=profile', label: 'Profile', icon: User },
   ];
 
   const items = isFacility ? facilityItems : playerItems;

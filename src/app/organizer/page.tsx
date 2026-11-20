@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
@@ -41,11 +41,19 @@ import {
   Edit3,
   X,
   AlertTriangle,
+  ChevronDown,
+  LogOut,
+  Layers,
+  Phone,
+  Mail,
 } from 'lucide-react';
 
-export default function OrganizerDashboard() {
+export type OrganizerTab = 'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments';
+
+function OrganizerDashboardContent() {
   const {
     currentUser,
+    logoutUser,
     venues,
     courts,
     sessions,
@@ -64,6 +72,7 @@ export default function OrganizerDashboard() {
     updateVenueProfile,
   } = useMatchiStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
 
@@ -77,12 +86,46 @@ export default function OrganizerDashboard() {
   }, [currentUser.id, currentUser.full_name, storedRole, router]);
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [selectedScoreMatch, setSelectedScoreMatch] = useState<Match | null>(null);
   const [walkInName, setWalkInName] = useState('');
   const [walkInFormat, setWalkInFormat] = useState<'doubles' | 'singles'>('doubles');
-  const [activeTab, setActiveTab] = useState<'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments'>('overview');
+  const [activeTab, setActiveTab] = useState<OrganizerTab>('overview');
   const [monetizeSuccessMessage, setMonetizeSuccessMessage] = useState<string | null>(null);
+
+  // Sync tab with URL search parameter
+  React.useEffect(() => {
+    const tabParam = searchParams.get('tab') as OrganizerTab | null;
+    if (
+      tabParam &&
+      ['overview', 'games', 'courts', 'profile', 'bookings', 'monetize', 'queue_ops', 'payments'].includes(tabParam)
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab: OrganizerTab) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = tab === 'overview' ? '/organizer' : `/organizer?tab=${tab}`;
+      window.history.pushState(null, '', url);
+    }
+  };
+
+  const handleFacultyLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.warn('Logout error:', err);
+    } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_user_role');
+        localStorage.removeItem('sportsync_facility_venue_id');
+        window.location.href = '/?auth=signin';
+      }
+    }
+  };
 
   // Bookings management state
   const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'rejected'>('all');
@@ -290,11 +333,70 @@ export default function OrganizerDashboard() {
   const totalFacilityNetCents = calculateBookingFees(totalGrossCents).facilityAmountCents;
   const totalBookingsCount = facilityBookings.length;
 
-  // Dynamic Occupancy calculation based on real bookings vs available court-hours
-  const facilityCourts = primaryVenue ? (primaryVenue.courts && primaryVenue.courts.length > 0 ? primaryVenue.courts : courts.filter((c) => c.venue_id === primaryVenue.id)) : [];
-  const totalCapacitySlots = (facilityCourts.length || 1) * 14;
-  const bookedSlotsCount = facilityBookings.filter((b) => b.status !== 'cancelled').length;
-  const occupancyRate = Math.min(100, Math.round((bookedSlotsCount / Math.max(1, totalCapacitySlots)) * 100));
+  // Unified registered courts for this facility
+  const allFacilityCourts = useMemo<Court[]>(() => {
+    if (!primaryVenue) return [];
+    if (primaryVenue.courts && primaryVenue.courts.length > 0) return primaryVenue.courts;
+    return courts.filter((c) => c.venue_id === primaryVenue.id);
+  }, [primaryVenue, courts]);
+
+  const timelineSlotRanges = useMemo(() => [
+    { time: '08:00 - 10:00', start: '08:00', end: '10:00' },
+    { time: '10:00 - 12:00', start: '10:00', end: '12:00' },
+    { time: '13:00 - 15:00', start: '13:00', end: '15:00' },
+    { time: '15:00 - 17:00', start: '15:00', end: '17:00' },
+    { time: '17:00 - 19:00', start: '17:00', end: '19:00' },
+    { time: '19:00 - 21:00', start: '19:00', end: '21:00' },
+  ], []);
+
+  const todayDateStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const todayBookings = useMemo(() => {
+    return facilityBookings.filter((b) => !b.booking_date || b.booking_date === todayDateStr);
+  }, [facilityBookings, todayDateStr]);
+
+  const confirmedTodayCount = useMemo(() => {
+    return todayBookings.filter((b) => b.status === 'confirmed').length;
+  }, [todayBookings]);
+
+  // Compute unbooked idle slots across registered courts based on actual Supabase bookings
+  const unbookedSlotsCount = useMemo(() => {
+    if (allFacilityCourts.length === 0) return 0;
+    let count = 0;
+    allFacilityCourts.forEach((court) => {
+      timelineSlotRanges.forEach((slot) => {
+        const hasBooking = facilityBookings.some(
+          (b) =>
+            (b.court_id === court.id || b.court?.name === court.name) &&
+            b.status !== 'rejected' &&
+            b.status !== 'cancelled' &&
+            (b.start_time === slot.start || (b.start_time < slot.end && b.end_time > slot.start))
+        );
+        const hasSession = facilitySessions.some(
+          (s) => s.court_ids?.includes(court.id) && s.start_time === slot.start
+        );
+        if (!hasBooking && !hasSession) {
+          count++;
+        }
+      });
+    });
+    return count;
+  }, [allFacilityCourts, facilityBookings, facilitySessions, timelineSlotRanges]);
+
+  const idleCourtHours = unbookedSlotsCount * 2;
+  const totalCapacitySlots = Math.max(1, (allFacilityCourts.length || 1) * timelineSlotRanges.length);
+  const activeBookedSlotsCount = totalCapacitySlots - unbookedSlotsCount;
+  const occupancyRate = allFacilityCourts.length === 0
+    ? 0
+    : Math.min(100, Math.max(0, Math.round((activeBookedSlotsCount / totalCapacitySlots) * 100)));
+
+  const handleMonetizeSlot = (courtId: string, courtSport: SportType, timeSlot: string) => {
+    setNewGameCourtId(courtId);
+    setNewGameSport(courtSport);
+    setNewGameTime(timeSlot);
+    setIsCreateGameOpen(true);
+    handleTabChange('games');
+  };
 
   if (!mounted) {
     return (
@@ -381,11 +483,6 @@ export default function OrganizerDashboard() {
     );
   }
 
-  const allFacilityCourts: Court[] = primaryVenue
-    ? (primaryVenue.courts && primaryVenue.courts.length > 0
-      ? primaryVenue.courts
-      : courts.filter((c) => c.venue_id === primaryVenue.id))
-    : [];
 
   const handleAddCourt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -583,14 +680,14 @@ export default function OrganizerDashboard() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12" suppressHydrationWarning>
       {/* Executive Operations Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl sm:text-3xl font-black text-[#1A241E] tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-[#F4F7F0] tracking-tight">
               Facility Ops &amp; Management
             </h1>
             {primaryVenue?.is_verified ? (
-              <span className="rounded-full bg-[#1E4A32] px-3 py-1 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
+              <span className="rounded-full bg-[#1E4A32] border border-[#C8FF2E]/30 px-3 py-1 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#C8FF2E]" />
                 Verified Facility
               </span>
@@ -601,12 +698,12 @@ export default function OrganizerDashboard() {
               </span>
             )}
           </div>
-          <p className="text-xs sm:text-sm text-[#65756B] mt-1">
+          <p className="text-xs sm:text-sm text-[#A5B0A6] mt-1">
             {primaryVenue?.name || 'Sports Facility'} &bull; Real-time court utilization, bookings ledger &amp; cash desk.
           </p>
         </div>
 
-        {/* Facility Setup + Action / Tab Bar */}
+        {/* Facility Setup + Navigation Tab Bar + Faculty Profile Dropdown */}
         <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
           <button
             type="button"
@@ -617,10 +714,11 @@ export default function OrganizerDashboard() {
             <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
             <span>Facility Setup</span>
           </button>
+
           <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar max-w-full">
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => handleTabChange('overview')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${activeTab === 'overview'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
@@ -630,7 +728,7 @@ export default function OrganizerDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('games')}
+              onClick={() => handleTabChange('games')}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${activeTab === 'games'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
@@ -640,27 +738,29 @@ export default function OrganizerDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('courts')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${activeTab === 'courts'
+              onClick={() => handleTabChange('courts')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === 'courts'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
                 }`}
             >
-              Courts ({allFacilityCourts.length})
+              <Layers className="w-3.5 h-3.5" />
+              <span>Courts ({allFacilityCourts.length})</span>
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('profile')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${activeTab === 'profile'
-                ? 'bg-white text-[#1A241E] shadow-sm'
+              onClick={() => handleTabChange('profile')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === 'profile'
+                ? 'bg-white text-[#1A241E] shadow-sm font-black'
                 : 'text-[#65756B] hover:text-[#1A241E]'
                 }`}
             >
-              Profile
+              <User className="w-3.5 h-3.5 text-[#2D724E]" />
+              <span>Profile</span>
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('bookings')}
+              onClick={() => handleTabChange('bookings')}
               className={`relative px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === 'bookings'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
@@ -675,7 +775,7 @@ export default function OrganizerDashboard() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('payments')}
+              onClick={() => handleTabChange('payments')}
               className={`relative px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === 'payments'
                 ? 'bg-white text-[#1A241E] shadow-sm'
                 : 'text-[#65756B] hover:text-[#1A241E]'
@@ -688,6 +788,81 @@ export default function OrganizerDashboard() {
                 </span>
               )}
             </button>
+          </div>
+
+          {/* Faculty Profile & Logout Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
+              className="px-3 py-2 rounded-xl text-xs font-bold text-[#F4F7F0] bg-[#141A15] hover:bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E]/40 flex items-center gap-2 transition-all shadow-sm"
+              title="Faculty Account Menu & Logout"
+            >
+              <div className="w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-black text-[10px]">
+                {currentUser.full_name?.[0] || currentUser.email?.[0]?.toUpperCase() || 'F'}
+              </div>
+              <span className="hidden sm:inline max-w-[100px] truncate">
+                {currentUser.full_name || 'Faculty'}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-[#A5B0A6]" />
+            </button>
+
+            {isAccountDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141A15] border border-white/10 shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2 text-[#F4F7F0]">
+                <div className="px-4 py-3 border-b border-white/5 space-y-1">
+                  <div className="text-xs font-bold truncate">
+                    {currentUser.full_name || 'Faculty Partner'}
+                  </div>
+                  <div className="text-[11px] text-[#A5B0A6] truncate">
+                    {currentUser.email || 'faculty@sportsync.ph'}
+                  </div>
+                  <div className="pt-1 flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 px-2 py-0.5 rounded-md">
+                      Verified Faculty
+                    </span>
+                  </div>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAccountDropdownOpen(false);
+                      handleTabChange('profile');
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors text-left"
+                  >
+                    <User className="w-4 h-4 text-[#C8FF2E]" />
+                    <span>Faculty Profile &amp; Account</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAccountDropdownOpen(false);
+                      setIsOwnerModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors text-left"
+                  >
+                    <Building2 className="w-4 h-4 text-[#C8FF2E]" />
+                    <span>Configure Setup</span>
+                  </button>
+                </div>
+
+                <div className="pt-1 border-t border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAccountDropdownOpen(false);
+                      handleFacultyLogout();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -707,10 +882,10 @@ export default function OrganizerDashboard() {
             <Calendar className="w-4 h-4 text-[#2D724E]" />
           </div>
           <div className="text-2xl font-black text-[#1A241E]">
-            {totalBookingsCount}
+            {todayBookings.length}
           </div>
           <span className="text-[11px] text-[#2D724E] font-medium block">
-            {bookings.filter((b) => b.status === 'confirmed').length} confirmed reservations
+            {confirmedTodayCount} confirmed reservations
           </span>
         </div>
 
@@ -749,7 +924,7 @@ export default function OrganizerDashboard() {
             {occupancyRate}%
           </div>
           <div className="w-full bg-[#E8E5DF] h-1.5 rounded-full overflow-hidden mt-1">
-            <div className="bg-[#2D724E] h-full rounded-full" style={{ width: `${occupancyRate}%` }} />
+            <div className="bg-[#2D724E] h-full rounded-full transition-all duration-500" style={{ width: `${occupancyRate}%` }} />
           </div>
         </div>
       </div>
@@ -869,88 +1044,118 @@ export default function OrganizerDashboard() {
 
             {/* Court Rows */}
             <div className="space-y-3">
-              {(facilityCourts.length > 0
-                ? facilityCourts
-                : primaryVenue?.courts && primaryVenue.courts.length > 0
-                  ? primaryVenue.courts
-                  : [
-                    { id: 'c1', name: 'Court 1', sport: 'pickleball', hourly_rate_cents: 50000 },
-                    { id: 'c2', name: 'Court 2', sport: 'pickleball', hourly_rate_cents: 50000 },
-                    { id: 'c3', name: 'Court 3', sport: 'badminton', hourly_rate_cents: 45000 },
-                  ]
-              ).map((court: any, idx: number) => {
-                const courtBookings = bookings.filter(
-                  (b) => b.court_id === court.id || b.court?.name === court.name
-                );
-                const hasSession = primarySession?.court_ids?.includes(court.id);
-
-                return (
-                  <div
-                    key={court.id || idx}
-                    className="p-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-3"
+              {allFacilityCourts.length === 0 ? (
+                <div className="py-8 text-center text-xs text-[#65756B] space-y-2 border border-dashed border-[#E8E5DF] rounded-2xl">
+                  <Building2 className="w-8 h-8 text-[#65756B]/40 mx-auto" />
+                  <p className="font-bold text-[#1A241E] text-sm">No Courts Configured Yet</p>
+                  <p className="text-[11px] max-w-sm mx-auto">
+                    Add your facility courts and operating rates to activate the real-time schedule timeline.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCourtOpen(true)}
+                    className="mt-1 px-4 py-2 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold transition-all shadow-xs"
                   >
-                    <div className="min-w-[140px]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-[#1A241E]">{court.name}</span>
-                        <span className="text-[10px] font-bold text-[#2D724E] bg-[#EBF4EE] px-1.5 py-0.5 rounded-md capitalize">
-                          {court.sport}
+                    Add Your First Court
+                  </button>
+                </div>
+              ) : (
+                allFacilityCourts.map((court: Court, idx: number) => {
+                  return (
+                    <div
+                      key={court.id || idx}
+                      className="p-3.5 rounded-2xl border border-[#E8E5DF] bg-[#FAF8F5] flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    >
+                      <div className="min-w-[140px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-[#1A241E]">{court.name}</span>
+                          <span className="text-[10px] font-bold text-[#2D724E] bg-[#EBF4EE] px-1.5 py-0.5 rounded-md capitalize">
+                            {court.sport}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-[#65756B] block mt-0.5">
+                          {formatCurrency(court.hourly_rate_cents || 35000)}/hr standard rate
                         </span>
                       </div>
-                      <span className="text-[10px] text-[#65756B] block mt-0.5">
-                        {formatCurrency(court.hourly_rate_cents || 50000)}/hr standard rate
-                      </span>
-                    </div>
 
-                    {/* Timeline Slots */}
-                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1.5">
-                      {[
-                        { time: '08:00 - 10:00', type: courtBookings[0] ? 'booked' : 'free', label: courtBookings[0]?.user?.full_name || 'Available' },
-                        { time: '10:00 - 12:00', type: hasSession ? 'session' : 'free', label: hasSession ? 'Open Play' : 'Available' },
-                        { time: '13:00 - 15:00', type: 'free', label: 'Idle Slot' },
-                        { time: '15:00 - 17:00', type: idx % 2 === 0 ? 'booked' : 'free', label: idx % 2 === 0 ? 'Reserved' : 'Available' },
-                        { time: '17:00 - 19:00', type: 'booked', label: 'League Match' },
-                        { time: '19:00 - 21:00', type: 'booked', label: 'Prime Slot' },
-                      ].map((slot, sIdx) => {
-                        if (slot.type === 'booked') {
-                          return (
-                            <div
-                              key={sIdx}
-                              className="p-2 rounded-xl bg-[#1E4A32] text-white text-[10px] space-y-0.5"
-                            >
-                              <span className="font-extrabold block truncate">{slot.label}</span>
-                              <span className="text-[#E9C46A] text-[9px] block">{slot.time}</span>
-                            </div>
+                      {/* Timeline Slots */}
+                      <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5">
+                        {timelineSlotRanges.map((slot, sIdx) => {
+                          const courtBooking = facilityBookings.find(
+                            (b) =>
+                              (b.court_id === court.id || b.court?.name?.toLowerCase() === court.name?.toLowerCase()) &&
+                              b.status !== 'cancelled' &&
+                              b.status !== 'rejected' &&
+                              (b.start_time === slot.start || (b.start_time < slot.end && b.end_time > slot.start))
                           );
-                        }
-                        if (slot.type === 'session') {
-                          return (
-                            <div
-                              key={sIdx}
-                              className="p-2 rounded-xl bg-[#E9C46A] text-[#1A241E] text-[10px] font-black space-y-0.5"
-                            >
-                              <span className="block truncate">{slot.label}</span>
-                              <span className="text-[#A35C2B] text-[9px] block">{slot.time}</span>
-                            </div>
+
+                          const hasSession = facilitySessions.find(
+                            (s) => s.court_ids?.includes(court.id) && s.start_time === slot.start
                           );
-                        }
-                        return (
-                          <button
-                            key={sIdx}
-                            type="button"
-                            onClick={() => setActiveTab('monetize')}
-                            className="p-2 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] text-left text-[10px] space-y-0.5 transition-colors group"
-                          >
-                            <span className="text-[#65756B] group-hover:text-[#2D724E] font-bold block truncate">
-                              + Monetize
-                            </span>
-                            <span className="text-[#65756B]/70 text-[9px] block">{slot.time}</span>
-                          </button>
-                        );
-                      })}
+
+                          if (courtBooking && courtBooking.status === 'confirmed') {
+                            return (
+                              <div
+                                key={sIdx}
+                                className="p-2 rounded-xl bg-[#1E4A32] text-white text-[10px] space-y-0.5 shadow-xs"
+                                title={`Confirmed reservation by ${courtBooking.user?.full_name || 'Player'}`}
+                              >
+                                <span className="font-extrabold block truncate">
+                                  {courtBooking.user?.full_name || 'Confirmed'}
+                                </span>
+                                <span className="text-[#E9C46A] text-[9px] block">{slot.time}</span>
+                              </div>
+                            );
+                          }
+
+                          if (courtBooking && courtBooking.status === 'pending') {
+                            return (
+                              <div
+                                key={sIdx}
+                                className="p-2 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-[10px] space-y-0.5 shadow-xs"
+                                title={`Pending request from ${courtBooking.user?.full_name || 'Player'}`}
+                              >
+                                <span className="font-extrabold block truncate">
+                                  {courtBooking.user?.full_name || 'Pending Review'}
+                                </span>
+                                <span className="text-amber-700 text-[9px] block">{slot.time}</span>
+                              </div>
+                            );
+                          }
+
+                          if (hasSession) {
+                            return (
+                              <div
+                                key={sIdx}
+                                className="p-2 rounded-xl bg-[#E9C46A] text-[#1A241E] text-[10px] font-black space-y-0.5 shadow-xs"
+                                title={`Open Play: ${hasSession.title}`}
+                              >
+                                <span className="block truncate">{hasSession.title || 'Open Play'}</span>
+                                <span className="text-[#A35C2B] text-[9px] block">{slot.time}</span>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => handleMonetizeSlot(court.id, court.sport, slot.time)}
+                              className="p-2 rounded-xl bg-white border border-[#E8E5DF] hover:border-[#2D724E] text-left text-[10px] space-y-0.5 transition-colors group cursor-pointer"
+                              title={`Click to schedule a game for ${court.name} at ${slot.time}`}
+                            >
+                              <span className="text-[#65756B] group-hover:text-[#2D724E] font-bold block truncate">
+                                + Monetize
+                              </span>
+                              <span className="text-[#65756B]/70 text-[9px] block">{slot.time}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -962,7 +1167,7 @@ export default function OrganizerDashboard() {
                   Monetization Alert
                 </span>
                 <span className="text-xs font-bold text-[#A35C2B]">
-                  {emptyOpportunities.length} idle court hours detected today
+                  {idleCourtHours} idle court hours detected today
                 </span>
               </div>
               <h3 className="text-base sm:text-lg font-black text-[#1A241E]">
@@ -976,10 +1181,17 @@ export default function OrganizerDashboard() {
 
             <button
               type="button"
-              onClick={() => setActiveTab('monetize')}
+              onClick={() => {
+                if (allFacilityCourts.length > 0) {
+                  setNewGameCourtId(allFacilityCourts[0].id);
+                  setNewGameSport(allFacilityCourts[0].sport);
+                }
+                setIsCreateGameOpen(true);
+                handleTabChange('games');
+              }}
               className="px-5 py-3 rounded-xl bg-[#C87D43] hover:bg-[#A35C2B] text-white text-xs font-bold shadow-xs transition-all whitespace-nowrap min-h-[44px]"
             >
-              Inspect Opportunities ({emptyOpportunities.length})
+              Inspect Opportunities ({unbookedSlotsCount})
             </button>
           </div>
 
@@ -989,62 +1201,89 @@ export default function OrganizerDashboard() {
               <h3 className="text-base font-bold text-[#1A241E]">Today&apos;s Reservations</h3>
               <button
                 type="button"
-                onClick={() => setActiveTab('bookings')}
+                onClick={() => handleTabChange('bookings')}
                 className="text-xs font-bold text-[#2D724E] hover:underline"
               >
                 View All Bookings &rarr;
               </button>
             </div>
 
-            <div className="divide-y divide-[#E8E5DF]">
-              {facilityBookings.slice(0, 5).map((booking) => (
-                <div key={booking.id} className="py-3 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center text-xs font-bold text-[#1A241E]">
-                      {booking.court?.name?.replace(/[^0-9]/g, '') || '1'}
+            {facilityBookings.length === 0 ? (
+              <div className="py-12 text-center text-xs text-[#65756B] space-y-2">
+                <div className="w-10 h-10 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center mx-auto text-[#2D724E]">
+                  <Calendar className="w-5 h-5 opacity-60" />
+                </div>
+                <p className="font-bold text-[#1A241E] text-sm">No Reservations Scheduled Today</p>
+                <p className="text-[11px] max-w-xs mx-auto text-[#65756B]">
+                  When players book courts through SportSync, their confirmed reservations will appear here in real time.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (allFacilityCourts.length > 0) {
+                      setNewGameCourtId(allFacilityCourts[0].id);
+                      setNewGameSport(allFacilityCourts[0].sport);
+                    }
+                    setIsCreateGameOpen(true);
+                    handleTabChange('games');
+                  }}
+                  className="mt-2 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FAF8F5] hover:bg-[#EBF4EE] border border-[#E8E5DF] text-[#1E4A32] text-xs font-bold transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[#2D724E]" />
+                  <span>Host an Open Play Session</span>
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#E8E5DF]">
+                {facilityBookings.slice(0, 5).map((booking) => (
+                  <div key={booking.id} className="py-3 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-xl bg-[#FAF8F5] border border-[#E8E5DF] flex items-center justify-center text-xs font-bold text-[#1A241E]">
+                        {booking.court?.name?.replace(/[^0-9]/g, '') || '1'}
+                      </div>
+                      <div>
+                        <div className="font-bold text-[#1A241E]">
+                          {booking.user?.full_name || 'Player'}
+                          <span className="font-normal text-[#65756B] ml-1">
+                            ({booking.court?.name || 'Court'})
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-[#65756B] flex items-center gap-2 mt-0.5">
+                          <span className="capitalize">{booking.sport}</span>
+                          <span>&bull;</span>
+                          <span>{booking.start_time} - {booking.end_time}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold text-[#1A241E]">
-                        {booking.user?.full_name || 'Player'}
-                        <span className="font-normal text-[#65756B] ml-1">
-                          ({booking.court?.name || 'Court'})
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="font-bold text-[#1A241E]">
+                          {formatCurrency(booking.total_amount_cents)}
+                        </div>
+                        <span className="text-[10px] text-[#2D724E] capitalize">
+                          {booking.payment_status.replace(/_/g, ' ')}
                         </span>
                       </div>
-                      <div className="text-[11px] text-[#65756B] flex items-center gap-2 mt-0.5">
-                        <span className="capitalize">{booking.sport}</span>
-                        <span>&bull;</span>
-                        <span>{booking.start_time} - {booking.end_time}</span>
-                      </div>
+
+                      {booking.status !== 'completed' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleCheckInBooking(booking.id)}
+                          className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] hover:bg-[#EBF4EE] border border-[#E8E5DF] hover:border-[#2D724E] text-[#1E4A32] font-semibold text-xs transition-colors"
+                        >
+                          Check In
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[11px] text-[#2D724E] font-semibold px-2 py-1 bg-[#EBF4EE] rounded-lg">
+                          <Check className="w-3 h-3" /> Checked In
+                        </span>
+                      )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="font-bold text-[#1A241E]">
-                        {formatCurrency(booking.total_amount_cents)}
-                      </div>
-                      <span className="text-[10px] text-[#2D724E] capitalize">
-                        {booking.payment_status.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-
-                    {booking.status !== 'completed' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleCheckInBooking(booking.id)}
-                        className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] hover:bg-[#EBF4EE] border border-[#E8E5DF] hover:border-[#2D724E] text-[#1E4A32] font-semibold text-xs transition-colors"
-                      >
-                        Check In
-                      </button>
-                    ) : (
-                      <span className="flex items-center gap-1 text-[11px] text-[#2D724E] font-semibold px-2 py-1 bg-[#EBF4EE] rounded-lg">
-                        <Check className="w-3 h-3" /> Checked In
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Pending Payment Desk Preview */}
@@ -2117,11 +2356,80 @@ export default function OrganizerDashboard() {
       {/* TAB: FACILITY & OPERATOR PROFILE */}
       {activeTab === 'profile' && (
         <div className="space-y-6">
+          {/* Card 1: Faculty Account & Profile Information */}
+          <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-[#1E4A32] text-[#C8FF2E] flex items-center justify-center font-black text-xl shadow-xs border border-[#C8FF2E]/30">
+                  {currentUser.full_name?.[0] || currentUser.email?.[0]?.toUpperCase() || 'F'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-[#1A241E]">
+                      {currentUser.full_name || 'Faculty Partner'}
+                    </h2>
+                    <span className="rounded-full bg-[#EBF4EE] text-[#1E4A32] border border-[#2D724E]/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                      Verified Faculty
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#65756B] mt-0.5">{currentUser.email || 'faculty@sportsync.ph'}</p>
+                </div>
+              </div>
+
+              {/* Log Out CTA */}
+              <button
+                type="button"
+                onClick={handleFacultyLogout}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer"
+                title="Log Out of Faculty Portal"
+              >
+                <LogOut className="w-4 h-4 text-rose-600" />
+                <span>Log Out of Faculty Portal</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block">Account Role</span>
+                <span className="text-xs font-black text-[#1A241E] block capitalize">{currentUser.role || 'Facility Owner'}</span>
+                <span className="text-[11px] text-[#2D724E] font-semibold">Authorized Portal Scope</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block">Contact Phone</span>
+                <span className="text-xs font-bold text-[#1A241E] block font-mono">
+                  {currentUser.phone || (primaryVenue.payment_info as any)?.gcash_number || '0917-888-0000'}
+                </span>
+                <span className="text-[11px] text-[#65756B]">Primary SMS / Verification</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block">Authentication Session</span>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <span className="w-2 h-2 rounded-full bg-[#2D724E] animate-pulse" />
+                  <span className="text-xs font-bold text-[#1E4A32]">Supabase Auth Active</span>
+                </div>
+                <span className="text-[10px] text-[#65756B] font-mono truncate block max-w-full">
+                  ID: {currentUser.id?.slice(0, 16) || 'auth-session'}...
+                </span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block">Linked Sports Facility</span>
+                <span className="text-xs font-black text-[#1A241E] block truncate">{primaryVenue.name}</span>
+                <span className="text-[11px] text-[#2D724E] font-semibold">
+                  {allFacilityCourts.length} Registered Courts
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Facility Venue Profile */}
           <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
               <div>
                 <span className="text-xs font-bold text-[#65756B] uppercase tracking-wider block">
-                  Facility Profile
+                  Facility Profile &amp; Location
                 </span>
                 <h2 className="text-xl sm:text-2xl font-black text-[#1A241E]">
                   {primaryVenue.name}
@@ -2138,17 +2446,14 @@ export default function OrganizerDashboard() {
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>Edit Facility Profile</span>
                 </button>
-                {primaryVenue.is_verified ? (
-                  <span className="rounded-full bg-[#1E4A32] px-3.5 py-1.5 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm">
-                    <ShieldCheck className="w-4 h-4 text-[#C8FF2E]" />
-                    Verified Facility
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-[#FBF0E6] border border-[#C87D43]/40 px-3.5 py-1.5 text-xs font-bold text-[#A35C2B] flex items-center gap-1.5 shadow-sm">
-                    <Clock className="w-4 h-4 text-[#C87D43]" />
-                    Pending Verification (Draft Mode)
-                  </span>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOwnerModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] rounded-xl bg-[#C8FF2E] hover:bg-[#b8f022] text-[#0B0F0C] text-xs font-black shadow-sm transition-all"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
+                  <span>Configure Setup</span>
+                </button>
               </div>
             </div>
 
@@ -2157,20 +2462,11 @@ export default function OrganizerDashboard() {
                 <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
                   Location &amp; Coordinates
                 </span>
-                <p className="text-[#1A241E] font-medium">{primaryVenue.address}</p>
-                <p className="text-[#65756B]">{primaryVenue.city}, Philippines</p>
+                <p className="text-[#1A241E] font-medium">{primaryVenue.address || 'Address configured'}</p>
+                <p className="text-[#65756B]">{primaryVenue.city || 'Philippines'}, Philippines</p>
                 <p className="text-[10px] font-mono text-[#65756B] pt-1">
                   Lat: {primaryVenue.latitude} &bull; Lon: {primaryVenue.longitude}
                 </p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
-                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
-                  Operator Contact Desk
-                </span>
-                <p className="text-[#1A241E] font-medium">Owner: {currentUser.full_name || 'Facility Manager'}</p>
-                <p className="text-[#65756B]">Email: {currentUser.email || 'manager@facility.ph'}</p>
-                <p className="text-[#65756B]">Phone: {(primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000'}</p>
               </div>
 
               <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
@@ -2190,7 +2486,7 @@ export default function OrganizerDashboard() {
                   Supported Sports
                 </span>
                 <div className="flex gap-1.5 flex-wrap pt-1">
-                  {primaryVenue.featured_sports.map((s: SportType) => (
+                  {(primaryVenue.featured_sports || ['pickleball']).map((s: SportType) => (
                     <span
                       key={s}
                       className="px-2.5 py-1 rounded-lg bg-white border border-[#E8E5DF] text-[11px] font-semibold text-[#1A241E] capitalize"
@@ -2200,17 +2496,16 @@ export default function OrganizerDashboard() {
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Actions */}
-            <div className="pt-4 border-t border-[#E8E5DF] flex flex-col sm:flex-row items-center gap-3">
-              <button
-                type="button"
-                onClick={openEditProfile}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold text-center transition-colors shadow-sm"
-              >
-                Edit Facility Profile
-              </button>
+              <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-2">
+                <span className="font-bold text-[#1A241E] uppercase text-[10px] tracking-wider block">
+                  Cash &amp; Digital Payments Desk
+                </span>
+                <p className="text-[#1A241E] font-medium">
+                  GCash: {(primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000'}
+                </p>
+                <p className="text-[#65756B]">Cash accepted at venue counter &bull; Automated voucher verification.</p>
+              </div>
             </div>
           </div>
 
@@ -2610,5 +2905,22 @@ export default function OrganizerDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function OrganizerDashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#C8FF2E]" />
+            <span className="text-xs text-[#8A9E91] font-medium tracking-wide">Loading Faculty Portal...</span>
+          </div>
+        </div>
+      }
+    >
+      <OrganizerDashboardContent />
+    </Suspense>
   );
 }
