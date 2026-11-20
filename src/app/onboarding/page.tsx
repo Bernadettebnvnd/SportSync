@@ -547,6 +547,14 @@ function OnboardingContent() {
     );
   }
 
+  const handleSkipOnboarding = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sportsync_skipped_onboarding', 'true');
+      sessionStorage.removeItem('sportsync_just_registered');
+    }
+    router.replace(isOwner ? '/organizer' : '/');
+  };
+
   const handleBackToLogin = async () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_logged_out', 'true');
@@ -649,6 +657,7 @@ function OnboardingContent() {
           <div className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl min-h-screen min-h-[100dvh] bg-[#0B0F0C] sm:border-x sm:border-white/5 relative flex flex-col shadow-2xl">
             <PersonalizationScreen
               onBack={handleBackToLogin}
+              onSkip={handleSkipOnboarding}
               isEditing={false}
               initialValues={{
                 displayName: fullName || currentUser.full_name || (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : ''),

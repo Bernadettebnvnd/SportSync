@@ -196,7 +196,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         // For new signups, strictly require onboarding! For existing logins, proceed to dashboard if fields are complete.
         const actualOnboardingCompleted = isSignUp
           ? false
-          : (isExplicitlyCompleted || hasRequiredPlayerFields);
+          : (isExplicitlyCompleted || hasRequiredPlayerFields || data.user.onboarding_completed !== false);
 
         setAuthenticatedUser({
           id: data.user.id,
@@ -221,36 +221,43 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           localStorage.setItem('sportsync_user_email', data.user.email);
           localStorage.setItem('sportsync_user_role', assignedRole);
           localStorage.setItem('sportsync_user_name', data.user.full_name);
-          if (!actualOnboardingCompleted) {
+
+          if (isSignUp) {
+            // New registration strictly flags pending onboarding
+            sessionStorage.setItem('sportsync_just_registered', 'true');
             localStorage.setItem('sportsync_pending_onboarding', 'true');
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
-            localStorage.removeItem('sportsync_user_profile');
-            localStorage.removeItem('sportsync_user_city');
-            localStorage.removeItem('sportsync_user_sports');
+            localStorage.removeItem('sportsync_skipped_onboarding');
           } else {
+            // Returning user logging in: NEVER treat as new registration
+            sessionStorage.removeItem('sportsync_just_registered');
             localStorage.removeItem('sportsync_pending_onboarding');
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-            const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
-              ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
-              : ['Football'];
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                id: data.user.id,
-                name: data.user.full_name,
-                username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-                role: data.user.role,
-                city: data.user.city || 'Naga City',
-                primarySport: data.user.primary_sport || 'football',
-                preferredSports: userSports,
-                skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
+            if (actualOnboardingCompleted) {
+              localStorage.setItem('matchi_onboarding_completed', 'true');
+              localStorage.setItem('sportsync_onboarding_completed', 'true');
+              localStorage.removeItem('sportsync_skipped_onboarding');
+            }
           }
+
+          const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
+            ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+            : ['Football'];
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: data.user.id,
+              name: data.user.full_name,
+              username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
+              role: data.user.role,
+              city: data.user.city || 'Naga City',
+              primarySport: data.user.primary_sport || 'football',
+              preferredSports: userSports,
+              skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
+              onboardingCompleted: actualOnboardingCompleted,
+              isGuest: false,
+            })
+          );
         }
 
         const userRole = data.user?.role;
@@ -264,7 +271,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             ? `Account registered successfully! Welcome to SportSync.`
             : 'Welcome back! Signed in.'
         );
-        setTimeout(() => onSuccess(detectedRole, !actualOnboardingCompleted), 800);
+        setTimeout(() => onSuccess(detectedRole, isSignUp), 800);
       }
     } catch (err: unknown) {
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';

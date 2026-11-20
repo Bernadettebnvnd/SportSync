@@ -410,7 +410,7 @@ export function useSportSyncBridge() {
               if (Array.isArray(sp)) storedSports = sp.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
             } catch {}
           }
-          const finalCity = 'Naga City';
+          const finalCity = parsed.city || storedCity || store.currentUser.city || 'Naga City';
 
           const hasStaleDefaultSports = parsed.preferredSports?.length === 2 &&
             parsed.preferredSports.includes('Pickleball') &&
@@ -462,9 +462,7 @@ export function useSportSyncBridge() {
       levelTitle: getLevelTitle(1),
       xp: 0,
       xpNextLevel: 1000,
-      city: (store.currentUser.city && store.currentUser.city.toLowerCase().includes('naga'))
-        ? store.currentUser.city
-        : 'Naga City',
+      city: store.currentUser.city || (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location')) : null) || 'Naga City',
       primarySport: store.currentUser.primary_sport || 'football',
       preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
         ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))

@@ -37,8 +37,8 @@ export async function getCurrentUser(): Promise<User | null> {
         const meta = authUser.user_metadata || {};
         const effectiveSports = (meta.preferred_sports && meta.preferred_sports.length > 0)
           ? meta.preferred_sports
-          : (profile?.preferred_sports || ['football']);
-        const effectiveCity = meta.city || profile?.city || 'Naga City';
+          : (profile?.preferred_sports && profile.preferred_sports.length > 0 ? profile.preferred_sports : ['football']);
+        const effectiveCity = meta.city || profile?.city || '';
         const effectivePrimarySport = meta.primary_sport || profile?.primary_sport || (effectiveSports[0] || 'football');
         const effectiveSkill = meta.skill_level || profile?.skill_level || 'intermediate';
 
@@ -62,12 +62,19 @@ export async function getCurrentUser(): Promise<User | null> {
 
         const isUserComplete = isExplicitlyComplete || hasRequiredPlayerFields;
 
-        if (isUserComplete && profile?.id && profile.onboarding_completed !== true) {
-          supabase
-            .from('users')
-            .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
-            .eq('id', profile.id)
-            .then(() => {}, () => {});
+        if (isUserComplete) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.removeItem('sportsync_pending_onboarding');
+          }
+          if (profile?.id && profile.onboarding_completed !== true) {
+            supabase
+              .from('users')
+              .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+              .eq('id', profile.id)
+              .then(() => {}, () => {});
+          }
         }
 
         if (!profile) {

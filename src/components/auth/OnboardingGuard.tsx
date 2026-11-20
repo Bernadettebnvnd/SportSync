@@ -16,10 +16,11 @@ import { useMatchiStore } from '@/lib/store';
 export function OnboardingGuard() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoading } = useMatchiStore();
+  const { currentUser, isLoading, isInitialized } = useMatchiStore();
 
   useEffect(() => {
-    if (isLoading) return;
+    // 1. Do not evaluate or make redirect decisions while profile data is loading or uninitialized!
+    if (isLoading || !isInitialized) return;
 
     // Bypass check on callback & API paths to allow OAuth handshake & password reset
     const isExemptPath =
@@ -45,11 +46,6 @@ export function OnboardingGuard() {
     const isLoggedOut =
       typeof window !== 'undefined' &&
       localStorage.getItem('sportsync_logged_out') === 'true';
-
-    const hasPendingOnboarding =
-      !isLoggedOut &&
-      typeof window !== 'undefined' &&
-      localStorage.getItem('sportsync_pending_onboarding') === 'true';
 
     const storedUserId =
       !isLoggedOut && typeof window !== 'undefined'
@@ -102,50 +98,49 @@ export function OnboardingGuard() {
       storedRole === 'venue_owner' ||
       storedRole === 'facility_owner';
 
-    const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true');
-
+    // 2. Persistent Completion Check (authoritative from Supabase or verified local store)
     const hasStoredCompletion = typeof window !== 'undefined' && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     );
 
-    // If pending onboarding or explicitly incomplete, user cannot be considered complete
-    let isProfileComplete = false;
+    const hasExplicitCompletion = Boolean(
+      currentUser.onboarding_completed === true ||
+      currentUser.has_completed_onboarding === true ||
+      hasStoredCompletion
+    );
 
-    if (!isPending) {
-      const hasExplicitCompletion = Boolean(
-        currentUser.onboarding_completed === true ||
-        currentUser.has_completed_onboarding === true ||
-        hasStoredCompletion
-      );
+    const hasRequiredPlayerFields = !isOwner && Boolean(
+      currentUser.full_name &&
+      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
+      Array.isArray(currentUser.preferred_sports) &&
+      currentUser.preferred_sports.length > 0 &&
+      (currentUser.city || currentUser.skill_level)
+    );
 
-      const hasRequiredPlayerFields = !isOwner && Boolean(
-        currentUser.full_name &&
-        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-        Array.isArray(currentUser.preferred_sports) &&
-        currentUser.preferred_sports.length > 0 &&
-        (currentUser.city || currentUser.skill_level)
-      );
+    const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields;
 
-      isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields;
-    }
-
-    // Clean up stale pending onboarding flag only when genuinely complete
-    if (isProfileComplete && isPending && typeof window !== 'undefined') {
+    // Clean up stale pending onboarding flag when genuinely complete
+    if (isProfileComplete && typeof window !== 'undefined') {
       localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.setItem('sportsync_onboarding_completed', 'true');
     }
 
-    // CASE 1: Authenticated user with MISSING or INCOMPLETE profile attempting to access dashboard
-    // STRICT ROUTING: Under no circumstances allow access to dashboard until setup is done.
-    if (!isProfileComplete && !isOnboardingPath) {
-      const target = isOwner ? '/onboarding?role=owner' : '/onboarding';
+    // CASE 1: Already completed user visiting /onboarding -> Redirect to Dashboard
+    if (isProfileComplete && isOnboardingPath && !isLocalDevOrPreview) {
+      const target = isOwner ? '/organizer' : '/';
       router.replace(target);
       return;
     }
 
-    // CASE 2: Already onboarded user attempting to re-visit /onboarding
-    if (isProfileComplete && !isPending && isOnboardingPath && !isLocalDevOrPreview) {
-      const target = isOwner ? '/organizer' : '/';
+    // CASE 2: Incomplete profile access preservation
+    // Users who previously skipped or exited onboarding must NOT be trapped in an onboarding redirect loop.
+    // Only redirect to /onboarding if user just registered in this session AND has not explicitly skipped.
+    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
+    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
+
+    if (!isProfileComplete && !hasSkipped && isJustRegistered && !isOnboardingPath) {
+      const target = isOwner ? '/onboarding?role=owner' : '/onboarding';
       router.replace(target);
       return;
     }
@@ -158,6 +153,7 @@ export function OnboardingGuard() {
     currentUser.role,
     currentUser.full_name,
     isLoading,
+    isInitialized,
     router,
   ]);
 

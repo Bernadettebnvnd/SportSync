@@ -82,7 +82,7 @@ let globalState: AppState = {
   payments: [],
   bookings: [],
   emptyOpportunities: [],
-  isLoading: false,
+  isLoading: true,
   error: null,
 };
 
@@ -180,33 +180,34 @@ async function initializeStore() {
 
     const user = isExplicitlyLoggedOut ? null : await getCurrentUser();
     if (user) {
-      const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
       const isOwner = user.role === 'venue_owner' || user.role === 'organizer';
 
-      let isUserOnboarded = false;
-      if (!hasPendingOnboarding && user.onboarding_completed !== false && user.has_completed_onboarding !== false) {
-        const isExplicitlyComplete = Boolean(
-          user.onboarding_completed === true ||
-          user.has_completed_onboarding === true
-        );
-        const hasRequiredPlayerFields = !isOwner && Boolean(
-          user.full_name &&
-          !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
-          Array.isArray(user.preferred_sports) &&
-          user.preferred_sports.length > 0 &&
-          (user.city || user.skill_level)
-        );
-        isUserOnboarded = isExplicitlyComplete || hasRequiredPlayerFields;
-      }
+      // 1. Authoritative check from Supabase profile:
+      // If the Supabase user profile has onboarding_completed = true, this ALWAYS overrides local pending flags!
+      const isExplicitlyCompleteInDb = Boolean(
+        user.onboarding_completed === true ||
+        user.has_completed_onboarding === true
+      );
+
+      const hasRequiredPlayerFields = !isOwner && Boolean(
+        user.full_name &&
+        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
+        Array.isArray(user.preferred_sports) &&
+        user.preferred_sports.length > 0 &&
+        (user.city || user.skill_level)
+      );
+
+      const isUserOnboarded = isExplicitlyCompleteInDb || hasRequiredPlayerFields;
 
       user.onboarding_completed = isUserOnboarded;
       user.has_completed_onboarding = isUserOnboarded;
 
-      if (isUserOnboarded && typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_pending_onboarding');
-      } else if (!isUserOnboarded && typeof window !== 'undefined') {
-        localStorage.removeItem('matchi_onboarding_completed');
-        localStorage.removeItem('sportsync_onboarding_completed');
+      if (typeof window !== 'undefined') {
+        if (isUserOnboarded) {
+          localStorage.removeItem('sportsync_pending_onboarding');
+          localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
+        }
       }
 
       const storedCity = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location')) : null;
@@ -1196,6 +1197,7 @@ export function useMatchiStore() {
     bookings: globalState.bookings,
     emptyOpportunities: globalState.emptyOpportunities,
     isLoading: globalState.isLoading,
+    isInitialized: hasInitialized,
     error: globalState.error,
     activeMode: globalState.currentUser.active_mode || 'play',
     setActiveMode,

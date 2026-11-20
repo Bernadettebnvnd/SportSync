@@ -139,8 +139,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (isLoggingOutRef.current) return false;
     if (!isUserAuthenticated()) return false;
 
-    if (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true') {
-      return false;
+    if (typeof window !== 'undefined') {
+      if (localStorage.getItem('sportsync_skipped_onboarding') === 'true') {
+        return true;
+      }
+      if (localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+        return false;
+      }
     }
 
     const hasStoredCompletion = typeof window !== 'undefined' && (
@@ -223,8 +228,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       }
       return 'auth';
     }
-    // Strict Routing: Incomplete profiles MUST be routed directly to Profile Setup
-    if (!isUserOnboarded()) {
+    // Only route to onboarding if explicitly marked as a brand new registration in this session AND not skipped
+    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
+    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
+
+    if (isJustRegistered && !hasSkipped && !isUserOnboarded()) {
       const isOwner =
         bridge.store.currentUser.role === 'venue_owner' ||
         bridge.store.currentUser.role === 'organizer' ||
@@ -667,6 +675,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_logged_out', 'true');
       localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.removeItem('sportsync_skipped_onboarding');
+      localStorage.removeItem('sportsync_onboarding_completed');
+      localStorage.removeItem('matchi_onboarding_completed');
+      sessionStorage.removeItem('sportsync_just_registered');
       localStorage.removeItem('sportsync_user_id');
       localStorage.removeItem('sportsync_user_email');
       localStorage.removeItem('sportsync_user_name');
@@ -817,13 +829,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 } else {
                   navigateTo(isNewAccount ? 'faculty-setup' : 'home');
                 }
-              } else if (isNewAccount || !isUserOnboarded()) {
+              } else if (isNewAccount) {
+                // ONLY brand new registered accounts are directed to onboarding!
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
                 } else {
                   navigateTo('personalization');
                 }
               } else {
+                // Returning user logging in: ALWAYS proceed directly to dashboard!
                 if (guestPrompt.pendingAction) {
                   const act = guestPrompt.pendingAction;
                   setGuestPrompt({ isOpen: false });
@@ -866,10 +880,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (isEditing) {
                 goBack();
               } else {
-                // User does not want to continue onboarding:
-                // Log out cleanly and put them back to the login screen
-                await handleLogout();
+                // User exited onboarding: allow access to dashboard without redirect loop
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('sportsync_skipped_onboarding', 'true');
+                  sessionStorage.removeItem('sportsync_just_registered');
+                }
+                navigateTo('home');
               }
+            }}
+            onSkip={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('sportsync_skipped_onboarding', 'true');
+                sessionStorage.removeItem('sportsync_just_registered');
+              }
+              navigateTo('home');
             }}
             isEditing={isEditing}
             initialValues={personalizationDraft || {

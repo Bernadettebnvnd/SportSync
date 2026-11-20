@@ -20,6 +20,7 @@ export interface PersonalizationDraftData {
 
 interface PersonalizationScreenProps {
   onBack?: () => void;
+  onSkip?: () => void;
   isEditing?: boolean;
   initialValues?: PersonalizationDraftData;
   onDraftChange?: (draft: PersonalizationDraftData) => void;
@@ -35,6 +36,7 @@ interface PersonalizationScreenProps {
 
 export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   onBack,
+  onSkip,
   isEditing,
   initialValues,
   onDraftChange,
@@ -222,27 +224,38 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   return (
     <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-4 sm:pt-6 select-none overflow-y-auto no-scrollbar">
       <div className="space-y-6">
-        {/* Header with Back Button */}
+        {/* Header with Back Button and Skip Option */}
         <div>
-          <div className="flex items-center gap-3 mb-2">
-            {onBack && (
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+                  aria-label="Go back to previous screen"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              )}
+              <div>
+                <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
+                  {isEditing ? 'Account & Profile • Preferences' : 'Player Onboarding • Preferences'}
+                </span>
+                <h2 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0]">
+                  {isEditing ? 'Edit Profile & Preferences' : 'Profile & Playing Preferences'}
+                </h2>
+              </div>
+            </div>
+            {!isEditing && onSkip && (
               <button
                 type="button"
-                onClick={handleBack}
-                className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-                aria-label="Go back to previous screen"
+                onClick={onSkip}
+                className="text-xs text-[#A5B0A6] hover:text-[#C8FF2E] font-semibold px-2.5 py-1.5 rounded-xl bg-[#141A15] border border-white/5 transition-colors shrink-0"
               >
-                <ArrowLeft className="w-4 h-4" />
+                Skip for now
               </button>
             )}
-            <div>
-              <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
-                {isEditing ? 'Account & Profile • Preferences' : 'Player Onboarding • Preferences'}
-              </span>
-              <h2 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0]">
-                {isEditing ? 'Edit Profile & Preferences' : 'Profile & Playing Preferences'}
-              </h2>
-            </div>
           </div>
           <p className="text-xs text-[#A5B0A6] mt-0.5">
             SportSync connects you with compatible local players and complete rosters.
@@ -494,7 +507,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       </div>
 
       {/* Complete Button */}
-      <div className="pt-6 pb-2">
+      <div className="pt-6 pb-2 space-y-2">
         <Button
           variant="primary"
           size="lg"
@@ -504,6 +517,15 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
           <span>{isEditing ? 'Save Changes' : 'Complete Onboarding & Play'}</span>
           <ArrowRight className="w-4 h-4 ml-1" />
         </Button>
+        {!isEditing && onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#C8FF2E] transition-colors py-2 font-medium"
+          >
+            Skip for now &bull; Explore Dashboard
+          </button>
+        )}
       </div>
     </div>
   );
