@@ -970,38 +970,47 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 ((Array.isArray(authedUser?.preferred_sports) && authedUser.preferred_sports.length > 0) || authedUser?.primary_sport) ||
                 isUserOnboarded();
 
-              if (isOwner) {
-                const ownerProceedToDashboard = !isNewAccount || isAlreadyComplete;
-                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                  window.location.href = ownerProceedToDashboard ? '/organizer' : '/onboarding?role=owner';
+              if (isNewAccount) {
+                // Newly registered account -> Always route to Setup!
+                if (isOwner) {
+                  if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                    window.location.href = '/onboarding?role=owner';
+                  } else {
+                    navigateTo('faculty-setup');
+                  }
                 } else {
-                  navigateTo(ownerProceedToDashboard ? 'home' : 'faculty-setup');
-                }
-              } else if (isNewAccount && !isAlreadyComplete) {
-                // Newly registered Player account -> Player Profile Setup
-                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                  window.location.href = '/onboarding';
-                } else {
-                  navigateTo('personalization');
-                }
-              } else {
-                // Existing Player account with completed profile -> Directly to Player Dashboard
-                if (typeof window !== 'undefined') {
-                  sessionStorage.removeItem('sportsync_just_registered');
-                  localStorage.removeItem('sportsync_pending_onboarding');
-                  localStorage.setItem('sportsync_onboarding_completed', 'true');
-                  localStorage.setItem('matchi_onboarding_completed', 'true');
-                  if (!window.location.port.includes('5173') && window.location.pathname.includes('/onboarding')) {
-                    window.location.href = '/';
-                    return;
+                  if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                    window.location.href = '/onboarding';
+                  } else {
+                    navigateTo('personalization');
                   }
                 }
-                if (guestPrompt.pendingAction) {
-                  const act = guestPrompt.pendingAction;
-                  setGuestPrompt({ isOpen: false });
-                  act();
+              } else {
+                // Existing account logging in -> Directly to Dashboard!
+                if (isOwner) {
+                  if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                    window.location.href = '/organizer';
+                  } else {
+                    navigateTo('home');
+                  }
                 } else {
-                  navigateTo('home');
+                  if (typeof window !== 'undefined') {
+                    sessionStorage.removeItem('sportsync_just_registered');
+                    localStorage.removeItem('sportsync_pending_onboarding');
+                    localStorage.setItem('sportsync_onboarding_completed', 'true');
+                    localStorage.setItem('matchi_onboarding_completed', 'true');
+                    if (!window.location.port.includes('5173') && window.location.pathname.includes('/onboarding')) {
+                      window.location.href = '/';
+                      return;
+                    }
+                  }
+                  if (guestPrompt.pendingAction) {
+                    const act = guestPrompt.pendingAction;
+                    setGuestPrompt({ isOpen: false });
+                    act();
+                  } else {
+                    navigateTo('home');
+                  }
                 }
               }
             }}

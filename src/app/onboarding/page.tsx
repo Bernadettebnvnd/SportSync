@@ -178,11 +178,7 @@ function OnboardingContent() {
       router.replace('/');
       return;
     }
-    if (isCompleted) {
-      const target = isOwner ? '/organizer' : '/';
-      router.replace(target);
-    }
-  }, [isGuest, isCompleted, isOwner, isExplicitPreview, router]);
+  }, [isGuest, isExplicitPreview, router]);
 
   React.useEffect(() => {
     if (isFacilityUrl) {

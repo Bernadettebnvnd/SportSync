@@ -117,6 +117,19 @@ export function Navbar() {
             </Link>
 
             <Link
+              href="/onboarding"
+              className={cn(
+                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                pathname === '/onboarding'
+                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Profile Setup</span>
+            </Link>
+
+            <Link
               href="/organizer"
               className={cn(
                 'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
@@ -151,12 +164,22 @@ export function Navbar() {
             </button>
 
             {isFacilityView ? (
-              <Link
-                href="/"
-                className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#d4ff52] transition-all press-scale shadow-sm"
-              >
-                Back to Player App
-              </Link>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsOwnerModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#C8FF2E] bg-[#1C241E] border border-[#C8FF2E]/30 hover:bg-[#263028] transition-all press-scale flex items-center gap-1"
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Facility Setup</span>
+                </button>
+                <Link
+                  href="/"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#d4ff52] transition-all press-scale shadow-sm"
+                >
+                  Back to Player App
+                </Link>
+              </div>
             ) : (
               <>
                 {isOwnerOrAdmin && (
