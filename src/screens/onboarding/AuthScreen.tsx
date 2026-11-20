@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Lock, ArrowLeft, ArrowRight, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, ArrowRight, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff, RotateCw } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { APP_CONFIG } from '../../config/appConfig';
 import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
@@ -35,10 +35,73 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPasswordReset, setIsPasswordReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => {
+      setCooldown((c) => (c > 0 ? c - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown]);
 
   useEffect(() => {
     setIsSignUp(initialMode === 'signup');
   }, [initialMode]);
+
+  const handleSendResetEmail = async (targetEmail: string) => {
+    const trimmedEmail = targetEmail.trim().toLowerCase();
+    const emailValidation = validateRealEmail(trimmedEmail);
+    if (!emailValidation.isValid) {
+      setErrorMessage(emailValidation.error || 'Please enter a valid email address.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured) {
+      setErrorMessage('Authentication service is currently unconfigured or unavailable. Please verify that Supabase environment variables are set.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Dynamic origin handles both localhost (http://localhost:3000/auth/callback) and production (https://sportsync.ph/auth/callback)
+      const redirectUrl =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/auth/callback`
+          : 'https://sportsync.ph/auth/callback';
+
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: redirectUrl,
+      });
+
+      if (resetErr) {
+        const msg = resetErr.message || '';
+        if (msg.toLowerCase().includes('for security purposes') || msg.toLowerCase().includes('rate limit') || resetErr.status === 429) {
+          setCooldown(60);
+          throw new Error('For security purposes, you can only request a reset link once every 60 seconds. Please check your inbox or wait before retrying.');
+        }
+        throw new Error(msg || 'Failed to send reset link.');
+      }
+
+      setResetSent(true);
+      setCooldown(60);
+      setSuccessMessage(`Password reset link sent to ${trimmedEmail}! Please check your inbox and spam folder.`);
+    } catch (err: unknown) {
+      let msg = err instanceof Error ? err.message : 'Failed to send reset link.';
+      if (msg === 'Failed to fetch') {
+        msg = 'Unable to reach the authentication service. Please verify your connection.';
+      }
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,30 +131,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     // Password reset flow
     if (isPasswordReset) {
-      try {
-        const supabase = getSupabaseClient();
-        if (supabase && isSupabaseConfigured) {
-          const redirectUrl =
-            typeof window !== 'undefined'
-              ? `${window.location.origin}/auth/callback?next=/reset-password`
-              : 'https://sportsync.ph/auth/callback?next=/reset-password';
-
-          const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-            redirectTo: redirectUrl,
-          });
-          if (error) throw error;
-        }
-        setSuccessMessage('Password reset link sent! Check your inbox.');
-        setTimeout(() => setIsPasswordReset(false), 2500);
-      } catch (err: unknown) {
-        let msg = err instanceof Error ? err.message : 'Failed to send reset link.';
-        if (msg === 'Failed to fetch') {
-          msg = 'Unable to reach the authentication service. Please verify your connection.';
-        }
-        setErrorMessage(msg);
-      } finally {
-        setIsLoading(false);
-      }
+      await handleSendResetEmail(trimmedEmail);
       return;
     }
 
@@ -241,10 +281,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     <div className="relative w-full h-full flex flex-col justify-between bg-[#0B0F0C] p-4 sm:p-6 pt-5 sm:pt-8 select-none overflow-y-auto no-scrollbar">
       {/* Top Header */}
       <div>
-        {canGoBack && onBack && (
+        {(isPasswordReset || (canGoBack && onBack)) && (
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => {
+              if (isPasswordReset) {
+                setIsPasswordReset(false);
+                setResetSent(false);
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              } else if (onBack) {
+                onBack();
+              }
+            }}
             aria-label="Go back"
             className="w-10 h-10 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors mb-6"
           >
@@ -263,14 +312,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
           <h2 className="font-display font-bold text-2xl text-[#F4F7F0] tracking-tight">
             {isPasswordReset
-              ? 'Reset your password'
+              ? resetSent
+                ? 'Check Your Inbox'
+                : 'Reset your password'
               : isSignUp
                 ? 'Create Account'
                 : 'Welcome back'}
           </h2>
           <div className="text-xs text-[#A5B0A6] mt-1 font-medium">
             {isPasswordReset ? (
-              <span>Enter your email to receive a recovery link</span>
+              <span>
+                {resetSent
+                  ? 'We sent a recovery link to your email'
+                  : 'Enter your email to receive a recovery link'}
+              </span>
             ) : isSignUp ? (
               <span>Find Players. Play Together.</span>
             ) : (
@@ -389,164 +444,238 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
         )}
 
-        {/* Form Fields */}
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {isSignUp && !isPasswordReset && (
-            <div>
-              <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block mb-1.5 ml-1">
-                {selectedRole === 'facility_owner' ? 'Contact / Owner Name' : 'Full Name'}
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
-                placeholder={selectedRole === 'facility_owner' ? 'e.g. Alex Morgan' : 'e.g. Alex Rivera'}
-                required
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block mb-1.5 ml-1">
-              Email Address
-            </label>
-            <div className="relative flex items-center">
-              <Mail className="absolute left-3.5 w-4 h-4 text-[#6F7B71]" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                className="w-full h-12 pl-10 pr-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
-                placeholder="your.email@sport.com"
-                required
-              />
-            </div>
-          </div>
-
-          {!isPasswordReset && (
-            <div>
-              <div className="flex items-center justify-between mb-1.5 ml-1">
-                <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block">
-                  Password
-                </label>
-                {!isSignUp && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsPasswordReset(true);
-                      setErrorMessage(null);
-                    }}
-                    className="text-[11px] text-[#C8FF2E] hover:underline"
-                  >
-                    Forgot password?
-                  </button>
-                )}
+        {/* Form Fields & Confirmation State */}
+        {isPasswordReset && resetSent ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-[#141A15] border border-white/10 text-center space-y-3">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 text-[#C8FF2E] flex items-center justify-center">
+                <Mail className="w-6 h-6" />
               </div>
-              <div className="relative flex items-center">
-                <Lock className="absolute left-3.5 w-4 h-4 text-[#6F7B71]" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="w-full h-12 pl-10 pr-11 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
-                  placeholder="Min. 6 characters"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 text-[#6F7B71] hover:text-[#C8FF2E] transition-colors p-1"
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <Button
-            variant="primary"
-            size="lg"
-            type="submit"
-            disabled={isLoading}
-            className="w-full mt-4 font-bold shadow-[0_8px_24px_rgba(200,255,46,0.25)]"
-          >
-            {isLoading
-              ? 'Connecting...'
-              : isPasswordReset
-                ? 'Send Reset Link'
-                : isSignUp
-                  ? selectedRole === 'facility_owner'
-                    ? 'Register Facility & Continue'
-                    : 'Create Account'
-                  : 'Log In'}
-          </Button>
-
-          {!isPasswordReset && (
-            <div className="text-center pt-2">
-              {isSignUp ? (
-                <p className="text-xs text-[#A5B0A6]">
-                  Already have an account?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSignUp(false);
-                      setErrorMessage(null);
-                    }}
-                    className="text-[#C8FF2E] font-semibold hover:underline"
-                  >
-                    Log In
-                  </button>
+              <div>
+                <h3 className="text-base font-bold text-[#F4F7F0]">Check your inbox</h3>
+                <p className="text-xs text-[#A5B0A6] mt-1.5 leading-relaxed">
+                  We’ve dispatched a recovery link to{' '}
+                  <span className="font-semibold text-[#F4F7F0]">{email}</span>. Click the link in your email to choose a new password.
                 </p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs text-[#A5B0A6]">
-                    Don't have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSignUp(true);
-                        setErrorMessage(null);
-                      }}
-                      className="text-[#C8FF2E] font-semibold hover:underline"
-                    >
-                      Create an account
-                    </button>
-                  </p>
-                </div>
-              )}
+              </div>
+              <div className="text-[11px] text-[#6F7B71] bg-[#0B0F0C] p-2.5 rounded-xl border border-white/5 leading-relaxed">
+                Tip: If you do not see the email within 1-2 minutes, check your spam or junk folder.
+              </div>
             </div>
-          )}
 
-          {isPasswordReset && (
-            <div className="space-y-2 pt-2 text-center">
+            {/* Resend Action with Supabase Cooldown */}
+            <Button
+              variant="primary"
+              size="lg"
+              type="button"
+              onClick={() => handleSendResetEmail(email)}
+              disabled={isLoading || cooldown > 0}
+              className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.25)] flex items-center justify-center gap-2"
+            >
+              <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading
+                ? 'Sending...'
+                : cooldown > 0
+                  ? `Resend link in ${cooldown}s`
+                  : 'Resend Reset Link'}
+            </Button>
+
+            <div className="space-y-2 pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setResetSent(false);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className="w-full text-center text-xs text-[#C8FF2E] hover:underline font-semibold block"
+              >
+                Use a different email address
+              </button>
+
               {onNavigateToResetPassword && (
                 <button
                   type="button"
                   onClick={onNavigateToResetPassword}
-                  className="w-full text-center text-xs text-[#C8FF2E] hover:underline font-semibold block"
+                  className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#F4F7F0] block"
                 >
                   Already have a recovery link? Reset password here
                 </button>
               )}
+
               <button
                 type="button"
-                onClick={() => setIsPasswordReset(false)}
-                className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#F4F7F0]"
+                onClick={() => {
+                  setIsPasswordReset(false);
+                  setResetSent(false);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className="w-full text-center text-xs text-[#6F7B71] hover:text-[#A5B0A6] block"
               >
                 Back to Sign In
               </button>
             </div>
-          )}
-        </form>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            {isSignUp && !isPasswordReset && (
+              <div>
+                <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block mb-1.5 ml-1">
+                  {selectedRole === 'facility_owner' ? 'Contact / Owner Name' : 'Full Name'}
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
+                  placeholder={selectedRole === 'facility_owner' ? 'e.g. Alex Morgan' : 'e.g. Alex Rivera'}
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block mb-1.5 ml-1">
+                Email Address
+              </label>
+              <div className="relative flex items-center">
+                <Mail className="absolute left-3.5 w-4 h-4 text-[#6F7B71]" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full h-12 pl-10 pr-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
+                  placeholder="your.email@sport.com"
+                  required
+                />
+              </div>
+            </div>
+
+            {!isPasswordReset && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5 ml-1">
+                  <label className="text-[11px] font-semibold text-[#A5B0A6] uppercase tracking-wider block">
+                    Password
+                  </label>
+                  {!isSignUp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPasswordReset(true);
+                        setErrorMessage(null);
+                      }}
+                      className="text-[11px] text-[#C8FF2E] hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative flex items-center">
+                  <Lock className="absolute left-3.5 w-4 h-4 text-[#6F7B71]" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full h-12 pl-10 pr-11 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] focus:outline-none focus:border-[#C8FF2E]"
+                    placeholder="Min. 6 characters"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 text-[#6F7B71] hover:text-[#C8FF2E] transition-colors p-1"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <Button
+              variant="primary"
+              size="lg"
+              type="submit"
+              disabled={isLoading}
+              className="w-full mt-4 font-bold shadow-[0_8px_24px_rgba(200,255,46,0.25)]"
+            >
+              {isLoading
+                ? 'Connecting...'
+                : isPasswordReset
+                  ? 'Send Reset Link'
+                  : isSignUp
+                    ? selectedRole === 'facility_owner'
+                      ? 'Register Facility & Continue'
+                      : 'Create Account'
+                    : 'Log In'}
+            </Button>
+
+            {!isPasswordReset && (
+              <div className="text-center pt-2">
+                {isSignUp ? (
+                  <p className="text-xs text-[#A5B0A6]">
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSignUp(false);
+                        setErrorMessage(null);
+                      }}
+                      className="text-[#C8FF2E] font-semibold hover:underline"
+                    >
+                      Log In
+                    </button>
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-[#A5B0A6]">
+                      Don't have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSignUp(true);
+                          setErrorMessage(null);
+                        }}
+                        className="text-[#C8FF2E] font-semibold hover:underline"
+                      >
+                        Create an account
+                      </button>
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isPasswordReset && (
+              <div className="space-y-2 pt-2 text-center">
+                {onNavigateToResetPassword && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToResetPassword}
+                    className="w-full text-center text-xs text-[#C8FF2E] hover:underline font-semibold block"
+                  >
+                    Already have a recovery link? Reset password here
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordReset(false)}
+                  className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#F4F7F0]"
+                >
+                  Back to Sign In
+                </button>
+              </div>
+            )}
+          </form>
+        )}
       </div>
     </div>
   );
