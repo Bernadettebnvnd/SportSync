@@ -92,32 +92,38 @@ export function OnboardingGuard() {
     const isOwner =
       currentUser.role === 'venue_owner' ||
       currentUser.role === 'organizer' ||
+      (currentUser.role as string) === 'facility_owner' ||
+      (currentUser.role as string) === 'faculty' ||
       storedRole === 'venue_owner' ||
-      storedRole === 'facility_owner';
+      storedRole === 'facility_owner' ||
+      storedRole === 'organizer' ||
+      storedRole === 'faculty';
+
+    const isPending = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
 
     // 2. Persistent Completion Check (authoritative from Supabase or verified local store)
-    const hasStoredCompletion = typeof window !== 'undefined' && (
+    const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     );
 
     const hasExplicitCompletion = Boolean(
-      currentUser.onboarding_completed === true ||
+      !isPending &&
+      (currentUser.onboarding_completed === true ||
       currentUser.has_completed_onboarding === true ||
-      hasStoredCompletion
+      hasStoredCompletion)
     );
 
-    const hasRequiredPlayerFields = !isOwner && Boolean(
+    const hasRequiredPlayerFields = !isOwner && !isPending && Boolean(
       currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
       ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-      (currentUser.city || currentUser.skill_level)
+      (currentUser.city || currentUser.skill_level) &&
+      currentUser.onboarding_completed !== false
     );
 
-    const hasRequiredOwnerFields = isOwner && Boolean(
-      currentUser.full_name &&
-      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-      (currentUser.city || (currentUser as any).phone || hasExplicitCompletion)
+    const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
+      hasExplicitCompletion
     );
 
     const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields;
@@ -128,22 +134,43 @@ export function OnboardingGuard() {
       localStorage.setItem('sportsync_onboarding_completed', 'true');
     }
 
-    // CASE 1: Already completed user visiting /onboarding -> Redirect to Dashboard
-    if (isProfileComplete && isOnboardingPath && !isExplicitPreview) {
-      const target = isOwner ? '/organizer' : '/';
+    // FACULTY RESTRICTION & PORTAL GUARD:
+    // Once logged in as Faculty, the user must remain in the Faculty Portal.
+    // Faculty users must NEVER access the Player Dashboard (/).
+    if (isOwner) {
+      if (pathname === '/' || pathname === '/explore') {
+        const target = isProfileComplete ? '/organizer' : '/onboarding?role=owner';
+        router.replace(target);
+        return;
+      }
+      if (pathname === '/organizer' && !isProfileComplete) {
+        router.replace('/onboarding?role=owner');
+        return;
+      }
+      if (isOnboardingPath && isProfileComplete && !isExplicitPreview) {
+        router.replace('/organizer');
+        return;
+      }
+      return;
+    }
+
+    // PLAYER RESTRICTION & ONBOARDING GUARD:
+    // Players must never access the Faculty Portal (/organizer).
+    if (pathname.startsWith('/organizer')) {
+      const target = isProfileComplete ? '/' : '/onboarding';
       router.replace(target);
       return;
     }
 
-    // CASE 2: Incomplete profile access preservation
-    // Users who previously skipped or exited onboarding must NOT be trapped in an onboarding redirect loop.
-    // Only redirect to /onboarding if user just registered in this session AND has not explicitly skipped.
-    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
-    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
+    // Incomplete Player accounts MUST go to Player Profile Setup first
+    if (!isProfileComplete && !isOnboardingPath && !isExplicitPreview) {
+      router.replace('/onboarding');
+      return;
+    }
 
-    if (!isProfileComplete && !hasSkipped && isJustRegistered && !isOnboardingPath) {
-      const target = isOwner ? '/onboarding?role=owner' : '/onboarding';
-      router.replace(target);
+    // Completed Player accounts visiting /onboarding go to Player Dashboard
+    if (isProfileComplete && isOnboardingPath && !isExplicitPreview) {
+      router.replace('/');
       return;
     }
   }, [

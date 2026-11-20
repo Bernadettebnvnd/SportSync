@@ -432,19 +432,8 @@ export async function isProfileCompleteInDb(
       }
     }
 
-    // Facility owners with an active profile are considered complete to avoid repetitive onboarding loops
-    const facultyName = (profile?.full_name || authMetadata?.full_name || '').trim();
-    const isGenericFacultyName = !facultyName || ['player', 'guest player', 'guest'].includes(facultyName.toLowerCase());
-    if (!isGenericFacultyName || profile?.city || profile?.phone || profile?.email || authMetadata?.email) {
-      if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
-        dbClient
-          .from('users')
-          .update({ onboarding_completed: true, role: 'venue_owner', updated_at: new Date().toISOString() })
-          .eq('id', profile.id)
-          .then(() => {}, () => {});
-      }
-      return true;
-    }
+    // Facility owners without registered venues or explicit onboarding flag must complete setup
+    return false;
   }
 
   // 3. For players (and general profiles), check if required setup fields are complete
@@ -473,6 +462,11 @@ export async function isProfileCompleteInDb(
   const hasSports = parsedSports.length > 0 || Boolean(profile?.primary_sport || authMetadata?.primary_sport);
   const hasCity = Boolean(profile?.city || authMetadata?.city);
   const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
+
+  // If the profile is explicitly incomplete, require onboarding
+  if (profile?.onboarding_completed === false && authMetadata?.onboarding_completed === false) {
+    return false;
+  }
 
   // If the user has a real name and sports selected, and has city or skill, their profile is complete
   if (!isGenericName && hasSports && (hasCity || hasSkill)) {

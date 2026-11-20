@@ -141,6 +141,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (isLoggingOutRef.current) return false;
     if (!isUserAuthenticated()) return false;
 
+    if (typeof window !== 'undefined') {
+      if (localStorage.getItem('sportsync_pending_onboarding') === 'true') {
+        return false;
+      }
+    }
+
     const userRoleStr = (bridge.store.currentUser.role as string) || '';
     const isOwner =
       userRoleStr === 'venue_owner' ||
@@ -150,7 +156,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       (typeof window !== 'undefined' && (
         localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
         localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
-        localStorage.getItem('sportsync_user_role') === 'organizer'
+        localStorage.getItem('sportsync_user_role') === 'organizer' ||
+        localStorage.getItem('sportsync_user_role') === 'faculty'
       ));
 
     // Check explicit profile completion flags
@@ -165,6 +172,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       bridge.store.currentUser.has_completed_onboarding === true ||
       hasStoredCompletion
     );
+
+    if (bridge.store.currentUser.onboarding_completed === false) {
+      return false;
+    }
+
+    if (isOwner) {
+      return isExplicitlyComplete;
+    }
 
     // Check whether existing profile has required setup fields filled
     const effectiveName = (bridge.store.currentUser.full_name || bridge.userProfile.name || '').trim();
@@ -181,15 +196,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       bridge.userProfile.skillLevel
     );
 
-    const hasRequiredOwnerFields = Boolean(
-      isOwner && hasValidName && (hasLocationOrSkill || bridge.venues.length > 0 || isExplicitlyComplete)
-    );
-
     const hasRequiredPlayerFields = Boolean(
       !isOwner && hasValidName && hasSports && hasLocationOrSkill
     );
 
-    const isComplete = isExplicitlyComplete || hasRequiredPlayerFields || hasRequiredOwnerFields;
+    const isComplete = isExplicitlyComplete || hasRequiredPlayerFields;
 
     if (isComplete) {
       if (typeof window !== 'undefined') {
@@ -198,15 +209,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         localStorage.setItem('matchi_onboarding_completed', 'true');
       }
       return true;
-    }
-
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem('sportsync_skipped_onboarding') === 'true') {
-        return true;
-      }
-      if (localStorage.getItem('sportsync_pending_onboarding') === 'true') {
-        return false;
-      }
     }
 
     return false;
@@ -248,20 +250,35 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!isUserAuthenticated()) {
       return 'landing';
     }
-    // Only route to onboarding if explicitly marked as a brand new registration in this session AND not skipped
-    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
-    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
 
-    if (isJustRegistered && !hasSkipped && !isUserOnboarded()) {
-      const isOwner =
-        bridge.store.currentUser.role === 'venue_owner' ||
-        bridge.store.currentUser.role === 'organizer' ||
-        (typeof window !== 'undefined' && (
-          localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
-          localStorage.getItem('sportsync_user_role') === 'facility_owner'
-        ));
-      return isOwner ? 'faculty-setup' : 'personalization';
+    const userRoleStr = (bridge.store.currentUser.role as string) || '';
+    const isOwner =
+      userRoleStr === 'venue_owner' ||
+      userRoleStr === 'organizer' ||
+      userRoleStr === 'facility_owner' ||
+      userRoleStr === 'faculty' ||
+      (typeof window !== 'undefined' && (
+        localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+        localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
+        localStorage.getItem('sportsync_user_role') === 'organizer' ||
+        localStorage.getItem('sportsync_user_role') === 'faculty'
+      ));
+
+    // Faculty accounts must remain in the Faculty Portal and never access Player Dashboard
+    if (isOwner) {
+      if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+        const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+        window.location.href = target;
+        return 'splash';
+      }
+      return 'faculty-setup';
     }
+
+    // Players: Incomplete accounts must go to Player Profile Setup first
+    if (!isUserOnboarded()) {
+      return 'personalization';
+    }
+
     return 'home';
   };
 
@@ -497,25 +514,41 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
   }, [initialScreen]);
 
-  // Automatically route authenticated returning users away from the public landing page to their dashboard
+  // Automatically route authenticated users away from the public landing page to their appropriate destination
   useEffect(() => {
     if (bridge.store.isLoading || isLoggingOutRef.current || currentScreen !== 'landing') {
       return;
     }
     if (isUserAuthenticated()) {
-      const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
-      const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
-      if (isJustRegistered && !hasSkipped && !isUserOnboarded()) {
-        const isOwner =
-          bridge.store.currentUser.role === 'venue_owner' ||
-          bridge.store.currentUser.role === 'organizer' ||
-          (typeof window !== 'undefined' && (
-            localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
-            localStorage.getItem('sportsync_user_role') === 'facility_owner'
-          ));
-        const target: ScreenId = isOwner ? 'faculty-setup' : 'personalization';
-        setCurrentScreen(target);
-        setScreenHistory([target]);
+      const userRoleStr = (bridge.store.currentUser.role as string) || '';
+      const isOwner =
+        userRoleStr === 'venue_owner' ||
+        userRoleStr === 'organizer' ||
+        userRoleStr === 'facility_owner' ||
+        userRoleStr === 'faculty' ||
+        (typeof window !== 'undefined' && (
+          localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+          localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
+          localStorage.getItem('sportsync_user_role') === 'organizer' ||
+          localStorage.getItem('sportsync_user_role') === 'faculty'
+        ));
+
+      // Faculty accounts must remain in the Faculty Portal
+      if (isOwner) {
+        if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+          const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+          window.location.href = target;
+          return;
+        }
+        setCurrentScreen('faculty-setup');
+        setScreenHistory(['faculty-setup']);
+        return;
+      }
+
+      // Player accounts
+      if (!isUserOnboarded()) {
+        setCurrentScreen('personalization');
+        setScreenHistory(['personalization']);
       } else {
         setCurrentScreen('home');
         setScreenHistory(['home']);
@@ -523,17 +556,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
   }, [bridge.store.isLoading, bridge.store.currentUser.id, bridge.userProfile.id, currentScreen]);
 
-  // Strict Routing: Route newly registered users with incomplete profiles to setup.
-  // Existing accounts logging in must proceed directly to their dashboard.
+  // Strict Routing: Route users with incomplete profiles to setup.
+  // Existing accounts logging in with completed profiles proceed directly to their dashboard.
   useEffect(() => {
-    if (bridge.store.isLoading || isLoggingOutRef.current || !isUserAuthenticated() || isUserOnboarded()) {
-      return;
-    }
-    // Only force redirect to setup if user genuinely just registered in this session AND has not completed or skipped setup
-    const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
-    const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
-
-    if (!isJustRegistered || hasSkipped) {
+    if (bridge.store.isLoading || isLoggingOutRef.current || !isUserAuthenticated()) {
       return;
     }
 
@@ -546,15 +572,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       (typeof window !== 'undefined' && (
         localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
         localStorage.getItem('sportsync_user_role') === 'facility_owner' ||
-        localStorage.getItem('sportsync_user_role') === 'organizer'
+        localStorage.getItem('sportsync_user_role') === 'organizer' ||
+        localStorage.getItem('sportsync_user_role') === 'faculty'
       ));
-    const setupScreen: ScreenId = isOwner ? 'faculty-setup' : 'personalization';
-    const allowedScreens: ScreenId[] = ['landing', 'personalization', 'faculty-setup', 'auth', 'invitation-landing', 'splash'];
-    if (!allowedScreens.includes(currentScreen)) {
+
+    // Faculty accounts: strictly redirect to Faculty Portal or Faculty Setup
+    if (isOwner) {
       if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-        window.location.href = isOwner ? '/onboarding?role=owner' : '/onboarding';
-      } else {
-        setCurrentScreen(setupScreen);
+        const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+        window.location.href = target;
+        return;
+      }
+      if (currentScreen !== 'faculty-setup' && currentScreen !== 'auth' && currentScreen !== 'splash') {
+        setCurrentScreen('faculty-setup');
+      }
+      return;
+    }
+
+    // Players: If incomplete, redirect to Player Profile Setup
+    if (!isUserOnboarded()) {
+      const allowedScreens: ScreenId[] = ['landing', 'personalization', 'auth', 'invitation-landing', 'splash', 'reset-password'];
+      if (!allowedScreens.includes(currentScreen)) {
+        if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+          window.location.href = '/onboarding';
+        } else {
+          setCurrentScreen('personalization');
+        }
       }
     }
   }, [bridge.store.isLoading, bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, bridge.store.currentUser.role, currentScreen]);
@@ -957,21 +1000,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               const isOwner =
                 role === 'facility_owner' ||
                 authedUser?.role === 'venue_owner' ||
+                authedUser?.role === 'facility_owner' ||
+                authedUser?.role === 'faculty' ||
                 authedUser?.role === 'organizer';
 
-              // Determine if this user already has an active, completed profile:
-              // 1. If isNewAccount is explicitly false, they are an existing user
-              // 2. Check profile fields on authedUser
-              // 3. Fall back to isUserOnboarded()
-              const isAlreadyComplete =
-                !isNewAccount ||
-                authedUser?.onboarding_completed === true ||
-                authedUser?.has_completed_onboarding === true ||
-                ((Array.isArray(authedUser?.preferred_sports) && authedUser.preferred_sports.length > 0) || authedUser?.primary_sport) ||
-                isUserOnboarded();
-
+              // Newly registered accounts MUST go to profile setup first!
               if (isNewAccount) {
-                // Newly registered account -> Always route to Setup!
                 if (isOwner) {
                   if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                     window.location.href = '/onboarding?role=owner';
@@ -985,32 +1019,54 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     navigateTo('personalization');
                   }
                 }
-              } else {
-                // Existing account logging in -> Directly to Dashboard!
-                if (isOwner) {
+                return;
+              }
+
+              // Existing accounts logging in:
+              const isAlreadyComplete =
+                authedUser?.onboarding_completed === true ||
+                authedUser?.has_completed_onboarding === true ||
+                isUserOnboarded();
+
+              if (isOwner) {
+                if (isAlreadyComplete) {
                   if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                     window.location.href = '/organizer';
                   } else {
                     navigateTo('home');
                   }
                 } else {
-                  if (typeof window !== 'undefined') {
-                    sessionStorage.removeItem('sportsync_just_registered');
-                    localStorage.removeItem('sportsync_pending_onboarding');
-                    localStorage.setItem('sportsync_onboarding_completed', 'true');
-                    localStorage.setItem('matchi_onboarding_completed', 'true');
-                    if (!window.location.port.includes('5173') && window.location.pathname.includes('/onboarding')) {
-                      window.location.href = '/';
-                      return;
-                    }
-                  }
-                  if (guestPrompt.pendingAction) {
-                    const act = guestPrompt.pendingAction;
-                    setGuestPrompt({ isOpen: false });
-                    act();
+                  if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                    window.location.href = '/onboarding?role=owner';
                   } else {
-                    navigateTo('home');
+                    navigateTo('faculty-setup');
                   }
+                }
+              } else if (!isAlreadyComplete) {
+                // Existing Player account with incomplete profile -> Player Profile Setup
+                if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+                  window.location.href = '/onboarding';
+                } else {
+                  navigateTo('personalization');
+                }
+              } else {
+                // Existing Player account with completed profile -> Directly to Player Dashboard
+                if (typeof window !== 'undefined') {
+                  sessionStorage.removeItem('sportsync_just_registered');
+                  localStorage.removeItem('sportsync_pending_onboarding');
+                  localStorage.setItem('sportsync_onboarding_completed', 'true');
+                  localStorage.setItem('matchi_onboarding_completed', 'true');
+                  if (!window.location.port.includes('5173') && window.location.pathname.includes('/onboarding')) {
+                    window.location.href = '/';
+                    return;
+                  }
+                }
+                if (guestPrompt.pendingAction) {
+                  const act = guestPrompt.pendingAction;
+                  setGuestPrompt({ isOpen: false });
+                  act();
+                } else {
+                  navigateTo('home');
                 }
               }
             }}
@@ -1113,7 +1169,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                 window.location.href = '/organizer';
               } else {
-                navigateTo('home');
+                navigateTo('profile');
               }
             }}
           />

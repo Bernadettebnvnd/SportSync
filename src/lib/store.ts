@@ -123,9 +123,12 @@ async function initializeStore() {
       if (storedCompleted) {
         globalState.currentUser.onboarding_completed = true;
         globalState.currentUser.has_completed_onboarding = true;
-      } else if (hasPendingOnboarding) {
+      } else {
         globalState.currentUser.onboarding_completed = false;
         globalState.currentUser.has_completed_onboarding = false;
+        globalState.currentUser.preferred_sports = [];
+        globalState.currentUser.primary_sport = '' as any;
+        globalState.currentUser.skill_level = '' as any;
       }
       const storedId = localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id');
       if (storedId) {
@@ -180,7 +183,11 @@ async function initializeStore() {
 
     const user = isExplicitlyLoggedOut ? null : await getCurrentUser();
     if (user) {
-      const isOwner = user.role === 'venue_owner' || user.role === 'organizer';
+      const isOwner =
+        user.role === 'venue_owner' ||
+        user.role === 'organizer' ||
+        (user.role as string) === 'facility_owner' ||
+        (user.role as string) === 'faculty';
 
       // 1. Authoritative check from Supabase profile:
       // If the Supabase user profile has onboarding_completed = true, this ALWAYS overrides local pending flags!
@@ -193,13 +200,12 @@ async function initializeStore() {
         user.full_name &&
         !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
         ((Array.isArray(user.preferred_sports) && user.preferred_sports.length > 0) || user.primary_sport) &&
-        (user.city || user.skill_level)
+        (user.city || user.skill_level) &&
+        user.onboarding_completed !== false
       );
 
       const hasRequiredOwnerFields = isOwner && Boolean(
-        user.full_name &&
-        !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
-        Boolean(user.city || user.phone)
+        isExplicitlyCompleteInDb
       );
 
       const isUserOnboarded = isExplicitlyCompleteInDb || hasRequiredPlayerFields || hasRequiredOwnerFields;

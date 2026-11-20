@@ -221,18 +221,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           data.user.full_name &&
           !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
           ((Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0) || data.user.primary_sport) &&
-          Boolean(data.user.city || data.user.skill_level)
+          Boolean(data.user.city || data.user.skill_level) &&
+          data.user.onboarding_completed !== false
         );
 
         const hasRequiredOwnerFields = isFacility && Boolean(
-          data.user.full_name &&
-          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim())
+          isExplicitlyCompleted
         );
 
         // For new signups, strictly require onboarding! For existing logins, proceed to dashboard if fields are complete.
         const actualOnboardingCompleted = isSignUp
           ? false
-          : (isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed === true || data.user.has_completed_onboarding === true || data.user.onboarding_completed !== false);
+          : (isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
         setAuthenticatedUser({
           id: data.user.id,
@@ -265,35 +265,43 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
             localStorage.removeItem('sportsync_skipped_onboarding');
+            localStorage.removeItem('sportsync_user_profile');
+            localStorage.removeItem('sportsync_user_sports');
+            localStorage.removeItem('sportsync_user_skill');
           } else {
             // Returning user logging in: NEVER treat as new registration
             sessionStorage.removeItem('sportsync_just_registered');
-            localStorage.removeItem('sportsync_pending_onboarding');
             if (actualOnboardingCompleted) {
+              localStorage.removeItem('sportsync_pending_onboarding');
               localStorage.setItem('matchi_onboarding_completed', 'true');
               localStorage.setItem('sportsync_onboarding_completed', 'true');
               localStorage.removeItem('sportsync_skipped_onboarding');
+
+              const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
+                ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+                : ['Football'];
+              localStorage.setItem(
+                'sportsync_user_profile',
+                JSON.stringify({
+                  id: data.user.id,
+                  name: data.user.full_name,
+                  username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
+                  role: assignedRole,
+                  city: data.user.city || 'Naga City',
+                  primarySport: data.user.primary_sport || 'football',
+                  preferredSports: userSports,
+                  skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
+                  onboardingCompleted: true,
+                  isGuest: false,
+                })
+              );
+            } else {
+              localStorage.setItem('sportsync_pending_onboarding', 'true');
+              localStorage.removeItem('matchi_onboarding_completed');
+              localStorage.removeItem('sportsync_onboarding_completed');
+              localStorage.removeItem('sportsync_user_profile');
             }
           }
-
-          const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
-            ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
-            : ['Football'];
-          localStorage.setItem(
-            'sportsync_user_profile',
-            JSON.stringify({
-              id: data.user.id,
-              name: data.user.full_name,
-              username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-              role: assignedRole,
-              city: data.user.city || 'Naga City',
-              primarySport: data.user.primary_sport || 'football',
-              preferredSports: userSports,
-              skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-              onboardingCompleted: actualOnboardingCompleted,
-              isGuest: false,
-            })
-          );
         }
 
         const detectedRole: AuthRole = isFacility ? 'facility_owner' : 'player';

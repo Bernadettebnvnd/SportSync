@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Compass, Calendar, User, Building2, Users } from 'lucide-react';
+import { Home, Compass, Calendar, User, Building2, Users, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -41,7 +41,7 @@ export function BottomDock() {
     { href: '/organizer', label: 'Console', icon: Building2 },
     { href: '/organizer?tab=bookings', label: 'Bookings', icon: Calendar },
     { href: '/organizer?tab=queue_ops', label: 'Queue', icon: Compass },
-    { href: '/', label: 'Player Hub', icon: Users },
+    { href: '/organizer?tab=courts', label: 'Courts', icon: Layers },
   ];
 
   const items = isFacility ? facilityItems : playerItems;

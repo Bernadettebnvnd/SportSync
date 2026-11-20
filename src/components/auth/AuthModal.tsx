@@ -139,6 +139,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           });
 
           if (typeof window !== 'undefined') {
+            sessionStorage.setItem('sportsync_just_registered', 'true');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
             localStorage.setItem('sportsync_user_role', assignedRole);
@@ -149,6 +150,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             localStorage.removeItem('sportsync_user_profile');
             localStorage.removeItem('sportsync_user_city');
             localStorage.removeItem('sportsync_user_sports');
+            localStorage.removeItem('sportsync_user_skill');
           }
 
           setSuccessMsg(
@@ -177,17 +179,12 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             data.user.full_name &&
             !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
             ((Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0) || data.user.primary_sport) &&
-            (data.user.city || data.user.skill_level)
+            (data.user.city || data.user.skill_level) &&
+            data.user.onboarding_completed !== false
           );
-          const hasRequiredOwnerFields = isOwnerRole && Boolean(
-            data.user.full_name &&
-            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(data.user.full_name.trim()) &&
-            (data.user.city || (data.user as any).phone || isExplicitlyCompleted)
-          );
-          // For facility owners signing in, treat as completed so they are routed directly to /organizer
           const actualOnboardingCompleted = isOwnerRole
-            ? true
-            : (isExplicitlyCompleted || hasRequiredPlayerFields || hasRequiredOwnerFields || data.user.onboarding_completed !== false);
+            ? isExplicitlyCompleted
+            : (isExplicitlyCompleted || hasRequiredPlayerFields);
 
           setAuthenticatedUser({
             id: data.user.id,
@@ -213,11 +210,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             localStorage.setItem('sportsync_user_name', data.user.full_name);
 
             if (!actualOnboardingCompleted) {
+              sessionStorage.setItem('sportsync_just_registered', 'true');
               localStorage.setItem('sportsync_pending_onboarding', 'true');
               localStorage.removeItem('matchi_onboarding_completed');
               localStorage.removeItem('sportsync_onboarding_completed');
               localStorage.removeItem('sportsync_user_profile');
             } else {
+              sessionStorage.removeItem('sportsync_just_registered');
               localStorage.removeItem('sportsync_pending_onboarding');
               localStorage.setItem('matchi_onboarding_completed', 'true');
               localStorage.setItem('sportsync_onboarding_completed', 'true');

@@ -427,14 +427,16 @@ export function useSportSyncBridge() {
           const finalSkill = formatSkillTier(storedSkill || parsed.skillLevel || store.currentUser.skill_level);
           const finalAvailability = parsed.availability || storedAvailability || store.currentUser.availability || 'Weekday Evenings & Weekends';
 
-          const isExplicitlyDone = Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted);
+          const isExplicitlyDone = !hasPendingOnboarding && Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted);
           const hasStoredProfileInfo = Boolean(
+            !hasPendingOnboarding &&
             finalSports && finalSports.length > 0 &&
             finalCity &&
             parsed.name &&
-            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(parsed.name.trim())
+            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(parsed.name.trim()) &&
+            store.currentUser.onboarding_completed !== false
           );
-          const isProfileFinished = isExplicitlyDone || (!hasPendingOnboarding && hasStoredProfileInfo);
+          const isProfileFinished = isExplicitlyDone || hasStoredProfileInfo;
           if (isProfileFinished && typeof window !== 'undefined') {
             try {
               localStorage.removeItem('sportsync_pending_onboarding');
@@ -458,14 +460,15 @@ export function useSportSyncBridge() {
     }
     const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
     const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
-    const hasExplicitCompletion = Boolean(isStoreCompleted || localCompleted);
-    const hasRequiredPlayerFields = !isOwner && Boolean(
+    const hasExplicitCompletion = !hasPendingOnboarding && Boolean(isStoreCompleted || localCompleted);
+    const hasRequiredPlayerFields = !isOwner && !hasPendingOnboarding && Boolean(
       store.currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(store.currentUser.full_name.trim()) &&
       Array.isArray(store.currentUser.preferred_sports) &&
-      store.currentUser.preferred_sports.length > 0
+      store.currentUser.preferred_sports.length > 0 &&
+      store.currentUser.onboarding_completed !== false
     );
-    const completed = Boolean(hasExplicitCompletion || (!hasPendingOnboarding && hasRequiredPlayerFields));
+    const completed = Boolean(hasExplicitCompletion || hasRequiredPlayerFields);
     if (completed && typeof window !== 'undefined') {
       try {
         localStorage.removeItem('sportsync_pending_onboarding');

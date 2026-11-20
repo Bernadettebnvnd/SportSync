@@ -130,34 +130,40 @@ function OnboardingContent() {
       : 'player';
   });
 
-  const isOwner = isFacilityUrl || role === 'owner' || currentUser.role === 'venue_owner' || currentUser.role === 'organizer';
+  const isOwner =
+    isFacilityUrl ||
+    role === 'owner' ||
+    currentUser.role === 'venue_owner' ||
+    currentUser.role === 'organizer' ||
+    (currentUser.role as string) === 'faculty' ||
+    (currentUser.role as string) === 'facility_owner';
   const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true');
 
-  const hasStoredCompletion = typeof window !== 'undefined' && (
+  const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
     localStorage.getItem('matchi_onboarding_completed') === 'true' ||
     localStorage.getItem('sportsync_onboarding_completed') === 'true'
   );
 
   const hasExplicitCompletion = Boolean(
-    (currentUser.onboarding_completed === true && currentUser.has_completed_onboarding !== false) ||
-    hasStoredCompletion
+    !isPending &&
+    ((currentUser.onboarding_completed === true && currentUser.has_completed_onboarding !== false) ||
+    hasStoredCompletion)
   );
 
   // Existing player with completed profile
-  const hasRequiredPlayerFields = !isOwner && Boolean(
+  const hasRequiredPlayerFields = !isOwner && !isPending && Boolean(
     currentUser.full_name &&
     !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
     ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-    (currentUser.skill_level || currentUser.city)
+    (currentUser.skill_level || currentUser.city) &&
+    currentUser.onboarding_completed !== false
   );
 
-  const hasRequiredOwnerFields = isOwner && Boolean(
-    currentUser.full_name &&
-    !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-    (currentUser.city || (currentUser as any).phone || hasExplicitCompletion)
+  const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
+    hasExplicitCompletion
   );
 
-  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
+  const isCompleted = !isGuest && !isPending && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
   React.useEffect(() => {
     if (isCompleted && typeof window !== 'undefined') {

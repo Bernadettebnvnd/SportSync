@@ -61,14 +61,15 @@ export async function getCurrentUser(): Promise<User | null> {
         }
 
         const meta = authUser.user_metadata || {};
-        const effectiveSports = (Array.isArray(profile?.preferred_sports) && profile.preferred_sports.length > 0)
-          ? profile.preferred_sports
-          : (Array.isArray(meta.preferred_sports) && meta.preferred_sports.length > 0
-              ? meta.preferred_sports
-              : (profile?.primary_sport ? [profile.primary_sport] : ['football']));
-        const effectiveCity = profile?.city || meta.city || '';
-        const effectivePrimarySport = profile?.primary_sport || meta.primary_sport || effectiveSports[0] || 'football';
-        const effectiveSkill = profile?.skill_level || meta.skill_level || 'intermediate';
+        const isOwner =
+          profile?.role === 'venue_owner' ||
+          profile?.role === 'organizer' ||
+          profile?.role === 'facility_owner' ||
+          profile?.role === 'faculty' ||
+          meta.role === 'venue_owner' ||
+          meta.role === 'organizer' ||
+          meta.role === 'facility_owner' ||
+          meta.role === 'faculty';
 
         const isExplicitlyComplete = Boolean(
           profile?.onboarding_completed === true ||
@@ -79,26 +80,34 @@ export async function getCurrentUser(): Promise<User | null> {
           meta.has_completed_onboarding === true
         );
 
-        const isOwner =
-          profile?.role === 'venue_owner' ||
-          profile?.role === 'organizer' ||
-          meta.role === 'venue_owner' ||
-          meta.role === 'organizer';
+        // Check if user has genuine sports saved
+        const hasDbSports = (Array.isArray(profile?.preferred_sports) && profile.preferred_sports.length > 0) ||
+          Boolean(profile?.primary_sport);
+        const hasMetaSports = (Array.isArray(meta?.preferred_sports) && meta.preferred_sports.length > 0) ||
+          Boolean(meta?.primary_sport);
+
+        const effectiveSports = (Array.isArray(profile?.preferred_sports) && profile.preferred_sports.length > 0)
+          ? profile.preferred_sports
+          : (Array.isArray(meta.preferred_sports) && meta.preferred_sports.length > 0
+              ? meta.preferred_sports
+              : (profile?.primary_sport ? [profile.primary_sport] : (isExplicitlyComplete ? ['football'] : [])));
+        const effectiveCity = profile?.city || meta.city || '';
+        const effectivePrimarySport = profile?.primary_sport || meta.primary_sport || (effectiveSports.length > 0 ? effectiveSports[0] : (isExplicitlyComplete ? 'football' : ''));
+        const effectiveSkill = profile?.skill_level || meta.skill_level || (isExplicitlyComplete ? 'intermediate' : '');
 
         // Check whether existing player profile has required setup fields filled
         const hasRequiredPlayerFields = !isOwner && Boolean(
           profile &&
           profile.full_name &&
           !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(profile.full_name.trim()) &&
-          ((Array.isArray(profile.preferred_sports) && profile.preferred_sports.length > 0) || profile.primary_sport) &&
-          Boolean(profile.city || profile.skill_level)
+          (hasDbSports || hasMetaSports) &&
+          Boolean(profile.city || profile.skill_level) &&
+          profile.onboarding_completed !== false &&
+          meta.onboarding_completed !== false
         );
 
         const hasRequiredOwnerFields = isOwner && Boolean(
-          profile &&
-          profile.full_name &&
-          !['Player', 'Guest Player', 'Guest', 'SportSync Player', 'Google Player'].includes(profile.full_name.trim()) &&
-          Boolean(profile.city || profile.phone)
+          isExplicitlyComplete
         );
 
         const isUserComplete = isExplicitlyComplete || hasRequiredPlayerFields || hasRequiredOwnerFields;
@@ -108,13 +117,6 @@ export async function getCurrentUser(): Promise<User | null> {
             localStorage.setItem('sportsync_onboarding_completed', 'true');
             localStorage.setItem('matchi_onboarding_completed', 'true');
             localStorage.removeItem('sportsync_pending_onboarding');
-          }
-          if (profile?.id && profile.onboarding_completed !== true) {
-            supabase
-              .from('users')
-              .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
-              .eq('id', profile.id)
-              .then(() => {}, () => {});
           }
         }
 

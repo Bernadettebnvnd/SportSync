@@ -74,7 +74,7 @@ export function Navbar() {
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* SportSync Brand Logo & Context */}
           <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2.5 select-none shrink-0 group">
+            <Link href={isOwnerOrAdmin ? '/organizer' : '/'} className="flex items-center gap-2.5 select-none shrink-0 group">
               <img
                 src="/sportsync-name.svg"
                 alt="SportSync"
@@ -90,57 +90,75 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            <Link
-              href="/"
-              className={cn(
-                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                pathname === '/'
-                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
-              )}
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>Player App</span>
-            </Link>
+            {!isOwnerOrAdmin ? (
+              <>
+                <Link
+                  href="/"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    pathname === '/'
+                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>Player App</span>
+                </Link>
 
-            <Link
-              href="/explore"
-              className={cn(
-                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                pathname === '/explore'
-                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
-              )}
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>Find Courts</span>
-            </Link>
+                <Link
+                  href="/explore"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    pathname === '/explore'
+                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Find Courts</span>
+                </Link>
 
-            <Link
-              href="/onboarding"
-              className={cn(
-                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                pathname === '/onboarding'
-                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
-              )}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Profile Setup</span>
-            </Link>
-
-            <Link
-              href="/organizer"
-              className={cn(
-                'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
-                isFacilityView
-                  ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
-                  : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
-              )}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Facility Portal</span>
-            </Link>
+                <Link
+                  href="/onboarding"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    pathname === '/onboarding'
+                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Profile Setup</span>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/organizer"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    pathname === '/organizer'
+                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Facility Console</span>
+                </Link>
+                <Link
+                  href="/organizer?tab=courts"
+                  className={cn(
+                    'px-3 py-1.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5',
+                    pathname.includes('tab=courts')
+                      ? 'bg-[#1C241E] text-[#C8FF2E] border border-[#C8FF2E]/20'
+                      : 'text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-[#141A15]'
+                  )}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Courts & Schedule</span>
+                </Link>
+              </>
+            )}
           </nav>
 
           {/* Right Side Controls */}
@@ -173,12 +191,6 @@ export function Navbar() {
                   <Building2 className="w-3.5 h-3.5" />
                   <span>Facility Setup</span>
                 </button>
-                <Link
-                  href="/"
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#d4ff52] transition-all press-scale shadow-sm"
-                >
-                  Back to Player App
-                </Link>
               </div>
             ) : (
               <>

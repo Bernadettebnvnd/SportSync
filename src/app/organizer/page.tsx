@@ -328,12 +328,6 @@ export default function OrganizerDashboard() {
             >
               List Facility
             </button>
-            <Link
-              href="/"
-              className="px-4 py-2 rounded-xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#F4F7F0] transition-all"
-            >
-              Player Mode
-            </Link>
           </div>
         </div>
         {isOwnerModalOpen && (
@@ -372,11 +366,11 @@ export default function OrganizerDashboard() {
               <span>Set Up Facility & Courts</span>
             </button>
             <Link
-              href="/"
+              href="/onboarding?role=owner"
               className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center flex items-center justify-center gap-2"
             >
-              <Users className="w-3.5 h-3.5 text-[#C8FF2E]" />
-              <span>Switch to Player Hub</span>
+              <Building2 className="w-3.5 h-3.5 text-[#C8FF2E]" />
+              <span>Launch Setup Wizard</span>
             </Link>
           </div>
         </div>
@@ -612,7 +606,7 @@ export default function OrganizerDashboard() {
           </p>
         </div>
 
-        {/* Switcher to Player Hub + Facility Setup + Action / Tab Bar */}
+        {/* Facility Setup + Action / Tab Bar */}
         <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
           <button
             type="button"
@@ -623,16 +617,6 @@ export default function OrganizerDashboard() {
             <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
             <span>Facility Setup</span>
           </button>
-
-          <Link
-            href="/"
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1A241E] bg-[#E8F0E6] hover:bg-[#D5E5D2] border border-[#1E4A32]/20 flex items-center gap-1.5 transition-all shadow-xs"
-            title="Switch to Player Hub"
-          >
-            <Users className="w-3.5 h-3.5 text-[#1E4A32]" />
-            <span>Switch to Player Hub</span>
-          </Link>
-
           <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar max-w-full">
             <button
               type="button"
@@ -2227,12 +2211,6 @@ export default function OrganizerDashboard() {
               >
                 Edit Facility Profile
               </button>
-              <Link
-                href="/"
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-[#E8E5DF] hover:bg-[#FAF8F5] text-xs font-bold text-[#1A241E] text-center transition-colors"
-              >
-                &larr; Switch to Player Application
-              </Link>
             </div>
           </div>
 
