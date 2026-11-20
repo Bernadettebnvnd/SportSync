@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useMatchiStore } from '@/lib/store';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
 
 interface GoogleSignInButtonProps {
@@ -55,14 +56,90 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   }, [onSuccess, setAuthenticatedUser]);
 
   // Handle Google Sign In click: opens standard native browser popup window
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback(async () => {
     setIsLoading(true);
 
     const width = 500;
-    const height = 620;
+    const height = 640;
     const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
     const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
 
+    const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const callbackUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '/auth/callback';
+
+    // 1. If direct Google Client ID is configured, open official Google Accounts OAuth directly
+    if (googleClientId) {
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
+        googleClientId
+      )}&redirect_uri=${encodeURIComponent(
+        callbackUrl
+      )}&response_type=code&scope=${encodeURIComponent(
+        'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile'
+      )}&access_type=offline&prompt=consent`;
+
+      const popup = window.open(
+        googleOAuthUrl,
+        'google_signin_popup',
+        `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
+      );
+
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        window.location.href = googleOAuthUrl;
+        return;
+      }
+
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          setIsLoading(false);
+        }
+      }, 500);
+      return;
+    }
+
+    // 2. If Supabase is configured with Google provider, use Supabase OAuth
+    if (isSupabaseConfigured) {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+              redirectTo: callbackUrl,
+              queryParams: {
+                access_type: 'offline',
+                prompt: 'consent',
+              },
+            },
+          });
+
+          if (!error && data?.url) {
+            const popup = window.open(
+              data.url,
+              'google_signin_popup',
+              `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
+            );
+
+            if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+              window.location.href = data.url;
+              return;
+            }
+
+            const timer = setInterval(() => {
+              if (popup.closed) {
+                clearInterval(timer);
+                setIsLoading(false);
+              }
+            }, 500);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[GoogleSignIn] Supabase OAuth attempt failed, falling back:', err);
+      }
+    }
+
+    // 3. Fallback: In-app popup flow
     const popupUrl = '/auth/google-popup';
     const popup = window.open(
       popupUrl,
@@ -71,7 +148,6 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     );
 
     if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      // In case browser strictly blocks popups, fallback to same-tab navigation
       window.location.href = popupUrl;
       return;
     }

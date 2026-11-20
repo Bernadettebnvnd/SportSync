@@ -55,7 +55,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Naga City');
   const [availability, setAvailability] = useState(initialValues?.availability ?? '');
 
-  const handleBack = () => {
+  const handleBack = async () => {
     if (onDraftChange) {
       onDraftChange({
         displayName,
@@ -68,7 +68,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       });
     }
     if (onBack) {
-      onBack();
+      await onBack();
     }
   };
 

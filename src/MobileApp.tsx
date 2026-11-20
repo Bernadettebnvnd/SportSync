@@ -190,16 +190,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (typeof window !== 'undefined') {
       try {
         const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.get('auth') === 'login' || searchParams.get('login') === 'true') {
+          return 'auth';
+        }
         if (searchParams.get('invite') || searchParams.get('code') || searchParams.get('match')) {
           return 'invitation-landing';
         }
       } catch {}
     }
     if (!isUserAuthenticated()) {
-      if (typeof window !== 'undefined' && sessionStorage.getItem('sportsync_splash_shown') === 'true') {
+      if (typeof window !== 'undefined' && (sessionStorage.getItem('sportsync_splash_shown') === 'true' || localStorage.getItem('sportsync_logged_out') === 'true')) {
         return 'auth';
       }
-      return 'splash';
+      return 'auth';
     }
     // Strict Routing: Incomplete profiles MUST be routed directly to Profile Setup
     if (!isUserOnboarded()) {
@@ -384,6 +387,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     resolveInvitation();
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('auth') === 'login' || searchParams.get('login') === 'true') {
+        setCurrentScreen('auth');
+        setAuthInitialMode('login');
+        setScreenHistory(['auth']);
+        onScreenChange?.('auth');
+      }
+    }
+  }, [onScreenChange]);
 
   useEffect(() => {
     if (initialScreen) {
@@ -632,18 +647,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     isLoggingOutRef.current = true;
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_logged_out', 'true');
+      localStorage.removeItem('sportsync_pending_onboarding');
+      localStorage.removeItem('sportsync_user_id');
+      localStorage.removeItem('sportsync_user_email');
+      localStorage.removeItem('sportsync_user_name');
+      localStorage.removeItem('matchi_user_id');
+      localStorage.removeItem('matchi_user_name');
+      localStorage.removeItem('sportsync_user_profile');
+      localStorage.removeItem('sportsync_user_role');
     }
     setAuthInitialMode('login');
     setCurrentScreen('auth');
     setScreenHistory(['auth']);
     onScreenChange?.('auth');
-    setToastMessage('Signed out successfully.');
+    setToastMessage('Signed out. Please sign in to continue.');
 
     try {
       await Promise.all([
         bridge.logout(),
         bridge.store.logoutUser(),
       ]);
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     } catch (err) {
       console.warn('Logout error:', err);
     }
@@ -651,7 +675,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     resetNotificationCache();
 
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-      window.location.href = '/';
+      window.location.href = '/?auth=login';
     } else {
       setTimeout(() => {
         isLoggingOutRef.current = false;
@@ -803,9 +827,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
         return (
           <PersonalizationScreen
-            onBack={() => {
+            onBack={async () => {
               setIsEditingFromProfile(false);
-              goBack();
+              if (isEditing) {
+                goBack();
+              } else {
+                // User does not want to continue onboarding:
+                // Log out cleanly and put them back to the login screen
+                await handleLogout();
+              }
             }}
             isEditing={isEditing}
             initialValues={personalizationDraft || {
