@@ -247,8 +247,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
         {/* Brand Banner Header */}
         <div className="p-4 rounded-3xl bg-[#0F2A22] border border-white/10 mb-6 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-xl shrink-0 shadow-sm">
-            {APP_CONFIG.appName.slice(0, 2)}
+          <div className="w-12 h-12 shrink-0 flex items-center justify-center">
+            <img src="/sportsync-logo.svg" alt="SportSync Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <h2 className="font-display font-bold text-lg text-[#F4F7F0]">

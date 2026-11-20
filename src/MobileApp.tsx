@@ -196,7 +196,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       } catch {}
     }
     if (!isUserAuthenticated()) {
-      return 'auth';
+      if (typeof window !== 'undefined' && sessionStorage.getItem('sportsync_splash_shown') === 'true') {
+        return 'auth';
+      }
+      return 'splash';
     }
     // Strict Routing: Incomplete profiles MUST be routed directly to Profile Setup
     if (!isUserOnboarded()) {
@@ -707,15 +710,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'splash':
         return (
           <SplashScreen
+            onFinish={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('sportsync_splash_shown', 'true');
+              }
+              navigateTo('auth');
+            }}
             onGetStarted={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('sportsync_splash_shown', 'true');
+              }
               setAuthInitialMode('signup');
               navigateTo('auth');
             }}
             onLogIn={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('sportsync_splash_shown', 'true');
+              }
               setAuthInitialMode('login');
               navigateTo('auth');
             }}
             onGuest={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('sportsync_splash_shown', 'true');
+              }
               bridge.setAsGuest();
               navigateTo('home');
             }}

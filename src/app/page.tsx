@@ -12,12 +12,9 @@ const MobileApp = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full flex-1 min-h-[100dvh] flex flex-col items-center justify-center bg-[#0B0F0C] text-[#F4F7F0] p-6 select-none">
-        <div className="w-12 h-12 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-display font-black text-lg shadow-[0_0_24px_rgba(200,255,46,0.3)] animate-pulse">
-          {APP_CONFIG.appName.slice(0, 2)}
-        </div>
-        <div className="mt-3 font-display font-bold text-sm text-[#F4F7F0]">
-          {APP_CONFIG.appName}
+      <div className="w-full flex-1 min-h-[100dvh] flex flex-col items-center justify-center bg-[#060E0A] text-[#F4F7F0] p-6 select-none">
+        <div className="w-64 h-64 flex items-center justify-center mb-2 animate-pulse">
+          <img src="/sportsync-full-logo.svg" alt="SportSync" className="w-full h-full object-contain" />
         </div>
         <p className="mt-1 text-xs text-[#A5B0A6]">
           Loading sports experience...
