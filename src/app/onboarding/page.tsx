@@ -159,8 +159,13 @@ function OnboardingContent() {
     currentUser.onboarding_completed !== false
   );
 
+  const hasStoredVenue = typeof window !== 'undefined' && Boolean(
+    localStorage.getItem('sportsync_facility_venue_id') ||
+    localStorage.getItem('sportsync_user_venues')
+  );
+
   const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
-    hasExplicitCompletion
+    hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.onboarding_completed !== false)
   );
 
   const isCompleted = !isGuest && !isPending && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
@@ -177,6 +182,13 @@ function OnboardingContent() {
   const isExplicitPreview =
     typeof window !== 'undefined' &&
     (searchParams.get('preview') === 'true' || searchParams.get('demo') === 'true');
+
+  // Immediately redirect completed users to prevent setup wizard from ever rendering
+  React.useEffect(() => {
+    if (isCompleted && !isExplicitPreview) {
+      router.replace(isOwner ? '/organizer' : '/');
+    }
+  }, [isCompleted, isOwner, isExplicitPreview, router]);
 
   React.useEffect(() => {
     if (isExplicitPreview) return;
@@ -542,12 +554,12 @@ function OnboardingContent() {
     );
   }
 
-  if (isCompleted) {
+  if (isCompleted || (isOwner && !hasPendingOnboarding && (hasStoredCompletion || hasStoredVenue))) {
     return (
       <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-semibold text-[#A5B0A6]">Loading your dashboard...</p>
+          <p className="text-xs font-semibold text-[#A5B0A6]">Redirecting to Faculty Portal...</p>
         </div>
       </div>
     );

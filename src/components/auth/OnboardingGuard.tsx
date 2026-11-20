@@ -122,8 +122,13 @@ export function OnboardingGuard() {
       currentUser.onboarding_completed !== false
     );
 
+    const hasStoredVenue = typeof window !== 'undefined' && Boolean(
+      localStorage.getItem('sportsync_facility_venue_id') ||
+      localStorage.getItem('sportsync_user_venues')
+    );
+
     const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
-      hasExplicitCompletion
+      hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.onboarding_completed !== false)
     );
 
     const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields;
@@ -144,6 +149,10 @@ export function OnboardingGuard() {
         return;
       }
       if (pathname === '/organizer' && !isProfileComplete) {
+        // If the user's role is stored as faculty/venue_owner and not explicitly pending, wait for hydration instead of prematurely ejecting to onboarding
+        if (storedRole && !isPending && (!currentUser.id || currentUser.id === 'usr_guest_01')) {
+          return;
+        }
         router.replace('/onboarding?role=owner');
         return;
       }

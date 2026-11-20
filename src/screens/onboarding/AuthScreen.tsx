@@ -226,7 +226,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         );
 
         const hasRequiredOwnerFields = isFacility && Boolean(
-          isExplicitlyCompleted
+          isExplicitlyCompleted ||
+          (!isSignUp && data.user.full_name && data.user.onboarding_completed !== false)
         );
 
         // For new signups, strictly require onboarding! For existing logins, proceed to dashboard if fields are complete.
@@ -311,6 +312,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             ? `Account registered successfully! Welcome to SportSync.`
             : 'Welcome back! Signed in.'
         );
+
+        // Prevent any intermediate screen flashing: existing faculty accounts with complete profiles go directly to /organizer
+        if (!isSignUp && isFacility && actualOnboardingCompleted) {
+          if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
+            window.location.href = '/organizer';
+            return;
+          }
+        }
+
         setTimeout(() => onSuccess(detectedRole, isSignUp, data.user), 800);
       }
     } catch (err: unknown) {

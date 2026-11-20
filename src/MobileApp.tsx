@@ -160,25 +160,34 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         localStorage.getItem('sportsync_user_role') === 'faculty'
       ));
 
+    const isPending = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
+
     // Check explicit profile completion flags
-    const hasStoredCompletion = typeof window !== 'undefined' && (
+    const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     );
 
-    const isExplicitlyComplete = Boolean(
-      bridge.userProfile.onboardingCompleted === true ||
-      bridge.store.currentUser.onboarding_completed === true ||
-      bridge.store.currentUser.has_completed_onboarding === true ||
-      hasStoredCompletion
+    const hasStoredVenue = typeof window !== 'undefined' && Boolean(
+      localStorage.getItem('sportsync_facility_venue_id') ||
+      localStorage.getItem('sportsync_user_venues')
     );
 
-    if (bridge.store.currentUser.onboarding_completed === false) {
-      return false;
-    }
+    const isExplicitlyComplete = Boolean(
+      !isPending && (
+        bridge.userProfile.onboardingCompleted === true ||
+        bridge.store.currentUser.onboarding_completed === true ||
+        bridge.store.currentUser.has_completed_onboarding === true ||
+        hasStoredCompletion
+      )
+    );
 
     if (isOwner) {
-      return isExplicitlyComplete;
+      return isExplicitlyComplete || hasStoredVenue;
+    }
+
+    if (isPending || (bridge.store.currentUser.onboarding_completed === false && !hasStoredCompletion)) {
+      return false;
     }
 
     // Check whether existing profile has required setup fields filled
@@ -266,12 +275,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     // Faculty accounts must remain in the Faculty Portal and never access Player Dashboard
     if (isOwner) {
+      const onboarded = isUserOnboarded();
       if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-        const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+        const target = onboarded ? '/organizer' : '/onboarding?role=owner';
         window.location.href = target;
         return 'splash';
       }
-      return 'faculty-setup';
+      return onboarded ? 'home' : 'faculty-setup';
     }
 
     // Players: Incomplete accounts must go to Player Profile Setup first
@@ -535,13 +545,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
       // Faculty accounts must remain in the Faculty Portal
       if (isOwner) {
+        const onboarded = isUserOnboarded();
         if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-          const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+          const target = onboarded ? '/organizer' : '/onboarding?role=owner';
           window.location.href = target;
           return;
         }
-        setCurrentScreen('faculty-setup');
-        setScreenHistory(['faculty-setup']);
+        if (onboarded) {
+          setCurrentScreen('home');
+          setScreenHistory(['home']);
+        } else {
+          setCurrentScreen('faculty-setup');
+          setScreenHistory(['faculty-setup']);
+        }
         return;
       }
 
@@ -578,12 +594,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     // Faculty accounts: strictly redirect to Faculty Portal or Faculty Setup
     if (isOwner) {
+      const onboarded = isUserOnboarded();
       if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-        const target = isUserOnboarded() ? '/organizer' : '/onboarding?role=owner';
+        const target = onboarded ? '/organizer' : '/onboarding?role=owner';
         window.location.href = target;
         return;
       }
-      if (currentScreen !== 'faculty-setup' && currentScreen !== 'auth' && currentScreen !== 'splash') {
+      if (onboarded) {
+        if (currentScreen !== 'home') setCurrentScreen('home');
+      } else if (currentScreen !== 'faculty-setup' && currentScreen !== 'auth' && currentScreen !== 'splash') {
         setCurrentScreen('faculty-setup');
       }
       return;
@@ -1026,7 +1045,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               const isAlreadyComplete =
                 authedUser?.onboarding_completed === true ||
                 authedUser?.has_completed_onboarding === true ||
-                isUserOnboarded();
+                isUserOnboarded() ||
+                (isOwner && !isNewAccount && Boolean(authedUser?.full_name));
 
               if (isOwner) {
                 if (isAlreadyComplete) {
