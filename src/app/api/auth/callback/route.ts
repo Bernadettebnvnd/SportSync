@@ -15,6 +15,22 @@ export async function GET(request: Request) {
 
   const code = searchParams.get('code');
   const next = searchParams.get('next');
+  const type = searchParams.get('type');
+
+  // Handle password recovery without triggering user sync or onboarding checks
+  if (type === 'recovery' || next === '/reset-password') {
+    if (code && isSupabaseConfigured) {
+      const supabase = createServerClient();
+      if (supabase) {
+        try {
+          await supabase.auth.exchangeCodeForSession(code);
+        } catch (exErr) {
+          console.warn('[Recovery API] Exchange code note:', exErr);
+        }
+      }
+    }
+    return NextResponse.redirect(`${origin}/reset-password`);
+  }
 
   if (code && isSupabaseConfigured) {
     const supabase = createServerClient();

@@ -12,12 +12,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isOnboarding = pathname.startsWith('/onboarding');
   const isPrototype = pathname.startsWith('/prototype');
   const isAuth = pathname.startsWith('/auth');
+  const isResetPassword = pathname.startsWith('/reset-password');
 
   return (
     <>
       <OnboardingGuard />
       <main className="flex-1 flex flex-col w-full min-h-screen">{children}</main>
-      {!isMainApp && !isOnboarding && !isPrototype && !isAuth && <BottomDock />}
+      {!isMainApp && !isOnboarding && !isPrototype && !isAuth && !isResetPassword && <BottomDock />}
     </>
   );
 }

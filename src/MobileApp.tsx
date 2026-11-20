@@ -8,6 +8,7 @@ import { PhoneFrame } from './design-system/components/PhoneFrame';
 import { SplashScreen } from './screens/onboarding/SplashScreen';
 import { CarouselScreen } from './screens/onboarding/CarouselScreen';
 import { AuthScreen } from './screens/onboarding/AuthScreen';
+import { ResetPasswordScreen } from './screens/onboarding/ResetPasswordScreen';
 import { PersonalizationScreen } from './screens/onboarding/PersonalizationScreen';
 import { FacultySetupScreen } from './screens/onboarding/FacultySetupScreen';
 import { DiscoverScreen } from './screens/home/DiscoverScreen';
@@ -53,6 +54,7 @@ export type ScreenId =
   | 'splash'
   | 'carousel'
   | 'auth'
+  | 'reset-password'
   | 'personalization'
   | 'faculty-setup'
   | 'home'
@@ -190,10 +192,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (typeof window !== 'undefined') {
       try {
         const searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.get('auth') === 'login' || searchParams.get('login') === 'true') {
+        if (searchParams.get('screen') === 'reset-password' || searchParams.get('screen') === 'resetpassword') {
+          return 'reset-password';
+        }
+        if (searchParams.get('screen') === 'onboarding' || searchParams.get('screen') === 'personalization') {
+          return 'personalization';
+        }
+        if (searchParams.get('screen') === 'faculty-setup' || searchParams.get('screen') === 'owner-onboarding') {
+          return 'faculty-setup';
+        }
+        if (
+          searchParams.get('auth') === 'signin' ||
+          searchParams.get('auth') === 'login' ||
+          searchParams.get('login') === 'true'
+        ) {
           return 'auth';
         }
-        if (searchParams.get('invite') || searchParams.get('code') || searchParams.get('match')) {
+        const isAuthRecovery = searchParams.get('type') === 'recovery' || window.location.hash.includes('type=recovery');
+        if (isAuthRecovery) {
+          return 'reset-password';
+        }
+        if (searchParams.get('invite') || (searchParams.get('code') && !searchParams.get('state')) || searchParams.get('match')) {
           return 'invitation-landing';
         }
       } catch {}
@@ -782,6 +801,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <AuthScreen
             initialMode={authInitialMode}
             canGoBack={canGoBack}
+            onNavigateToResetPassword={() => navigateTo('reset-password')}
             onSuccess={(role, isNewAccount) => {
               isLoggingOutRef.current = false;
               if (typeof window !== 'undefined') {
@@ -814,6 +834,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               }
             }}
             onBack={canGoBack ? goBack : undefined}
+          />
+        );
+      }
+      case 'reset-password': {
+        return (
+          <ResetPasswordScreen
+            onSuccess={() => {
+              setAuthInitialMode('login');
+              navigateTo('auth');
+            }}
+            onBack={() => {
+              setAuthInitialMode('login');
+              navigateTo('auth');
+            }}
           />
         );
       }

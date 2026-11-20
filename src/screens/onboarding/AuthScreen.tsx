@@ -14,6 +14,7 @@ interface AuthScreenProps {
   onSuccess: (role: AuthRole, isNewAccount?: boolean) => void;
   onBack?: () => void;
   canGoBack?: boolean;
+  onNavigateToResetPassword?: () => void;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -21,6 +22,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onSuccess,
   onBack,
   canGoBack = false,
+  onNavigateToResetPassword,
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
@@ -69,8 +71,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       try {
         const supabase = getSupabaseClient();
         if (supabase && isSupabaseConfigured) {
+          const redirectUrl =
+            typeof window !== 'undefined'
+              ? `${window.location.origin}/auth/callback?next=/reset-password`
+              : 'https://sportsync.ph/auth/callback?next=/reset-password';
+
           const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-            redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+            redirectTo: redirectUrl,
           });
           if (error) throw error;
         }
@@ -520,13 +527,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           )}
 
           {isPasswordReset && (
-            <button
-              type="button"
-              onClick={() => setIsPasswordReset(false)}
-              className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#F4F7F0] pt-2"
-            >
-              Back to Sign In
-            </button>
+            <div className="space-y-2 pt-2 text-center">
+              {onNavigateToResetPassword && (
+                <button
+                  type="button"
+                  onClick={onNavigateToResetPassword}
+                  className="w-full text-center text-xs text-[#C8FF2E] hover:underline font-semibold block"
+                >
+                  Already have a recovery link? Reset password here
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsPasswordReset(false)}
+                className="w-full text-center text-xs text-[#A5B0A6] hover:text-[#F4F7F0]"
+              >
+                Back to Sign In
+              </button>
+            </div>
           )}
         </form>
       </div>

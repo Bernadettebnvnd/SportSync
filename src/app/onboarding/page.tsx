@@ -131,7 +131,15 @@ function OnboardingContent() {
     }
   }, [isCompleted]);
 
+  const isLocalDevOrPreview =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      searchParams.get('preview') === 'true' ||
+      searchParams.get('demo') === 'true');
+
   React.useEffect(() => {
+    if (isLocalDevOrPreview) return;
     if (isGuest) {
       router.replace('/');
       return;
@@ -140,7 +148,7 @@ function OnboardingContent() {
       const target = isOwner ? '/organizer' : '/';
       router.replace(target);
     }
-  }, [isGuest, isCompleted, isOwner, router]);
+  }, [isGuest, isCompleted, isOwner, isLocalDevOrPreview, router]);
 
   React.useEffect(() => {
     if (isFacilityUrl) {

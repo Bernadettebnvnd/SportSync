@@ -23,6 +23,28 @@ export default function AuthCallbackPage() {
             hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
           }
 
+          const type = searchParams.get('type') || hashParams.get('type');
+          const next = searchParams.get('next');
+          const isRecovery =
+            type === 'recovery' ||
+            next === '/reset-password' ||
+            (window.location.hash && window.location.hash.includes('type=recovery'));
+
+          if (isRecovery) {
+            sessionStorage.setItem('sportsync_recovery_mode', 'true');
+            const code = searchParams.get('code');
+            const supabase = getSupabaseClient();
+            if (code && supabase) {
+              try {
+                await supabase.auth.exchangeCodeForSession(code);
+              } catch (exErr) {
+                console.warn('[Recovery] Code exchange note:', exErr);
+              }
+            }
+            router.replace('/reset-password' + (window.location.hash || ''));
+            return;
+          }
+
           const oauthError = searchParams.get('error') || hashParams.get('error');
           const oauthErrorDesc =
             searchParams.get('error_description') ||
@@ -80,6 +102,14 @@ export default function AuthCallbackPage() {
           const { data: authListener } = supabase.auth.onAuthStateChange(
             async (event, newSession) => {
               if (isCancelled) return;
+              if (event === 'PASSWORD_RECOVERY') {
+                authListener.subscription.unsubscribe();
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('sportsync_recovery_mode', 'true');
+                }
+                router.replace('/reset-password');
+                return;
+              }
               if (newSession?.user) {
                 authListener.subscription.unsubscribe();
                 await handleUserSync(newSession.user);
@@ -106,6 +136,12 @@ export default function AuthCallbackPage() {
     };
 
     const handleUserSync = async (authUser: any) => {
+      // Do not sync or route to onboarding if user is in password recovery mode
+      if (typeof window !== 'undefined' && sessionStorage.getItem('sportsync_recovery_mode') === 'true') {
+        router.replace('/reset-password');
+        return;
+      }
+
       const meta = authUser.user_metadata || {};
       const res = await fetch('/api/auth/oauth-sync', {
         method: 'POST',

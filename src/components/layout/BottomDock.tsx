@@ -20,6 +20,7 @@ export function BottomDock() {
   if (
     pathname.startsWith('/auth') ||
     pathname.startsWith('/onboarding') ||
+    pathname.startsWith('/reset-password') ||
     pathname === '/' ||
     pathname === '/sideline' ||
     pathname.startsWith('/prototype')

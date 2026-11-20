@@ -21,14 +21,26 @@ export function OnboardingGuard() {
   useEffect(() => {
     if (isLoading) return;
 
-    // Bypass check on callback & API paths to allow OAuth handshake
+    // Bypass check on callback & API paths to allow OAuth handshake & password reset
     const isExemptPath =
       pathname.startsWith('/auth') ||
       pathname.startsWith('/api') ||
+      pathname.startsWith('/reset-password') ||
       pathname === '/login' ||
       pathname === '/register';
 
     if (isExemptPath) return;
+
+    // Never hijack a password recovery flow or redirect to onboarding
+    if (
+      typeof window !== 'undefined' &&
+      (sessionStorage.getItem('sportsync_recovery_mode') === 'true' ||
+        window.location.hash.includes('type=recovery') ||
+        window.location.search.includes('type=recovery') ||
+        window.location.search.includes('reset-password'))
+    ) {
+      return;
+    }
 
     const isLoggedOut =
       typeof window !== 'undefined' &&
@@ -67,10 +79,17 @@ export function OnboardingGuard() {
     const isOnboardingPath = pathname === '/onboarding';
     const isProtectedPath = pathname === '/organizer' || pathname === '/profile';
 
+    const isLocalDevOrPreview =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.search.includes('preview=true') ||
+        window.location.search.includes('demo=true'));
+
     // CASE 0: Unauthenticated or Logged-Out user
     // Strictly prevent access to profile setup or protected organizer/profile pages after logout
     if (!isAuthenticated) {
-      if (isOnboardingPath || isProtectedPath) {
+      if ((isOnboardingPath && !isLocalDevOrPreview) || isProtectedPath) {
         router.replace('/');
       }
       return;
@@ -125,7 +144,7 @@ export function OnboardingGuard() {
     }
 
     // CASE 2: Already onboarded user attempting to re-visit /onboarding
-    if (isProfileComplete && !isPending && isOnboardingPath) {
+    if (isProfileComplete && !isPending && isOnboardingPath && !isLocalDevOrPreview) {
       const target = isOwner ? '/organizer' : '/';
       router.replace(target);
       return;

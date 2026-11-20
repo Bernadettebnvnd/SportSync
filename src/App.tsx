@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { MobileApp, ScreenId } from './MobileApp';
 import { ShowcasePage } from './showcase/ShowcasePage';
 import { StyleguidePage } from './styleguide/StyleguidePage';
+import { ResetPasswordScreen } from './screens/onboarding/ResetPasswordScreen';
 
 const StandaloneMobileView: React.FC = () => {
   const [selectedScreen] = useState<ScreenId | undefined>(undefined);
@@ -22,6 +23,7 @@ export const App: React.FC = () => {
     <Routes>
       <Route path="/" element={<StandaloneMobileView />} />
       <Route path="/home" element={<StandaloneMobileView />} />
+      <Route path="/reset-password" element={<ResetPasswordScreen />} />
       <Route path="/showcase" element={<ShowcasePage />} />
       <Route path="/styleguide" element={<StyleguidePage />} />
       {/* Fallback to root */}
