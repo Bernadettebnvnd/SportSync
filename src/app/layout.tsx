@@ -75,8 +75,10 @@ export default function RootLayout({
                 var theme = localStorage.getItem('sportsync_theme');
                 if (theme === 'light' || (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)) {
                   document.documentElement.classList.add('light');
+                  document.documentElement.style.colorScheme = 'light';
                 } else {
                   document.documentElement.classList.remove('light');
+                  document.documentElement.style.colorScheme = 'dark';
                 }
               } catch (e) {}
             })();`,

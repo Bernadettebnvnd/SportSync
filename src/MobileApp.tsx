@@ -1406,7 +1406,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       )}
 
       {/* Screen Render */}
-      <div className={`flex-1 w-full no-scrollbar ${currentScreen === 'create-match' ? 'h-full flex flex-col overflow-hidden' : 'overflow-y-auto'}`}>
+      <div className={`flex-1 w-full no-scrollbar ${currentScreen === 'create-match' ? 'h-full flex flex-col overflow-hidden' : 'overflow-y-auto'} ${showBottomNav ? 'pb-28 sm:pb-32' : ''}`}>
         {renderScreen()}
       </div>
 

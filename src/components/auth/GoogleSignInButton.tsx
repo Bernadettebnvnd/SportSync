@@ -91,7 +91,13 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       onClick={handleClick}
       disabled={disabled || isLoading}
       aria-label="Continue with Google"
-      className={`group relative w-full h-12 sm:h-13 px-6 rounded-full bg-white hover:bg-[#F9FAFB] active:bg-[#F3F4F6] border border-[#D1D5DB] hover:border-[#9CA3AF] text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)] hover:shadow-md transition-all duration-200 active:scale-[0.99] flex items-center justify-center select-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className}`}
+      data-theme-ignore="true"
+      style={{
+        backgroundColor: '#FFFFFF',
+        color: '#1F1F1F',
+        borderColor: 'rgba(116, 119, 117, 0.4)',
+      }}
+      className={`google-signin-btn group relative w-full h-12 sm:h-13 px-6 rounded-full !bg-white hover:!bg-[#F8F9FA] active:!bg-[#F1F3F4] !border !border-[#747775]/40 hover:!border-[#747775] !text-[#1F1F1F] shadow-[0_1px_3px_rgba(0,0,0,0.08)] hover:shadow-md transition-all duration-200 active:scale-[0.99] flex items-center justify-center select-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none ${className}`}
     >
       {/* Google "G" Brand Icon anchored to left */}
       <div className="absolute left-4 sm:left-6 flex items-center justify-center shrink-0">
@@ -99,7 +105,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
           <Loader2 className="w-5 h-5 text-neutral-600 animate-spin" />
         ) : (
           <svg
-            className="w-5 h-5"
+            className="w-5 h-5 shrink-0"
             viewBox="0 0 24 24"
             aria-hidden="true"
             xmlns="http://www.w3.org/2000/svg"
@@ -125,7 +131,10 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       </div>
 
       {/* Centered label matching reference pill button typography */}
-      <span className="font-semibold text-sm sm:text-[15px] text-[#111827] tracking-tight">
+      <span
+        style={{ color: '#1F1F1F' }}
+        className="font-semibold text-sm sm:text-[15px] !text-[#1F1F1F] tracking-tight"
+      >
         {isLoading ? 'Opening Google...' : label}
       </span>
     </button>

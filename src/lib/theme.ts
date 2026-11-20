@@ -30,16 +30,20 @@ export function applyTheme(theme: Theme, dispatchEvent = true) {
     if (theme === 'light') {
       root.classList.add('light');
       root.classList.remove('dark');
+      root.style.colorScheme = 'light';
       if (body) {
         body.classList.add('light');
         body.classList.remove('dark');
+        body.style.colorScheme = 'light';
       }
     } else {
       root.classList.remove('light');
       root.classList.add('dark');
+      root.style.colorScheme = 'dark';
       if (body) {
         body.classList.remove('light');
         body.classList.add('dark');
+        body.style.colorScheme = 'dark';
       }
     }
 

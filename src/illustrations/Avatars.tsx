@@ -43,8 +43,6 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   name,
   size = 40,
   className = '',
-  showBadge = false,
-  badgeLevel = 18,
 }) => {
   const displayName = name || (id && id !== 'default' ? id : 'Player');
   const initials = getPlayerInitials(displayName);
@@ -59,11 +57,6 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
       <span style={{ fontSize }} className="leading-none text-center select-none tracking-tight">
         {initials}
       </span>
-      {showBadge && (
-        <span className="absolute -bottom-1 -right-1 bg-[#C8FF2E] text-[#0B0F0C] font-display font-bold text-[9px] px-1 py-0.2 rounded-full border border-[#0B0F0C] leading-none shadow-sm">
-          {badgeLevel}
-        </span>
-      )}
     </div>
   );
 };

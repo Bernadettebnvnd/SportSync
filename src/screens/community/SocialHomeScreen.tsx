@@ -195,8 +195,6 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
               id={toAvatarId(user?.avatarId)}
               name={userName || user?.name}
               size={38}
-              showBadge={!effectiveIsGuest}
-              badgeLevel={user?.level || 1}
             />
             <div>
               <span className="text-[11px] text-[#A5B0A6] uppercase tracking-wider font-semibold block">

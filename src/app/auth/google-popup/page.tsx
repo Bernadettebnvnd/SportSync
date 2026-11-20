@@ -140,11 +140,11 @@ export default function GoogleOAuthPopupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#131314] text-[#E3E3E3] flex flex-col justify-between p-6 sm:p-10 font-sans select-none antialiased">
-      {/* Centered Google Accounts Card (Dark Mode Material 3) */}
-      <div className="w-full max-w-[440px] mx-auto my-auto flex flex-col">
+    <div className="min-h-screen bg-[#F0F4F9] text-[#1F1F1F] flex flex-col justify-between p-4 sm:p-8 font-sans select-none antialiased">
+      {/* Centered Google Accounts Card (Authentic Standard Google Material UI) */}
+      <div className="w-full max-w-[460px] mx-auto my-auto bg-white rounded-[28px] border border-[#747775]/20 shadow-[0_4px_24px_rgba(0,0,0,0.06)] p-8 sm:p-10 flex flex-col">
         {/* Top Google Header: Multi-color G logo + "Sign in with Google" */}
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3 mb-6">
           <svg className="w-6 h-6 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -163,44 +163,44 @@ export default function GoogleOAuthPopupPage() {
               fill="#EA4335"
             />
           </svg>
-          <span className="text-[17px] font-normal text-[#E3E3E3] tracking-normal">
+          <span className="text-[17px] font-medium text-[#1F1F1F] tracking-normal">
             Sign in with Google
           </span>
         </div>
 
         {/* Target App Brand Logo & Name */}
-        <div className="mb-6 flex items-center gap-2">
-          <span className="text-2xl font-black italic tracking-wide text-[#C8FF2E]">
-            Sport<span className="text-white">Sync</span>
+        <div className="mb-5 flex items-center gap-2">
+          <span className="text-xl font-black italic tracking-wide text-[#0F2A22]">
+            Sport<span className="text-[#365314]">Sync</span>
           </span>
         </div>
 
         {/* Main Heading & Subtitle */}
-        <h1 className="text-[32px] sm:text-[36px] font-normal text-[#E3E3E3] tracking-tight leading-tight mb-2">
+        <h1 className="text-[28px] sm:text-[32px] font-normal text-[#1F1F1F] tracking-tight leading-tight mb-2">
           Sign in
         </h1>
-        <p className="text-base text-[#C4C7C5] mb-8">
-          to continue to <span className="font-medium text-[#E3E3E3]">{APP_CONFIG.appName}</span>
+        <p className="text-sm text-[#444746] mb-6">
+          to continue to <span className="font-semibold text-[#1F1F1F]">{APP_CONFIG.appName}</span>
         </p>
 
         {errorMsg && (
-          <div className="mb-6 p-3 rounded-lg bg-red-950/40 border border-red-500/50 text-xs text-red-200">
+          <div className="mb-5 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">
             {errorMsg}
           </div>
         )}
 
         {isSuccess ? (
-          <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-[#1A382B] text-[#78D993] flex items-center justify-center">
+          <div className="py-10 flex flex-col items-center justify-center text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
               <Check className="w-6 h-6 stroke-[2.5]" />
             </div>
-            <p className="text-sm font-medium text-[#E3E3E3]">Signed in successfully</p>
-            <p className="text-xs text-[#8E918F]">Connecting and closing window...</p>
+            <p className="text-sm font-semibold text-[#1F1F1F]">Signed in successfully</p>
+            <p className="text-xs text-[#444746]">Connecting and closing window...</p>
           </div>
         ) : isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-            <Loader2 className="w-8 h-8 text-[#A8C7FA] animate-spin" />
-            <p className="text-sm font-medium text-[#E3E3E3]">Connecting to Google...</p>
+          <div className="py-10 flex flex-col items-center justify-center text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-[#0B57D0] animate-spin" />
+            <p className="text-sm font-medium text-[#1F1F1F]">Connecting to Google...</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col">
@@ -220,7 +220,7 @@ export default function GoogleOAuthPopupPage() {
                   }
                 }}
                 placeholder="Email or phone"
-                className="w-full h-14 px-4 rounded-[4px] bg-[#131314] border border-[#8E918F] hover:border-[#E3E3E3] focus:border-[#A8C7FA] focus:ring-1 focus:ring-[#A8C7FA] text-base text-[#E3E3E3] placeholder-[#8E918F] focus:outline-none transition-all"
+                className="w-full h-13 px-4 rounded-lg bg-white border border-[#747775] hover:border-[#1F1F1F] focus:border-[#0B57D0] focus:ring-1 focus:ring-[#0B57D0] text-base text-[#1F1F1F] placeholder-[#747775] focus:outline-none transition-all"
               />
             </div>
 
@@ -229,15 +229,15 @@ export default function GoogleOAuthPopupPage() {
               <button
                 type="button"
                 onClick={() => setEmailInput('player@gmail.com')}
-                className="text-sm font-medium text-[#8AB4F8] hover:underline"
+                className="text-sm font-medium text-[#0B57D0] hover:underline"
               >
                 Forgot email?
               </button>
             </div>
 
-            {/* Player's Display Name (Defaults to user's name from email, NEVER "Google Player") */}
-            <div className="mb-6">
-              <label className="text-xs text-[#C4C7C5] block mb-1.5">
+            {/* Player's Display Name */}
+            <div className="mb-5">
+              <label className="text-xs font-medium text-[#444746] block mb-1.5">
                 Player Name (auto-derived from email prefix or customized)
               </label>
               <input
@@ -245,32 +245,32 @@ export default function GoogleOAuthPopupPage() {
                 value={customNameInput}
                 onChange={(e) => setCustomNameInput(e.target.value)}
                 placeholder="e.g. Andrei Manrique"
-                className="w-full h-11 px-4 rounded-[4px] bg-[#131314] border border-[#444746] hover:border-[#8E918F] focus:border-[#A8C7FA] text-sm text-[#E3E3E3] placeholder-[#8E918F] focus:outline-none transition-all"
+                className="w-full h-11 px-4 rounded-lg bg-white border border-[#C4C7C5] hover:border-[#747775] focus:border-[#0B57D0] text-sm text-[#1F1F1F] placeholder-[#747775] focus:outline-none transition-all"
               />
             </div>
 
             {/* Privacy & Terms Consent Notice */}
-            <p className="text-xs text-[#C4C7C5] leading-relaxed mb-8">
+            <p className="text-xs text-[#444746] leading-relaxed mb-6">
               Before using this app, you can review {APP_CONFIG.appName}&apos;s{' '}
-              <a href="#" className="text-[#8AB4F8] hover:underline font-medium">
+              <a href="#" className="text-[#0B57D0] hover:underline font-medium">
                 Privacy Policy
               </a>{' '}
               and{' '}
-              <a href="#" className="text-[#8AB4F8] hover:underline font-medium">
+              <a href="#" className="text-[#0B57D0] hover:underline font-medium">
                 Terms of Service
               </a>
               .
             </p>
 
             {/* Bottom Actions Row: "Create account" on left, "Next" pill button on right */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center justify-between pt-1">
               <button
                 type="button"
                 onClick={() => {
                   setEmailInput('new.athlete@gmail.com');
                   setCustomNameInput('New Athlete');
                 }}
-                className="text-sm font-medium text-[#8AB4F8] hover:underline cursor-pointer"
+                className="text-sm font-medium text-[#0B57D0] hover:underline cursor-pointer"
               >
                 Create account
               </button>
@@ -278,7 +278,7 @@ export default function GoogleOAuthPopupPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="px-6 py-2.5 rounded-full bg-[#A8C7FA] hover:bg-[#B8D2FA] active:bg-[#96B7EA] text-[#041E49] text-sm font-medium transition-colors shadow-xs cursor-pointer disabled:opacity-60"
+                className="px-7 py-2.5 rounded-full bg-[#0B57D0] hover:bg-[#0842A0] active:bg-[#06337B] text-white text-sm font-medium transition-colors shadow-xs cursor-pointer disabled:opacity-60"
               >
                 Next
               </button>
@@ -288,14 +288,14 @@ export default function GoogleOAuthPopupPage() {
       </div>
 
       {/* Google Footer (Language & Legal Links) */}
-      <div className="w-full max-w-[440px] mx-auto mt-6 px-1 flex items-center justify-between text-xs text-[#8E918F]">
-        <span className="hover:text-[#E3E3E3] cursor-pointer">
+      <div className="w-full max-w-[460px] mx-auto mt-6 px-2 flex items-center justify-between text-xs text-[#444746]">
+        <span className="hover:text-[#1F1F1F] cursor-pointer">
           English (United States) ▾
         </span>
         <div className="flex items-center gap-6">
-          <span className="hover:text-[#E3E3E3] cursor-pointer">Help</span>
-          <span className="hover:text-[#E3E3E3] cursor-pointer">Privacy</span>
-          <span className="hover:text-[#E3E3E3] cursor-pointer">Terms</span>
+          <span className="hover:text-[#1F1F1F] cursor-pointer">Help</span>
+          <span className="hover:text-[#1F1F1F] cursor-pointer">Privacy</span>
+          <span className="hover:text-[#1F1F1F] cursor-pointer">Terms</span>
         </div>
       </div>
     </div>

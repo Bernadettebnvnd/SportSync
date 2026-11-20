@@ -31,6 +31,7 @@
 :root {
   --background: #0B0F0C;
   --foreground: #F4F7F0;
+  color-scheme: dark;
 }
 
 html,
@@ -141,6 +142,7 @@ body.light,
 .light {
   --background: #F4F6F2;
   --foreground: #0F1612;
+  color-scheme: light;
   background-color: #F4F6F2 !important;
   color: #0F1612 !important;
 }
@@ -358,11 +360,17 @@ body.light .bg-\[\#0B0F0C\] {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12) !important;
 }
 
+.light nav button.border-\[\#0B0F0C\],
 .light nav button .border-\[\#0B0F0C\] {
   border-color: #FFFFFF !important;
 }
 
 /* Inputs, Textareas, and Selects */
+input::placeholder,
+textarea::placeholder {
+  color: #6F7B71;
+}
+
 .light input,
 .light textarea,
 .light select {
@@ -372,6 +380,25 @@ body.light .bg-\[\#0B0F0C\] {
 .light input::placeholder,
 .light textarea::placeholder {
   color: #68766C !important;
+}
+
+/* Google Sign-In Button Protection (Always authentic light appearance) */
+.google-signin-btn,
+.google-signin-btn:hover,
+.google-signin-btn:active,
+.light .google-signin-btn,
+.light .google-signin-btn:hover,
+.light .google-signin-btn:active,
+[data-theme-ignore="true"] {
+  background-color: #FFFFFF !important;
+  color: #1F1F1F !important;
+  border-color: rgba(116, 119, 117, 0.4) !important;
+}
+
+.google-signin-btn *,
+.light .google-signin-btn *,
+[data-theme-ignore="true"] * {
+  color: #1F1F1F !important;
 }
 
 /* Modals & Backdrop Blur */

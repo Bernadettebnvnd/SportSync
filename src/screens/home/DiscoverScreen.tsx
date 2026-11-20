@@ -169,17 +169,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             id={toAvatarId(user?.avatarId)}
             name={user?.name || user?.username}
             size={42}
-            showBadge={!effectiveIsGuest}
-            badgeLevel={user?.level || 1}
           />
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-[#A5B0A6]">{salutation}</span>
-              {!effectiveIsGuest && (
-                <span className="px-2 py-0.5 rounded-full bg-[#1C241E] text-[#C8FF2E] text-[10px] font-bold border border-white/10">
-                  Lv.{user?.level || 1}
-                </span>
-              )}
             </div>
             {/* 2. Personalized Greeting */}
             <h2 className="font-display font-black text-base text-[#F4F7F0] tracking-tight">

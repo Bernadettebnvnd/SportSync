@@ -159,7 +159,6 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                     : 'bg-[#FF8FC7]/15 border-[#FF8FC7]'
                 }`}>
                   <span className="font-display font-black text-xl text-[#FF8FC7]">2nd</span>
-                  <span className="text-[9px] text-[#A5B0A6]">Lv.{dynamicPlayers[1].level}</span>
                 </div>
               </div>
             )}
@@ -187,7 +186,6 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                     : 'bg-[#C8FF2E]/20 border-[#C8FF2E]'
                 }`}>
                   <span className="font-display font-black text-2xl text-[#C8FF2E]">1st</span>
-                  <span className="text-[10px] text-[#F4F7F0]/80 font-semibold">Lv.{dynamicPlayers[0].level}</span>
                 </div>
               </div>
             )}
@@ -214,7 +212,6 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                     : 'bg-white/10 border-white/40'
                 }`}>
                   <span className="font-display font-black text-lg text-white/80">3rd</span>
-                  <span className="text-[9px] text-[#A5B0A6]">Lv.{dynamicPlayers[2].level}</span>
                 </div>
               </div>
             )}
@@ -243,7 +240,6 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
                     <span className={`font-semibold ${player.isMe ? 'text-[#C8FF2E] font-bold' : 'text-[#F4F7F0]'}`}>
                       {player.name}
                     </span>
-                    <span className="text-[10px] text-[#6F7B71] block">Lv.{player.level}</span>
                   </div>
                 </div>
                 <span className="font-display font-bold text-xs text-[#F4F7F0] tabular-nums font-mono">
