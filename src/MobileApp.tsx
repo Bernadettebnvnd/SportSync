@@ -91,7 +91,7 @@ interface MobileAppProps {
 
 export const MobileApp: React.FC<MobileAppProps> = ({
   initialScreen,
-  inPhoneFrame = true,
+  inPhoneFrame = false,
   onScreenChange,
   isLightMode: propIsLightMode,
   onToggleTheme,

@@ -55,6 +55,26 @@ main {
   overflow-x: hidden;
 }
 
+/* Safe area padding utilities for native mobile notches & gesture bars */
+.safe-area-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
+.safe-area-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+.safe-area-left {
+  padding-left: max(env(safe-area-inset-left, 0px), 0px);
+}
+.safe-area-right {
+  padding-right: max(env(safe-area-inset-right, 0px), 0px);
+}
+.safe-area-inset {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+  padding-left: max(env(safe-area-inset-left, 0px), 0px);
+  padding-right: max(env(safe-area-inset-right, 0px), 0px);
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
