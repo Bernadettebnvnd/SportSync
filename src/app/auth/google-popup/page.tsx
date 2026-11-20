@@ -116,11 +116,16 @@ export default function GoogleOAuthPopupPage() {
     const derivedFullName = deriveNameFromEmail(trimmedEmail);
 
     try {
+      const generatedAuthId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : '00000000-0000-4000-8000-' + Math.random().toString(16).substring(2, 14).padEnd(12, '0');
+
       const res = await fetch('/api/auth/oauth-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          authId: `usr_google_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          authId: generatedAuthId,
           email: trimmedEmail,
           fullName: derivedFullName,
           avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(derivedFullName)}&backgroundColor=0f2a22&textColor=c8ff2e`,
@@ -133,7 +138,13 @@ export default function GoogleOAuthPopupPage() {
         throw new Error(data.error || 'Google authentication failed.');
       }
 
-      const isComplete = Boolean(data.isComplete === true);
+      // Existing accounts with saved profile/sports proceed directly to dashboard
+      const isComplete = Boolean(
+        data.isComplete === true ||
+        data.user?.onboarding_completed === true ||
+        data.user?.has_completed_onboarding === true ||
+        ((Array.isArray(data.user?.preferred_sports) && data.user.preferred_sports.length > 0) || data.user?.primary_sport)
+      );
       const finalName = data.user.full_name || derivedFullName;
 
       // Persist authenticated identity in localStorage
@@ -154,6 +165,24 @@ export default function GoogleOAuthPopupPage() {
           localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_onboarding_completed', 'true');
+          const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
+            ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+            : ['Football'];
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: data.user.id,
+              name: finalName,
+              username: `@${data.user.nickname || trimmedEmail.split('@')[0]}`,
+              role: data.user.role || 'player',
+              city: data.user.city || 'Naga City',
+              primarySport: data.user.primary_sport || 'football',
+              preferredSports: userSports,
+              skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
+              onboardingCompleted: true,
+              isGuest: false,
+            })
+          );
         }
       }
 
@@ -181,7 +210,8 @@ export default function GoogleOAuthPopupPage() {
         }, 350);
       } else {
         setTimeout(() => {
-          window.location.href = !isComplete ? '/onboarding' : '/';
+          const isOwner = data.user.role === 'venue_owner' || data.user.role === 'organizer';
+          window.location.href = isComplete ? (isOwner ? '/organizer' : '/') : '/onboarding';
         }, 350);
       }
     } catch (err: unknown) {

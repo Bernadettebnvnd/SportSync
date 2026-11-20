@@ -9,7 +9,7 @@ interface GoogleSignInButtonProps {
   className?: string;
   disabled?: boolean;
   onError?: (errorMsg: string) => void;
-  onSuccess?: (isNewUser?: boolean) => void;
+  onSuccess?: (isNewUser?: boolean, user?: any) => void;
 }
 
 export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
@@ -33,19 +33,64 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         const { user, isComplete } = event.data;
         setIsLoading(false);
 
+        const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer';
+        const isCompleteUser = Boolean(
+          isComplete === true ||
+          user?.onboarding_completed === true ||
+          user?.has_completed_onboarding === true ||
+          ((Array.isArray(user?.preferred_sports) && user.preferred_sports.length > 0) || user?.primary_sport)
+        );
+
         if (user) {
           setAuthenticatedUser({
             ...user,
-            onboarding_completed: isComplete,
-            has_completed_onboarding: isComplete,
+            onboarding_completed: isCompleteUser,
+            has_completed_onboarding: isCompleteUser,
           });
         }
 
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('sportsync_logged_out');
+          localStorage.setItem('sportsync_user_id', user?.id);
+          localStorage.setItem('sportsync_user_email', user?.email);
+          localStorage.setItem('sportsync_user_role', user?.role || 'player');
+          localStorage.setItem('sportsync_user_name', user?.full_name || '');
+          localStorage.setItem('matchi_user_name', user?.full_name || '');
+
+          if (isCompleteUser) {
+            localStorage.removeItem('sportsync_pending_onboarding');
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+            const userSports = Array.isArray(user?.preferred_sports) && user.preferred_sports.length > 0
+              ? user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+              : ['Football'];
+            localStorage.setItem(
+              'sportsync_user_profile',
+              JSON.stringify({
+                id: user?.id,
+                name: user?.full_name,
+                username: `@${user?.nickname || user?.email?.split('@')[0]}`,
+                role: user?.role || 'player',
+                city: user?.city || 'Naga City',
+                primarySport: user?.primary_sport || 'football',
+                preferredSports: userSports,
+                skillLevel: user?.skill_level ? (user.skill_level.charAt(0).toUpperCase() + user.skill_level.slice(1)) : 'Intermediate',
+                onboardingCompleted: true,
+                isGuest: false,
+              })
+            );
+          } else {
+            localStorage.setItem('sportsync_pending_onboarding', 'true');
+            localStorage.removeItem('matchi_onboarding_completed');
+            localStorage.removeItem('sportsync_onboarding_completed');
+            localStorage.removeItem('sportsync_user_profile');
+          }
+        }
+
         if (onSuccess) {
-          onSuccess(!isComplete);
+          onSuccess(!isCompleteUser, user);
         } else if (typeof window !== 'undefined') {
-          // Strict routing: incomplete profiles must complete Profile Setup
-          window.location.href = !isComplete ? '/onboarding' : '/';
+          window.location.href = isCompleteUser ? (isOwner ? '/organizer' : '/') : '/onboarding';
         }
       }
     };

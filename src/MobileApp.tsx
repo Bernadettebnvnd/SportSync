@@ -814,23 +814,35 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             initialMode={authInitialMode}
             canGoBack={canGoBack}
             onNavigateToResetPassword={() => navigateTo('reset-password')}
-            onSuccess={(role, isNewAccount) => {
+            onSuccess={(role, isNewAccount, authedUser) => {
               isLoggingOutRef.current = false;
               if (typeof window !== 'undefined') {
                 localStorage.removeItem('sportsync_logged_out');
               }
-              if (role === 'facility_owner') {
+
+              const isOwner =
+                role === 'facility_owner' ||
+                authedUser?.role === 'venue_owner' ||
+                authedUser?.role === 'organizer';
+
+              // Determine if this user already has an active, completed profile:
+              // 1. If isNewAccount is explicitly false, they are an existing user
+              // 2. Check profile fields on authedUser
+              // 3. Fall back to isUserOnboarded()
+              const isAlreadyComplete =
+                !isNewAccount ||
+                authedUser?.onboarding_completed === true ||
+                authedUser?.has_completed_onboarding === true ||
+                ((Array.isArray(authedUser?.preferred_sports) && authedUser.preferred_sports.length > 0) || authedUser?.primary_sport) ||
+                isUserOnboarded();
+
+              if (isOwner) {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                  if (isNewAccount) {
-                    window.location.href = '/onboarding?role=owner';
-                  } else {
-                    window.location.href = '/organizer';
-                  }
+                  window.location.href = isAlreadyComplete ? '/organizer' : '/onboarding?role=owner';
                 } else {
-                  navigateTo(isNewAccount ? 'faculty-setup' : 'home');
+                  navigateTo(isAlreadyComplete ? 'home' : 'faculty-setup');
                 }
-              } else if (isNewAccount) {
-                // ONLY brand new registered accounts are directed to onboarding!
+              } else if (isNewAccount && !isAlreadyComplete) {
                 if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
                   window.location.href = '/onboarding';
                 } else {

@@ -11,7 +11,7 @@ export type AuthRole = 'player' | 'facility_owner';
 
 interface AuthScreenProps {
   initialMode?: 'signup' | 'login';
-  onSuccess: (role: AuthRole, isNewAccount?: boolean) => void;
+  onSuccess: (role: AuthRole, isNewAccount?: boolean, user?: any) => void;
   onBack?: () => void;
   canGoBack?: boolean;
   onNavigateToResetPassword?: () => void;
@@ -277,6 +277,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       let message = err instanceof Error ? err.message : 'Authentication failed. Please check credentials.';
       if (message === 'Failed to fetch') {
         message = 'Unable to connect to the authentication server. Please verify that the backend is running and reachable.';
+      } else if (message.toLowerCase().includes('rate limit') || message.toLowerCase().includes('rate_limit')) {
+        message = 'Supabase email service is currently rate-limited. Tip: Use "Sign up with Google" above for instant access!';
       }
       setErrorMessage(message);
     } finally {
@@ -361,8 +363,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <GoogleSignInButton
               label={isSignUp ? 'Sign up with Google' : 'Continue with Google'}
               onError={(err) => setErrorMessage(err)}
-              onSuccess={(isNewUser) => {
-                onSuccess('player', Boolean(isNewUser));
+              onSuccess={(isNewUser, user) => {
+                const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer' || selectedRole === 'facility_owner';
+                onSuccess(isOwner ? 'facility_owner' : 'player', Boolean(isNewUser), user);
               }}
             />
             <div className="relative flex items-center justify-center">

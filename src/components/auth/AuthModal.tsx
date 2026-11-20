@@ -252,6 +252,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       let message = err instanceof Error ? err.message : 'Authentication failed';
       if (message === 'Failed to fetch') {
         message = 'Unable to connect to the authentication server. Please check your network connection.';
+      } else if (message.toLowerCase().includes('rate limit') || message.toLowerCase().includes('rate_limit')) {
+        message = 'Supabase email service is currently rate-limited. Tip: Use "Continue with Google" for instant access!';
       }
       setErrorMsg(message);
     } finally {
@@ -435,10 +437,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                 <GoogleSignInButton
                   label={mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'}
                   onError={(err) => setErrorMsg(err)}
-                  onSuccess={(isNewUser) => {
+                  onSuccess={(isNewUser, user) => {
                     onClose();
                     if (typeof window !== 'undefined') {
-                      window.location.href = isNewUser ? '/onboarding' : '/';
+                      const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer' || role === 'facility_owner';
+                      window.location.href = isNewUser ? '/onboarding' : (isOwner ? '/organizer' : '/');
                     }
                   }}
                 />
