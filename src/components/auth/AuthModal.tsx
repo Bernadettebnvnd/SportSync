@@ -93,15 +93,15 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       const endpoint = mode === 'signup' ? '/api/auth/register' : '/api/auth/login';
       const payload = mode === 'signup'
         ? {
-            email: trimmedEmail,
-            password: cleanPassword,
-            fullName: fullName.trim(),
-            role: role === 'facility_owner' ? 'facility_owner' : 'player',
-          }
+          email: trimmedEmail,
+          password: cleanPassword,
+          fullName: fullName.trim(),
+          role: role === 'facility_owner' ? 'facility_owner' : 'player',
+        }
         : {
-            email: trimmedEmail,
-            password: cleanPassword,
-          };
+          email: trimmedEmail,
+          password: cleanPassword,
+        };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -337,8 +337,8 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                 {isAlreadyLoggedIn
                   ? 'Account Session'
                   : mode === 'signup'
-                  ? 'Create SportSync Account'
-                  : 'Sign in to SportSync'}
+                    ? 'Create SportSync Account'
+                    : 'Sign in to SportSync'}
               </h2>
               <span className="text-[10px] text-[#A5B0A6] block">
                 {isAlreadyLoggedIn
@@ -420,11 +420,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`py-1.5 rounded-lg transition-all ${
-                    mode === 'signin'
+                  className={`py-1.5 rounded-lg transition-all ${mode === 'signin'
                       ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold shadow-xs'
                       : 'text-[#A5B0A6] hover:text-[#F4F7F0]'
-                  }`}
+                    }`}
                 >
                   Sign In
                 </button>
@@ -435,11 +434,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`py-1.5 rounded-lg transition-all ${
-                    mode === 'signup'
+                  className={`py-1.5 rounded-lg transition-all ${mode === 'signup'
                       ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold shadow-xs'
                       : 'text-[#A5B0A6] hover:text-[#F4F7F0]'
-                  }`}
+                    }`}
                 >
                   Create Account
                 </button>
@@ -517,11 +515,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                           <button
                             type="button"
                             onClick={() => setRole('player')}
-                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
-                              role === 'player'
+                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${role === 'player'
                                 ? 'bg-[#0F2A22] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-xs'
                                 : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6]'
-                            }`}
+                              }`}
                           >
                             <User className="w-4 h-4 shrink-0" />
                             <span className="text-xs">Player</span>
@@ -529,11 +526,10 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                           <button
                             type="button"
                             onClick={() => setRole('facility_owner')}
-                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
-                              role === 'facility_owner'
+                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${role === 'facility_owner'
                                 ? 'bg-[#0F2A22] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-xs'
                                 : 'bg-[#0B0F0C] border-white/10 text-[#A5B0A6]'
-                            }`}
+                              }`}
                           >
                             <Building2 className="w-4 h-4 shrink-0" />
                             <span className="text-xs">Facility Owner</span>
