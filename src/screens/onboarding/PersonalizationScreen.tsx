@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Check, ArrowRight, ArrowLeft, MapPin, User, Calendar, Clock, Camera } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Check, ArrowRight, ArrowLeft, MapPin, User, Calendar, Clock, Camera, Search, Navigation, Loader2 } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
 import { SportIcon, SportId } from '../../illustrations/SportIcons';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
@@ -52,8 +52,22 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
     }
     return null;
   });
-  const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? 'Naga City');
+  const [preferredArea, setPreferredArea] = useState(initialValues?.preferredArea ?? '');
+  const [locationSearch, setLocationSearch] = useState(initialValues?.preferredArea ?? '');
+  const [isLocating, setIsLocating] = useState(false);
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [availability, setAvailability] = useState(initialValues?.availability ?? '');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleBack = async () => {
     if (onDraftChange) {
@@ -79,9 +93,88 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
     'Flexible / Anytime',
   ];
 
-  const locationOptions = [
-    'Naga City',
+  const POPULAR_LOCATIONS = [
+    'Naga City, Camarines Sur',
+    'Legazpi City, Albay',
+    'Quezon City, Metro Manila',
+    'Makati, Metro Manila',
+    'Taguig (BGC), Metro Manila',
+    'Pasig, Metro Manila',
+    'Manila, Metro Manila',
+    'Mandaluyong, Metro Manila',
+    'Cebu City, Cebu',
+    'Mandaue City, Cebu',
+    'Davao City, Davao del Sur',
+    'Iloilo City, Iloilo',
+    'Bacolod, Negros Occidental',
+    'Baguio City, Benguet',
+    'San Fernando, Pampanga',
+    'Angeles City, Pampanga',
+    'Antipolo, Rizal',
+    'Santa Rosa, Laguna',
+    'Calamba, Laguna',
+    'Batangas City, Batangas',
+    'Cagayan de Oro, Misamis Oriental',
+    'General Santos, South Cotabato',
+    'Iriga City, Camarines Sur',
+    'Daet, Camarines Norte',
+    'Sorsogon City, Sorsogon',
   ];
+
+  const filteredLocations = useMemo(() => {
+    const q = locationSearch.trim().toLowerCase();
+    if (!q) return POPULAR_LOCATIONS.slice(0, 8);
+    return POPULAR_LOCATIONS.filter((loc) => loc.toLowerCase().includes(q)).slice(0, 8);
+  }, [locationSearch]);
+
+  const handleSelectLocation = (loc: string) => {
+    setPreferredArea(loc);
+    setLocationSearch(loc);
+    setIsLocationDropdownOpen(false);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data.address || {};
+            const city = addr.city || addr.town || addr.municipality || addr.city_district || addr.county || '';
+            const state = addr.state || addr.province || addr.region || '';
+            const detected = city && state ? `${city}, ${state}` : city || state || 'Current Location';
+            setPreferredArea(detected);
+            setLocationSearch(detected);
+            setIsLocationDropdownOpen(false);
+          } else {
+            setPreferredArea('Current Location');
+            setLocationSearch('Current Location');
+          }
+        } catch {
+          setPreferredArea('Current Location');
+          setLocationSearch('Current Location');
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      () => {
+        setIsLocating(false);
+        alert('Could not retrieve your location. Please enter your city or municipality manually.');
+      },
+      { timeout: 8000 }
+    );
+  };
 
   const toggleSport = (sport: string) => {
     if (selectedSports.includes(sport)) {
@@ -102,6 +195,10 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       alert('Please choose your skill level.');
       return;
     }
+    if (!preferredArea.trim()) {
+      alert('Please enter or select your playing location / city.');
+      return;
+    }
     if (!availability) {
       alert('Please select your general availability.');
       return;
@@ -116,7 +213,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       fullName: displayName.trim() || 'Player',
       selectedSports: finalSports,
       skillLevel: skillLabels[skillLevel],
-      preferredArea,
+      preferredArea: preferredArea.trim(),
       availability,
       avatarUrl: selectedAvatar,
     });
@@ -273,27 +370,102 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
         </div>
 
         {/* 4. Preferred Playing Location */}
-        <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
+        <div ref={dropdownRef} className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3 relative">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
-              4. Playing Location (Pilot Market)
+              4. Preferred Playing Location
             </label>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
-              Pilot Market
-            </span>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocating}
+              className="text-[11px] text-[#C8FF2E] hover:underline flex items-center gap-1 font-semibold disabled:opacity-50"
+            >
+              {isLocating ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Locating...</span>
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-3 h-3" />
+                  <span>Current Location</span>
+                </>
+              )}
+            </button>
           </div>
+
+          {/* Location Input with Search Icon */}
           <div className="relative flex items-center">
             <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
             <input
               type="text"
-              readOnly
-              value="Naga City, Camarines Sur"
-              className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none cursor-default font-semibold"
+              value={locationSearch}
+              onChange={(e) => {
+                const val = e.target.value;
+                setLocationSearch(val);
+                setPreferredArea(val);
+                setIsLocationDropdownOpen(true);
+              }}
+              onFocus={() => setIsLocationDropdownOpen(true)}
+              placeholder="Search or enter your city, municipality, province..."
+              className="w-full h-11 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E] font-medium"
             />
           </div>
-          <p className="text-[11px] text-[#A5B0A6]">
-            SportSync is currently exclusively live for players across Naga City, Camarines Sur.
-          </p>
+
+          {/* Location Dropdown / Suggestions */}
+          {isLocationDropdownOpen && (
+            <div className="absolute top-full left-0 right-0 mt-1 z-30 max-h-52 overflow-y-auto rounded-xl bg-[#1C241E] border border-white/10 shadow-2xl p-1.5 space-y-1 no-scrollbar">
+              {locationSearch.trim() && !POPULAR_LOCATIONS.some((l) => l.toLowerCase() === locationSearch.trim().toLowerCase()) && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectLocation(locationSearch.trim())}
+                  className="w-full text-left px-3 py-2 rounded-lg bg-[#C8FF2E]/10 hover:bg-[#C8FF2E]/20 text-[#C8FF2E] text-xs font-bold flex items-center gap-2 transition-colors"
+                >
+                  <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">Use &ldquo;{locationSearch.trim()}&rdquo;</span>
+                </button>
+              )}
+              {filteredLocations.map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => handleSelectLocation(loc)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-colors ${
+                    preferredArea === loc
+                      ? 'bg-[#141A15] text-[#C8FF2E] font-bold'
+                      : 'text-[#A5B0A6] hover:bg-[#141A15] hover:text-[#F4F7F0]'
+                  }`}
+                >
+                  <span className="truncate">{loc}</span>
+                  {preferredArea === loc && <Check className="w-3.5 h-3.5 text-[#C8FF2E]" />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Quick Select Popular Pills */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[10px] text-[#6F7B71] uppercase tracking-wider font-semibold block">
+              Popular areas:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {['Naga City', 'Quezon City', 'Makati', 'Cebu City', 'Davao City', 'Legazpi City', 'Baguio City'].map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => handleSelectLocation(chip)}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all ${
+                    preferredArea.toLowerCase().includes(chip.toLowerCase())
+                      ? 'bg-[#C8FF2E]/15 border-[#C8FF2E]/40 text-[#C8FF2E] font-bold'
+                      : 'bg-[#1C241E] border-white/5 text-[#A5B0A6] hover:text-white'
+                  }`}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* 5. General Availability */}

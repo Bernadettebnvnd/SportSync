@@ -3450,7 +3450,7 @@ export function useSportSyncBridge() {
     }) => {
       const cleanCity = prefs.preferredArea
         ? prefs.preferredArea.replace(/\s*\(Pilot Area\)/i, '').trim()
-        : 'Naga City';
+        : (userProfile.city || '');
       const formattedSports = prefs.preferredSports.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
       const cleanSkill = formatSkillTier(prefs.skillLevel);
       const cleanAvailability = prefs.availability || 'Weekday Evenings & Weekends';
@@ -3501,13 +3501,15 @@ export function useSportSyncBridge() {
           preferredSports: mappedSports,
           preferredFormat: 'doubles',
           skillLevel: mappedSkill,
-          city: prefs.preferredArea || 'Naga City',
+          city: cleanCity,
         });
       } catch (err) {
         console.warn('Profile update warning:', err);
       }
 
       if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_user_city', cleanCity);
+        localStorage.setItem('sportsync_user_location', cleanCity);
         localStorage.setItem('sportsync_user_skill', cleanSkill.toLowerCase());
         localStorage.setItem('sportsync_user_availability', cleanAvailability);
         localStorage.setItem('sportsync_onboarding_completed', 'true');
@@ -3520,7 +3522,7 @@ export function useSportSyncBridge() {
           nickname: prefs.fullName.split(' ')[0],
           preferredSports: mappedSports,
           skillLevel: mappedSkill,
-          city: prefs.preferredArea || 'Naga City',
+          city: cleanCity,
           preferredFormat: 'doubles',
           availability: cleanAvailability,
         });

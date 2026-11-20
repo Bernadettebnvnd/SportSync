@@ -879,7 +879,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     ? bridge.store.currentUser.full_name
                     : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
               selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
-              preferredArea: bridge.userProfile.city || 'Naga City',
+              preferredArea: bridge.userProfile.city || bridge.store.currentUser.city || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_city') || '' : ''),
               availability: bridge.userProfile.availability || 'Weekday Evenings & Weekends',
               skillLevel: initialSkillIndex,
             }}

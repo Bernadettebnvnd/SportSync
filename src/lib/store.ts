@@ -630,10 +630,10 @@ export function useMatchiStore() {
       availability?: string;
     }) => {
       const primarySport = data.preferredSports[0] || 'football';
-      const rawCity = data.city || globalState.currentUser.city || 'Naga City';
+      const rawCity = data.city || globalState.currentUser.city || '';
       const cleanCity = rawCity === 'Current Location'
-        ? 'Naga City'
-        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim() || 'Naga City');
+        ? (globalState.currentUser.city || 'Philippines')
+        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim());
       const formattedSports = data.preferredSports.map(getSportDisplayName);
       const cleanSkill = (data.skillLevel && data.skillLevel !== 'all_levels') ? data.skillLevel : 'beginner';
       const formattedSkill = cleanSkill.charAt(0).toUpperCase() + cleanSkill.slice(1);

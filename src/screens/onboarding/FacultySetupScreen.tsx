@@ -30,6 +30,7 @@ export interface FacultySetupData {
   adminName: string;
   email: string;
   phone: string;
+  city?: string;
   address: string;
   district: string;
   landmark?: string;
@@ -77,6 +78,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
   const [phone, setPhone] = useState(initialValues?.phone || currentUser.phone || '0917-555-0199');
 
   // Step 2: Location
+  const [city, setCity] = useState(initialValues?.city || currentUser.city || 'Naga City');
   const [address, setAddress] = useState(initialValues?.address || '');
   const [district, setDistrict] = useState(initialValues?.district || 'Bagumbayan Sur');
   const [landmark, setLandmark] = useState(initialValues?.landmark || '');
@@ -186,6 +188,10 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     }
 
     if (step === 2) {
+      if (!city.trim()) {
+        setValidationError('Please enter your facility city or municipality.');
+        return;
+      }
       if (!address.trim()) {
         setValidationError('Please enter your campus or street address.');
         return;
@@ -211,7 +217,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     if (step === 5) {
       setIsSubmitting(true);
       try {
-        const fullAddress = [address.trim(), district, 'Naga City', landmark.trim() ? `(${landmark.trim()})` : '']
+        const fullAddress = [address.trim(), district, city.trim(), landmark.trim() ? `(${landmark.trim()})` : '']
           .filter(Boolean)
           .join(', ');
 
@@ -230,9 +236,9 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           ownerEmail: email.trim() || 'partner@facility.ph',
           ownerPhone: phone.trim(),
           facilityName: facilityName.trim(),
-          description: `${facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'} in Naga City featuring ${selectedSports.join(', ')}.`,
+          description: `${facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'} in ${city.trim()} featuring ${selectedSports.join(', ')}.`,
           address: fullAddress,
-          city: 'Naga City',
+          city: city.trim(),
           featuredSports: normalizedSports,
           courts: generatedCourts,
           inventorySource: 'manual',
@@ -454,21 +460,20 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
         {step === 2 && (
           <div className="space-y-4 animate-fadeIn">
             <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
-                  1. Pilot Market
-                </label>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
-                  Naga City
-                </span>
-              </div>
+              <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                1. City / Municipality / Province
+              </label>
               <div className="relative flex items-center">
                 <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
                 <input
                   type="text"
-                  readOnly
-                  value="Naga City, Camarines Sur"
-                  className="w-full h-10 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none font-semibold cursor-default"
+                  value={city}
+                  onChange={(e) => {
+                    setCity(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder="e.g. Naga City, Makati, Cebu City"
+                  className="w-full h-11 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E] font-semibold"
                 />
               </div>
             </div>
@@ -754,7 +759,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Location</span>
                   <p className="text-white font-medium truncate">{address || 'Ateneo Ave'}</p>
-                  <p className="text-[10px] text-[#C8FF2E]">{district}, Naga City</p>
+                  <p className="text-[10px] text-[#C8FF2E]">{district ? `${district}, ` : ''}{city}</p>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">

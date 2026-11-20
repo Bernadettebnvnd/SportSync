@@ -98,7 +98,7 @@ function ExploreContent() {
           <p className="text-xs sm:text-sm text-[#A5B0A6]">
             {isLoading
               ? 'Checking real-time court availability...'
-              : `${filteredVenues.length} sports centers ready for booking in Naga City`}
+              : `${filteredVenues.length} sports centers ready for booking`}
           </p>
         </div>
       </div>
@@ -178,7 +178,7 @@ function ExploreContent() {
               <EmptyState
                 icon={<Compass className="w-6 h-6 text-[#C8FF2E]" />}
                 title="No facilities found matching your filters"
-                description="Try changing the sport filter or searching for another court in Naga City."
+                description="Try changing the sport filter or searching for another court or city."
                 action={{
                   label: 'Reset Filters',
                   onClick: handleResetFilters,

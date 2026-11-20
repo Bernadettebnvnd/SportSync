@@ -47,7 +47,31 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
 ];
 
 const PHILIPPINE_AREAS = [
-  'Naga City',
+  'Naga City, Camarines Sur',
+  'Legazpi City, Albay',
+  'Quezon City, Metro Manila',
+  'Makati, Metro Manila',
+  'Taguig (BGC), Metro Manila',
+  'Pasig, Metro Manila',
+  'Manila, Metro Manila',
+  'Mandaluyong, Metro Manila',
+  'Cebu City, Cebu',
+  'Mandaue City, Cebu',
+  'Davao City, Davao del Sur',
+  'Iloilo City, Iloilo',
+  'Bacolod, Negros Occidental',
+  'Baguio City, Benguet',
+  'San Fernando, Pampanga',
+  'Angeles City, Pampanga',
+  'Antipolo, Rizal',
+  'Santa Rosa, Laguna',
+  'Calamba, Laguna',
+  'Batangas City, Batangas',
+  'Cagayan de Oro, Misamis Oriental',
+  'General Santos, South Cotabato',
+  'Iriga City, Camarines Sur',
+  'Daet, Camarines Norte',
+  'Sorsogon City, Sorsogon',
 ];
 
 const NICKNAME_SUGGESTIONS = [
@@ -60,7 +84,13 @@ const NICKNAME_SUGGESTIONS = [
 ];
 
 const FACILITY_LOCATIONS = [
-  'Naga City',
+  'Naga City, Camarines Sur',
+  'Legazpi City, Albay',
+  'Quezon City, Metro Manila',
+  'Makati, Metro Manila',
+  'Taguig, Metro Manila',
+  'Cebu City, Cebu',
+  'Davao City, Davao del Sur',
 ];
 
 function OnboardingContent() {
@@ -293,12 +323,44 @@ function OnboardingContent() {
   };
 
   const handleUseCurrentLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setSelectedArea('Current Location');
+      setLocationSearch('Current Location');
+      return;
+    }
     setIsLocating(true);
-    setTimeout(() => {
-      setSelectedArea('Naga City');
-      setLocationSearch('Naga City');
-      setIsLocating(false);
-    }, 400);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data.address || {};
+            const city = addr.city || addr.town || addr.municipality || addr.county || '';
+            const state = addr.state || addr.province || '';
+            const detected = city && state ? `${city}, ${state}` : city || state || 'Current Location';
+            setSelectedArea(detected);
+            setLocationSearch(detected);
+          } else {
+            setSelectedArea('Current Location');
+            setLocationSearch('Current Location');
+          }
+        } catch {
+          setSelectedArea('Current Location');
+          setLocationSearch('Current Location');
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      () => {
+        setIsLocating(false);
+      },
+      { timeout: 7000 }
+    );
   };
 
   const handleSearchLocation = async (q: string) => {
@@ -307,18 +369,12 @@ function OnboardingContent() {
       setLocationSuggestions([]);
       return;
     }
-    const nagaDistricts = [
-      'Pacol, Naga City',
-      'Triangulo, Naga City',
-      'Magsaysay Ave, Naga City',
-      'San Felipe, Naga City',
-      'Concepcion Pequeña, Naga City',
-      'San Francisco, Downtown, Naga City',
-      'Bagumbayan Sur, Naga City',
-      'Naga City',
-    ];
-    const matches = nagaDistricts.filter((d) => d.toLowerCase().includes(q.trim().toLowerCase()));
-    setLocationSuggestions(matches.length > 0 ? matches : ['Naga City']);
+    const matches = PHILIPPINE_AREAS.filter((d) => d.toLowerCase().includes(q.trim().toLowerCase()));
+    if (q.trim() && !matches.some((m) => m.toLowerCase() === q.trim().toLowerCase())) {
+      setLocationSuggestions([q.trim(), ...matches]);
+    } else {
+      setLocationSuggestions(matches);
+    }
   };
 
   // =========================================================================
@@ -361,10 +417,10 @@ function OnboardingContent() {
 
       const finalFullName = fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
-      const rawCity = selectedArea || 'Naga City';
+      const rawCity = selectedArea || locationSearch || currentUser.city || '';
       const cleanCity = rawCity === 'Current Location'
-        ? 'Naga City'
-        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim() || 'Naga City');
+        ? (currentUser.city || 'Philippines')
+        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim());
 
       await completePlayerOnboarding({
         fullName: finalFullName,
@@ -550,7 +606,7 @@ function OnboardingContent() {
 
       const finalFullName = prefs.fullName?.trim() || fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = finalFullName.split(' ')[0] || 'Player';
-      const cleanCity = prefs.preferredArea || 'Naga City';
+      const cleanCity = prefs.preferredArea?.trim() || selectedArea || currentUser.city || '';
       const rawSkill = (prefs.skillLevel || 'intermediate').toLowerCase();
       const mappedSkill: SkillLevel = rawSkill === 'advanced' ? 'advanced' : rawSkill === 'beginner' ? 'beginner' : 'intermediate';
 
@@ -597,7 +653,7 @@ function OnboardingContent() {
               initialValues={{
                 displayName: fullName || currentUser.full_name || (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : ''),
                 selectedSports: selectedSports.length > 0 ? selectedSports : ['Football'],
-                preferredArea: selectedArea || 'Naga City',
+                preferredArea: selectedArea || currentUser.city || '',
                 availability: 'Weekday Evenings & Weekends',
                 skillLevel: initialSkillIndex,
               }}

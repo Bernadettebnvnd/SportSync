@@ -91,7 +91,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Filter by sport, location in Naga City..."
+          placeholder="Filter by sport, city, or venue..."
         />
 
         {/* Urgency & Timing Filter Pills */}
@@ -147,9 +147,9 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
                 <MapPin className="w-6 h-6" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-bold text-[#F4F7F0]">No pickup games in Naga City right now</h3>
+                <h3 className="text-base font-bold text-[#F4F7F0]">No pickup games found right now</h3>
                 <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                  No community matches currently scheduled in Naga City matching your filters. Host a game or check back soon!
+                  No community matches currently scheduled matching your filters. Host a game or check back soon!
                 </p>
               </div>
             </div>

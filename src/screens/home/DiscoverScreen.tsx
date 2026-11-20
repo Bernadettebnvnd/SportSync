@@ -93,18 +93,32 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [activeSport, setActiveSport] = useState<string>('All');
   const [courtSearchInput, setCourtSearchInput] = useState<string>('');
 
-  // Fixed Naga City pilot location
-  const userLocation = 'Naga City';
+  // User's saved reference location (falls back gracefully if unassigned)
+  const userLocation =
+    user?.city ||
+    currentUser.city ||
+    (typeof window !== 'undefined'
+      ? localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location')
+      : '') ||
+    'Naga City';
 
   const userName = user?.name || currentUser.full_name || (effectiveIsGuest ? 'Guest' : 'Player');
 
   // Time-based greeting per Phase 8
   const { salutation, fullGreeting, showName } = useTimeGreeting(userName, effectiveIsGuest);
 
-  // Filter featured courts by active sport in Naga City
+  // Filter featured courts by active sport and prioritize user location
   const featuredCourts = useMemo(() => {
-    return venues.filter((v) => {
-      if (!isNagaVenue(v)) return false;
+    const qCity = userLocation.toLowerCase().split(',')[0].trim();
+    const localVenues = venues.filter((v) => {
+      const vCity = (v.city || '').toLowerCase();
+      const vAddr = (v.address || '').toLowerCase();
+      return vCity.includes(qCity) || vAddr.includes(qCity);
+    });
+
+    const candidateVenues = localVenues.length > 0 ? localVenues : venues;
+
+    return candidateVenues.filter((v) => {
       if (activeSport !== 'All') {
         const sportLower = activeSport.toLowerCase();
         const primaryMatch = v.sport.toLowerCase().includes(sportLower);
@@ -114,7 +128,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       }
       return true;
     });
-  }, [venues, activeSport]);
+  }, [venues, activeSport, userLocation]);
 
   // Filter upcoming games by active sport and strict expiration (strictly deduplicated by game.id)
   const upcomingGames = useMemo(() => {
@@ -303,7 +317,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <p className="text-[11px] text-[#A5B0A6]">
-                📍 Naga City, Camarines Sur • Live verified availability
+                📍 {userLocation ? `${userLocation}` : 'Sports Hubs'} • Live verified availability
               </p>
             </div>
           </div>
@@ -312,7 +326,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onClick={() =>
               onNavigateToVenues({
                 sport: activeSport !== 'All' ? activeSport : undefined,
-                city: 'naga',
+                city: userLocation ? userLocation.split(',')[0].trim().toLowerCase() : undefined,
               })
             }
             className="text-xs text-[#C8FF2E] font-bold flex items-center gap-0.5 hover:underline press-scale shrink-0"
@@ -322,7 +336,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </button>
         </div>
 
-        {/* Featured Courts Content: Real Cards vs Truthful Naga Empty State */}
+        {/* Featured Courts Content: Real Cards vs Truthful Empty State */}
         {featuredCourts.length > 0 ? (
           <div className="space-y-3.5">
             {featuredCourts.slice(0, 3).map((venue) => (
@@ -341,12 +355,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </div>
             <div className="space-y-1">
               <h4 className="font-display font-bold text-sm text-[#F4F7F0]">
-                No {activeSport !== 'All' ? activeSport : ''} courts found in Naga City
+                No {activeSport !== 'All' ? activeSport : ''} courts found in {userLocation}
               </h4>
               <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
                 {activeSport !== 'All'
-                  ? `No verified ${activeSport} facilities currently available in Naga City. Try another sport or view all local courts.`
-                  : 'No verified facilities currently available in Naga City. Check back soon as more local venues onboard.'}
+                  ? `No verified ${activeSport} facilities currently available in ${userLocation}. Try another sport or view all local courts.`
+                  : `No verified facilities currently available in ${userLocation}. Check back soon as more local venues onboard.`}
               </p>
             </div>
             {activeSport !== 'All' && (
@@ -356,7 +370,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   onClick={() => setActiveSport('All')}
                   className="px-4 py-2 rounded-xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-xs font-bold text-[#0B0F0C] transition-all press-scale shadow-sm"
                 >
-                  View All Sports in Naga
+                  View All Sports in {userLocation}
                 </button>
               </div>
             )}
