@@ -4,7 +4,6 @@ import React from 'react';
 import {
   Settings,
   Trophy,
-  Flame,
   MapPin,
   Sparkles,
   LogOut,
@@ -22,7 +21,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
-import { StatTile, LevelBadge, XpRing, RatingChip } from '../../design-system/components/StatTile';
+import { StatTile, RatingChip } from '../../design-system/components/StatTile';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
 import { CommunityGame } from '../../mock/types';
@@ -277,15 +276,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       </div>
 
       <div className="px-4 pt-1 space-y-3.5">
-        {/* 2. Hero Avatar & Playmaker Level & XP Ring */}
+        {/* 2. Hero Avatar & Player Information */}
         <div className="p-4 rounded-3xl bg-[#0F2A22] border border-white/10 relative overflow-hidden flex flex-col gap-3 shadow-xl">
           {/* Subtle accent glow in top corner */}
           <div className="absolute -top-12 -right-12 w-28 h-28 bg-[#C8FF2E]/10 rounded-full blur-2xl pointer-events-none" />
 
-          {/* Top Row: Avatar + Name on left, XP Progress Ring on right */}
+          {/* Top Row: Avatar + Name on left, Location Badge on right */}
           <div className="flex items-center justify-between gap-3 min-w-0 relative z-10">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <UserAvatar name={displayName} size={52} />
+            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+              <UserAvatar name={displayName} size={56} />
               <div className="min-w-0 flex-1">
                 <h2 className="font-display font-black text-lg text-[#F4F7F0] truncate leading-snug">
                   {displayName}
@@ -296,29 +295,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               </div>
             </div>
 
-            {/* XP Progress Ring with visible SVG gauge */}
-            <XpRing
-              currentXp={isGuest ? 0 : user?.xp || 0}
-              nextLevelXp={isGuest ? 500 : user?.xpNextLevel || 500}
-              level={isGuest ? 1 : user?.level || 1}
-              size={58}
-            />
-          </div>
-
-          {/* Bottom Row: Level Badge, Streak, Location Badges */}
-          <div className="flex items-center gap-1.5 pt-2 border-t border-white/10 overflow-x-auto no-scrollbar relative z-10">
-            <LevelBadge
-              level={isGuest ? 1 : user?.level || 1}
-              title={isGuest ? 'Guest Explorer' : user?.levelTitle || 'Rookie Starter'}
-            />
-            {!isGuest && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#141A15] border border-[#C8FF2E]/40 text-[#C8FF2E] text-[10px] font-bold whitespace-nowrap shrink-0">
-                <Flame className="w-3 h-3 text-[#C8FF2E]" />
-                <span>{user?.streakWeeks || 0}W Streak</span>
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#141A15] border border-white/10 text-[#A5B0A6] text-[10px] font-medium whitespace-nowrap shrink-0">
-              <MapPin className="w-3 h-3 text-[#C8FF2E]" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#141A15] border border-white/10 text-[#F4F7F0] text-xs font-medium whitespace-nowrap shrink-0 shadow-xs">
+              <MapPin className="w-3.5 h-3.5 text-[#C8FF2E]" />
               <span>{userCity}</span>
             </span>
           </div>
@@ -326,9 +304,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         {/* 3. Performance Stats (Participation History) */}
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 px-1">
             <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
-              Career Participation &amp; XP
+              Career Participation
             </h3>
             <button
               onClick={onOpenLeaderboard}
@@ -339,7 +317,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <StatTile
               value={isGuest ? 0 : user?.matchesTotal || 0}
               label="Matches Played"
@@ -353,11 +331,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   ? `${Math.round(((user.wins || 0) / user.matchesTotal) * 100)}% Win`
                   : '0% Wins'
               }
-            />
-            <StatTile
-              value={isGuest ? '0 XP' : `${user?.xp || 0} XP`}
-              label="Playmaker XP"
-              trend={isGuest ? 'Sign in' : 'Progress'}
             />
             <StatTile
               value={userSkill}
@@ -480,79 +453,106 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </p>
         </div>
 
-        {/* 7. Theme Preference Card */}
-        {onToggleTheme && (
-          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#1C241E] flex items-center justify-center text-[#C8FF2E]">
-                {isLightMode ? <Sun className="w-4 h-4 text-[#E29B24]" /> : <Moon className="w-4 h-4 text-[#C8FF2E]" />}
-              </div>
-              <div>
-                <span className="text-xs font-bold text-[#F4F7F0] block leading-tight">
-                  {isLightMode ? 'Light Canvas Active' : 'Dark Floodlight Active'}
-                </span>
-                <span className="text-[10px] text-[#A5B0A6]">
-                  {isLightMode ? 'Clean daylight contrast' : 'Night stadium pitch view'}
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              className={`h-8 px-3 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all press-scale ${
-                isLightMode
-                  ? 'bg-[#1C241E] text-[#0F1612] hover:bg-[#DDE3D9]'
-                  : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26]'
-              }`}
-            >
-              {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
-              <span>{isLightMode ? 'Switch to Dark' : 'Switch to Light'}</span>
-            </button>
+        {/* 7. General Settings */}
+        <div className="space-y-2.5 pt-3">
+          <div className="px-1">
+            <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+              General Settings
+            </h3>
+            <p className="text-[11px] text-[#A5B0A6]/70 mt-0.5">
+              Application-level preferences and appearance
+            </p>
           </div>
-        )}
 
-        {/* 8. Account Actions & Logout */}
-        <div className="pt-1 space-y-2 pb-4">
-          {isGuest && onRequireAuth && (
+          {/* Theme Preference Switch Card */}
+          {onToggleTheme && (
+            <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#1C241E] flex items-center justify-center text-[#C8FF2E] shrink-0">
+                  {isLightMode ? <Sun className="w-5 h-5 text-[#E29B24]" /> : <Moon className="w-5 h-5 text-[#C8FF2E]" />}
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-[#F4F7F0] block leading-tight">
+                    Light
+                  </span>
+                  <span className="text-[11px] text-[#A5B0A6]">
+                    {isLightMode ? 'Light mode enabled' : 'Dark mode active'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isLightMode}
+                onClick={onToggleTheme}
+                aria-label="Toggle Light mode"
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out press-scale ${
+                  isLightMode ? 'bg-[#C8FF2E]' : 'bg-[#1C241E] border border-white/10'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full shadow-md transition duration-200 ease-in-out ${
+                    isLightMode ? 'translate-x-5 bg-[#0B0F0C]' : 'translate-x-0 bg-[#A5B0A6]'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 8. Account Settings */}
+        <div className="space-y-2.5 pt-4 pb-6">
+          <div className="px-1">
+            <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#A5B0A6]">
+              Account Settings
+            </h3>
+            <p className="text-[11px] text-[#A5B0A6]/70 mt-0.5">
+              Personal information, privacy, and account security
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {isGuest && onRequireAuth && (
+              <button
+                type="button"
+                onClick={() => onRequireAuth('Join SportSync', 'Create an account to track your matches, reserve courts, and unlock all features.')}
+                className="w-full h-11 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#d4ff52] flex items-center justify-center gap-2 text-xs font-bold transition-all shadow-[0_4px_16px_rgba(200,255,46,0.25)]"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Create Account or Sign In</span>
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => onRequireAuth('Join SportSync', 'Create an account to track your matches, earn XP, and unlock all features.')}
-              className="w-full h-11 rounded-2xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#d4ff52] flex items-center justify-center gap-2 text-xs font-bold transition-all shadow-[0_4px_16px_rgba(200,255,46,0.25)]"
+              onClick={() => onEditPreferences ? onEditPreferences() : setIsEditModalOpen(true)}
+              className="w-full h-11 rounded-2xl bg-[#141A15] text-[#C8FF2E] hover:bg-[#1C241E] border border-[#C8FF2E]/30 flex items-center justify-center gap-2 text-xs font-bold transition-all press-scale shadow-[0_0_14px_rgba(200,255,46,0.12)]"
             >
-              <UserCheck className="w-4 h-4" />
-              <span>Create Account or Sign In</span>
+              <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
+              <span>Edit Playing Preferences (Sports &amp; City)</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => onEditPreferences ? onEditPreferences() : setIsEditModalOpen(true)}
-            className="w-full h-11 rounded-2xl bg-[#141A15] text-[#C8FF2E] hover:bg-[#1C241E] border border-[#C8FF2E]/30 flex items-center justify-center gap-2 text-xs font-bold transition-all press-scale shadow-[0_0_14px_rgba(200,255,46,0.12)]"
-          >
-            <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
-            <span>Edit Playing Preferences (Sports &amp; City)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="w-full h-11 rounded-2xl bg-[#141A15] text-[#F4F7F0] hover:bg-[#1C241E] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
-          >
-            <Settings className="w-4 h-4 text-[#A5B0A6]" />
-            <span>Account Settings</span>
-          </button>
-
-          {!isGuest && onLogout && (
             <button
               type="button"
-              onClick={onLogout}
-              className="w-full h-11 rounded-2xl bg-[#1C241E] text-[#FF5C5C] hover:bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
+              onClick={onOpenSettings}
+              className="w-full h-11 rounded-2xl bg-[#141A15] text-[#F4F7F0] hover:bg-[#1C241E] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
             >
-              <LogOut className="w-4 h-4" />
-              <span>Sign Out of {APP_CONFIG.appName}</span>
+              <Settings className="w-4 h-4 text-[#A5B0A6]" />
+              <span>System &amp; Regional Settings</span>
             </button>
-          )}
+
+            {!isGuest && onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="w-full h-11 rounded-2xl bg-[#1C241E] text-[#FF5C5C] hover:bg-[#FF5C5C]/10 border border-[#FF5C5C]/20 flex items-center justify-center gap-2 text-xs font-bold transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out of {APP_CONFIG.appName}</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
