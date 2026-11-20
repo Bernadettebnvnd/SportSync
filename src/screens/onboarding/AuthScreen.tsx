@@ -11,6 +11,7 @@ export type AuthRole = 'player' | 'facility_owner';
 
 interface AuthScreenProps {
   initialMode?: 'signup' | 'login';
+  initialRole?: AuthRole;
   onSuccess: (role: AuthRole, isNewAccount?: boolean, user?: any) => void;
   onBack?: () => void;
   canGoBack?: boolean;
@@ -19,6 +20,7 @@ interface AuthScreenProps {
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   initialMode = 'login',
+  initialRole = 'player',
   onSuccess,
   onBack,
   canGoBack = false,
@@ -26,7 +28,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 }) => {
   const { currentUser, setAuthenticatedUser } = useMatchiStore();
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
-  const [selectedRole, setSelectedRole] = useState<AuthRole>('player');
+  const [selectedRole, setSelectedRole] = useState<AuthRole>(initialRole);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +51,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   useEffect(() => {
     setIsSignUp(initialMode === 'signup');
   }, [initialMode]);
+
+  useEffect(() => {
+    if (initialRole) {
+      setSelectedRole(initialRole);
+    }
+  }, [initialRole]);
 
   const handleSendResetEmail = async (targetEmail: string) => {
     const trimmedEmail = targetEmail.trim().toLowerCase();

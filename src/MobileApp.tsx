@@ -4,10 +4,11 @@ import { QuickActionSheet } from './design-system/components/QuickActionSheet';
 import { Toast } from './design-system/components/SearchBar';
 import { PhoneFrame } from './design-system/components/PhoneFrame';
 
-// All 28 Screen Components
+// All 28+ Screen Components
+import { LandingPage } from './components/landing/LandingPage';
 import { SplashScreen } from './screens/onboarding/SplashScreen';
 import { CarouselScreen } from './screens/onboarding/CarouselScreen';
-import { AuthScreen } from './screens/onboarding/AuthScreen';
+import { AuthScreen, AuthRole } from './screens/onboarding/AuthScreen';
 import { ResetPasswordScreen } from './screens/onboarding/ResetPasswordScreen';
 import { PersonalizationScreen } from './screens/onboarding/PersonalizationScreen';
 import { FacultySetupScreen } from './screens/onboarding/FacultySetupScreen';
@@ -51,6 +52,7 @@ import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
 
 export type ScreenId =
+  | 'landing'
   | 'splash'
   | 'carousel'
   | 'auth'
@@ -227,7 +229,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         if (
           searchParams.get('auth') === 'signin' ||
           searchParams.get('auth') === 'login' ||
-          searchParams.get('login') === 'true'
+          searchParams.get('auth') === 'signup' ||
+          searchParams.get('auth') === 'register' ||
+          searchParams.get('login') === 'true' ||
+          searchParams.get('signup') === 'true'
         ) {
           return 'auth';
         }
@@ -241,10 +246,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       } catch {}
     }
     if (!isUserAuthenticated()) {
-      if (typeof window !== 'undefined' && (sessionStorage.getItem('sportsync_splash_shown') === 'true' || localStorage.getItem('sportsync_logged_out') === 'true')) {
-        return 'auth';
-      }
-      return 'auth';
+      return 'landing';
     }
     // Only route to onboarding if explicitly marked as a brand new registration in this session AND not skipped
     const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
@@ -313,7 +315,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     return false;
   });
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>('login');
+  const [authInitialMode, setAuthInitialMode] = useState<'signup' | 'login'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const authParam = searchParams.get('auth');
+        if (authParam === 'signup' || authParam === 'register' || searchParams.get('signup') === 'true') {
+          return 'signup';
+        }
+      } catch {}
+    }
+    return 'login';
+  });
+  const [authInitialRole, setAuthInitialRole] = useState<AuthRole>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const roleParam = searchParams.get('role');
+        if (roleParam === 'owner' || roleParam === 'facility' || roleParam === 'facility_owner') {
+          return 'facility_owner';
+        }
+      } catch {}
+    }
+    return 'player';
+  });
   const [guestPrompt, setGuestPrompt] = useState<{
     isOpen: boolean;
     title?: string;
@@ -434,12 +459,28 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   }, []);
 
   useEffect(() => {
+    onScreenChange?.(currentScreen);
+  }, [currentScreen, onScreenChange]);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.get('auth') === 'login' || searchParams.get('login') === 'true') {
+      const authParam = searchParams.get('auth');
+      if (authParam === 'login' || authParam === 'signin' || searchParams.get('login') === 'true') {
         setCurrentScreen('auth');
         setAuthInitialMode('login');
-        setScreenHistory(['auth']);
+        setScreenHistory(['landing', 'auth']);
+        onScreenChange?.('auth');
+      } else if (authParam === 'signup' || authParam === 'register' || searchParams.get('signup') === 'true') {
+        setCurrentScreen('auth');
+        setAuthInitialMode('signup');
+        const roleParam = searchParams.get('role');
+        if (roleParam === 'owner' || roleParam === 'facility' || roleParam === 'facility_owner') {
+          setAuthInitialRole('facility_owner');
+        } else {
+          setAuthInitialRole('player');
+        }
+        setScreenHistory(['landing', 'auth']);
         onScreenChange?.('auth');
       }
     }
@@ -455,6 +496,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       else if (initialScreen === 'profile') setActiveTab('profile');
     }
   }, [initialScreen]);
+
+  // Automatically route authenticated returning users away from the public landing page to their dashboard
+  useEffect(() => {
+    if (bridge.store.isLoading || isLoggingOutRef.current || currentScreen !== 'landing') {
+      return;
+    }
+    if (isUserAuthenticated()) {
+      const isJustRegistered = typeof window !== 'undefined' && sessionStorage.getItem('sportsync_just_registered') === 'true';
+      const hasSkipped = typeof window !== 'undefined' && localStorage.getItem('sportsync_skipped_onboarding') === 'true';
+      if (isJustRegistered && !hasSkipped && !isUserOnboarded()) {
+        const isOwner =
+          bridge.store.currentUser.role === 'venue_owner' ||
+          bridge.store.currentUser.role === 'organizer' ||
+          (typeof window !== 'undefined' && (
+            localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
+            localStorage.getItem('sportsync_user_role') === 'facility_owner'
+          ));
+        const target: ScreenId = isOwner ? 'faculty-setup' : 'personalization';
+        setCurrentScreen(target);
+        setScreenHistory([target]);
+      } else {
+        setCurrentScreen('home');
+        setScreenHistory(['home']);
+      }
+    }
+  }, [bridge.store.isLoading, bridge.store.currentUser.id, bridge.userProfile.id, currentScreen]);
 
   // Strict Routing: Route newly registered users with incomplete profiles to setup.
   // Existing accounts logging in must proceed directly to their dashboard.
@@ -482,7 +549,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         localStorage.getItem('sportsync_user_role') === 'organizer'
       ));
     const setupScreen: ScreenId = isOwner ? 'faculty-setup' : 'personalization';
-    const allowedScreens: ScreenId[] = ['personalization', 'faculty-setup', 'auth', 'invitation-landing', 'splash'];
+    const allowedScreens: ScreenId[] = ['landing', 'personalization', 'faculty-setup', 'auth', 'invitation-landing', 'splash'];
     if (!allowedScreens.includes(currentScreen)) {
       if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
         window.location.href = isOwner ? '/onboarding?role=owner' : '/onboarding';
@@ -695,7 +762,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       if (isUserAuthenticated()) {
         navigateTo('home');
       } else {
-        navigateTo('auth');
+        navigateTo('landing');
       }
     }
   };
@@ -791,7 +858,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Render current active screen
   const renderScreen = () => {
     switch (currentScreen) {
-      // Flow 1: Onboarding & Auth
+      // Flow 1: Public Landing Page, Onboarding & Auth
+      case 'landing':
+        return (
+          <LandingPage
+            isLightMode={isLightMode}
+            onToggleTheme={toggleTheme}
+            onSignIn={() => {
+              setAuthInitialMode('login');
+              setAuthInitialRole('player');
+              navigateTo('auth');
+            }}
+            onGetStarted={(role = 'player') => {
+              setAuthInitialMode('signup');
+              setAuthInitialRole(role);
+              navigateTo('auth');
+            }}
+          />
+        );
       case 'splash':
         return (
           <SplashScreen
@@ -799,7 +883,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (typeof window !== 'undefined') {
                 sessionStorage.setItem('sportsync_splash_shown', 'true');
               }
-              navigateTo('auth');
+              navigateTo('landing');
             }}
             onGetStarted={() => {
               if (typeof window !== 'undefined') {
@@ -838,10 +922,30 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'auth': {
-        const canGoBack = screenHistory.length > 1 && isUserAuthenticated();
+        const canGoBack = !isUserAuthenticated() || screenHistory.length > 1;
+        const handleAuthBack = () => {
+          if (!isUserAuthenticated()) {
+            if (typeof window !== 'undefined') {
+              try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('auth');
+                url.searchParams.delete('login');
+                url.searchParams.delete('signup');
+                url.searchParams.delete('role');
+                window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+              } catch {}
+            }
+            setScreenHistory(['landing']);
+            setCurrentScreen('landing');
+            onScreenChange?.('landing');
+            return;
+          }
+          goBack();
+        };
         return (
           <AuthScreen
             initialMode={authInitialMode}
+            initialRole={authInitialRole}
             canGoBack={canGoBack}
             onNavigateToResetPassword={() => navigateTo('reset-password')}
             onSuccess={(role, isNewAccount, authedUser) => {
@@ -900,7 +1004,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 }
               }
             }}
-            onBack={canGoBack ? goBack : undefined}
+            onBack={canGoBack ? handleAuthBack : undefined}
           />
         );
       }
