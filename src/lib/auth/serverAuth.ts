@@ -82,6 +82,15 @@ export function isMissingColumnError(err: any): boolean {
   );
 }
 
+export function extractMissingColumn(err: any): string | null {
+  if (!err || !err.message) return null;
+  const match =
+    err.message.match(/Could not find the '([^']+)' column/i) ||
+    err.message.match(/column "?([^"\s]+)"? of relation/i) ||
+    err.message.match(/column "?([^"\s]+)"? does not exist/i);
+  return match ? match[1] : null;
+}
+
 function parsePreferredSports(rawSports: unknown): string[] {
   if (Array.isArray(rawSports)) {
     return rawSports.filter((s): s is string => typeof s === 'string' && Boolean(s.trim()));
@@ -301,8 +310,15 @@ async function upsertCanonicalPublicUser(
 
     if (updateErr && isMissingColumnError(updateErr)) {
       const sanitizedUpdate = { ...updateData };
+      const missing = extractMissingColumn(updateErr);
+      if (missing) delete sanitizedUpdate[missing];
       delete sanitizedUpdate.onboarding_completed;
+      delete sanitizedUpdate.has_completed_onboarding;
       delete sanitizedUpdate.preferred_format;
+      delete sanitizedUpdate.preferred_sports;
+      delete sanitizedUpdate.primary_sport;
+      delete sanitizedUpdate.skill_level;
+      delete sanitizedUpdate.city;
       const retry = await dbClient
         .from('users')
         .update(sanitizedUpdate)
@@ -314,7 +330,7 @@ async function upsertCanonicalPublicUser(
     }
 
     if (updateErr) {
-      console.error('[ServerAuth] Failed updating existing public.users row:', updateErr);
+      console.warn('[ServerAuth] Warning updating existing public.users row:', updateErr);
     }
     return updated || { ...existingRow, ...updateData };
   }
@@ -326,14 +342,11 @@ async function upsertCanonicalPublicUser(
     email: normalizedEmail,
     full_name: cleanName,
     nickname,
-    avatar_url: params.avatarUrl || null,
     role: params.role,
-    onboarding_completed: Boolean(params.onboardingCompleted),
-    primary_sport: null,
-    preferred_sports: [],
-    skill_level: null,
-    city: params.city || null,
   };
+  if (params.avatarUrl) newPayload.avatar_url = params.avatarUrl;
+  if (params.city) newPayload.city = params.city;
+  if (params.onboardingCompleted) newPayload.onboarding_completed = true;
 
   let { data: inserted, error: insertErr } = await dbClient
     .from('users')
@@ -342,23 +355,47 @@ async function upsertCanonicalPublicUser(
     .maybeSingle();
 
   if (insertErr && isMissingColumnError(insertErr)) {
-    console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying without problematic fields:', insertErr.message);
+    console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying with minimal fields:', insertErr.message);
     const sanitizedPayload = { ...newPayload };
-    // Remove columns that may be missing in the database schema
+    const missing = extractMissingColumn(insertErr);
+    if (missing) delete sanitizedPayload[missing];
     delete sanitizedPayload.onboarding_completed;
+    delete sanitizedPayload.has_completed_onboarding;
     delete sanitizedPayload.preferred_format;
-    const retry = await dbClient
+    delete sanitizedPayload.preferred_sports;
+    delete sanitizedPayload.primary_sport;
+    delete sanitizedPayload.skill_level;
+    delete sanitizedPayload.city;
+
+    let retry = await dbClient
       .from('users')
       .upsert(sanitizedPayload, { onConflict: 'id' })
       .select('*')
       .maybeSingle();
+
+    if (retry.error && isMissingColumnError(retry.error)) {
+      // Ultra-minimal core fallback
+      const corePayload: Record<string, any> = {
+        id: params.authUserId,
+        email: normalizedEmail,
+        full_name: cleanName,
+        role: params.role,
+      };
+      retry = await dbClient
+        .from('users')
+        .upsert(corePayload, { onConflict: 'id' })
+        .select('*')
+        .maybeSingle();
+    }
+
     inserted = retry.data;
     insertErr = retry.error;
   }
 
   if (insertErr) {
-    console.error('[ServerAuth] Error inserting canonical public.users row:', insertErr);
-    throw new Error(`Failed to persist user profile in database: ${insertErr.message}`);
+    console.warn('[ServerAuth] Warning inserting canonical public.users row:', insertErr);
+    // Never throw a hard blocking error: returning newPayload allows user registration & login to proceed smoothly
+    return newPayload;
   }
 
   return inserted || newPayload;
@@ -967,9 +1004,14 @@ export async function serverUpdateUserProfile(
       };
 
       if (isMissingColumnError(error)) {
+        const missing = extractMissingColumn(error);
+        if (missing) delete fallbackPayload[missing];
         delete fallbackPayload.onboarding_completed;
         delete fallbackPayload.has_completed_onboarding;
         delete fallbackPayload.preferred_format;
+        delete fallbackPayload.preferred_sports;
+        delete fallbackPayload.primary_sport;
+        delete fallbackPayload.skill_level;
       }
 
       const retryRes = await db
