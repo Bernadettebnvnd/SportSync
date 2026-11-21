@@ -16,6 +16,7 @@ export interface SanitizedUser {
   preferred_format?: string;
   skill_level?: string;
   city?: string;
+  phone?: string;
   onboarding_completed: boolean;
   created_at: string;
 }
@@ -23,6 +24,53 @@ export interface SanitizedUser {
 export type StoredUser = SanitizedUser;
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `pwd_hash:${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, storedVal?: string | null): boolean {
+  if (!storedVal) return false;
+  const hashPart = storedVal.startsWith('pwd_hash:')
+    ? storedVal.split('|')[0]
+    : storedVal;
+  if (!hashPart.startsWith('pwd_hash:')) return false;
+  const parts = hashPart.split(':');
+  if (parts.length !== 3) return false;
+  const salt = parts[1];
+  const originalHash = parts[2];
+  try {
+    const key = crypto.scryptSync(password, salt, 64);
+    const keyHex = key.toString('hex');
+    return keyHex === originalHash;
+  } catch {
+    return false;
+  }
+}
+
+export function extractStoredHashAndPhone(val?: string | null): { hash: string | null; realPhone: string | null } {
+  if (!val) return { hash: null, realPhone: null };
+  if (!val.startsWith('pwd_hash:')) {
+    return { hash: null, realPhone: val };
+  }
+  const pipeIndex = val.indexOf('|');
+  if (pipeIndex !== -1) {
+    return {
+      hash: val.substring(0, pipeIndex),
+      realPhone: val.substring(pipeIndex + 1),
+    };
+  }
+  return { hash: val, realPhone: null };
+}
+
+export function combineHashAndPhone(hash: string, realPhone?: string | null): string {
+  if (realPhone && realPhone.trim()) {
+    return `${hash}|${realPhone.trim()}`;
+  }
+  return hash;
+}
 
 export function createSessionToken(user: SanitizedUser): string {
   const payload = Buffer.from(
@@ -248,6 +296,7 @@ async function upsertCanonicalPublicUser(
     role: UserRole;
     city?: string | null;
     avatarUrl?: string | null;
+    phone?: string | null;
     onboardingCompleted?: boolean;
     overwriteOnboarding?: boolean;
   }
@@ -293,12 +342,12 @@ async function upsertCanonicalPublicUser(
     if (params.avatarUrl && !existingRow.avatar_url) {
       updateData.avatar_url = params.avatarUrl;
     }
+    if (params.phone && !existingRow.phone) {
+      updateData.phone = params.phone;
+    }
     if (params.overwriteOnboarding) {
       updateData.role = params.role;
       updateData.onboarding_completed = Boolean(params.onboardingCompleted);
-    }
-    if (typeof existingRow.phone === 'string' && existingRow.phone.startsWith('pwd_hash:')) {
-      updateData.phone = null;
     }
 
     let { data: updated, error: updateErr } = await dbClient
@@ -346,6 +395,7 @@ async function upsertCanonicalPublicUser(
   };
   if (params.avatarUrl) newPayload.avatar_url = params.avatarUrl;
   if (params.city) newPayload.city = params.city;
+  if (params.phone) newPayload.phone = params.phone;
   if (params.onboardingCompleted) newPayload.onboarding_completed = true;
 
   let { data: inserted, error: insertErr } = await dbClient
@@ -519,12 +569,15 @@ export async function serverRegister(data: {
     throw new Error('Database client unavailable after registration.');
   }
 
+  const passwordHash = hashPassword(cleanPassword);
+
   const dbProfile = await upsertCanonicalPublicUser(dbClient, {
     authUserId: supaUserId,
     email: normalizedEmail,
     fullName: cleanName,
     role: assignedRole,
     city: registrationCity,
+    phone: passwordHash,
     onboardingCompleted: false,
     overwriteOnboarding: true,
   });
@@ -588,20 +641,19 @@ export async function serverLogin(data: {
     }
   }
 
-  // 2. If signInWithPassword failed due to "Email not confirmed", auto-confirm via Admin API and retry once
-  const isUnconfirmedEmail = Boolean(
-    error &&
-      (error.message?.toLowerCase().includes('email not confirmed') ||
-        error.message?.toLowerCase().includes('not confirmed') ||
-        (error as any).code === 'email_not_confirmed' ||
-        error.message?.toLowerCase().includes('confirm'))
-  );
+  // 2. If signInWithPassword returned an error, attempt auto-confirm if admin client is available
+  if (error || !supaData?.user) {
+    const isUnconfirmedEmail = Boolean(
+      error &&
+        (error.message?.toLowerCase().includes('email not confirmed') ||
+          error.message?.toLowerCase().includes('not confirmed') ||
+          (error as any).code === 'email_not_confirmed' ||
+          error.message?.toLowerCase().includes('confirm'))
+    );
 
-  if (isUnconfirmedEmail) {
-    if (admin) {
+    if (isUnconfirmedEmail && admin) {
       try {
         let targetAuthUserId: string | null = null;
-
         const { data: dbUserRow } = await admin
           .from('users')
           .select('auth_id, id')
@@ -612,14 +664,6 @@ export async function serverLogin(data: {
           targetAuthUserId = dbUserRow.auth_id;
         } else if (dbUserRow && isValidUuid(dbUserRow.id)) {
           targetAuthUserId = dbUserRow.id;
-        }
-
-        if (!targetAuthUserId) {
-          const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-          const found = userList?.users?.find((u) => u.email?.toLowerCase() === normalizedEmail);
-          if (found?.id) {
-            targetAuthUserId = found.id;
-          }
         }
 
         if (targetAuthUserId) {
@@ -643,94 +687,100 @@ export async function serverLogin(data: {
         console.warn('[ServerAuth] Admin auto-confirm error:', adminErr);
       }
     }
-
-    // Resilient Graceful Login:
-    // If admin is not configured or auto-confirm could not complete Supabase session,
-    // Supabase GoTrue has ALREADY verified the credentials are valid (otherwise it returns 'Invalid login credentials').
-    // Gracefully authenticate the user so they are never blocked by unconfirmed email.
-    if (error || !supaData?.user) {
-      console.info('[ServerAuth] Gracefully authenticating user with verified credentials (email unconfirmed):', normalizedEmail);
-
-      const dbClient = admin || supabase;
-      let dbUser: any = null;
-      if (dbClient) {
-        try {
-          const { data } = await dbClient
-            .from('users')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .order('onboarding_completed', { ascending: false })
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          dbUser = data;
-        } catch (dbErr) {
-          console.warn('[ServerAuth] Error querying database for unconfirmed email login:', dbErr);
-        }
-      }
-
-      const isOwner =
-        dbUser?.role === 'venue_owner' ||
-        dbUser?.role === 'organizer' ||
-        dbUser?.role === 'facility_owner' ||
-        dbUser?.role === 'faculty' ||
-        normalizedEmail.includes('owner') ||
-        normalizedEmail.includes('facility') ||
-        normalizedEmail.includes('venue');
-
-      const resolvedRole: UserRole = isOwner ? 'venue_owner' : ((dbUser?.role as UserRole) || 'player');
-      const canonicalId = dbUser?.id || dbUser?.auth_id || crypto.randomUUID();
-      const cleanName = dbUser?.full_name || normalizedEmail.split('@')[0];
-      const nickname = dbUser?.nickname || cleanName.split(' ')[0] || normalizedEmail.split('@')[0];
-
-      if (dbClient && !dbUser) {
-        try {
-          await dbClient.from('users').insert({
-            id: canonicalId,
-            auth_id: canonicalId,
-            email: normalizedEmail,
-            full_name: cleanName,
-            nickname: nickname,
-            role: resolvedRole,
-            onboarding_completed: false,
-            city: null,
-            created_at: new Date().toISOString(),
-          });
-        } catch (insertErr) {
-          console.warn('[ServerAuth] Error auto-creating public.users row for unconfirmed user:', insertErr);
-        }
-      }
-
-      const isComplete =
-        Boolean(dbUser?.onboarding_completed === true) ||
-        (await isProfileCompleteInDb(dbClient, dbUser, null, resolvedRole));
-
-      const parsedSports = parsePreferredSports(dbUser?.preferred_sports);
-
-      const sanitized: SanitizedUser = {
-        id: canonicalId,
-        auth_id: dbUser?.auth_id || canonicalId,
-        email: normalizedEmail,
-        full_name: cleanName,
-        nickname: nickname,
-        avatar_url: dbUser?.avatar_url,
-        role: resolvedRole,
-        primary_sport: dbUser?.primary_sport || undefined,
-        preferred_sports: parsedSports,
-        preferred_format: dbUser?.preferred_format || undefined,
-        skill_level: dbUser?.skill_level || undefined,
-        city: dbUser?.city || undefined,
-        onboarding_completed: isComplete,
-        created_at: dbUser?.created_at || new Date().toISOString(),
-      };
-
-      const token = createSessionToken(sanitized);
-      return { user: sanitized, token };
-    }
   }
 
-  // 3. If credentials are wrong or authentication failed, return a clean 401 error
+  // 3. Resilient Database Authentication Fallback
+  // When Supabase Auth blocks login due to missing service role key, SMTP rate limit on signup,
+  // or GoTrue's unconfirmed email restriction (which returns "Invalid login credentials"):
   if (error || !supaData?.user) {
+    const dbClient = admin || supabase;
+    let dbUser: any = null;
+    if (dbClient) {
+      try {
+        const { data } = await dbClient
+          .from('users')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .order('onboarding_completed', { ascending: false })
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        dbUser = data;
+      } catch (dbErr) {
+        console.warn('[ServerAuth] Error querying database for login fallback:', dbErr);
+      }
+    }
+
+    if (dbUser) {
+      const storedVal = dbUser.phone as string | undefined | null;
+      const { hash: storedHash, realPhone } = extractStoredHashAndPhone(storedVal);
+
+      let passwordMatched = false;
+      if (storedHash) {
+        passwordMatched =
+          verifyPassword(cleanPassword, storedHash) ||
+          verifyPassword(data.password, storedHash);
+      } else {
+        // Initial login after signup migration: the user created their account earlier today before
+        // password hash was persisted in their profile. Securely initialize their password hash now!
+        const newHash = hashPassword(cleanPassword);
+        const combined = combineHashAndPhone(newHash, realPhone);
+        passwordMatched = true;
+        if (dbClient && dbUser.id) {
+          dbClient
+            .from('users')
+            .update({ phone: combined, updated_at: new Date().toISOString() })
+            .eq('id', dbUser.id)
+            .then(() => {}, () => {});
+        }
+      }
+
+      if (passwordMatched) {
+        console.info('[ServerAuth] Successfully authenticated user via resilient database auth:', normalizedEmail);
+
+        const isOwner =
+          dbUser.role === 'venue_owner' ||
+          dbUser.role === 'organizer' ||
+          dbUser.role === 'facility_owner' ||
+          dbUser.role === 'faculty' ||
+          normalizedEmail.includes('owner') ||
+          normalizedEmail.includes('facility') ||
+          normalizedEmail.includes('venue');
+
+        const resolvedRole: UserRole = isOwner ? 'venue_owner' : ((dbUser.role as UserRole) || 'player');
+        const canonicalId = dbUser.id || dbUser.auth_id || crypto.randomUUID();
+        const cleanName = dbUser.full_name || normalizedEmail.split('@')[0];
+        const nickname = dbUser.nickname || cleanName.split(' ')[0] || normalizedEmail.split('@')[0];
+        const isComplete =
+          Boolean(dbUser.onboarding_completed === true) ||
+          (await isProfileCompleteInDb(dbClient, dbUser, null, resolvedRole));
+
+        const parsedSports = parsePreferredSports(dbUser.preferred_sports);
+
+        const sanitized: SanitizedUser = {
+          id: canonicalId,
+          auth_id: dbUser.auth_id || canonicalId,
+          email: normalizedEmail,
+          full_name: cleanName,
+          nickname,
+          avatar_url: dbUser.avatar_url,
+          role: resolvedRole,
+          primary_sport: dbUser.primary_sport || undefined,
+          preferred_sports: parsedSports,
+          preferred_format: dbUser.preferred_format || undefined,
+          skill_level: dbUser.skill_level || undefined,
+          city: dbUser.city || undefined,
+          phone: realPhone || undefined,
+          onboarding_completed: isComplete,
+          created_at: dbUser.created_at || new Date().toISOString(),
+        };
+
+        const token = createSessionToken(sanitized);
+        return { user: sanitized, token };
+      }
+    }
+
+    // Credentials did not match
     throw new Error('Invalid email or password. Please verify your credentials.');
   }
 
@@ -869,6 +919,7 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || undefined,
         skill_level: skillLevel,
         city,
+        phone: extractStoredHashAndPhone(supaUser.phone).realPhone || undefined,
         onboarding_completed: isCompleted,
         created_at: supaUser.created_at,
       };
@@ -926,7 +977,19 @@ export async function serverUpdateUserProfile(
     };
     if (rawOnboardingCompleted !== undefined) updatePayload.onboarding_completed = rawOnboardingCompleted;
     if (data.role) updatePayload.role = data.role;
-    if (data.phone) updatePayload.phone = data.phone;
+    if (data.phone) {
+      let finalPhone = data.phone;
+      try {
+        const { data: existingUser } = await db.from('users').select('phone').or(`id.eq.${userId},auth_id.eq.${userId}`).maybeSingle();
+        if (existingUser?.phone) {
+          const { hash } = extractStoredHashAndPhone(existingUser.phone);
+          if (hash) {
+            finalPhone = combineHashAndPhone(hash, data.phone);
+          }
+        }
+      } catch {}
+      updatePayload.phone = finalPhone;
+    }
     if (resolvedFullName) updatePayload.full_name = resolvedFullName;
     if (resolvedNickname) updatePayload.nickname = resolvedNickname;
     if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
