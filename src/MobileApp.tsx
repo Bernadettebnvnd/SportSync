@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { BottomNav, NavTabId } from './design-system/components/BottomNav';
 import { QuickActionSheet } from './design-system/components/QuickActionSheet';
 import { Toast } from './design-system/components/SearchBar';
@@ -46,7 +46,12 @@ import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 import { useChatUnread, isUserAuthorizedForChat } from './lib/services/chat';
-import { resetNotificationCache, isNotificationForUser, NotificationItem } from './lib/notifications';
+import {
+  resetNotificationCache,
+  isNotificationForUser,
+  getUnreadChatNotificationsCount,
+  NotificationItem,
+} from './lib/notifications';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -767,7 +772,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         username: bridge.userProfile.username,
       };
       if (isNotificationForUser(notif, uFilter)) {
-        setToastMessage(`🔔 ${notif.desc || notif.title}`);
+        // If it's a chat message and user is currently inside match-chat for this game, skip intrusive banner toast
+        const activeGameId = selectedGame?.id || selectedGame?.sessionId;
+        const notifGameId = notif.meta?.gameId || notif.meta?.sessionId;
+        if (
+          notif.type === 'chat' &&
+          currentScreen === 'match-chat' &&
+          activeGameId &&
+          notifGameId &&
+          (activeGameId === notifGameId || String(activeGameId).toLowerCase() === String(notifGameId).toLowerCase())
+        ) {
+          return;
+        }
+        setToastMessage(notif.type === 'chat' ? `💬 ${notif.title}: ${notif.desc}` : `🔔 ${notif.desc || notif.title}`);
       }
     };
 
@@ -777,7 +794,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       window.removeEventListener('sportsync:game-deleted', handleGameDeleted);
       window.removeEventListener('sportsync:notification-received', handleNotificationReceived);
     };
-  }, [bridge.userProfile.id, bridge.userProfile.name, bridge.userProfile.username, (bridge.userProfile as any).email, bridge.store.currentUser.email, bridge.userProfile.isGuest]);
+  }, [
+    bridge.userProfile.id,
+    bridge.userProfile.name,
+    bridge.userProfile.username,
+    (bridge.userProfile as any).email,
+    bridge.store.currentUser.email,
+    bridge.userProfile.isGuest,
+    currentScreen,
+    selectedGame?.id,
+    selectedGame?.sessionId,
+  ]);
 
   const requireAuth = (
     title: string,
@@ -962,6 +989,35 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     activeChatGameId: currentScreen === 'match-chat' ? (selectedGame?.id || null) : null,
   });
 
+  const userNotificationFilter = useMemo(
+    () =>
+      !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player'
+        ? { id: bridge.userProfile.id, name: bridge.userProfile.name }
+        : undefined,
+    [bridge.userProfile.id, bridge.userProfile.name, bridge.userProfile.isGuest]
+  );
+
+  const [chatNotifsCount, setChatNotifsCount] = useState<number>(() =>
+    getUnreadChatNotificationsCount(undefined, undefined, userNotificationFilter)
+  );
+
+  useEffect(() => {
+    const updateNotifs = () => {
+      setChatNotifsCount(getUnreadChatNotificationsCount(undefined, undefined, userNotificationFilter));
+    };
+    updateNotifs();
+    window.addEventListener('sportsync:notification-received', updateNotifs);
+    window.addEventListener('sportsync:notification-change', updateNotifs);
+    window.addEventListener('sportsync:chat_read', updateNotifs);
+    return () => {
+      window.removeEventListener('sportsync:notification-received', updateNotifs);
+      window.removeEventListener('sportsync:notification-change', updateNotifs);
+      window.removeEventListener('sportsync:chat_read', updateNotifs);
+    };
+  }, [userNotificationFilter]);
+
+  const effectiveGlobalChatUnread = Math.max(chatUnread.totalUnread, chatNotifsCount);
+
   const handleOpenChatFromHeader = useCallback(() => {
     if (!requireAuth('Match Chat', 'Sign in to access your match chats.')) return;
 
@@ -974,12 +1030,18 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       return;
     }
 
-    const gameWithUnread = authorizedGames.find((g) => (chatUnread.unreadByGame[g.id] || 0) > 0);
+    const gameWithUnread = authorizedGames.find((g) => {
+      const fromMap =
+        (chatUnread.unreadByGame[g.id] || 0) ||
+        (g.sessionId ? chatUnread.unreadByGame[g.sessionId] || 0 : 0);
+      const fromNotif = getUnreadChatNotificationsCount(g.sessionId || g.id, g.title, userNotificationFilter);
+      return fromMap > 0 || fromNotif > 0;
+    });
     const targetGame = gameWithUnread || selectedGame || authorizedGames[0];
 
     setSelectedGame(targetGame);
     navigateTo('match-chat');
-  }, [bridge.games, bridge.userProfile.id, bridge.userProfile.name, chatUnread.unreadByGame, selectedGame]);
+  }, [bridge.games, bridge.userProfile.id, bridge.userProfile.name, chatUnread.unreadByGame, selectedGame, userNotificationFilter]);
 
   const handleTabChange = (tab: NavTabId) => {
     setActiveTab(tab);
@@ -1292,7 +1354,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             venues={bridge.venues}
             games={bridge.games}
             user={bridge.userProfile}
-            chatUnreadCount={chatUnread.totalUnread}
+            chatUnreadCount={effectiveGlobalChatUnread}
             onOpenChat={handleOpenChatFromHeader}
             onSelectMatch={(m) => {
               setSelectedMatch(m);
@@ -1376,7 +1438,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <SocialHomeScreen
             games={bridge.games}
             user={bridge.userProfile}
-            chatUnreadCount={chatUnread.totalUnread}
+            chatUnreadCount={effectiveGlobalChatUnread}
             onOpenChat={handleOpenChatFromHeader}
             onCreateMatch={() => {
               if (!requireAuth('Create a Match', 'Join SportSync to create pickup games and recruit players.')) return;
@@ -1440,6 +1502,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               ) || selectedGame
             : bridge.games[0]) || null;
         const isHost = bridge.isGameHost(activeTargetGame);
+        const matchChatUnread = activeTargetGame
+          ? Math.max(
+              chatUnread.unreadByGame[activeTargetGame.id] || 0,
+              activeTargetGame.sessionId ? (chatUnread.unreadByGame[activeTargetGame.sessionId] || 0) : 0,
+              getUnreadChatNotificationsCount(
+                activeTargetGame.sessionId || activeTargetGame.id,
+                activeTargetGame.title,
+                userNotificationFilter
+              )
+            )
+          : 0;
         return (
           <MatchDetailScreen
             game={activeTargetGame}
@@ -1447,7 +1520,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             isHost={isHost}
             currentUserName={bridge.userProfile.name}
             currentUserId={bridge.userProfile.id}
-            unreadCount={activeTargetGame ? (chatUnread.unreadByGame[activeTargetGame.id] || 0) : 0}
+            unreadCount={matchChatUnread}
             onEditGame={async (updatedData) => {
               if (!activeTargetGame) return;
               const res = await bridge.updateCommunityGame(activeTargetGame.id, updatedData);

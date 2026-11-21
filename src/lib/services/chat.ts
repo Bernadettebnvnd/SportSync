@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { AvatarId } from '../../illustrations/Avatars';
 import { ChatMessage } from '../../design-system/components/ChatBubble';
+import {
+  getUnreadChatNotificationsCount,
+  markGameChatNotificationsAsRead,
+} from '../notifications';
 
 export interface DbChatMessage {
   id: string;
@@ -152,17 +156,24 @@ export async function fetchGameMessages(
   return mapped;
 }
 
-/**
- * Send and persist a new message via POST /api/games/[id]/chat.
- */
-export async function sendGameMessage(params: {
+export interface SendGameMessageParams {
   gameId: string;
   senderId?: string;
   senderName: string;
   senderAvatar?: AvatarId | string;
   text: string;
   isHost?: boolean;
-}): Promise<ChatMessage> {
+  gameTitle?: string;
+  sport?: string;
+  locationName?: string;
+  schedule?: string;
+  recipients?: Array<{ id?: string; name: string }>;
+}
+
+/**
+ * Send and persist a new message via POST /api/games/[id]/chat.
+ */
+export async function sendGameMessage(params: SendGameMessageParams): Promise<ChatMessage> {
   const { gameId, text, isHost = false } = params;
 
   const messageId =
@@ -193,6 +204,11 @@ export async function sendGameMessage(params: {
       senderName: params.senderName,
       senderAvatar: params.senderAvatar,
       isHost,
+      gameTitle: params.gameTitle,
+      sport: params.sport,
+      locationName: params.locationName,
+      schedule: params.schedule,
+      recipients: params.recipients,
     }),
   });
 
@@ -522,6 +538,7 @@ export function markGameChatAsRead(gameId: string, force = false): void {
   try {
     const nowIso = new Date(now).toISOString();
     localStorage.setItem(`sportsync_chat_read_${gameId}`, nowIso);
+    markGameChatNotificationsAsRead(gameId);
     window.dispatchEvent(
       new CustomEvent('sportsync:chat_read', { detail: { gameId, timestamp: nowIso } })
     );
@@ -632,6 +649,26 @@ export async function fetchUnreadCountsForAuthorizedGames(
     console.warn('[Chat] Failed fetching unread counts:', err);
   }
 
+  // Merge unread counts from notifications system (sportsync_notifications)
+  try {
+    for (const g of authorizedGames) {
+      const notifCount = getUnreadChatNotificationsCount(
+        g.sessionId || g.id,
+        g.title,
+        { id: userId, name: userName }
+      );
+      if (notifCount > 0) {
+        const existing = byGame[g.id] || 0;
+        const effective = Math.max(existing, notifCount);
+        total += (effective - existing);
+        byGame[g.id] = effective;
+        if (g.sessionId) {
+          byGame[g.sessionId] = effective;
+        }
+      }
+    }
+  } catch {}
+
   return { total, byGame };
 }
 
@@ -716,7 +753,7 @@ export function useChatUnread(params: {
     }
   }, [activeChatGameId]);
 
-  // 3. Listen to local read events to remove count when conversation is opened
+  // 3. Listen to local read events and incoming chat notification events
   useEffect(() => {
     const handleReadEvent = (e: any) => {
       const readGameId = e.detail?.gameId;
@@ -731,11 +768,52 @@ export function useChatUnread(params: {
       });
     };
 
+    const handleChatNotificationReceived = (e: any) => {
+      const notif = e.detail;
+      if (!notif || notif.type !== 'chat') return;
+      const gameId = notif.meta?.gameId || notif.meta?.sessionId;
+      if (!gameId) return;
+
+      const latestGames = gamesRef.current;
+      const uId = currentUserIdRef.current;
+      const uName = currentUserNameRef.current;
+      const activeId = activeChatGameIdRef.current;
+
+      const targetGame = latestGames.find((g) => g.id === gameId || g.sessionId === gameId);
+      if (!targetGame || !isUserAuthorizedForChat(targetGame, uId, uName)) return;
+
+      // Ignore messages sent by current user
+      const senderName = notif.senderName || notif.meta?.senderName;
+      if (uName && senderName && senderName.trim().toLowerCase() === uName.trim().toLowerCase()) return;
+      if (uId && notif.senderId && notif.senderId === uId) return;
+
+      // If currently viewing this chat, mark as read immediately
+      if (activeId && (activeId === gameId || targetGame.id === activeId || targetGame.sessionId === activeId)) {
+        markGameChatAsRead(targetGame.id);
+        return;
+      }
+
+      setUnreadState((prev) => {
+        const currentForGame = prev.byGame[targetGame.id] || 0;
+        return {
+          total: prev.total + 1,
+          byGame: {
+            ...prev.byGame,
+            [targetGame.id]: currentForGame + 1,
+          },
+        };
+      });
+    };
+
     window.addEventListener('sportsync:chat_read', handleReadEvent);
+    window.addEventListener('sportsync:notification-received', handleChatNotificationReceived);
+    window.addEventListener('sportsync:notification-change', refreshUnread);
     return () => {
       window.removeEventListener('sportsync:chat_read', handleReadEvent);
+      window.removeEventListener('sportsync:notification-received', handleChatNotificationReceived);
+      window.removeEventListener('sportsync:notification-change', refreshUnread);
     };
-  }, []);
+  }, [refreshUnread]);
 
   // 4. Real-time updates via Supabase: established ONCE per user
   useEffect(() => {

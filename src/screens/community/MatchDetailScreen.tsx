@@ -27,6 +27,7 @@ import { APP_CONFIG } from '../../config/appConfig';
 import { EditGameModal } from '@/components/community/EditGameModal';
 import { DeleteGameConfirmationDialog } from '@/components/community/DeleteGameConfirmationDialog';
 import { shareMatch, copyToClipboard, getMatchShareUrl } from '../../lib/shareUtils';
+import { getUnreadChatNotificationsCount } from '../../lib/notifications';
 
 interface MatchDetailScreenProps {
   game: CommunityGame | null;
@@ -91,6 +92,30 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
 
   const [enteredInviteCode, setEnteredInviteCode] = useState('');
   const [inviteUnlocked, setInviteUnlocked] = useState(false);
+
+  const [notifChatCount, setNotifChatCount] = useState<number>(0);
+
+  useEffect(() => {
+    const updateCount = () => {
+      if (!game) return;
+      const cnt = getUnreadChatNotificationsCount(
+        game.sessionId || game.id,
+        game.title,
+        currentUserId || currentUserName ? { id: currentUserId, name: currentUserName } : undefined
+      );
+      setNotifChatCount(cnt);
+    };
+
+    updateCount();
+    window.addEventListener('sportsync:notification-received', updateCount);
+    window.addEventListener('sportsync:notification-change', updateCount);
+    window.addEventListener('sportsync:chat_read', updateCount);
+    return () => {
+      window.removeEventListener('sportsync:notification-received', updateCount);
+      window.removeEventListener('sportsync:notification-change', updateCount);
+      window.removeEventListener('sportsync:chat_read', updateCount);
+    };
+  }, [game?.id, game?.sessionId, game?.title, currentUserId, currentUserName]);
 
   const handleShareMatch = async () => {
     if (!game) return;
@@ -334,13 +359,15 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
               {(() => {
                 const isAuthorized = Boolean(
                   isHost ||
+                  isAlreadyMember ||
+                  isJoined ||
                   (game && game.members && game.members.some(
                     (m) =>
                       (m.id && currentUserId && m.id === currentUserId) ||
                       (m.name && currentUserName && m.name.trim().toLowerCase() === currentUserName.trim().toLowerCase())
                   ))
                 );
-                const count = isAuthorized ? unreadCount : 0;
+                const count = isAuthorized ? Math.max(unreadCount, notifChatCount) : 0;
                 if (count <= 0) return null;
                 const badgeText = count > 99 ? '99+' : count.toString();
                 return (

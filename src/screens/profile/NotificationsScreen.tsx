@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -54,10 +54,24 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   startOfToday.setHours(0, 0, 0, 0);
   const todayCutoff = startOfToday.getTime();
 
-  const displayedList = notifications.filter((n: NotificationItem) => {
-    if (filterType === 'unread') return !n.read;
-    return true;
-  });
+  const displayedList = useMemo(() => {
+    const filtered = notifications.filter((n: NotificationItem) => {
+      if (filterType === 'unread') return !n.read;
+      return true;
+    });
+
+    const seen = new Set<string>();
+    return filtered.filter((n) => {
+      const msgId = n.meta?.messageId || n.meta?.message_id;
+      const key =
+        n.type === 'chat' && msgId
+          ? `chat_${msgId}_${(n.recipientName || n.recipientId || '').toLowerCase()}`
+          : n.meta?.dedupeKey || n.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [notifications, filterType]);
 
   const todayList = displayedList.filter((n: NotificationItem) => (n.timestamp || 0) >= todayCutoff);
   const earlierList = displayedList.filter((n: NotificationItem) => (n.timestamp || 0) < todayCutoff);
@@ -315,13 +329,15 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   ? `Player: ${item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName}`
                                   : item.meta?.event === 'game_updated' || item.meta?.event === 'game_deleted' || item.meta?.event === 'participant_removed'
                                   ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
+                                  : item.type === 'chat' || item.meta?.event === 'new_chat_message'
+                                  ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              View Match <ChevronRight className="w-2.5 h-2.5" />
+                              {item.type === 'chat' || item.linkScreen === 'match-chat' ? 'Open Chat' : 'View Match'} <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
@@ -425,13 +441,15 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   ? `Player: ${item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName}`
                                   : item.meta?.event === 'game_updated' || item.meta?.event === 'game_deleted' || item.meta?.event === 'participant_removed'
                                   ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
+                                  : item.type === 'chat' || item.meta?.event === 'new_chat_message'
+                                  ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              View Match <ChevronRight className="w-2.5 h-2.5" />
+                              {item.type === 'chat' || item.linkScreen === 'match-chat' ? 'Open Chat' : 'View Match'} <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>

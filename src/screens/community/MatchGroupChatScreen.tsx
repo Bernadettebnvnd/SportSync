@@ -31,6 +31,7 @@ import {
   GameParticipant,
   AuthenticatedProfile,
 } from '../../lib/services/chat';
+import { addNotification } from '../../lib/notifications';
 
 interface MatchGroupChatScreenProps {
   onBack: () => void;
@@ -321,6 +322,35 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       // If user is host, use game.hostName. If player, use their specific profile name from Supabase.
       const senderDisplayName = isHost && game?.hostName ? game.hostName : effectiveUserName;
 
+      // Compile list of recipients (host + all joined players, excluding sender)
+      const recipientMap = new Map<string, { id?: string; name: string }>();
+      const normSender = senderDisplayName.trim().toLowerCase();
+
+      // Check host
+      const hostName = game?.hostName || hostParticipant?.name;
+      const hostId = game?.hostId || hostParticipant?.id;
+      if (hostName && hostName.trim().toLowerCase() !== normSender && (!hostId || !effectiveUserId || hostId !== effectiveUserId)) {
+        recipientMap.set((hostId || hostName).toLowerCase(), { id: hostId, name: hostName });
+      }
+
+      // Check joined players from state & game.members
+      [...joinedPlayers, ...(game?.members || [])].forEach((p) => {
+        if (!p?.name) return;
+        const normPName = p.name.trim().toLowerCase();
+        if (normPName !== normSender && (!p.id || !effectiveUserId || p.id !== effectiveUserId)) {
+          const key = (p.id || normPName).toLowerCase();
+          if (!recipientMap.has(key)) {
+            recipientMap.set(key, { id: p.id, name: p.name });
+          }
+        }
+      });
+
+      const recipientsList = Array.from(recipientMap.values());
+      const scheduleStr =
+        game?.date && game?.time
+          ? `${game.date} • ${game.time}`
+          : (game as any)?.schedule || game?.date || game?.time || '';
+
       const sentMsg = await sendGameMessage({
         gameId: chatRoomId,
         senderId: effectiveUserId,
@@ -328,7 +358,16 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         senderAvatar: effectiveUserAvatar,
         text: textToSend,
         isHost,
+        gameTitle: matchTitle,
+        sport: game?.sport,
+        locationName: game?.locationName,
+        schedule: scheduleStr,
+        recipients: recipientsList,
       });
+
+      // Note: Recipient notifications are created, persisted to Supabase, and broadcasted to each
+      // recipient's targeted Realtime channel directly by the server API route (/api/games/[id]/chat).
+      // The sender's local storage should never be polluted with other players' notifications.
 
       // Optimistic update if not already received via subscription
       setMessages((prev) => {

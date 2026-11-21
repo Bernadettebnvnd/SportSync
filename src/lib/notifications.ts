@@ -68,6 +68,7 @@ export interface UserNotificationFilter {
  * that have no recipient, preventing newly registered users from seeing false notifications.
  */
 function sanitizeNotifications(list: NotificationItem[]): NotificationItem[] {
+  const seenKeys = new Set<string>();
   return list.filter((n) => {
     if (!n || !n.id) return false;
     // Strip old mock IDs from previous static mockups
@@ -94,6 +95,32 @@ function sanitizeNotifications(list: NotificationItem[]): NotificationItem[] {
       return false;
     }
 
+    // Chat deduplication & sender self-notification filter
+    if (n.type === 'chat') {
+      const sName = (n.senderName || n.meta?.senderName || '').trim().toLowerCase();
+      const rName = (n.recipientName || n.meta?.recipientName || '').trim().toLowerCase();
+      // Drop if sender is the recipient (never notify oneself about own sent message)
+      if (sName && rName && sName === rName) {
+        return false;
+      }
+      // Deduplicate chat notifications by messageId + recipient, or dedupeKey
+      const msgId = n.meta?.messageId || n.meta?.message_id;
+      const dedupeKey = n.meta?.dedupeKey || (msgId ? `chat_${msgId}_${rName}` : null);
+      if (dedupeKey) {
+        if (seenKeys.has(dedupeKey)) return false;
+        seenKeys.add(dedupeKey);
+      } else {
+        const fallbackKey = `chat_${n.desc}_${n.meta?.gameId || ''}_${rName}`;
+        if (seenKeys.has(fallbackKey)) return false;
+        seenKeys.add(fallbackKey);
+      }
+    } else {
+      // General notification deduplication
+      const dedupeKey = n.meta?.dedupeKey || n.id;
+      if (seenKeys.has(dedupeKey)) return false;
+      seenKeys.add(dedupeKey);
+    }
+
     return true;
   });
 }
@@ -117,8 +144,31 @@ export function isNotificationForUser(
   const uEmail = userFilter.email?.trim().toLowerCase();
   const uUsername = userFilter.username?.trim().toLowerCase().replace(/^@/, '');
 
-  const rId = (n.recipientId || n.meta?.recipientId || n.meta?.recipient_id || n.meta?.hostId || n.meta?.host_id)?.toString().trim().toLowerCase();
-  const rName = (n.recipientName || n.meta?.recipientName || n.meta?.recipient_name || n.meta?.hostName || n.meta?.host_name)?.toString().trim().toLowerCase();
+  // 0. SENDER EXCLUSION: If the user is the sender of this chat message, never notify them
+  if (n.type === 'chat') {
+    const sName = (n.senderName || n.meta?.senderName || n.meta?.sender_name)?.toString().trim().toLowerCase();
+    const sId = (n.meta?.senderId || n.meta?.sender_id)?.toString().trim().toLowerCase();
+    if (uId && sId && (uId === sId || uId.includes(sId) || sId.includes(uId))) return false;
+    if (uName && sName && (uName === sName || uName.toLowerCase() === sName.toLowerCase())) return false;
+    if (uUsername && sName && uUsername === sName) return false;
+    if (uFirst && sName && uFirst === sName.split(' ')[0] && uFirst.length >= 2) return false;
+  }
+
+  const isChat = n.type === 'chat';
+  const rId = (
+    n.recipientId ||
+    n.meta?.recipientId ||
+    n.meta?.recipient_id ||
+    (!isChat ? (n.meta?.hostId || n.meta?.host_id) : undefined)
+  )?.toString().trim().toLowerCase();
+
+  const rName = (
+    n.recipientName ||
+    n.meta?.recipientName ||
+    n.meta?.recipient_name ||
+    (!isChat ? (n.meta?.hostName || n.meta?.host_name) : undefined)
+  )?.toString().trim().toLowerCase();
+
   const rFirst = rName ? rName.split(' ')[0] : undefined;
   const targetId = (n.meta?.targetUserId || n.meta?.target_user_id)?.toString().trim().toLowerCase();
 
@@ -256,8 +306,9 @@ export async function broadcastNotification(notif: NotificationItem): Promise<vo
         .toLowerCase()
         .replace(/\s+/g, '_');
 
+      const isChat = notif.type === 'chat';
       const targetChannels = [
-        'sportsync-notifs-all',
+        ...(!isChat ? ['sportsync-notifs-all'] : []),
         ...(targetId ? [`sportsync-notifs-${targetId}`] : []),
         ...(targetName ? [`sportsync-notifs-${targetName}`] : []),
       ];
@@ -329,26 +380,28 @@ export function getNotifications(): NotificationItem[] {
     const sanitized = sanitizeNotifications(Array.isArray(parsed) ? parsed : []);
 
     // Refresh relative times and backfill missing recipient details from meta
-    const refreshed = sanitized.map((item) => ({
-      ...item,
-      recipientId: item.recipientId || item.meta?.hostId || item.meta?.host_id || item.meta?.recipientId,
-      recipientName: item.recipientName || item.meta?.hostName || item.meta?.host_name || item.meta?.recipientName,
-      senderName:
-        item.senderName ||
-        item.meta?.senderName ||
-        item.meta?.sender_name ||
-        item.meta?.joiningPlayerName ||
-        item.meta?.joining_player_name ||
-        item.meta?.hostName ||
-        item.meta?.host_name,
-      senderAvatar:
-        item.senderAvatar ||
-        item.meta?.senderAvatar ||
-        item.meta?.sender_avatar ||
-        item.meta?.joiningPlayerAvatar ||
-        item.meta?.joining_player_avatar,
-      time: formatRelativeTime(item.timestamp || Date.now()),
-    }));
+    const refreshed = sanitized.map((item) => {
+      const isChat = item.type === 'chat';
+      return {
+        ...item,
+        recipientId: item.recipientId || (!isChat ? (item.meta?.hostId || item.meta?.host_id) : undefined) || item.meta?.recipientId,
+        recipientName: item.recipientName || (!isChat ? (item.meta?.hostName || item.meta?.host_name) : undefined) || item.meta?.recipientName,
+        senderName:
+          item.senderName ||
+          item.meta?.senderName ||
+          item.meta?.sender_name ||
+          item.meta?.joiningPlayerName ||
+          item.meta?.joining_player_name ||
+          (!isChat ? (item.meta?.hostName || item.meta?.host_name) : undefined),
+        senderAvatar:
+          item.senderAvatar ||
+          item.meta?.senderAvatar ||
+          item.meta?.sender_avatar ||
+          item.meta?.joiningPlayerAvatar ||
+          item.meta?.joining_player_avatar,
+        time: formatRelativeTime(item.timestamp || Date.now()),
+      };
+    });
 
     // If sanitization changed items, save clean copy
     if (sanitized.length !== parsed.length) {
@@ -532,6 +585,7 @@ export function addNotification(
 ): NotificationItem {
   const current = getNotifications();
   const timestamp = input.timestamp || Date.now();
+  const isChat = input.type === 'chat';
   const dedupeKey = input.meta?.dedupeKey || input.id;
 
   // Strict deduplication: check if already exists in memory or delivered keys
@@ -541,6 +595,16 @@ export function addNotification(
   const metaKey = input.meta?.dedupeKey;
   if (metaKey && current.some((n) => n.meta?.dedupeKey === metaKey)) {
     return current.find((n) => n.meta?.dedupeKey === metaKey)!;
+  }
+  if (isChat && input.meta?.messageId) {
+    const existingMsg = current.find(
+      (n) =>
+        n.type === 'chat' &&
+        n.meta?.messageId === input.meta?.messageId &&
+        ((!input.recipientName || n.recipientName === input.recipientName) ||
+          (!input.recipientId || n.recipientId === input.recipientId))
+    );
+    if (existingMsg) return existingMsg;
   }
   if (dedupeKey && getDeliveredNotificationKeys().has(dedupeKey)) {
     const existing = current.find(
@@ -562,14 +626,18 @@ export function addNotification(
     time: input.time || formatRelativeTime(timestamp),
     read: input.read ?? false,
     linkScreen: input.linkScreen,
-    recipientId: input.recipientId || input.meta?.hostId || input.meta?.host_id || input.meta?.recipientId,
-    recipientName: input.recipientName || input.meta?.hostName || item_meta_host_name(input.meta),
+    recipientId: input.recipientId || (!isChat ? (input.meta?.hostId || input.meta?.host_id) : undefined) || input.meta?.recipientId,
+    recipientName: input.recipientName || (!isChat ? (input.meta?.hostName || item_meta_host_name(input.meta)) : undefined) || input.meta?.recipientName,
     senderName: input.senderName || input.meta?.senderName || input.meta?.joiningPlayerName,
     senderAvatar: input.senderAvatar || input.meta?.senderAvatar || input.meta?.joiningPlayerAvatar,
     meta: {
       ...(input.meta || {}),
-      hostName: input.recipientName || input.meta?.hostName,
-      hostId: input.recipientId || input.meta?.hostId,
+      ...(isChat
+        ? {}
+        : {
+            hostName: input.recipientName || input.meta?.hostName,
+            hostId: input.recipientId || input.meta?.hostId,
+          }),
       recipientName: input.recipientName || input.meta?.recipientName,
       recipientId: input.recipientId || input.meta?.recipientId,
     },
@@ -714,6 +782,92 @@ export function clearAllNotifications(userFilter?: UserNotificationFilter): void
 export function getUnreadCount(userFilter?: UserNotificationFilter): number {
   const all = getNotifications();
   return all.filter((n) => !n.read && isNotificationForUser(n, userFilter)).length;
+}
+
+/**
+ * Returns the count of unread chat notifications, either globally or scoped to a specific match.
+ */
+export function getUnreadChatNotificationsCount(
+  gameIdentifier?: string,
+  gameTitle?: string,
+  userFilter?: UserNotificationFilter
+): number {
+  const all = getNotifications();
+  const cleanId = gameIdentifier?.toLowerCase().trim();
+  const cleanTitle = gameTitle?.toLowerCase().trim();
+
+  return all.filter((n) => {
+    if (n.read || n.type !== 'chat') return false;
+    if (userFilter && !isNotificationForUser(n, userFilter)) return false;
+
+    if (!cleanId && !cleanTitle) {
+      return true; // Global unread chat notifications count
+    }
+
+    const nGId = (n.meta?.gameId || '').toLowerCase().trim();
+    const nSId = (n.meta?.sessionId || '').toLowerCase().trim();
+    const nTitle = (n.meta?.gameTitle || '').toLowerCase().trim();
+
+    const idMatches = cleanId && (nGId === cleanId || nSId === cleanId);
+    const titleMatches =
+      cleanTitle && nTitle && (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle));
+
+    return idMatches || titleMatches;
+  }).length;
+}
+
+/**
+ * Marks all chat notifications for a specific game as read (e.g. when opening that match chat).
+ */
+export function markGameChatNotificationsAsRead(
+  gameIdentifier: string,
+  gameTitle?: string,
+  userFilter?: UserNotificationFilter
+): void {
+  if (!gameIdentifier && !gameTitle) return;
+  const current = getNotifications();
+  const cleanId = gameIdentifier?.toLowerCase().trim();
+  const cleanTitle = gameTitle?.toLowerCase().trim();
+  const readIds: string[] = [];
+
+  const updated = current.map((n) => {
+    if (n.read || n.type !== 'chat') return n;
+    if (userFilter && !isNotificationForUser(n, userFilter)) return n;
+
+    const nGId = (n.meta?.gameId || '').toLowerCase().trim();
+    const nSId = (n.meta?.sessionId || '').toLowerCase().trim();
+    const nTitle = (n.meta?.gameTitle || '').toLowerCase().trim();
+
+    const idMatches = cleanId && (nGId === cleanId || nSId === cleanId);
+    const titleMatches =
+      cleanTitle && nTitle && (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle));
+
+    if (idMatches || titleMatches) {
+      readIds.push(n.id);
+      return { ...n, read: true };
+    }
+    return n;
+  });
+
+  if (readIds.length > 0) {
+    persistNotifications(updated);
+
+    // Sync to Supabase in background
+    if (typeof window !== 'undefined') {
+      readIds.forEach((id) => {
+        fetch('/api/notifications', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
+        }).catch(() => {});
+      });
+    }
+
+    const sb = getSupabaseClient();
+    if (sb && isSupabaseConfigured) {
+      sb.from('notifications').update({ read: true }).in('id', readIds).then();
+    }
+  }
 }
 
 /**

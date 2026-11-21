@@ -232,9 +232,10 @@ export async function POST(request: NextRequest) {
       notifStore.set(memKey, [notif, ...currentMem].slice(0, MAX_NOTIFICATIONS));
     }
 
-    // 3. Broadcast across Supabase Realtime channels
+    // 3. Broadcast across Supabase Realtime channels (chat notifications only go to recipient channels)
+    const isChat = notif.type === 'chat';
     const targetChannels = [
-      'sportsync-notifs-all',
+      ...(!isChat ? ['sportsync-notifs-all'] : []),
       ...(recipientId ? [`sportsync-notifs-${recipientId}`] : []),
       ...(recipientName ? [`sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`] : []),
     ];

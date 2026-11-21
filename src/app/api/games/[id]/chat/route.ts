@@ -576,6 +576,206 @@ export async function POST(
       console.warn('[API/Chat POST] Realtime broadcast notice:', bcErr);
     }
 
+    // 6. Notify game participants (host and joined players, excluding sender)
+    try {
+      const recipientMap = new Map<string, { id?: string; name: string }>();
+      const normSender = resolvedName.trim().toLowerCase();
+      const senderUserId = validSenderUuid || authUser.id;
+
+      // 6a. Explicit recipients passed from client
+      const bodyAny = body as any;
+      if (Array.isArray(bodyAny.recipients)) {
+        bodyAny.recipients.forEach((r: any) => {
+          if (!r?.name) return;
+          const rName = r.name.trim();
+          if (rName.toLowerCase() !== normSender && (!r.id || !senderUserId || r.id !== senderUserId)) {
+            recipientMap.set((r.id || rName).toLowerCase(), { id: r.id, name: rName });
+          }
+        });
+      }
+
+      // 6b. Check host if not sender
+      if (session.host_id && session.host_id !== senderUserId) {
+        const { data: hostUser } = await supabase
+          .from('users')
+          .select('id, full_name, nickname')
+          .eq('id', session.host_id)
+          .maybeSingle();
+
+        const hostName = hostUser?.full_name || hostUser?.nickname || 'Organizer';
+        if (hostName.trim().toLowerCase() !== normSender) {
+          recipientMap.set(session.host_id.toLowerCase(), { id: session.host_id, name: hostName });
+        }
+      } else if (session.description) {
+        const hostMatch = session.description.match(/\[HOST:(.*?)\]/i);
+        if (hostMatch && hostMatch[1].trim().toLowerCase() !== normSender) {
+          const hName = hostMatch[1].trim();
+          recipientMap.set(hName.toLowerCase(), { name: hName });
+        }
+      }
+
+      // 6c. Check queues table for joined players
+      if (session.id && isUuid(session.id)) {
+        const { data: queueRows } = await supabase
+          .from('queues')
+          .select('user_id, partner_names')
+          .eq('session_id', session.id)
+          .neq('status', 'cancelled');
+
+        if (Array.isArray(queueRows)) {
+          for (const q of queueRows) {
+            if (q.user_id && q.user_id !== senderUserId) {
+              const { data: qUser } = await supabase
+                .from('users')
+                .select('id, full_name, nickname')
+                .eq('id', q.user_id)
+                .maybeSingle();
+              const qName = qUser?.full_name || qUser?.nickname || 'Player';
+              if (qName.trim().toLowerCase() !== normSender) {
+                recipientMap.set(q.user_id.toLowerCase(), { id: q.user_id, name: qName });
+              }
+            }
+            if (Array.isArray(q.partner_names)) {
+              for (const pn of q.partner_names) {
+                if (typeof pn === 'string' && pn.trim().toLowerCase() !== normSender) {
+                  recipientMap.set(pn.trim().toLowerCase(), { name: pn.trim() });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 6d. Check session_participants table
+      if (session.id && isUuid(session.id)) {
+        const { data: partRows } = await supabase
+          .from('session_participants')
+          .select('user_id, user_name')
+          .eq('session_id', session.id)
+          .neq('status', 'cancelled');
+
+        if (Array.isArray(partRows)) {
+          for (const p of partRows) {
+            const pName = p.user_name || 'Player';
+            if (pName.trim().toLowerCase() !== normSender && (!p.user_id || p.user_id !== senderUserId)) {
+              recipientMap.set((p.user_id || pName).toLowerCase(), { id: p.user_id, name: pName });
+            }
+          }
+        }
+      }
+
+      const matchTitle = bodyAny.gameTitle || session.title || 'SportSync Match';
+      const sport = bodyAny.sport || 'Sports';
+      const locationName = bodyAny.locationName || 'Venue';
+      const schedule = bodyAny.schedule || '';
+      const textPreview = text.trim().length > 70 ? `${text.trim().slice(0, 70)}...` : text.trim();
+      const nowIso = new Date().toISOString();
+
+      for (const recipient of recipientMap.values()) {
+        const notifId = `notif_chat_${insertedRow.id}_${(recipient.id || recipient.name).replace(/\s+/g, '_')}`;
+        const recipientId = recipient.id && isUuid(recipient.id) ? recipient.id : null;
+        const recipientName = recipient.name;
+
+        const notifItem = {
+          id: notifId,
+          type: 'chat',
+          title: `New Message • ${matchTitle}`,
+          desc: `${resolvedName}: ${textPreview}`,
+          time: 'Just now',
+          timestamp: Date.now(),
+          read: false,
+          linkScreen: 'match-chat',
+          recipientId,
+          recipientName,
+          senderName: resolvedName,
+          senderAvatar: resolvedAvatar,
+          meta: {
+            event: 'new_chat_message',
+            gameId: canonicalGameId,
+            sessionId: canonicalGameId,
+            gameTitle: matchTitle,
+            sport,
+            locationName,
+            schedule,
+            messageId: insertedRow.id,
+            messageText: text.trim(),
+            senderName: resolvedName,
+            senderAvatar: resolvedAvatar,
+            recipientId,
+            recipientName,
+            dedupeKey: `chat_${insertedRow.id}_${(recipientId || recipientName).toLowerCase()}`,
+          },
+        };
+
+        // Dual persistence: public.notifications or fallback to public.users
+        let tableSaved = false;
+        try {
+          const { error: insertErr } = await supabase.from('notifications').insert({
+            id: isUuid(notifId) ? notifId : undefined,
+            user_id: recipientId,
+            user_identifier: recipientName || recipientId || null,
+            type: 'chat',
+            title: notifItem.title,
+            description: notifItem.desc,
+            read: false,
+            link_screen: 'match-chat',
+            metadata: notifItem.meta,
+            created_at: nowIso,
+          });
+          if (!insertErr) tableSaved = true;
+        } catch {}
+
+        if (!tableSaved) {
+          try {
+            let uQuery = supabase.from('users').select('id, equipped_gear');
+            if (recipientId && isUuid(recipientId)) {
+              uQuery = uQuery.or(`id.eq.${recipientId},auth_id.eq.${recipientId}`);
+            } else if (recipientName) {
+              uQuery = uQuery.ilike('full_name', recipientName.trim());
+            }
+
+            const { data: uRow } = await uQuery.limit(1).maybeSingle();
+            if (uRow?.id) {
+              const currentGear = typeof uRow.equipped_gear === 'object' && uRow.equipped_gear ? uRow.equipped_gear : {};
+              const existingNotifs = Array.isArray((currentGear as any)._sportsync_notifications)
+                ? (currentGear as any)._sportsync_notifications
+                : [];
+
+              if (!existingNotifs.some((n: any) => n.id === notifItem.id || (n.meta?.dedupeKey && n.meta.dedupeKey === notifItem.meta.dedupeKey))) {
+                const updated = [notifItem, ...existingNotifs].slice(0, 50);
+                await supabase
+                  .from('users')
+                  .update({
+                    equipped_gear: { ...currentGear, _sportsync_notifications: updated },
+                    updated_at: nowIso,
+                  })
+                  .eq('id', uRow.id);
+              }
+            }
+          } catch {}
+        }
+
+        // Broadcast to targeted recipient via Realtime (exclude sportsync-notifs-all to avoid duplicating to unintended users)
+        const targetChannels = [
+          ...(recipientId ? [`sportsync-notifs-${recipientId}`] : []),
+          ...(recipientName ? [`sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`] : []),
+        ];
+
+        for (const chName of targetChannels) {
+          try {
+            const ch = supabase.channel(chName);
+            await ch.send({
+              type: 'broadcast',
+              event: 'new_notification',
+              payload: notifItem,
+            });
+          } catch {}
+        }
+      }
+    } catch (notifErr) {
+      console.warn('[API/Chat POST] Notification dispatch warning:', notifErr);
+    }
+
     return NextResponse.json(
       {
         success: true,
