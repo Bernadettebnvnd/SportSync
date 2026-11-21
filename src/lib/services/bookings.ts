@@ -17,14 +17,12 @@ export async function getCourtDailyAvailability(
   const openHour = operatingHours.openHour ?? 6;
   const closeHour = operatingHours.closeHour ?? 23;
 
-  // Generate standard operating time slots for the day
   const candidateSlots: string[] = [];
   for (let h = openHour; h < closeHour; h++) {
     candidateSlots.push(`${String(h).padStart(2, '0')}:00`);
   }
 
   if (!supabase || !isSupabaseConfigured) {
-    // If not configured, slots cannot be booked; return empty or unblocked slots
     return candidateSlots.map((time) => {
       const nextHour = parseInt(time.split(':')[0], 10) + 1;
       return {
@@ -40,7 +38,6 @@ export async function getCourtDailyAvailability(
   }
 
   try {
-    // Query confirmed reservations on this court for the requested date (pending requests do NOT block slots)
     const { data: bookedSlots, error } = await supabase
       .from('bookings')
       .select('start_time, end_time, status')
@@ -55,7 +52,6 @@ export async function getCourtDailyAvailability(
     const bookedHoursSet = new Set<string>();
     if (bookedSlots) {
       for (const b of bookedSlots) {
-        // b.start_time can be stored as "14:00" or ISO string
         let startStr = b.start_time;
         if (startStr.includes('T')) {
           const d = new Date(startStr);
@@ -87,131 +83,73 @@ export async function getCourtDailyAvailability(
 }
 
 /**
- * Fetch all bookings for the currently authenticated user.
+ * Fetch all bookings for the currently authenticated player via /api/bookings.
  */
 export async function getPlayerBookings(): Promise<Booking[]> {
-  const supabase = getSupabaseClient();
-  if (supabase && isSupabaseConfigured) {
-    try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user) {
-        const { data: publicUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_id', userData.user.id)
-          .maybeSingle();
-
-        if (publicUser) {
-          const { data, error } = await supabase
-            .from('bookings')
-            .select('*, venue:venues(*), court:courts(*)')
-            .eq('user_id', publicUser.id)
-            .order('booking_date', { ascending: false })
-            .order('start_time', { ascending: false });
-
-          if (!error && data && data.length > 0) {
-            return data as Booking[];
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Supabase getPlayerBookings notice:', err);
-    }
-  }
-
   if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/bookings', { credentials: 'include' });
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json.bookings)) return json.bookings as Booking[];
-      }
-    } catch (err) {
-      console.warn('API getPlayerBookings fallback notice:', err);
+    const res = await fetch('/api/bookings?mine=true', {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      if (res.status === 401) return [];
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || 'Failed to fetch player bookings.');
     }
+    const json = await res.json();
+    return Array.isArray(json.bookings) ? (json.bookings as Booking[]) : [];
   }
-
   return [];
 }
 
 /**
- * Fetch all bookings for a facility managed by the authenticated operator.
+ * Fetch all bookings for a facility managed by the authenticated operator via /api/bookings.
  */
 export async function getFacilityBookings(venueId?: string): Promise<Booking[]> {
-  const supabase = getSupabaseClient();
-  if (supabase && isSupabaseConfigured) {
-    try {
-      let query = supabase
-        .from('bookings')
-        .select('*, user:users(*), court:courts(*), venue:venues(*)');
-
-      if (venueId) {
-        query = query.eq('venue_id', venueId);
-      }
-
-      const { data, error } = await query
-        .order('booking_date', { ascending: false })
-        .order('start_time', { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        return data as Booking[];
-      }
-    } catch (err) {
-      console.warn('Supabase getFacilityBookings notice:', err);
-    }
-  }
-
-  // Fallback to /api/bookings
   if (typeof window !== 'undefined') {
-    try {
-      const url = venueId ? `/api/bookings?venueId=${encodeURIComponent(venueId)}` : '/api/bookings';
-      const res = await fetch(url, { credentials: 'include' });
-      if (res.ok) {
-        const json = await res.json();
-        if (Array.isArray(json.bookings)) return json.bookings as Booking[];
-      }
-    } catch (err) {
-      console.warn('API getFacilityBookings fallback notice:', err);
+    const url = venueId
+      ? `/api/bookings?venueId=${encodeURIComponent(venueId)}`
+      : '/api/bookings';
+    const res = await fetch(url, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      if (res.status === 401) return [];
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || 'Failed to fetch facility bookings.');
     }
+    const json = await res.json();
+    return Array.isArray(json.bookings) ? (json.bookings as Booking[]) : [];
   }
-
   return [];
 }
 
 /**
- * Update the status of a booking (e.g. check-in, completed, cancelled).
+ * Update the status of a booking (e.g. confirmed, rejected, completed, cancelled)
+ * strictly through PATCH /api/bookings so server-side authorization, court_availability,
+ * and notifications are persisted atomically.
  */
 export async function updateBookingStatus(
   bookingId: string,
-  status: BookingStatus
+  status: BookingStatus,
+  reason?: string
 ): Promise<boolean> {
-  const supabase = getSupabaseClient();
-  if (supabase && isSupabaseConfigured) {
-    try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('id', bookingId);
+  const res = await fetch('/api/bookings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      bookingId,
+      status,
+      ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
+    }),
+  });
 
-      if (!error) return true;
-    } catch (err) {
-      console.error('Error updating booking status via Supabase:', err);
-    }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `Failed to update booking status (${res.status}).`);
   }
 
-  // Fallback to API route
-  if (typeof window !== 'undefined') {
-    try {
-      const res = await fetch('/api/bookings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingId, status }),
-      });
-      return res.ok;
-    } catch (err) {
-      console.warn('API updateBookingStatus fallback notice:', err);
-    }
-  }
-
-  return false;
+  return true;
 }

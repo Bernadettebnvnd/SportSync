@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { useMatchiStore } from '@/lib/store';
 import { getSportDisplayName, formatCurrency } from '@/lib/utils';
@@ -10,15 +10,26 @@ import {
   MapPin,
   CheckCircle2,
   AlertCircle,
+  XCircle,
   ArrowRight,
   Compass,
   Navigation,
 } from 'lucide-react';
 
-export default function BookingsPage() {
-  const { currentUser, bookings } = useMatchiStore();
+function extractDeclineReason(notes?: string | null): string | null {
+  if (!notes) return null;
+  const match = notes.match(/Declined:\s*(.+)$/i);
+  return match ? match[1].trim() : null;
+}
 
-  const userBookings = bookings.filter((b) => b.user_id === currentUser.id);
+export default function BookingsPage() {
+  const { currentUser, bookings, refreshBookings } = useMatchiStore();
+
+  useEffect(() => {
+    refreshBookings();
+  }, [refreshBookings]);
+
+  const userBookings = bookings.filter((b) => !currentUser.id || b.user_id === currentUser.id);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 space-y-6 pb-24 md:pb-12">
@@ -59,13 +70,19 @@ export default function BookingsPage() {
       ) : (
         <div className="space-y-4">
           {userBookings.map((booking) => {
-            const isConfirmed = booking.status === 'confirmed';
+            const isConfirmed = booking.status === 'confirmed' || booking.status === 'completed';
+            const isRejected = booking.status === 'rejected';
             const isPending = booking.status === 'pending';
+            const declineReason = isRejected ? extractDeclineReason(booking.notes) : null;
 
             return (
               <div
                 key={booking.id}
-                className="rounded-3xl border border-white/10 bg-[#141A15] p-5 sm:p-6 shadow-sm space-y-4 hover:border-[#C8FF2E]/40 transition-all"
+                className={`rounded-3xl border bg-[#141A15] p-5 sm:p-6 shadow-sm space-y-4 transition-all ${
+                  isRejected
+                    ? 'border-rose-500/30 hover:border-rose-500/50'
+                    : 'border-white/10 hover:border-[#C8FF2E]/40'
+                }`}
               >
                 {/* Top Row: Sport, Status, Reference */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -80,22 +97,38 @@ export default function BookingsPage() {
 
                   <div className="flex items-center gap-1.5">
                     {isConfirmed ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 px-2.5 py-1 rounded-lg">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/25 px-2.5 py-1 rounded-lg">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Confirmed</span>
+                        <span>Accepted (Confirmed)</span>
+                      </span>
+                    ) : isRejected ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-lg">
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Declined (Rejected)</span>
                       </span>
                     ) : isPending ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#FFC247] bg-[#FFC247]/10 border border-[#FFC247]/20 px-2.5 py-1 rounded-lg">
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>Payment Pending</span>
+                        <span>Pending Confirmation</span>
                       </span>
                     ) : (
-                      <span className="text-[11px] font-bold text-[#A5B0A6] capitalize">
+                      <span className="text-[11px] font-bold text-[#A5B0A6] capitalize px-2.5 py-1 rounded-lg bg-white/5 border border-white/10">
                         {booking.status}
                       </span>
                     )}
                   </div>
                 </div>
+
+                {/* Decline Reason Banner */}
+                {isRejected && declineReason && (
+                  <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200 flex items-start gap-2">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-300">Decline Reason: </span>
+                      <span>{declineReason}</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Main Details */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

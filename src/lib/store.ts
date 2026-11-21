@@ -957,13 +957,21 @@ export function useMatchiStore() {
 
   // Update Booking Status
   const updateBookingStatus = useCallback(
-    async (bookingId: string, status: BookingStatus) => {
-      await updateDbBookingStatus(bookingId, status);
+    async (bookingId: string, status: BookingStatus, reason?: string) => {
+      await updateDbBookingStatus(bookingId, status, reason);
+      const cleanReason = typeof reason === 'string' ? reason.trim() : '';
       globalState = {
         ...globalState,
-        bookings: globalState.bookings.map((b) =>
-          b.id === bookingId ? { ...b, status } : b
-        ),
+        bookings: globalState.bookings.map((b) => {
+          if (b.id !== bookingId) return b;
+          const updatedNotes =
+            status === 'rejected' && cleanReason
+              ? b.notes
+                ? `${b.notes} | Declined: ${cleanReason}`
+                : `Declined: ${cleanReason}`
+              : b.notes;
+          return { ...b, status, notes: updatedNotes };
+        }),
       };
       notify();
     },

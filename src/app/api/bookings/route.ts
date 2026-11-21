@@ -1,16 +1,29 @@
 import { NextResponse } from 'next/server';
 import { calculateBookingFees, generateBookingReference } from '@/lib/utils';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken, serverGetUser } from '@/lib/auth/serverAuth';
+import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
 
-function resolveUserFromRequest(request: Request): { userId: string; email?: string } | null {
+async function authenticateRequest(request: Request): Promise<SanitizedUser | null> {
   // 1. Check Bearer token in Authorization header
   const authHeader = request.headers.get('Authorization');
   if (authHeader) {
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
     if (token) {
       const verified = verifySessionToken(token);
-      if (verified) return verified;
+      if (verified) {
+        const user = await serverGetUser(verified.userId);
+        if (user) return user;
+      }
+      if (isSupabaseConfigured) {
+        const sb = createServerClient(token);
+        if (sb) {
+          const { data } = await sb.auth.getUser();
+          if (data?.user?.id) {
+            const user = await serverGetUser(data.user.id);
+            if (user) return user;
+          }
+        }
+      }
     }
   }
 
@@ -20,87 +33,104 @@ function resolveUserFromRequest(request: Request): { userId: string; email?: str
     cookieHeader.match(/sportsync-auth-token=([^;]+)/) ||
     cookieHeader.match(/sb-access-token=([^;]+)/);
   if (match) {
-    const token = match[1];
+    const token = decodeURIComponent(match[1]);
     const verified = verifySessionToken(token);
-    if (verified) return verified;
+    if (verified) {
+      const user = await serverGetUser(verified.userId);
+      if (user) return user;
+    }
   }
 
   return null;
 }
 
-// In-memory dev bookings storage across Next.js Route Handler workers & module re-evaluations
-const localDevBookings: any[] =
-  (globalThis as any).__sportsync_local_bookings ||
-  ((globalThis as any).__sportsync_local_bookings = []);
+const VALID_BOOKING_STATUSES = new Set([
+  'pending',
+  'confirmed',
+  'completed',
+  'cancelled',
+  'rejected',
+  'no_show',
+]);
 
 export async function GET(request: Request) {
   try {
+    if (!isSupabaseConfigured) {
+      return NextResponse.json({ error: 'Supabase is not configured on the server.' }, { status: 500 });
+    }
+
+    const dbClient = createAdminClient() || createServerClient();
+    if (!dbClient) {
+      return NextResponse.json({ error: 'Database client unavailable.' }, { status: 500 });
+    }
+
     const url = new URL(request.url);
     const venueId = url.searchParams.get('venueId');
     const courtId = url.searchParams.get('courtId');
     const bookingDate = url.searchParams.get('date');
     const userId = url.searchParams.get('userId');
+    const mine = url.searchParams.get('mine') === 'true';
 
-    let results: any[] = [];
-
-    if (isSupabaseConfigured) {
-      const dbClient = createAdminClient() || createServerClient();
-      if (dbClient) {
-        let query = dbClient
-          .from('bookings')
-          .select('*, user:users(*), court:courts(*), venue:venues(*)')
-          .order('booking_date', { ascending: false })
-          .order('start_time', { ascending: false });
-
-        if (venueId) {
-          query = query.eq('venue_id', venueId);
-        }
-        if (courtId) {
-          query = query.eq('court_id', courtId);
-        }
-        if (bookingDate) {
-          query = query.eq('booking_date', bookingDate);
-        }
-        if (userId) {
-          query = query.eq('user_id', userId);
-        }
-
-        const { data, error } = await query;
-        if (!error && data) {
-          results = data;
-        }
+    let targetUserId = userId;
+    if (mine) {
+      const user = await authenticateRequest(request);
+      if (!user) {
+        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
       }
+      targetUserId = user.id;
     }
 
-    // Merge or fallback to local in-memory bookings for development & offline prototypes
-    const filteredLocal = localDevBookings.filter((b) => {
-      if (venueId && b.venue_id !== venueId && b.venueId !== venueId) return false;
-      if (courtId && b.court_id !== courtId && b.courtId !== courtId) return false;
-      if (bookingDate && b.booking_date !== bookingDate && b.bookingDate !== bookingDate) return false;
-      if (userId && b.user_id !== userId && b.userId !== userId) return false;
-      return true;
-    });
+    let query = dbClient
+      .from('bookings')
+      .select('*, user:users(*), court:courts(*), venue:venues(*)')
+      .order('booking_date', { ascending: false })
+      .order('start_time', { ascending: false });
 
-    const seenIds = new Set(results.map((r) => r.id || r.booking_reference));
-    for (const item of filteredLocal) {
-      const key = item.id || item.booking_reference;
-      if (!seenIds.has(key)) {
-        seenIds.add(key);
-        results.push(item);
-      }
+    if (venueId) {
+      query = query.eq('venue_id', venueId);
+    }
+    if (courtId) {
+      query = query.eq('court_id', courtId);
+    }
+    if (bookingDate) {
+      query = query.eq('booking_date', bookingDate);
+    }
+    if (targetUserId) {
+      query = query.eq('user_id', targetUserId);
     }
 
-    return NextResponse.json({ success: true, bookings: results });
+    const { data, error } = await query;
+    if (error) {
+      console.error('[BookingsAPI GET] Supabase query failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, bookings: data || [] });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to retrieve bookings.';
+    console.error('[BookingsAPI GET] Unexpected error:', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
+    // 1. Authenticate requester
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
-    const { bookingId, status } = body;
+    const { bookingId, status, reason } = body as {
+      bookingId?: string;
+      status?: string;
+      reason?: string;
+    };
 
     if (!bookingId || !status) {
       return NextResponse.json(
@@ -109,92 +139,240 @@ export async function PATCH(request: Request) {
       );
     }
 
-    if (isSupabaseConfigured) {
-      const dbClient = createAdminClient() || createServerClient();
-      if (dbClient) {
-        // Retrieve current booking info
-        const { data: currentBooking } = await dbClient
-          .from('bookings')
-          .select('*')
-          .eq('id', bookingId)
-          .maybeSingle();
-
-        if (status === 'confirmed' && currentBooking) {
-          // Double-booking prevention check: check for any other confirmed booking on same court/time
-          const { data: conflicts } = await dbClient
-            .from('bookings')
-            .select('id, booking_reference')
-            .eq('court_id', currentBooking.court_id)
-            .eq('booking_date', currentBooking.booking_date)
-            .eq('status', 'confirmed')
-            .neq('id', currentBooking.id)
-            .or(`and(start_time.lte.${currentBooking.start_time},end_time.gt.${currentBooking.start_time}),and(start_time.lt.${currentBooking.end_time},end_time.gte.${currentBooking.end_time})`);
-
-          if (conflicts && conflicts.length > 0) {
-            return NextResponse.json(
-              { error: 'Cannot confirm: Court slot has already been booked by another confirmed reservation.' },
-              { status: 409 }
-            );
-          }
-
-          // Lock court_availability upon confirmation
-          await dbClient.from('court_availability').insert({
-            court_id: currentBooking.court_id,
-            start_time: currentBooking.start_time,
-            end_time: currentBooking.end_time,
-            block_type: 'booked',
-            booking_id: currentBooking.id,
-          });
-        } else if (status === 'rejected' || status === 'cancelled') {
-          // Unlock court_availability if booking is rejected or cancelled
-          await dbClient
-            .from('court_availability')
-            .delete()
-            .eq('booking_id', bookingId);
-        }
-
-        await dbClient
-          .from('bookings')
-          .update({ status, updated_at: new Date().toISOString() })
-          .eq('id', bookingId);
-      }
+    if (!VALID_BOOKING_STATUSES.has(status)) {
+      return NextResponse.json(
+        { error: `Invalid booking status: ${status}` },
+        { status: 400 }
+      );
     }
 
-    const localIndex = localDevBookings.findIndex(
-      (b) => b.id === bookingId || b.booking_reference === bookingId || b.bookingReference === bookingId
+    if (!isSupabaseConfigured) {
+      return NextResponse.json(
+        { error: 'Supabase is not configured on the server.' },
+        { status: 500 }
+      );
+    }
+
+    const dbClient = createAdminClient();
+    if (!dbClient) {
+      return NextResponse.json(
+        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { status: 500 }
+      );
+    }
+
+    // 2. Fetch the target booking
+    const { data: currentBooking, error: fetchErr } = await dbClient
+      .from('bookings')
+      .select('*, venue:venues(id, name, owner_id), court:courts(id, name)')
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[BookingsAPI PATCH] Failed fetching booking:', fetchErr);
+      return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+    }
+
+    if (!currentBooking) {
+      return NextResponse.json({ error: 'Booking not found.' }, { status: 404 });
+    }
+
+    // 3. Verify authorization: owner or facility_staff of the booking's venue (or player cancelling their own booking)
+    const isPlayerSelfCancel =
+      status === 'cancelled' && currentBooking.user_id === authUser.id;
+
+    let isAuthorizedFacilityManager = Boolean(
+      currentBooking.venue?.owner_id && currentBooking.venue.owner_id === authUser.id
     );
-    if (localIndex !== -1) {
-      const localBooking = localDevBookings[localIndex];
-      if (status === 'confirmed') {
-        const conflict = localDevBookings.find(
-          (b) =>
-            b !== localBooking &&
-            (b.id !== localBooking.id) &&
-            (b.court_id === localBooking.court_id || b.courtId === localBooking.court_id) &&
-            (b.booking_date === localBooking.booking_date || b.bookingDate === localBooking.booking_date) &&
-            b.status === 'confirmed' &&
-            (b.start_time === localBooking.start_time || b.startTime === localBooking.startTime)
-        );
-        if (conflict) {
-          return NextResponse.json(
-            { error: 'Cannot confirm: Court slot has already been booked by another confirmed reservation.' },
-            { status: 409 }
-          );
-        }
+
+    if (!isAuthorizedFacilityManager && currentBooking.venue_id) {
+      const { data: staffRow, error: staffErr } = await dbClient
+        .from('facility_staff')
+        .select('id, role')
+        .eq('facility_id', currentBooking.venue_id)
+        .eq('user_id', authUser.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (staffErr) {
+        console.error('[BookingsAPI PATCH] facility_staff lookup failed:', staffErr);
+        return NextResponse.json({ error: staffErr.message }, { status: 500 });
       }
-      localDevBookings[localIndex].status = status;
-      localDevBookings[localIndex].updated_at = new Date().toISOString();
+      if (staffRow?.id) {
+        isAuthorizedFacilityManager = true;
+      }
     }
 
-    return NextResponse.json({ success: true, bookingId, status });
+    if (!isAuthorizedFacilityManager && !isPlayerSelfCancel) {
+      return NextResponse.json(
+        { error: 'Forbidden: You are not authorized to manage bookings for this venue.' },
+        { status: 403 }
+      );
+    }
+
+    // 4. Handle court_availability locking / unlocking
+    if (status === 'confirmed') {
+      const { data: conflicts, error: conflictErr } = await dbClient
+        .from('bookings')
+        .select('id, booking_reference')
+        .eq('court_id', currentBooking.court_id)
+        .eq('booking_date', currentBooking.booking_date)
+        .eq('status', 'confirmed')
+        .neq('id', currentBooking.id)
+        .or(
+          `and(start_time.lte.${currentBooking.start_time},end_time.gt.${currentBooking.start_time}),and(start_time.lt.${currentBooking.end_time},end_time.gte.${currentBooking.end_time})`
+        );
+
+      if (conflictErr) {
+        console.error('[BookingsAPI PATCH] Conflict check failed:', conflictErr);
+        return NextResponse.json({ error: conflictErr.message }, { status: 500 });
+      }
+
+      if (conflicts && conflicts.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Cannot confirm: Court slot has already been booked by another confirmed reservation.',
+          },
+          { status: 409 }
+        );
+      }
+
+      // Remove any stale lock for this booking first, then insert fresh lock
+      const { error: cleanAvailErr } = await dbClient
+        .from('court_availability')
+        .delete()
+        .eq('booking_id', currentBooking.id);
+
+      if (cleanAvailErr) {
+        console.error('[BookingsAPI PATCH] court_availability cleanup failed:', cleanAvailErr);
+        return NextResponse.json({ error: cleanAvailErr.message }, { status: 500 });
+      }
+
+      const { error: lockErr } = await dbClient.from('court_availability').insert({
+        court_id: currentBooking.court_id,
+        start_time: currentBooking.start_time,
+        end_time: currentBooking.end_time,
+        block_type: 'booked',
+        booking_id: currentBooking.id,
+      });
+
+      if (lockErr) {
+        console.error('[BookingsAPI PATCH] court_availability lock failed:', lockErr);
+        const statusCode = lockErr.code === '23P01' ? 409 : 500;
+        return NextResponse.json(
+          {
+            error:
+              lockErr.code === '23P01'
+                ? 'Cannot confirm: Court slot overlaps with an existing locked reservation.'
+                : lockErr.message,
+          },
+          { status: statusCode }
+        );
+      }
+    } else if (status === 'rejected' || status === 'cancelled') {
+      const { error: unlockErr } = await dbClient
+        .from('court_availability')
+        .delete()
+        .eq('booking_id', bookingId);
+
+      if (unlockErr) {
+        console.error('[BookingsAPI PATCH] court_availability unlock failed:', unlockErr);
+        return NextResponse.json({ error: unlockErr.message }, { status: 500 });
+      }
+    }
+
+    // 5. Update booking status (and persist decline reason in notes when provided)
+    const cleanReason = typeof reason === 'string' ? reason.trim() : '';
+    const updatePayload: { status: string; updated_at: string; notes?: string } = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (status === 'rejected' && cleanReason) {
+      const existingNotes = (currentBooking.notes || '').trim();
+      updatePayload.notes = existingNotes
+        ? `${existingNotes} | Declined: ${cleanReason}`
+        : `Declined: ${cleanReason}`;
+    }
+
+    const { data: updatedBooking, error: updateErr } = await dbClient
+      .from('bookings')
+      .update(updatePayload)
+      .eq('id', bookingId)
+      .select('*, user:users(*), court:courts(*), venue:venues(*)')
+      .single();
+
+    if (updateErr || !updatedBooking) {
+      console.error('[BookingsAPI PATCH] Booking update failed:', updateErr);
+      return NextResponse.json(
+        { error: updateErr?.message || 'Failed to update booking.' },
+        { status: 500 }
+      );
+    }
+
+    // 6. Insert persistent notification for the player on confirm / reject
+    if ((status === 'confirmed' || status === 'rejected') && currentBooking.user_id) {
+      const venueName = currentBooking.venue?.name || 'Venue';
+      const courtName = currentBooking.court?.name || 'Court';
+      const isConfirmed = status === 'confirmed';
+
+      const { error: notifErr } = await dbClient.from('notifications').insert({
+        user_id: currentBooking.user_id,
+        type: 'booking',
+        title: isConfirmed ? 'Booking Approved! 🎉' : 'Booking Request Declined',
+        description: isConfirmed
+          ? `${venueName} has confirmed your reservation for ${courtName} on ${currentBooking.booking_date} (${currentBooking.start_time} - ${currentBooking.end_time}). See you on the court!`
+          : `Your booking request at ${venueName} for ${courtName} on ${currentBooking.booking_date} (${currentBooking.start_time}) was declined by the venue.${cleanReason ? ` Reason: ${cleanReason}` : ''}`,
+        link_screen: 'my-bookings',
+        metadata: {
+          event: isConfirmed ? 'booking_approved' : 'booking_rejected',
+          bookingId: currentBooking.id,
+          reference: currentBooking.booking_reference,
+          status,
+          ...(cleanReason ? { reason: cleanReason } : {}),
+        },
+      });
+
+      if (notifErr) {
+        console.error('[BookingsAPI PATCH] Notification insert failed:', notifErr);
+        return NextResponse.json({ error: notifErr.message }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      booking: updatedBooking,
+      bookingId,
+      status,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update booking status.';
+    console.error('[BookingsAPI PATCH] Unexpected error:', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    // 1. Authenticate requester
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required to create a booking.' }, { status: 401 });
+    }
+
+    if (!isSupabaseConfigured) {
+      return NextResponse.json({ error: 'Supabase is not configured on the server.' }, { status: 500 });
+    }
+
+    const dbClient = createAdminClient();
+    if (!dbClient) {
+      return NextResponse.json(
+        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { status: 500 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const {
       venueId,
@@ -209,7 +387,6 @@ export async function POST(request: Request) {
       notes,
     } = body;
 
-    // 1. Validate required parameters
     if (!venueId || !courtId || !bookingDate || !startTime) {
       return NextResponse.json(
         { error: 'Missing required booking parameters (venueId, courtId, bookingDate, startTime).' },
@@ -217,7 +394,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Validate Payment Method and Reference Number
     const validMethods = ['gcash', 'maya', 'grabpay', 'bdo', 'bpi', 'unionbank', 'cash'];
     const normalizedMethod = validMethods.includes(paymentMethod) ? paymentMethod : 'gcash';
     const isCash = paymentCategory === 'cash' || normalizedMethod === 'cash';
@@ -232,7 +408,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Validate startTime, duration, and compute midnight-safe Date timestamps
     const duration = Math.max(30, Math.min(240, Number(durationMinutes) || 60));
     const timeMatch = typeof startTime === 'string' ? startTime.trim().match(/^(\d{1,2}):(\d{2})$/) : null;
     if (!timeMatch) {
@@ -260,225 +435,118 @@ export async function POST(request: Request) {
     const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
     const startIso = startDateTime.toISOString();
     const endIso = endDateTime.toISOString();
-    const endTime = `${String(endDateTime.getUTCHours()).padStart(2, '0')}:${String(endDateTime.getUTCMinutes()).padStart(2, '0')}`;
-
-    // 4. Authenticate User
-    const resolvedSession = resolveUserFromRequest(request);
-    let publicUser: { id: string; email: string; full_name: string } | null = null;
-
-    if (resolvedSession) {
-      const localUser = await serverGetUser(resolvedSession.userId);
-      if (localUser) {
-        publicUser = {
-          id: localUser.id,
-          email: localUser.email,
-          full_name: localUser.full_name,
-        };
-      }
-    }
-
-    // If Supabase is configured and we didn't resolve a session yet, check Supabase auth
-    if (!publicUser && isSupabaseConfigured) {
-      const authHeader = request.headers.get('Authorization');
-      const token = authHeader?.replace(/^Bearer\s+/i, '');
-      const supabase = createServerClient(token);
-      if (supabase) {
-        const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user) {
-          const { data: dbUser } = await supabase
-            .from('users')
-            .select('id, email, full_name')
-            .eq('auth_id', authData.user.id)
-            .maybeSingle();
-
-          if (dbUser) {
-            publicUser = dbUser;
-          } else {
-            const { data: newUser } = await supabase
-              .from('users')
-              .insert({
-                auth_id: authData.user.id,
-                email: authData.user.email || '',
-                full_name: authData.user.user_metadata?.full_name || 'Player',
-              })
-              .select('id, email, full_name')
-              .single();
-            publicUser = newUser;
-          }
-        }
-      }
-    }
-
-    // If still no user, use default authenticated player context
-    if (!publicUser) {
-      publicUser = {
-        id: 'usr_player_default',
-        email: 'player@sportsync.ph',
-        full_name: 'SportSync Player',
-      };
-    }
 
     const bookingRef = generateBookingReference();
-    const hourlyRate = 45000; // ₱450.00
-    const fees = calculateBookingFees(hourlyRate, duration);
+    const hourlyRate = 45000;
 
-    // Initial booking status is ALWAYS pending until faculty approves.
-    // Payment status is handled independently.
     const initialStatus = 'pending';
     const initialPaymentStatus = isCash
       ? 'cash_at_venue'
-      : (referenceCode && referenceCode.trim().length >= 6 ? 'approved' : 'pending');
+      : referenceCode && referenceCode.trim().length >= 6
+      ? 'approved'
+      : 'pending';
     const finalReference = (referenceCode || '').trim() || bookingRef;
 
-    let createdBooking: any = null;
+    const { data: court, error: courtErr } = await dbClient
+      .from('courts')
+      .select('id, venue_id, name, sport, hourly_rate_cents, is_active')
+      .eq('id', courtId)
+      .maybeSingle();
 
-    // Check conflict in local dev cache against confirmed reservations
-    const localConflict = localDevBookings.find(
-      (b) =>
-        (b.court_id === courtId || b.courtId === courtId) &&
-        (b.booking_date === bookingDate || b.bookingDate === bookingDate) &&
-        b.status === 'confirmed' &&
-        (b.start_time === startTime || b.startTime === startTime)
-    );
-    if (localConflict) {
+    if (courtErr) {
+      console.error('[BookingsAPI POST] Court lookup failed:', courtErr);
+      return NextResponse.json({ error: courtErr.message }, { status: 500 });
+    }
+
+    const actualRate = court?.hourly_rate_cents || hourlyRate;
+    const actualFees = calculateBookingFees(actualRate, duration);
+
+    const { data: confirmedConflicts, error: conflictErr } = await dbClient
+      .from('bookings')
+      .select('id')
+      .eq('court_id', courtId)
+      .eq('booking_date', bookingDate)
+      .eq('status', 'confirmed')
+      .or(
+        `and(start_time.lte.${startIso},end_time.gt.${startIso}),and(start_time.lt.${endIso},end_time.gte.${endIso})`
+      );
+
+    if (conflictErr) {
+      console.error('[BookingsAPI POST] Conflict check failed:', conflictErr);
+      return NextResponse.json({ error: conflictErr.message }, { status: 500 });
+    }
+
+    if (confirmedConflicts && confirmedConflicts.length > 0) {
       return NextResponse.json(
-        { error: 'This court slot has already been reserved by a confirmed booking. Please select another time.' },
+        {
+          error:
+            'This court slot has already been reserved by a confirmed booking. Please select another time.',
+        },
         { status: 409 }
       );
     }
 
-    // 5. Database Insertion if Supabase is active
-    if (isSupabaseConfigured) {
-      try {
-        const dbClient = createAdminClient() || createServerClient();
-        if (dbClient) {
-          // Verify court existence & rate if possible
-          const { data: court } = await dbClient
-            .from('courts')
-            .select('id, venue_id, name, sport, hourly_rate_cents, is_active')
-            .eq('id', courtId)
-            .maybeSingle();
+    const { data: newBooking, error: insertErr } = await dbClient
+      .from('bookings')
+      .insert({
+        booking_reference: bookingRef,
+        user_id: authUser.id,
+        venue_id: venueId,
+        court_id: courtId,
+        sport: court?.sport || sport,
+        booking_date: bookingDate,
+        start_time: startIso,
+        end_time: endIso,
+        duration_minutes: duration,
+        court_rate_cents: actualRate,
+        booking_amount_cents: actualFees.totalAmountCents,
+        platform_fee_cents: actualFees.platformFeeCents,
+        total_amount_cents: actualFees.totalAmountCents,
+        status: initialStatus,
+        payment_status: initialPaymentStatus,
+        payment_method: normalizedMethod,
+        reference_code: finalReference,
+        notes,
+      })
+      .select('*, court:courts(*), venue:venues(*)')
+      .single();
 
-          const actualRate = court?.hourly_rate_cents || hourlyRate;
-          const actualFees = calculateBookingFees(actualRate, duration);
-
-          // Overlap check against confirmed bookings only (pending requests do NOT block slots)
-          const { data: confirmedConflicts } = await dbClient
-            .from('bookings')
-            .select('id')
-            .eq('court_id', courtId)
-            .eq('booking_date', bookingDate)
-            .eq('status', 'confirmed')
-            .or(`and(start_time.lte.${startIso},end_time.gt.${startIso}),and(start_time.lt.${endIso},end_time.gte.${endIso})`);
-
-          if (confirmedConflicts && confirmedConflicts.length > 0) {
-            return NextResponse.json(
-              { error: 'This court slot has already been reserved by a confirmed booking. Please select another time.' },
-              { status: 409 }
-            );
-          }
-
-          const { data: newBooking } = await dbClient
-            .from('bookings')
-            .insert({
-              booking_reference: bookingRef,
-              user_id: publicUser.id,
-              venue_id: venueId,
-              court_id: courtId,
-              sport: court?.sport || sport,
-              booking_date: bookingDate,
-              start_time: startIso,
-              end_time: endIso,
-              duration_minutes: duration,
-              court_rate_cents: actualRate,
-              booking_amount_cents: actualFees.totalAmountCents,
-              platform_fee_cents: actualFees.platformFeeCents,
-              total_amount_cents: actualFees.totalAmountCents,
-              status: initialStatus,
-              payment_status: initialPaymentStatus,
-              payment_method: normalizedMethod,
-              reference_code: finalReference,
-              notes,
-            })
-            .select('*, court:courts(*), venue:venues(*)')
-            .single();
-
-          if (newBooking) {
-            createdBooking = newBooking;
-
-            // Note: Court availability is NOT locked until faculty confirms the reservation.
-            // Create payment record
-            await dbClient.from('payments').insert({
-              booking_id: newBooking.id,
-              court_id: courtId,
-              user_id: publicUser.id,
-              amount_cents: actualFees.totalAmountCents,
-              payment_method: normalizedMethod,
-              reference_code: finalReference,
-              status: initialPaymentStatus,
-              notes: `Court reservation request: ${court?.name || courtId} | Date: ${bookingDate} ${startTime}`,
-            });
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[BookingsAPI] Supabase booking persistence notice:', dbErr);
-      }
+    if (insertErr || !newBooking) {
+      console.error('[BookingsAPI POST] Booking insert failed:', insertErr);
+      return NextResponse.json(
+        { error: insertErr?.message || 'Failed to create booking.' },
+        { status: 500 }
+      );
     }
 
-    const bookingResponse = createdBooking || {
-      id: `bk_${Date.now()}`,
-      booking_reference: bookingRef,
-      bookingReference: bookingRef,
-      user_id: publicUser.id,
-      user: {
-        id: publicUser.id,
-        full_name: publicUser.full_name,
-        email: publicUser.email,
-      },
-      venue_id: venueId,
-      venueId,
+    const { error: paymentErr } = await dbClient.from('payments').insert({
+      booking_id: newBooking.id,
       court_id: courtId,
-      courtId,
-      court: {
-        id: courtId,
-        name: typeof courtId === 'string' && courtId.includes('c') ? `Court ${courtId.replace(/[^0-9]/g, '') || '1'}` : 'Court 1',
-      },
-      sport,
-      booking_date: bookingDate,
-      bookingDate,
-      start_time: startTime,
-      startTime,
-      end_time: endTime,
-      endTime,
-      duration_minutes: duration,
-      durationMinutes: duration,
-      court_rate_cents: hourlyRate,
-      booking_amount_cents: fees.totalAmountCents,
-      platform_fee_cents: fees.platformFeeCents,
-      total_amount_cents: fees.totalAmountCents,
-      totalAmountCents: fees.totalAmountCents,
-      status: initialStatus,
-      payment_status: initialPaymentStatus,
-      paymentStatus: initialPaymentStatus,
+      user_id: authUser.id,
+      amount_cents: actualFees.totalAmountCents,
       payment_method: normalizedMethod,
-      paymentMethod: normalizedMethod,
       reference_code: finalReference,
-      referenceCode: finalReference,
-      notes,
-      created_at: new Date().toISOString(),
-    };
-
-    // Persist in local dev cache for facility management dashboard queries
-    localDevBookings.unshift(bookingResponse);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Booking request submitted. Awaiting venue confirmation.',
-      booking: bookingResponse,
+      status: initialPaymentStatus,
+      notes: `Court reservation request: ${court?.name || courtId} | Date: ${bookingDate} ${startTime}`,
     });
+
+    if (paymentErr) {
+      console.error('[BookingsAPI POST] Payment insert failed:', paymentErr);
+      return NextResponse.json({ error: paymentErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Booking request submitted. Awaiting venue confirmation.',
+        booking: newBooking,
+      },
+      { status: 201 }
+    );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Internal server error processing reservation.';
-    console.error('Booking API error:', error);
+    const message =
+      error instanceof Error ? error.message : 'Internal server error processing reservation.';
+    console.error('[BookingsAPI POST] Unexpected error:', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

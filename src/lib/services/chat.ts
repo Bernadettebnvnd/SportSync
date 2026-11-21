@@ -88,131 +88,59 @@ export async function getAuthenticatedUserProfile(): Promise<AuthenticatedProfil
 }
 
 /**
- * Fetch persisted messages for a game from Supabase, resolving real sender names and avatars from public.users.
- * Distinguishes the host's messages and individual players' messages.
+ * Fetch persisted messages for a game via GET /api/games/[id]/chat.
+ * Canonical game ID should be `game.sessionId || game.id`.
  */
 export async function fetchGameMessages(
   gameId: string,
   alternateId?: string,
   hostInfo?: { hostId?: string; hostName?: string }
 ): Promise<ChatMessage[]> {
-  if (!gameId) return [];
+  const canonicalId = alternateId || gameId;
+  if (!canonicalId) return [];
 
-  const targetIds = Array.from(new Set([gameId, alternateId].filter(Boolean))) as string[];
-  const cacheKey = `sportsync_chat_${gameId}`;
+  const res = await fetch(`/api/games/${encodeURIComponent(canonicalId)}/chat`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
 
-  // Read local cache first for instant UI response
-  let cachedMessages: ChatMessage[] = [];
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(cacheKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          cachedMessages = parsed;
-        }
-      }
-    } catch (e) {
-      console.warn('[Chat] Failed reading localStorage cache:', e);
-    }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json?.error || `Failed to load chat messages (${res.status}).`);
   }
 
-  const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured) {
-    return cachedMessages;
+  const rows = Array.isArray(json.messages) ? json.messages : [];
+  const seenIds = new Set<string>();
+  const mapped: ChatMessage[] = [];
+
+  for (const row of rows) {
+    if (!row?.id || seenIds.has(row.id)) continue;
+    seenIds.add(row.id);
+
+    const resolvedSenderName = row.sender_name || 'Player';
+    const resolvedAvatar = (row.sender_avatar as AvatarId) || 'alex';
+    const isSenderHost = Boolean(
+      (hostInfo?.hostId && row.sender_id && hostInfo.hostId === row.sender_id) ||
+        (hostInfo?.hostName &&
+          resolvedSenderName.trim().toLowerCase() === hostInfo.hostName.trim().toLowerCase())
+    );
+
+    mapped.push({
+      id: row.id,
+      senderId: row.sender_id,
+      senderName: isSenderHost && hostInfo?.hostName ? hostInfo.hostName : resolvedSenderName,
+      avatarId: resolvedAvatar,
+      text: row.message_text,
+      time: formatMessageTime(row.created_at),
+      isHost: isSenderHost,
+    });
   }
 
-  try {
-    let query = supabase.from('game_chat_messages').select('*');
-
-    if (targetIds.length === 1) {
-      query = query.eq('game_id', targetIds[0]);
-    } else {
-      query = query.in('game_id', targetIds);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: true });
-
-    if (error) {
-      console.warn('[Chat] Supabase messages query error:', error.message);
-      return cachedMessages;
-    }
-
-    if (Array.isArray(data)) {
-      // 1. Collect all distinct sender IDs to batch lookup authentic profiles from public.users
-      const senderIds = Array.from(
-        new Set(data.map((r) => r.sender_id).filter((id) => Boolean(id && isUuid(id))))
-      ) as string[];
-
-      const userProfilesMap = new Map<string, { name: string; avatar: AvatarId }>();
-
-      if (senderIds.length > 0) {
-        try {
-          const { data: usersData } = await supabase
-            .from('users')
-            .select('id, auth_id, full_name, nickname, avatar_url')
-            .in('id', senderIds);
-
-          if (Array.isArray(usersData)) {
-            usersData.forEach((u: any) => {
-              const uName = u.full_name || u.nickname;
-              const uAvatar = (u.avatar_url as AvatarId) || 'alex';
-              if (u.id) userProfilesMap.set(u.id, { name: uName, avatar: uAvatar });
-              if (u.auth_id) userProfilesMap.set(u.auth_id, { name: uName, avatar: uAvatar });
-            });
-          }
-        } catch (uErr) {
-          console.warn('[Chat] Could not batch-fetch sender profiles:', uErr);
-        }
-      }
-
-      const seenIds = new Set<string>();
-      const mapped: ChatMessage[] = [];
-
-      for (const row of data) {
-        if (!row.id || seenIds.has(row.id)) continue;
-        seenIds.add(row.id);
-
-        const profile = row.sender_id ? userProfilesMap.get(row.sender_id) : undefined;
-        const resolvedSenderName = profile?.name || row.sender_name || 'Player';
-        const resolvedAvatar = profile?.avatar || (row.sender_avatar as AvatarId) || 'alex';
-
-        // Check if sender is the host
-        const isSenderHost = Boolean(
-          (hostInfo?.hostId && row.sender_id && hostInfo.hostId === row.sender_id) ||
-          (hostInfo?.hostName && resolvedSenderName.trim().toLowerCase() === hostInfo.hostName.trim().toLowerCase())
-        );
-
-        mapped.push({
-          id: row.id,
-          senderId: row.sender_id,
-          senderName: isSenderHost && hostInfo?.hostName ? hostInfo.hostName : resolvedSenderName,
-          avatarId: resolvedAvatar,
-          text: row.message_text,
-          time: formatMessageTime(row.created_at),
-          isHost: isSenderHost,
-        });
-      }
-
-      // Update local storage cache
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(mapped));
-        } catch {}
-      }
-
-      return mapped;
-    }
-  } catch (err) {
-    console.warn('[Chat] Failed to fetch messages from Supabase:', err);
-  }
-
-  return cachedMessages;
+  return mapped;
 }
 
 /**
- * Send and persist a new message to Supabase for the specified game.
- * Uses the authenticated user's actual profile name and avatar.
+ * Send and persist a new message via POST /api/games/[id]/chat.
  */
 export async function sendGameMessage(params: {
   gameId: string;
@@ -222,79 +150,42 @@ export async function sendGameMessage(params: {
   text: string;
   isHost?: boolean;
 }): Promise<ChatMessage> {
-  const { gameId, senderId, senderName, senderAvatar = 'alex', text, isHost = false } = params;
+  const { gameId, text, isHost = false } = params;
 
-  const nowIso = new Date().toISOString();
   const messageId =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  const createdMessage: ChatMessage = {
-    id: messageId,
-    senderId,
-    senderName,
-    avatarId: (senderAvatar as AvatarId) || 'alex',
-    text: text.trim(),
-    time: formatMessageTime(nowIso),
+  const res = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      id: messageId,
+      text: text.trim(),
+    }),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.message) {
+    throw new Error(json?.error || `Failed to send message (${res.status}).`);
+  }
+
+  const m = json.message;
+  return {
+    id: m.id || messageId,
+    senderId: m.senderId,
+    senderName: m.senderName || params.senderName,
+    avatarId: (m.senderAvatar as AvatarId) || (params.senderAvatar as AvatarId) || 'alex',
+    text: m.text || text.trim(),
+    time: formatMessageTime(m.createdAt),
     isMe: true,
-    isHost,
+    isHost: typeof m.isHost === 'boolean' ? m.isHost : isHost,
   };
-
-  // 1. Save to localStorage cache immediately
-  const cacheKey = `sportsync_chat_${gameId}`;
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(cacheKey);
-      const existing: ChatMessage[] = raw ? JSON.parse(raw) : [];
-      if (!existing.some((m) => m.id === messageId)) {
-        existing.push(createdMessage);
-        localStorage.setItem(cacheKey, JSON.stringify(existing));
-      }
-    } catch {}
-  }
-
-  // 2. Persist to Supabase if configured
-  const supabase = getSupabaseClient();
-  if (supabase && isSupabaseConfigured) {
-    try {
-      const dbSenderId = senderId && isUuid(senderId) ? senderId : null;
-
-      const { error } = await supabase.from('game_chat_messages').insert({
-        id: messageId,
-        game_id: gameId,
-        sender_id: dbSenderId,
-        sender_name: senderName,
-        sender_avatar: senderAvatar,
-        message_text: text.trim(),
-        created_at: nowIso,
-      });
-
-      if (error) {
-        console.warn('[Chat] Supabase insert warning:', error.message);
-        // Fallback: try Next.js API route if direct insert errored
-        try {
-          await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: messageId,
-              senderId: dbSenderId,
-              senderName,
-              senderAvatar,
-              text: text.trim(),
-              createdAt: nowIso,
-            }),
-          });
-        } catch {}
-      }
-    } catch (dbEx) {
-      console.warn('[Chat] Exception writing message to Supabase:', dbEx);
-    }
-  }
-
-  return createdMessage;
 }
+
+const activeChatChannels = new Map<string, any>();
 
 /**
  * Subscribe to real-time chat messages for a specific game.
@@ -307,11 +198,12 @@ export function subscribeToGameChat(
   onNewMessage: (msg: ChatMessage) => void
 ): () => void {
   const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured || !gameId) {
+  const canonicalId = alternateId || gameId;
+  if (!supabase || !isSupabaseConfigured || !canonicalId) {
     return () => {};
   }
 
-  const channelName = `game-chat-${gameId}`;
+  const channelName = `game-chat-${canonicalId}`;
   const channel = supabase.channel(channelName);
 
   const processIncomingRow = (row: any) => {
@@ -342,7 +234,7 @@ export function subscribeToGameChat(
         event: 'INSERT',
         schema: 'public',
         table: 'game_chat_messages',
-        filter: `game_id=eq.${gameId}`,
+        filter: `game_id=eq.${canonicalId}`,
       },
       (payload) => {
         processIncomingRow(payload.new);
@@ -355,14 +247,14 @@ export function subscribeToGameChat(
       }
     });
 
-  if (alternateId && alternateId !== gameId) {
+  if (gameId && gameId !== canonicalId) {
     channel.on(
       'postgres_changes',
       {
         event: 'INSERT',
         schema: 'public',
         table: 'game_chat_messages',
-        filter: `game_id=eq.${alternateId}`,
+        filter: `game_id=eq.${gameId}`,
       },
       (payload) => {
         processIncomingRow(payload.new);
@@ -372,11 +264,12 @@ export function subscribeToGameChat(
 
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
-      // Channel connected
+      activeChatChannels.set(canonicalId, channel);
     }
   });
 
   return () => {
+    activeChatChannels.delete(canonicalId);
     try {
       supabase.removeChannel(channel);
     } catch {}
@@ -384,20 +277,22 @@ export function subscribeToGameChat(
 }
 
 /**
- * Broadcast a message to peers on the game's channel for instantaneous UI sync.
+ * Broadcast a message to peers over the active subscribed channel for instantaneous UI sync.
  */
 export async function broadcastGameMessage(gameId: string, message: ChatMessage): Promise<void> {
-  const supabase = getSupabaseClient();
-  if (!supabase || !isSupabaseConfigured || !gameId) return;
+  if (!gameId) return;
+  const activeChannel = activeChatChannels.get(gameId);
+  if (!activeChannel) return;
 
   try {
-    const channel = supabase.channel(`game-chat-${gameId}`);
-    await channel.send({
+    await activeChannel.send({
       type: 'broadcast',
       event: 'new_message',
       payload: message,
     });
-  } catch {}
+  } catch (err) {
+    console.warn('[Chat] Broadcast send warning:', err);
+  }
 }
 
 /**
@@ -480,20 +375,10 @@ export async function fetchGameParticipants(params: {
         .eq('session_id', searchSessionId)
         .not('status', 'in', '("cancelled","left")');
 
-      // 3. Query game_rosters
-      const { data: rosterData } = await supabase
-        .from('game_rosters')
-        .select('user_id, status')
-        .eq('session_id', searchSessionId)
-        .neq('status', 'cancelled');
-
       const userIdsToLookup = new Set<string>();
 
       (partData || []).forEach((p: any) => {
         if (p.user_id && isUuid(p.user_id)) userIdsToLookup.add(p.user_id);
-      });
-      (rosterData || []).forEach((r: any) => {
-        if (r.user_id && isUuid(r.user_id)) userIdsToLookup.add(r.user_id);
       });
       (queueData || []).forEach((q: any) => {
         if (q.user_id && isUuid(q.user_id)) userIdsToLookup.add(q.user_id);

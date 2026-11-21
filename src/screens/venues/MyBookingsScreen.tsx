@@ -7,12 +7,15 @@ import { APP_CONFIG } from '../../config/appConfig';
 interface MyBookingsScreenProps {
   bookings?: Array<{
     id: string;
+    bookingReference?: string;
     venue: any;
     court: string;
     date: string;
     time: string;
     price: number;
     status?: string;
+    notes?: string;
+    rejectionReason?: string;
   }>;
   onBack: () => void;
   onViewPass: (bookingId: string) => void;
@@ -92,43 +95,57 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
       {/* 3. Cards List or Empty State */}
       {list.length > 0 ? (
         <div className="space-y-3">
-          {list.map((item) => (
+          {list.map((item) => {
+            const declineReason =
+              item.rejectionReason ||
+              (item.notes ? item.notes.match(/Declined:\s*(.+)$/i)?.[1]?.trim() : undefined);
+
+            return (
             <div
               key={item.id}
-              className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3"
+              className={`p-4 rounded-3xl bg-[#141A15] border space-y-3 ${
+                item.status === 'rejected' ? 'border-rose-500/30' : 'border-white/5'
+              }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-[#F4F7F0] font-display font-bold text-[10px] uppercase font-mono">
-                    {item.id}
+                    {item.bookingReference || item.id}
                   </span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      item.status === 'confirmed'
+                      item.status === 'confirmed' || item.status === 'completed'
                         ? 'bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30'
                         : item.status === 'rejected'
                         ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                         : 'bg-amber-400/15 text-amber-400 border border-amber-400/30'
                     }`}
                   >
-                    {item.status === 'confirmed'
-                      ? 'Confirmed'
+                    {item.status === 'confirmed' || item.status === 'completed'
+                      ? 'Accepted (Confirmed)'
                       : item.status === 'rejected'
-                      ? 'Declined'
+                      ? 'Declined (Rejected)'
                       : 'Pending Approval'}
                   </span>
                 </div>
                 <button
-                  onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
+                  onClick={() => setSheetBooking({ id: item.id, venueName: item.venue?.name || 'Venue' })}
                   className="text-[#6F7B71] hover:text-white p-1"
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
               </div>
 
+              {item.status === 'rejected' && declineReason && (
+                <div className="p-2.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-200">
+                  <span className="font-bold text-rose-300">Decline Reason: </span>
+                  <span>{declineReason}</span>
+                </div>
+              )}
+
               <div>
                 <h3 className="font-display font-bold text-base text-[#F4F7F0]">
-                  {item.venue.name}
+                  {item.venue?.name || 'Venue'}
                 </h3>
                 <p className="text-xs text-[#A5B0A6] mt-0.5">{item.court}</p>
               </div>
@@ -150,9 +167,9 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
                 >
                   View Entry QR Pass →
                 </button>
-                {activeTab === 'upcoming' && (
+                {activeTab === 'upcoming' && item.status !== 'rejected' && (
                   <button
-                    onClick={() => setSheetBooking({ id: item.id, venueName: item.venue.name })}
+                    onClick={() => setSheetBooking({ id: item.id, venueName: item.venue?.name || 'Venue' })}
                     className="text-xs text-[#A5B0A6] hover:text-white"
                   >
                     Manage
@@ -160,7 +177,8 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-3xl border border-white/10 bg-[#141A15] p-8 text-center space-y-3">

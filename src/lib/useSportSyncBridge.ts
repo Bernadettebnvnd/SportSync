@@ -71,12 +71,15 @@ export function generateUniqueGameId(prefix: string = 'cg'): string {
 
 export interface SportSyncBookingItem {
   id: string;
+  bookingReference?: string;
   venue: Venue;
   court: string;
   date: string;
   time: string;
   price: number;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'rejected' | 'no_show';
+  notes?: string;
+  rejectionReason?: string;
   createdAt: string;
 }
 
@@ -1406,26 +1409,83 @@ export function useSportSyncBridge() {
     };
   }, [syncSessionRoster]);
 
-  // 3. Dynamic Bookings
-  const [bookings, setBookings] = useState<SportSyncBookingItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sportsync_my_bookings') || localStorage.getItem('sideline_my_bookings');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return [];
-  });
+  // 3. Dynamic Bookings (hydrated from store.bookings / GET /api/bookings + Realtime)
+  const [bookings, setBookings] = useState<SportSyncBookingItem[]>([]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('sportsync_my_bookings', JSON.stringify(bookings));
+      localStorage.removeItem('sportsync_my_bookings');
+      localStorage.removeItem('sideline_my_bookings');
     }
-  }, [bookings]);
+  }, []);
+
+  useEffect(() => {
+    const mapDbBookings = () => {
+      const uid = store.currentUser.id || userProfile.id;
+      const filtered = (store.bookings || []).filter((b) => !uid || b.user_id === uid);
+      const mapped: SportSyncBookingItem[] = filtered.map((b) => {
+        const formatSlotTime = (isoOrTime: string) => {
+          if (!isoOrTime) return '';
+          if (isoOrTime.includes('T')) {
+            const d = new Date(isoOrTime);
+            if (!isNaN(d.getTime())) {
+              return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+            }
+          }
+          return isoOrTime.substring(0, 5);
+        };
+        const startStr = formatSlotTime(b.start_time);
+        const endStr = formatSlotTime(b.end_time);
+        const declineMatch = b.notes ? b.notes.match(/Declined:\s*(.+)$/i) : null;
+        return {
+          id: b.id,
+          bookingReference: b.booking_reference,
+          venue: (b.venue as any) || { id: b.venue_id, name: 'Sports Venue', address: b.venue_id },
+          court: b.court?.name || 'Court 1',
+          date: b.booking_date,
+          time: endStr ? `${startStr} - ${endStr}` : startStr,
+          price: Math.round((b.total_amount_cents || 0) / 100),
+          status: b.status,
+          notes: b.notes,
+          rejectionReason: declineMatch ? declineMatch[1].trim() : undefined,
+          createdAt: b.created_at,
+        };
+      });
+      setBookings(mapped);
+    };
+
+    mapDbBookings();
+  }, [store.bookings, store.currentUser.id, userProfile.id]);
+
+  useEffect(() => {
+    if (!userProfile.id || userProfile.isGuest) return;
+    store.refreshBookings?.();
+
+    const supabase = getSupabaseClient();
+    if (!supabase || !isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel(`bookings-sync-${userProfile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings',
+          filter: `user_id=eq.${userProfile.id}`,
+        },
+        () => {
+          store.refreshBookings?.();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [userProfile.id, userProfile.isGuest]);
 
   // 4. Dynamic Badges
   const [badges, setBadges] = useState<BadgeItem[]>(() => {
@@ -3664,85 +3724,41 @@ export function useSportSyncBridge() {
   );
 
   const confirmReservation = useCallback(
-    (bookingId: string) => {
+    async (bookingId: string) => {
+      await store.updateBookingStatus(bookingId, 'confirmed');
       setBookings((prev) =>
         prev.map((b) => (b.id === bookingId ? { ...b, status: 'confirmed' } : b))
       );
-      store.updateBookingStatus(bookingId, 'confirmed');
-
-      const existing = bookings.find((b) => b.id === bookingId);
-      const venueName = existing?.venue?.name || 'Venue';
-      const courtName = existing?.court || 'Court';
-      const dateStr = existing?.date || 'Date';
-      const timeStr = existing?.time || 'Time';
-
-      addNotification({
-        id: `notif_approved_${bookingId}_${Date.now()}`,
-        type: 'booking',
-        title: 'Booking Approved! 🎉',
-        desc: `${venueName} has approved your booking for ${courtName} on ${dateStr} (${timeStr}). See you on the court!`,
-        linkScreen: 'my-bookings',
-        recipientId: userProfile.id,
-        recipientName: userProfile.name,
-        meta: {
-          event: 'booking_approved',
-          bookingId,
-          status: 'confirmed',
-        },
-      });
+      await store.refreshBookings?.();
     },
-    [bookings, store, userProfile.id, userProfile.name]
+    [store]
   );
 
   const rejectReservation = useCallback(
-    (bookingId: string, reason?: string) => {
+    async (bookingId: string, reason?: string) => {
+      await store.updateBookingStatus(bookingId, 'rejected', reason);
       setBookings((prev) =>
-        prev.map((b) => (b.id === bookingId ? { ...b, status: 'rejected' } : b))
+        prev.map((b) =>
+          b.id === bookingId
+            ? { ...b, status: 'rejected', rejectionReason: reason }
+            : b
+        )
       );
-      store.updateBookingStatus(bookingId, 'rejected');
-
-      const existing = bookings.find((b) => b.id === bookingId);
-      const venueName = existing?.venue?.name || 'Venue';
-      const dateStr = existing?.date || 'Date';
-
-      addNotification({
-        id: `notif_rejected_${bookingId}_${Date.now()}`,
-        type: 'booking',
-        title: 'Booking Request Declined',
-        desc: `Your booking request at ${venueName} for ${dateStr} was declined by the venue.${reason ? ` Reason: ${reason}` : ''}`,
-        linkScreen: 'my-bookings',
-        recipientId: userProfile.id,
-        recipientName: userProfile.name,
-        meta: {
-          event: 'booking_rejected',
-          bookingId,
-          status: 'rejected',
-          reason,
-        },
-      });
+      await store.refreshBookings?.();
     },
-    [bookings, store, userProfile.id, userProfile.name]
+    [store]
   );
 
-  const cancelReservation = useCallback((bookingId: string) => {
-    setBookings((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
-    );
-    store.updateBookingStatus(bookingId, 'cancelled');
-    addNotification({
-      id: `notif_cancel_${bookingId}`,
-      type: 'booking',
-      title: 'Booking Cancelled',
-      desc: 'Your court reservation was cancelled. Full refund issued.',
-      linkScreen: 'my-bookings',
-      recipientId: userProfile.id,
-      recipientName: userProfile.name,
-      meta: {
-        event: 'booking_cancelled',
-        bookingId,
-      },
-    });
-  }, [store, userProfile.id, userProfile.name]);
+  const cancelReservation = useCallback(
+    async (bookingId: string) => {
+      await store.updateBookingStatus(bookingId, 'cancelled');
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: 'cancelled' } : b))
+      );
+      await store.refreshBookings?.();
+    },
+    [store]
+  );
 
   // 18. Complete Onboarding
   const completeOnboarding = useCallback(

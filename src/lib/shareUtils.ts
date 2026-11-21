@@ -56,7 +56,7 @@ export function getMatchShareUrl(game: { id: string; inviteCode?: string }): str
  */
 export function getAppShareUrl(): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}/?invite=SPORTSYNC`;
+    return window.location.origin;
   }
   return 'https://sportsync.ph';
 }
@@ -83,9 +83,9 @@ export async function shareMatch(
       });
       onFeedback?.('Match link shared!');
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // If user aborted or canceled the native share dialog, don't show error
-      if (err?.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         return false;
       }
       // Otherwise fall through to clipboard

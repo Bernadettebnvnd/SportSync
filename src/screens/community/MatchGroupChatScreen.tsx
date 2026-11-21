@@ -146,9 +146,12 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     };
   }, [game, effectiveUserId, effectiveUserName, joinedPlayers]);
 
-  // 3. Fetch actual messages and subscribe to real-time updates
+  // Standardized canonical chat room key across all devices
+  const chatRoomId = game?.sessionId || game?.id || '';
+
+  // 3. Fetch actual messages and subscribe to real-time updates + clean fallback poll
   useEffect(() => {
-    if (!game?.id) {
+    if (!chatRoomId) {
       setMessages([]);
       setLoadingMessages(false);
       return;
@@ -159,34 +162,42 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     setLoadingMessages(true);
 
     let isMounted = true;
-    const targetGameId = game.id;
-    const hostInfo = { hostId: game.hostId, hostName: game.hostName };
+    const hostInfo = { hostId: game?.hostId, hostName: game?.hostName };
 
-    // Fetch persisted messages from Supabase
-    fetchGameMessages(targetGameId, game.sessionId, hostInfo)
-      .then((persisted) => {
+    const loadMessages = async (isInitial = false) => {
+      try {
+        const persisted = await fetchGameMessages(chatRoomId, game?.id, hostInfo);
         if (!isMounted) return;
-        setMessages(persisted);
-        setLoadingMessages(false);
-        markGameChatAsRead(targetGameId);
-      })
-      .catch((err) => {
+        setMessages((prev) => {
+          if (isInitial) return persisted;
+          const byId = new Map(prev.map((m) => [m.id, m]));
+          let changed = false;
+          for (const m of persisted) {
+            if (!byId.has(m.id)) {
+              byId.set(m.id, m);
+              changed = true;
+            }
+          }
+          return changed ? Array.from(byId.values()) : prev;
+        });
+        if (isInitial) setLoadingMessages(false);
+        markGameChatAsRead(chatRoomId);
+      } catch (err) {
         console.warn('[MatchChat] Error loading messages:', err);
-        if (isMounted) setLoadingMessages(false);
-      });
+        if (isMounted && isInitial) setLoadingMessages(false);
+      }
+    };
 
-    // Mark as read immediately on entering chat
-    markGameChatAsRead(targetGameId);
+    loadMessages(true);
+    markGameChatAsRead(chatRoomId);
 
     // Subscribe to real-time message changes
-    const unsubscribe = subscribeToGameChat(targetGameId, game.sessionId, hostInfo, (incoming) => {
+    const unsubscribe = subscribeToGameChat(game?.id || chatRoomId, chatRoomId, hostInfo, (incoming) => {
       if (!isMounted) return;
 
-      // When user is actively on this screen, mark incoming messages as read
-      markGameChatAsRead(targetGameId);
+      markGameChatAsRead(chatRoomId);
 
       setMessages((prev) => {
-        // Prevent duplicate messages
         if (prev.some((m) => m.id === incoming.id)) {
           return prev;
         }
@@ -196,11 +207,17 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       scrollToBottom();
     });
 
+    // Clean 5-second fallback poll for environments where Realtime WebSocket is delayed
+    const pollInterval = setInterval(() => {
+      loadMessages(false);
+    }, 5000);
+
     return () => {
       isMounted = false;
+      clearInterval(pollInterval);
       unsubscribe();
     };
-  }, [game?.id, game?.sessionId, game?.hostId, game?.hostName]);
+  }, [chatRoomId, game?.id, game?.hostId, game?.hostName]);
 
   // Stable string signature for members to avoid re-triggering effect when array reference changes
   const membersSignature = useMemo(() => {
@@ -276,7 +293,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
   // 5. Send Message Handler
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !game?.id || isSending) return;
+    if (!inputText.trim() || !chatRoomId || isSending) return;
 
     const textToSend = inputText.trim();
     setInputText('');
@@ -284,10 +301,10 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
     try {
       // If user is host, use game.hostName. If player, use their specific profile name from Supabase.
-      const senderDisplayName = isHost && game.hostName ? game.hostName : effectiveUserName;
+      const senderDisplayName = isHost && game?.hostName ? game.hostName : effectiveUserName;
 
       const sentMsg = await sendGameMessage({
-        gameId: game.id,
+        gameId: chatRoomId,
         senderId: effectiveUserId,
         senderName: senderDisplayName,
         senderAvatar: effectiveUserAvatar,
@@ -301,12 +318,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         return [...prev, { ...sentMsg, isMe: true }];
       });
 
-      // Broadcast to all peers connected to channel
-      await broadcastGameMessage(game.id, sentMsg);
+      // Broadcast to all peers connected to the active subscribed channel
+      await broadcastGameMessage(chatRoomId, sentMsg);
       scrollToBottom();
     } catch (err: any) {
       console.warn('[MatchChat] Failed to send message:', err);
-      showFeedback('Failed to send message. Please try again.');
+      setInputText(textToSend);
+      showFeedback(err?.message || 'Failed to send message. Please try again.');
     } finally {
       setIsSending(false);
     }

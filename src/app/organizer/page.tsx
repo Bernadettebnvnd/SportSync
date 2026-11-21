@@ -647,8 +647,14 @@ function OrganizerDashboardContent() {
     assignQueueToCourt(nextInLine.id, courtId, courtName);
   };
 
-  const handleCheckInBooking = (bookingId: string) => {
-    updateBookingStatus(bookingId, 'completed');
+  const handleCheckInBooking = async (bookingId: string) => {
+    setReviewActionError(null);
+    try {
+      await updateBookingStatus(bookingId, 'completed');
+      refreshBookings();
+    } catch (err: any) {
+      setReviewActionError(err?.message || 'Failed to check in booking.');
+    }
   };
 
   const handleConfirmBooking = async (b: Booking) => {
@@ -675,23 +681,6 @@ function OrganizerDashboardContent() {
 
       await updateBookingStatus(b.id, 'confirmed');
 
-      // 2. Notify player immediately
-      addNotification({
-        id: `notif_appr_${b.id}_${Date.now()}`,
-        type: 'booking',
-        title: 'Booking Approved! 🎉',
-        desc: `${primaryVenue?.name || 'Venue'} has confirmed your reservation for ${b.court?.name || 'Court'} on ${b.booking_date} (${b.start_time} - ${b.end_time}). See you on the court!`,
-        linkScreen: 'my-bookings',
-        recipientId: b.user_id,
-        recipientName: b.user?.full_name,
-        meta: {
-          event: 'booking_approved',
-          bookingId: b.id,
-          reference: b.booking_reference,
-          status: 'confirmed',
-        },
-      });
-
       setSelectedBookingForReview(null);
       setMonetizeSuccessMessage(`Booking ${b.booking_reference} confirmed successfully! Player has been notified.`);
       setTimeout(() => setMonetizeSuccessMessage(null), 4000);
@@ -716,30 +705,12 @@ function OrganizerDashboardContent() {
     setReviewActionError(null);
     setIsProcessingBookingAction(true);
     try {
-      await updateBookingStatus(b.id, 'rejected');
-
-      // Notify player immediately
-      addNotification({
-        id: `notif_rej_${b.id}_${Date.now()}`,
-        type: 'booking',
-        title: 'Booking Request Declined',
-        desc: `Your booking request at ${primaryVenue?.name || 'Venue'} for ${b.court?.name || 'Court'} on ${b.booking_date} (${b.start_time}) was declined by the venue.${rejectReasonPrompt ? ` Reason: ${rejectReasonPrompt}` : ''}`,
-        linkScreen: 'my-bookings',
-        recipientId: b.user_id,
-        recipientName: b.user?.full_name,
-        meta: {
-          event: 'booking_rejected',
-          bookingId: b.id,
-          reference: b.booking_reference,
-          status: 'rejected',
-          reason: rejectReasonPrompt,
-        },
-      });
+      await updateBookingStatus(b.id, 'rejected', rejectReasonPrompt.trim() || undefined);
 
       setIsRejectModalOpen(false);
       setBookingToReject(null);
       setSelectedBookingForReview(null);
-      setMonetizeSuccessMessage(`Booking ${b.booking_reference} rejected. Player has been notified.`);
+      setMonetizeSuccessMessage(`Booking ${b.booking_reference} declined. Player has been notified.`);
       setTimeout(() => setMonetizeSuccessMessage(null), 4000);
       refreshBookings();
     } catch (err: any) {

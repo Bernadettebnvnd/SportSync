@@ -285,7 +285,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         if (isAuthRecovery) {
           return 'reset-password';
         }
-        if (searchParams.get('invite') || (searchParams.get('code') && !searchParams.get('state')) || searchParams.get('match')) {
+        if (searchParams.get('invite') || searchParams.get('match')) {
           return 'invitation-landing';
         }
       } catch {}
@@ -417,9 +417,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     let cleanCode = '';
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
+      const inviteParam = searchParams.get('invite') || searchParams.get('match');
       if (inviteParam) {
-        cleanCode = inviteParam.trim().toUpperCase();
+        const trimmed = inviteParam.trim();
+        const isUuidParam = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+        cleanCode = isUuidParam ? trimmed : trimmed.toUpperCase();
       }
     } catch {}
 
