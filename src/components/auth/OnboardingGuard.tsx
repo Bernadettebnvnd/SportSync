@@ -16,7 +16,7 @@ import { useMatchiStore } from '@/lib/store';
 export function OnboardingGuard() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isLoading, isInitialized } = useMatchiStore();
+  const { currentUser, venues, isLoading, isInitialized } = useMatchiStore();
 
   useEffect(() => {
     // 1. Do not evaluate or make redirect decisions while profile data is loading or uninitialized!
@@ -110,7 +110,7 @@ export function OnboardingGuard() {
     const hasExplicitCompletion = Boolean(
       currentUser.onboarding_completed === true ||
       currentUser.has_completed_onboarding === true ||
-      hasStoredCompletion
+      (!isPending && hasStoredCompletion)
     );
 
     const hasRequiredPlayerFields = !isOwner && Boolean(
@@ -120,14 +120,44 @@ export function OnboardingGuard() {
       (currentUser.city || currentUser.skill_level)
     );
 
-    const hasStoredVenue = typeof window !== 'undefined' && Boolean(
-      localStorage.getItem('sportsync_facility_venue_id') ||
-      localStorage.getItem('sportsync_user_venues')
+    const activeOwnerIds = [currentUser.id, currentUser.auth_id, storedUserId].filter(
+      (id): id is string => Boolean(id && id !== 'usr_guest_01')
+    );
+    const activeOwnerEmail = (currentUser.email || storedEmail || '').trim().toLowerCase();
+
+    const hasOwnedVenueInStore = venues.some(
+      (v) =>
+        (v.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+        (activeOwnerEmail && v.description?.toLowerCase().includes(activeOwnerEmail))
     );
 
-    const hasRequiredOwnerFields = isOwner && Boolean(
-      hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player')
-    );
+    let hasOwnedVenueInStorage = false;
+    if (typeof window !== 'undefined' && (activeOwnerIds.length > 0 || activeOwnerEmail)) {
+      hasOwnedVenueInStorage = activeOwnerIds.some((id) =>
+        Boolean(localStorage.getItem(`sportsync_venue_id_${id}`))
+      );
+      if (!hasOwnedVenueInStorage) {
+        try {
+          const rawVenues = localStorage.getItem('sportsync_user_venues');
+          if (rawVenues) {
+            const parsedVenues = JSON.parse(rawVenues);
+            if (Array.isArray(parsedVenues)) {
+              hasOwnedVenueInStorage = parsedVenues.some(
+                (v: { owner_id?: string; owner_email?: string; description?: string }) =>
+                  (v?.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+                  (activeOwnerEmail &&
+                    ((v?.owner_email && v.owner_email.toLowerCase() === activeOwnerEmail) ||
+                      (v?.description && v.description.toLowerCase().includes(activeOwnerEmail))))
+              );
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const hasOwnedVenue = hasOwnedVenueInStore || hasOwnedVenueInStorage;
+
+    const hasRequiredOwnerFields = isOwner && Boolean(hasExplicitCompletion || hasOwnedVenue);
 
     const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields;
 
@@ -189,6 +219,7 @@ export function OnboardingGuard() {
     currentUser.has_completed_onboarding,
     currentUser.role,
     currentUser.full_name,
+    venues.length,
     isLoading,
     isInitialized,
     router,

@@ -1,4 +1,4 @@
-import { Venue, Court, SportType } from '@/types';
+import { Venue, Court, SportType, VenuePaymentInfo } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { INITIAL_VENUES } from '@/lib/mockData';
 
@@ -229,11 +229,23 @@ export async function getCourtsByVenueId(venueId: string): Promise<Court[]> {
  * Create a new facility and playing areas in Supabase.
  */
 export async function createVenueWithCourts(
-  venueData: Omit<Venue, 'id' | 'courts'>,
+  venueData: Omit<Venue, 'id' | 'courts'> & {
+    facility_type?: string;
+    booking_mode?: 'instant' | 'inquiry';
+  },
   courtsData: Array<Omit<Court, 'id' | 'venue_id'>>
 ): Promise<{ venue: Venue; courts: Court[] } | null> {
   const supabase = getSupabaseClient();
   const venueId = generateUniqueId('venue');
+
+  const mergedPaymentInfo: VenuePaymentInfo & {
+    facility_type?: string;
+    booking_mode?: 'instant' | 'inquiry';
+  } = {
+    ...(venueData.payment_info || { accepts_cash: true }),
+    ...(venueData.facility_type ? { facility_type: venueData.facility_type } : {}),
+    ...(venueData.booking_mode ? { booking_mode: venueData.booking_mode } : {}),
+  };
 
   // Construct venue record
   const formattedVenue: Venue = {
@@ -247,10 +259,10 @@ export async function createVenueWithCourts(
     latitude: venueData.latitude || 14.5828,
     longitude: venueData.longitude || 121.0664,
     operating_hours: venueData.operating_hours || { mon_sun: '06:00 - 23:00' },
-    amenities: venueData.amenities || ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
+    amenities: venueData.amenities !== undefined ? venueData.amenities : ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
     featured_sports: venueData.featured_sports || ['pickleball'],
     images: venueData.images || ['https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&w=1200&q=80'],
-    payment_info: venueData.payment_info || { accepts_cash: true },
+    payment_info: mergedPaymentInfo,
     rating: 5.0,
     review_count: 0,
     is_verified: true, // Display on player dashboard
@@ -277,137 +289,133 @@ export async function createVenueWithCourts(
 
   formattedVenue.courts = formattedCourts;
 
-  // Persist locally for immediate availability
-  saveLocalStoredVenues(formattedVenue);
-
   if (!supabase || !isSupabaseConfigured) {
+    saveLocalStoredVenues(formattedVenue);
     return { venue: formattedVenue, courts: formattedCourts };
   }
 
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_id') : null;
-    const storedOwnerEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
-    const rawOwnerId = userData?.user?.id || formattedVenue.owner_id || storedOwnerId;
-    // UUID verification to avoid postgres foreign key syntax error
-    const ownerId = isValidUuid(rawOwnerId) ? rawOwnerId : null;
-    const ownerEmail = userData?.user?.email || storedOwnerEmail || '';
+  const { data: userData } = await supabase.auth.getUser();
+  const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_id') : null;
+  const storedOwnerEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
+  const rawOwnerId = userData?.user?.id || formattedVenue.owner_id || storedOwnerId;
+  // UUID verification to avoid postgres foreign key syntax error
+  const ownerId = isValidUuid(rawOwnerId) ? rawOwnerId : null;
+  const ownerEmail = userData?.user?.email || storedOwnerEmail || '';
 
-    // Embed owner email in description if not already present, ensuring ownership queries and email-based matching pass
-    const venueDescription = ownerEmail && !formattedVenue.description.includes(ownerEmail)
-      ? `${formattedVenue.description} [Owner: ${ownerEmail}]`
-      : formattedVenue.description;
+  // Embed owner email in description if not already present, ensuring ownership queries and email-based matching pass
+  const venueDescription = ownerEmail && !formattedVenue.description.includes(ownerEmail)
+    ? `${formattedVenue.description} [Owner: ${ownerEmail}]`
+    : formattedVenue.description;
 
-    // Insert to Supabase venues table
-    const { data: newVenue, error: venueError } = await supabase
-      .from('venues')
-      .insert({
-        owner_id: ownerId,
-        name: formattedVenue.name,
-        slug: formattedVenue.slug,
-        description: venueDescription,
-        address: formattedVenue.address,
-        city: formattedVenue.city,
-        latitude: formattedVenue.latitude,
-        longitude: formattedVenue.longitude,
-        operating_hours: formattedVenue.operating_hours,
-        amenities: formattedVenue.amenities,
-        featured_sports: formattedVenue.featured_sports,
-        images: formattedVenue.images,
-        payment_info: formattedVenue.payment_info,
-        is_verified: true,
-        inventory_source: formattedVenue.inventory_source,
-      })
-      .select()
-      .single();
+  // Insert to Supabase venues table
+  const { data: newVenue, error: venueError } = await supabase
+    .from('venues')
+    .insert({
+      owner_id: ownerId,
+      name: formattedVenue.name,
+      slug: formattedVenue.slug,
+      description: venueDescription,
+      address: formattedVenue.address,
+      city: formattedVenue.city,
+      latitude: formattedVenue.latitude,
+      longitude: formattedVenue.longitude,
+      operating_hours: formattedVenue.operating_hours,
+      amenities: formattedVenue.amenities,
+      featured_sports: formattedVenue.featured_sports,
+      images: formattedVenue.images,
+      payment_info: formattedVenue.payment_info,
+      is_verified: true,
+      inventory_source: formattedVenue.inventory_source,
+    })
+    .select()
+    .single();
 
-    if (venueError || !newVenue) {
-      console.warn('Supabase venue insert fallback handled, using local record:', venueError?.message);
-      return { venue: formattedVenue, courts: formattedCourts };
-    }
-
-    // Link staff record if ownerId is valid UUID
-    if (ownerId && isValidUuid(ownerId)) {
-      try {
-        await supabase.from('facility_staff').upsert({
-          facility_id: newVenue.id,
-          user_id: ownerId,
-          role: 'owner',
-        });
-      } catch (staffErr) {
-        console.warn('Facility staff link error:', staffErr);
-      }
-
-      // Mark the user's role as venue_owner and onboarding_completed = true in public.users
-      try {
-        await supabase
-          .from('users')
-          .update({
-            role: 'venue_owner',
-            onboarding_completed: true,
-            updated_at: new Date().toISOString(),
-          })
-          .or(`auth_id.eq.${ownerId},id.eq.${ownerId}`);
-      } catch (userErr) {
-        console.warn('User onboarding status update error:', userErr);
-      }
-    }
-
-    if (ownerEmail) {
-      try {
-        await supabase
-          .from('users')
-          .update({
-            role: 'venue_owner',
-            onboarding_completed: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('email', ownerEmail);
-      } catch {}
-    }
-
-    if (userData?.user) {
-      try {
-        await supabase.auth.updateUser({
-          data: {
-            role: 'venue_owner',
-            onboarding_completed: true,
-            has_completed_onboarding: true,
-          },
-        });
-      } catch {}
-    }
-
-    // Insert courts
-    const dbCourts = courtsData.map((c) => ({
-      venue_id: newVenue.id,
-      name: c.name,
-      sport: c.sport,
-      floor_type: c.floor_type,
-      hourly_rate_cents: c.hourly_rate_cents,
-      supports_doubles: c.supports_doubles ?? true,
-      supports_singles: c.supports_singles ?? true,
-      is_indoor: c.is_indoor ?? true,
-      is_active: true,
-    }));
-
-    const { data: createdCourts } = await supabase
-      .from('courts')
-      .insert(dbCourts)
-      .select();
-
-    const finalCourts = (createdCourts as Court[]) || formattedCourts;
-    const finalVenue: Venue = {
-      ...newVenue,
-      courts: finalCourts,
-    };
-
-    saveLocalStoredVenues(finalVenue);
-    return { venue: finalVenue, courts: finalCourts };
-  } catch (err) {
-    console.warn('Supabase venue creation exception, returning stored record:', err);
-    return { venue: formattedVenue, courts: formattedCourts };
+  if (venueError || !newVenue) {
+    throw new Error(venueError?.message || 'Failed to save facility to database.');
   }
+
+  // Link staff record if ownerId is valid UUID
+  if (ownerId && isValidUuid(ownerId)) {
+    try {
+      await supabase.from('facility_staff').upsert({
+        facility_id: newVenue.id,
+        user_id: ownerId,
+        role: 'owner',
+      });
+    } catch (staffErr) {
+      console.warn('Facility staff link error:', staffErr);
+    }
+
+    // Mark the user's role as venue_owner and onboarding_completed = true in public.users
+    try {
+      await supabase
+        .from('users')
+        .update({
+          role: 'venue_owner',
+          onboarding_completed: true,
+          updated_at: new Date().toISOString(),
+        })
+        .or(`auth_id.eq.${ownerId},id.eq.${ownerId}`);
+    } catch (userErr) {
+      console.warn('User onboarding status update error:', userErr);
+    }
+  }
+
+  if (ownerEmail) {
+    try {
+      await supabase
+        .from('users')
+        .update({
+          role: 'venue_owner',
+          onboarding_completed: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('email', ownerEmail);
+    } catch {}
+  }
+
+  if (userData?.user) {
+    try {
+      await supabase.auth.updateUser({
+        data: {
+          role: 'venue_owner',
+          onboarding_completed: true,
+          has_completed_onboarding: true,
+        },
+      });
+    } catch {}
+  }
+
+  // Insert courts
+  const dbCourts = courtsData.map((c) => ({
+    venue_id: newVenue.id,
+    name: c.name,
+    sport: c.sport,
+    floor_type: c.floor_type,
+    hourly_rate_cents: c.hourly_rate_cents,
+    supports_doubles: c.supports_doubles ?? true,
+    supports_singles: c.supports_singles ?? true,
+    is_indoor: c.is_indoor ?? true,
+    is_active: true,
+  }));
+
+  const { data: createdCourts, error: courtsError } = await supabase
+    .from('courts')
+    .insert(dbCourts)
+    .select();
+
+  if (courtsError) {
+    throw new Error(`Facility saved, but failed to create courts: ${courtsError.message}`);
+  }
+
+  const finalCourts = (createdCourts as Court[]) || formattedCourts;
+  const finalVenue: Venue = {
+    ...newVenue,
+    courts: finalCourts,
+  };
+
+  saveLocalStoredVenues(finalVenue);
+  return { venue: finalVenue, courts: finalCourts };
 }
 
 /**

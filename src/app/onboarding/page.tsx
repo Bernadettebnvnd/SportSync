@@ -97,7 +97,7 @@ const FACILITY_LOCATIONS = [
 function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentUser, setAuthenticatedUser, completePlayerOnboarding, completeOwnerOnboarding, logoutUser } = useMatchiStore();
+  const { currentUser, venues, setAuthenticatedUser, completePlayerOnboarding, completeOwnerOnboarding, logoutUser } = useMatchiStore();
 
   const urlRole = searchParams.get('role');
   const isFacilityUrl = urlRole === 'owner' || urlRole === 'facility_owner' || urlRole === 'facility' || urlRole === 'venue_owner';
@@ -148,7 +148,7 @@ function OnboardingContent() {
   const hasExplicitCompletion = Boolean(
     currentUser.onboarding_completed === true ||
     currentUser.has_completed_onboarding === true ||
-    hasStoredCompletion
+    (!isPending && hasStoredCompletion)
   );
 
   // Existing player with completed profile
@@ -159,14 +159,44 @@ function OnboardingContent() {
     (currentUser.skill_level || currentUser.city)
   );
 
-  const hasStoredVenue = typeof window !== 'undefined' && Boolean(
-    localStorage.getItem('sportsync_facility_venue_id') ||
-    localStorage.getItem('sportsync_user_venues')
+  const activeOwnerIds = [currentUser.id, currentUser.auth_id, storedUserId].filter(
+    (id): id is string => Boolean(id && id !== 'usr_guest_01')
+  );
+  const activeOwnerEmail = (currentUser.email || storedEmail || '').trim().toLowerCase();
+
+  const hasOwnedVenueInStore = venues.some(
+    (v) =>
+      (v.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+      (activeOwnerEmail && v.description?.toLowerCase().includes(activeOwnerEmail))
   );
 
-  const hasRequiredOwnerFields = isOwner && Boolean(
-    hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player')
-  );
+  let hasOwnedVenueInStorage = false;
+  if (typeof window !== 'undefined' && (activeOwnerIds.length > 0 || activeOwnerEmail)) {
+    hasOwnedVenueInStorage = activeOwnerIds.some((id) =>
+      Boolean(localStorage.getItem(`sportsync_venue_id_${id}`))
+    );
+    if (!hasOwnedVenueInStorage) {
+      try {
+        const rawVenues = localStorage.getItem('sportsync_user_venues');
+        if (rawVenues) {
+          const parsedVenues = JSON.parse(rawVenues);
+          if (Array.isArray(parsedVenues)) {
+            hasOwnedVenueInStorage = parsedVenues.some(
+              (v: { owner_id?: string; owner_email?: string; description?: string }) =>
+                (v?.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+                (activeOwnerEmail &&
+                  ((v?.owner_email && v.owner_email.toLowerCase() === activeOwnerEmail) ||
+                    (v?.description && v.description.toLowerCase().includes(activeOwnerEmail))))
+            );
+          }
+        }
+      } catch {}
+    }
+  }
+
+  const hasOwnedVenue = hasOwnedVenueInStore || hasOwnedVenueInStorage;
+
+  const hasRequiredOwnerFields = isOwner && Boolean(hasExplicitCompletion || hasOwnedVenue);
 
   const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
@@ -470,11 +500,6 @@ function OnboardingContent() {
     setIsSubmitting(true);
     setOwnerValidationError(null);
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_pending_onboarding');
-      }
-      setHasPendingOnboarding(false);
-
       const parsedCourtCount = typeof courtCount === 'number' ? courtCount : (parseInt(String(courtCount), 10) || 1);
       const parsedRate = typeof hourlyRatePhp === 'number' ? hourlyRatePhp : (parseFloat(String(hourlyRatePhp)) || 0);
 
@@ -523,9 +548,18 @@ function OnboardingContent() {
         address: fullAddress,
         city: 'Naga City',
         featuredSports: facilitySports,
+        operatingHours,
+        amenities: facilityAmenities,
+        facilityType,
+        bookingMode,
         courts: generatedCourts,
         inventorySource: 'manual',
       });
+
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+      }
+      setHasPendingOnboarding(false);
 
       confetti({
         particleCount: 100,
@@ -535,9 +569,11 @@ function OnboardingContent() {
       });
 
       router.replace('/organizer');
-    } catch (err) {
-      console.warn('Facility setup warning:', err);
-      router.replace('/organizer');
+    } catch (err: unknown) {
+      console.error('Facility setup error:', err);
+      setOwnerValidationError(
+        err instanceof Error ? err.message : 'Failed to save your facility setup. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -554,7 +590,7 @@ function OnboardingContent() {
     );
   }
 
-  if (isCompleted || (isOwner && !hasPendingOnboarding && (hasStoredCompletion || hasStoredVenue))) {
+  if (!isExplicitPreview && (isCompleted || (isOwner && !isPending && (hasExplicitCompletion || hasOwnedVenue)))) {
     return (
       <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
@@ -576,6 +612,7 @@ function OnboardingContent() {
   const handleBackToLogin = async () => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_logged_out', 'true');
+      sessionStorage.removeItem('sportsync_just_registered');
       const authKeys = [
         'sportsync_user_id',
         'matchi_user_id',
@@ -591,14 +628,28 @@ function OnboardingContent() {
         'sportsync_pending_onboarding',
         'sportsync_onboarding_completed',
         'matchi_onboarding_completed',
+        'sportsync_skipped_onboarding',
         'sportsync_auth_user',
         'sportsync_user_city',
         'sportsync_user_location',
         'sportsync_user_sports',
         'sportsync_user_skill',
         'sportsync_user_availability',
+        'sportsync_facility_venue_id',
+        'sportsync_user_venues',
+        'sportsync_user_sessions',
       ];
       authKeys.forEach((k) => localStorage.removeItem(k));
+      try {
+        const venueKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('sportsync_venue_id_')) {
+            venueKeys.push(key);
+          }
+        }
+        venueKeys.forEach((k) => localStorage.removeItem(k));
+      } catch {}
     }
 
     try {

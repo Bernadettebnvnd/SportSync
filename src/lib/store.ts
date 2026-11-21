@@ -600,15 +600,23 @@ export function useMatchiStore() {
         'sportsync_user_skill',
         'sportsync_user_availability',
         'sportsync_facility_venue_id',
+        'sportsync_user_venues',
+        'sportsync_user_sessions',
+        'sportsync_skipped_onboarding',
       ];
       authKeys.forEach((k) => localStorage.removeItem(k));
 
-      // Clear all Supabase GoTrue tokens from localStorage and sessionStorage
+      // Clear all Supabase GoTrue tokens and user-scoped venue keys from localStorage and sessionStorage
       try {
         const sbKeys: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith('sb-') || key.startsWith('supabase.'))) {
+          if (
+            key &&
+            (key.startsWith('sb-') ||
+              key.startsWith('supabase.') ||
+              key.startsWith('sportsync_venue_id_'))
+          ) {
             sbKeys.push(key);
           }
         }
@@ -775,122 +783,26 @@ export function useMatchiStore() {
       address: string;
       city: string;
       featuredSports: SportType[];
+      operatingHours?: string;
+      amenities?: string[];
+      facilityType?: 'university' | 'club' | 'public' | 'commercial' | '';
+      bookingMode?: 'instant' | 'inquiry' | '';
       courts: {
         name: string;
         sport: SportType;
         hourlyRateCents: number;
         floorType: string;
         courtType?: 'full' | 'half' | 'standard';
+        isIndoor?: boolean;
       }[];
       inventorySource: FacilityInventorySource;
     }) => {
       const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_id') : null;
-      try {
-        const ownerId = globalState.currentUser.id || globalState.currentUser.auth_id || storedOwnerId || 'owner_pending';
-        const ownerEmail = data.ownerEmail || globalState.currentUser.email || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') || '';
-        const result = await createVenueWithCourts(
-          {
-            owner_id: ownerId,
-            name: data.facilityName,
-            slug: data.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-            description: data.description,
-            address: data.address,
-            city: data.city,
-            latitude: 14.5828,
-            longitude: 121.0664,
-            operating_hours: { mon_sun: '06:00 - 23:00' },
-            amenities: ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop', 'Locker Rooms'],
-            featured_sports: data.featuredSports,
-            images: [],
-            payment_info: { accepts_cash: true },
-            review_count: 0,
-            is_verified: true,
-            inventory_source: data.inventorySource,
-          },
-          data.courts.map((c) => ({
-            name: c.name,
-            sport: c.sport,
-            hourly_rate_cents: c.hourlyRateCents,
-            floor_type: c.floorType,
-            court_type: c.courtType || 'standard',
-            is_indoor: true,
-            is_active: true,
-            supports_doubles: true,
-            supports_singles: true,
-          }))
-        );
-
-        // Always sync faculty profile to Supabase auth metadata and database
-        try {
-          await updateFacultyProfile({
-            fullName: data.ownerName,
-            phone: data.ownerPhone,
-            city: data.city || 'Naga City',
-          });
-        } catch (profileErr) {
-          console.warn('Faculty profile update in onboarding notice:', profileErr);
-        }
-
-        if (result) {
-          saveLocalStoredVenues(result.venue);
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('sportsync_pending_onboarding');
-            localStorage.setItem('matchi_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_onboarding_completed', 'true');
-            localStorage.setItem('sportsync_user_role', 'venue_owner');
-            localStorage.setItem('sportsync_user_name', data.ownerName);
-            localStorage.setItem('sportsync_facility_venue_id', result.venue.id);
-            if (globalState.currentUser.id) {
-              localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, result.venue.id);
-            }
-            if (storedOwnerId) {
-              localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, result.venue.id);
-            }
-            localStorage.setItem(
-              'sportsync_user_profile',
-              JSON.stringify({
-                id: ownerId,
-                name: data.ownerName,
-                email: ownerEmail,
-                role: 'venue_owner',
-                city: data.city || 'Naga City',
-                phone: data.ownerPhone,
-                onboardingCompleted: true,
-                isGuest: false,
-              })
-            );
-          }
-          globalState.venues = [result.venue, ...globalState.venues.filter((v) => v.id !== result.venue.id)];
-          globalState.courts = [...result.courts, ...globalState.courts.filter((c) => c.venue_id !== result.venue.id)];
-          globalState.currentUser = {
-            ...globalState.currentUser,
-            full_name: data.ownerName,
-            email: data.ownerEmail,
-            role: 'venue_owner',
-            active_mode: 'manage',
-            onboarding_completed: true,
-            has_completed_onboarding: true,
-          };
-          notify();
-          return result.venue;
-        }
-      } catch (err) {
-        console.warn('Owner onboarding backend creation warning, using local state fallback:', err);
-        try {
-          await updateFacultyProfile({
-            fullName: data.ownerName,
-            phone: data.ownerPhone,
-            city: data.city || 'Naga City',
-          });
-        } catch {}
-
-        const fallbackVenueId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? `venue_${crypto.randomUUID()}`
-          : `venue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const fallbackOwnerId = globalState.currentUser.id || globalState.currentUser.auth_id || storedOwnerId || 'local_owner';
-        const fallbackVenue: Venue = {
-          id: fallbackVenueId,
-          owner_id: fallbackOwnerId,
+      const ownerId = globalState.currentUser.id || globalState.currentUser.auth_id || storedOwnerId || 'owner_pending';
+      const ownerEmail = data.ownerEmail || globalState.currentUser.email || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') || '';
+      const result = await createVenueWithCourts(
+        {
+          owner_id: ownerId,
           name: data.facilityName,
           slug: data.facilityName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           description: data.description,
@@ -898,79 +810,86 @@ export function useMatchiStore() {
           city: data.city,
           latitude: 14.5828,
           longitude: 121.0664,
-          operating_hours: { mon_sun: '06:00 - 23:00' },
-          amenities: ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop', 'Locker Rooms'],
+          operating_hours: { mon_sun: data.operatingHours?.trim() || '06:00 - 23:00' },
+          amenities: data.amenities !== undefined ? data.amenities : ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop', 'Locker Rooms'],
           featured_sports: data.featuredSports,
           images: [],
           payment_info: { accepts_cash: true },
-          rating: 5.0,
+          facility_type: data.facilityType || undefined,
+          booking_mode: data.bookingMode || undefined,
           review_count: 0,
           is_verified: true,
           inventory_source: data.inventorySource,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        (fallbackVenue as any).owner_email = data.ownerEmail || globalState.currentUser.email;
-
-        const fallbackCourts: Court[] = data.courts.map((c, i) => ({
-          id: `court_${fallbackVenueId}_${i + 1}`,
-          venue_id: fallbackVenueId,
+        },
+        data.courts.map((c) => ({
           name: c.name,
           sport: c.sport,
           hourly_rate_cents: c.hourlyRateCents,
           floor_type: c.floorType,
           court_type: c.courtType || 'standard',
-          is_indoor: true,
+          is_indoor: c.isIndoor ?? true,
           is_active: true,
           supports_doubles: true,
           supports_singles: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }));
+        }))
+      );
 
-        fallbackVenue.courts = fallbackCourts;
-        saveLocalStoredVenues(fallbackVenue);
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('sportsync_pending_onboarding');
-          localStorage.setItem('matchi_onboarding_completed', 'true');
-          localStorage.setItem('sportsync_onboarding_completed', 'true');
-          localStorage.setItem('sportsync_user_role', 'venue_owner');
-          localStorage.setItem('sportsync_user_name', data.ownerName);
-          localStorage.setItem('sportsync_facility_venue_id', fallbackVenueId);
-          if (globalState.currentUser.id) {
-            localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, fallbackVenueId);
-          }
-          if (storedOwnerId) {
-            localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, fallbackVenueId);
-          }
-          localStorage.setItem(
-            'sportsync_user_profile',
-            JSON.stringify({
-              id: fallbackOwnerId,
-              name: data.ownerName,
-              email: data.ownerEmail || globalState.currentUser.email,
-              role: 'venue_owner',
-              city: data.city || 'Naga City',
-              phone: data.ownerPhone,
-              onboardingCompleted: true,
-              isGuest: false,
-            })
-          );
-        }
-        globalState.venues = [fallbackVenue, ...globalState.venues.filter((v) => v.id !== fallbackVenueId)];
-        globalState.courts = [...fallbackCourts, ...globalState.courts];
-        globalState.currentUser = {
-          ...globalState.currentUser,
-          full_name: data.ownerName,
-          email: data.ownerEmail,
-          role: 'venue_owner',
-          active_mode: 'manage',
-          onboarding_completed: true,
-          has_completed_onboarding: true,
-        };
-        notify();
-        return fallbackVenue;
+      if (!result) {
+        throw new Error('Failed to save facility setup. Please try again.');
       }
+
+      // Sync faculty profile to Supabase auth metadata and database
+      try {
+        await updateFacultyProfile({
+          fullName: data.ownerName,
+          phone: data.ownerPhone,
+          city: data.city || 'Naga City',
+        });
+      } catch (profileErr) {
+        console.warn('Faculty profile update in onboarding notice:', profileErr);
+      }
+
+      saveLocalStoredVenues(result.venue);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+        localStorage.setItem('matchi_onboarding_completed', 'true');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        localStorage.setItem('sportsync_user_role', 'venue_owner');
+        localStorage.setItem('sportsync_user_name', data.ownerName);
+        localStorage.setItem('sportsync_facility_venue_id', result.venue.id);
+        if (globalState.currentUser.id) {
+          localStorage.setItem(`sportsync_venue_id_${globalState.currentUser.id}`, result.venue.id);
+        }
+        if (storedOwnerId) {
+          localStorage.setItem(`sportsync_venue_id_${storedOwnerId}`, result.venue.id);
+        }
+        localStorage.setItem(
+          'sportsync_user_profile',
+          JSON.stringify({
+            id: ownerId,
+            name: data.ownerName,
+            email: ownerEmail,
+            role: 'venue_owner',
+            city: data.city || 'Naga City',
+            phone: data.ownerPhone,
+            onboardingCompleted: true,
+            isGuest: false,
+          })
+        );
+      }
+      globalState.venues = [result.venue, ...globalState.venues.filter((v) => v.id !== result.venue.id)];
+      globalState.courts = [...result.courts, ...globalState.courts.filter((c) => c.venue_id !== result.venue.id)];
+      globalState.currentUser = {
+        ...globalState.currentUser,
+        full_name: data.ownerName,
+        email: data.ownerEmail,
+        role: 'venue_owner',
+        active_mode: 'manage',
+        onboarding_completed: true,
+        has_completed_onboarding: true,
+      };
+      notify();
+      return result.venue;
     },
     []
   );

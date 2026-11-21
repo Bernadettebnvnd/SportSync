@@ -168,10 +168,44 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     );
 
-    const hasStoredVenue = typeof window !== 'undefined' && Boolean(
-      localStorage.getItem('sportsync_facility_venue_id') ||
-      localStorage.getItem('sportsync_user_venues')
+    const storedUserId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id')) : null;
+    const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
+    const activeOwnerIds = [bridge.store.currentUser.id, bridge.store.currentUser.auth_id, storedUserId].filter(
+      (id): id is string => Boolean(id && id !== 'usr_guest_01')
     );
+    const activeOwnerEmail = (bridge.store.currentUser.email || storedEmail || '').trim().toLowerCase();
+
+    const hasOwnedVenueInStore = bridge.store.venues.some(
+      (v) =>
+        (v.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+        (activeOwnerEmail && v.description?.toLowerCase().includes(activeOwnerEmail))
+    );
+
+    let hasOwnedVenueInStorage = false;
+    if (typeof window !== 'undefined' && (activeOwnerIds.length > 0 || activeOwnerEmail)) {
+      hasOwnedVenueInStorage = activeOwnerIds.some((id) =>
+        Boolean(localStorage.getItem(`sportsync_venue_id_${id}`))
+      );
+      if (!hasOwnedVenueInStorage) {
+        try {
+          const rawVenues = localStorage.getItem('sportsync_user_venues');
+          if (rawVenues) {
+            const parsedVenues = JSON.parse(rawVenues);
+            if (Array.isArray(parsedVenues)) {
+              hasOwnedVenueInStorage = parsedVenues.some(
+                (v: { owner_id?: string; owner_email?: string; description?: string }) =>
+                  (v?.owner_id && activeOwnerIds.includes(v.owner_id)) ||
+                  (activeOwnerEmail &&
+                    ((v?.owner_email && v.owner_email.toLowerCase() === activeOwnerEmail) ||
+                      (v?.description && v.description.toLowerCase().includes(activeOwnerEmail))))
+              );
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const hasOwnedVenue = hasOwnedVenueInStore || hasOwnedVenueInStorage;
 
     const isExplicitlyComplete = Boolean(
       !isPending && (
@@ -183,7 +217,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     );
 
     if (isOwner) {
-      return isExplicitlyComplete || hasStoredVenue;
+      return isExplicitlyComplete || hasOwnedVenue;
     }
 
     if (isPending) {
@@ -277,8 +311,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (isOwner) {
       const onboarded = isUserOnboarded();
       if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-        const target = onboarded ? '/organizer' : '/onboarding?role=owner';
-        window.location.href = target;
         return 'splash';
       }
       return onboarded ? 'home' : 'faculty-setup';
@@ -293,7 +325,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(resolveInitialScreen);
-  const [screenHistory, setScreenHistory] = useState<ScreenId[]>([resolveInitialScreen()]);
+  const [screenHistory, setScreenHistory] = useState<ScreenId[]>(() => [currentScreen]);
   const [activeTab, setActiveTab] = useState<NavTabId>('home');
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
 
@@ -619,7 +651,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         }
       }
     }
-  }, [bridge.store.isLoading, bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, bridge.store.currentUser.role, currentScreen]);
+  }, [bridge.store.isLoading, bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, bridge.store.currentUser.role, bridge.store.venues.length, currentScreen]);
 
   useEffect(() => {
     if (currentScreen === 'match-detail' && selectedGame) {
@@ -833,18 +865,41 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     isLoggingOutRef.current = true;
     if (typeof window !== 'undefined') {
       localStorage.setItem('sportsync_logged_out', 'true');
-      localStorage.removeItem('sportsync_pending_onboarding');
-      localStorage.removeItem('sportsync_skipped_onboarding');
-      localStorage.removeItem('sportsync_onboarding_completed');
-      localStorage.removeItem('matchi_onboarding_completed');
       sessionStorage.removeItem('sportsync_just_registered');
-      localStorage.removeItem('sportsync_user_id');
-      localStorage.removeItem('sportsync_user_email');
-      localStorage.removeItem('sportsync_user_name');
-      localStorage.removeItem('matchi_user_id');
-      localStorage.removeItem('matchi_user_name');
-      localStorage.removeItem('sportsync_user_profile');
-      localStorage.removeItem('sportsync_user_role');
+      const keysToRemove = [
+        'sportsync_pending_onboarding',
+        'sportsync_skipped_onboarding',
+        'sportsync_onboarding_completed',
+        'matchi_onboarding_completed',
+        'sportsync_user_id',
+        'sportsync_user_email',
+        'sportsync_user_name',
+        'matchi_user_id',
+        'matchi_user_name',
+        'sportsync_user_profile',
+        'sideline_user_profile',
+        'sportsync_user_role',
+        'matchi_user_role',
+        'sportsync_user_city',
+        'sportsync_user_location',
+        'sportsync_user_sports',
+        'sportsync_user_skill',
+        'sportsync_user_availability',
+        'sportsync_facility_venue_id',
+        'sportsync_user_venues',
+        'sportsync_user_sessions',
+      ];
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      try {
+        const venueKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('sportsync_venue_id_')) {
+            venueKeys.push(key);
+          }
+        }
+        venueKeys.forEach((k) => localStorage.removeItem(k));
+      } catch {}
     }
     setAuthInitialMode('login');
     setCurrentScreen('auth');

@@ -238,6 +238,10 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           address: fullAddress,
           city: city.trim(),
           featuredSports: normalizedSports,
+          operatingHours: operatingHours.trim() || '06:00 - 23:00',
+          amenities,
+          facilityType,
+          bookingMode,
           courts: generatedCourts,
           inventorySource: 'manual',
         });
@@ -267,8 +271,11 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           amenities,
           bookingMode,
         });
-      } catch (err) {
-        console.warn('Faculty setup error:', err);
+      } catch (err: unknown) {
+        console.error('Faculty setup error:', err);
+        setValidationError(
+          err instanceof Error ? err.message : 'Failed to save your facility setup. Please try again.'
+        );
       } finally {
         setIsSubmitting(false);
       }
