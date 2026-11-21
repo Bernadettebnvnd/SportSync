@@ -71,6 +71,17 @@ function isValidUuid(val?: string | null): boolean {
   return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 }
 
+export function isMissingColumnError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    err.code === '42703' ||
+    err.code === 'PGRST204' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the')
+  );
+}
+
 function parsePreferredSports(rawSports: unknown): string[] {
   if (Array.isArray(rawSports)) {
     return rawSports.filter((s): s is string => typeof s === 'string' && Boolean(s.trim()));
@@ -242,7 +253,7 @@ async function upsertCanonicalPublicUser(
     .from('users')
     .select('*')
     .or(`id.eq.${params.authUserId},auth_id.eq.${params.authUserId}`)
-    .order('onboarding_completed', { ascending: false })
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -253,7 +264,6 @@ async function upsertCanonicalPublicUser(
       .from('users')
       .select('*')
       .ilike('email', normalizedEmail)
-      .order('onboarding_completed', { ascending: false })
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -282,12 +292,25 @@ async function upsertCanonicalPublicUser(
       updateData.phone = null;
     }
 
-    const { data: updated, error: updateErr } = await dbClient
+    let { data: updated, error: updateErr } = await dbClient
       .from('users')
       .update(updateData)
       .eq('id', existingRow.id)
       .select('*')
       .maybeSingle();
+
+    if (updateErr && isMissingColumnError(updateErr)) {
+      const sanitizedUpdate = { ...updateData };
+      delete sanitizedUpdate.onboarding_completed;
+      const retry = await dbClient
+        .from('users')
+        .update(sanitizedUpdate)
+        .eq('id', existingRow.id)
+        .select('*')
+        .maybeSingle();
+      updated = retry.data;
+      updateErr = retry.error;
+    }
 
     if (updateErr) {
       console.error('[ServerAuth] Failed updating existing public.users row:', updateErr);
@@ -296,7 +319,7 @@ async function upsertCanonicalPublicUser(
   }
 
   // 2. Insert new public.users row with id === authUserId AND auth_id === authUserId
-  const newPayload = {
+  const newPayload: Record<string, any> = {
     id: params.authUserId,
     auth_id: params.authUserId,
     email: normalizedEmail,
@@ -312,11 +335,25 @@ async function upsertCanonicalPublicUser(
     city: params.city || null,
   };
 
-  const { data: inserted, error: insertErr } = await dbClient
+  let { data: inserted, error: insertErr } = await dbClient
     .from('users')
     .upsert(newPayload, { onConflict: 'id' })
     .select('*')
     .maybeSingle();
+
+  if (insertErr && isMissingColumnError(insertErr)) {
+    console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying without onboarding_completed:', insertErr.message);
+    const sanitizedPayload = { ...newPayload };
+    delete sanitizedPayload.onboarding_completed;
+
+    const retry = await dbClient
+      .from('users')
+      .upsert(sanitizedPayload, { onConflict: 'id' })
+      .select('*')
+      .maybeSingle();
+    inserted = retry.data;
+    insertErr = retry.error;
+  }
 
   if (insertErr) {
     console.error('[ServerAuth] Error inserting canonical public.users row:', insertErr);
@@ -649,7 +686,6 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         .from('users')
         .select('*')
         .or(`id.eq.${userId},auth_id.eq.${userId}`)
-        .order('onboarding_completed', { ascending: false })
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -659,7 +695,6 @@ export async function serverGetUser(userId: string): Promise<SanitizedUser | nul
         .from('users')
         .select('*')
         .ilike('email', userId.trim().toLowerCase())
-        .order('onboarding_completed', { ascending: false })
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -840,18 +875,23 @@ export async function serverUpdateUserProfile(
       error = res.error;
     }
 
-    // Handle enum constraint fallback if remote DB hasn't added newer sport enum values yet
+    // Handle enum constraint or missing column fallback
     if (error && isValidUuid(userId)) {
       console.warn('[ServerAuth] public.users direct update warning:', error.message);
       const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
       const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
       const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));
 
-      const fallbackPayload = {
+      const fallbackPayload: Record<string, any> = {
         ...updatePayload,
         primary_sport: safePrimary,
         preferred_sports: safePreferred.length > 0 ? safePreferred : ['pickleball'],
       };
+
+      if (isMissingColumnError(error)) {
+        delete fallbackPayload.onboarding_completed;
+        delete fallbackPayload.has_completed_onboarding;
+      }
 
       const retryRes = await db
         .from('users')
@@ -943,9 +983,9 @@ export async function serverSyncOAuthUser(data: {
   } | null = null;
   const { data: preExistingById } = await dbClient
     .from('users')
-    .select('id, onboarding_completed, full_name, preferred_sports, primary_sport, city, skill_level, role')
+    .select('*')
     .or(`id.eq.${targetAuthId},auth_id.eq.${targetAuthId}`)
-    .order('onboarding_completed', { ascending: false })
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -954,9 +994,8 @@ export async function serverSyncOAuthUser(data: {
   } else {
     const { data: preExistingByEmail } = await dbClient
       .from('users')
-      .select('id, onboarding_completed, full_name, preferred_sports, primary_sport, city, skill_level, role')
+      .select('*')
       .ilike('email', normalizedEmail)
-      .order('onboarding_completed', { ascending: false })
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();

@@ -43,7 +43,6 @@ export async function getCurrentUser(): Promise<User | null> {
             .from('users')
             .select('*')
             .ilike('email', normalizedEmail)
-            .order('onboarding_completed', { ascending: false })
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();

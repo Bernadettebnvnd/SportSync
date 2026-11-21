@@ -2135,30 +2135,34 @@ export function useSportSyncBridge() {
 
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data?.success || !data?.game?.id) {
-          const errMsg = data?.error || 'Failed to create game on server.';
-          console.error('[SportSyncBridge] POST /api/games failed:', {
-            status: res.status,
-            error: data?.error,
-            code: data?.code,
-            details: data?.details,
-          });
-          throw new Error(errMsg);
+          if (data?.error && data.error.includes('Supabase is not configured')) {
+            console.warn('[SportSyncBridge] Supabase not configured on server; saving game in local storage mode.');
+          } else {
+            const errMsg = data?.error || 'Failed to create game on server.';
+            console.error('[SportSyncBridge] POST /api/games failed:', {
+              status: res.status,
+              error: data?.error,
+              code: data?.code,
+              details: data?.details,
+            });
+            throw new Error(errMsg);
+          }
+        } else {
+          newGame = {
+            ...newGame,
+            ...data.game,
+            id: data.session?.id || data.game.id,
+            sessionId: data.session?.id || data.game.sessionId || data.game.id,
+            hostId: data.game.hostId || userProfile.id,
+            hostName: userName || data.game.hostName,
+            hostAvatar: userAvatar || data.game.hostAvatar,
+            inviteCode: data.game.inviteCode || finalInviteCode,
+            visibility: gameData.visibility || newGame.visibility || 'Public',
+            isPublic: (gameData.visibility || newGame.visibility) !== 'Invite',
+            coordinates: gameData.coordinates,
+            invitedPlayers: gameData.invitedPlayers || [],
+          };
         }
-
-        newGame = {
-          ...newGame,
-          ...data.game,
-          id: data.session?.id || data.game.id,
-          sessionId: data.session?.id || data.game.sessionId || data.game.id,
-          hostId: data.game.hostId || userProfile.id,
-          hostName: userName || data.game.hostName,
-          hostAvatar: userAvatar || data.game.hostAvatar,
-          inviteCode: data.game.inviteCode || finalInviteCode,
-          visibility: gameData.visibility || newGame.visibility || 'Public',
-          isPublic: (gameData.visibility || newGame.visibility) !== 'Invite',
-          coordinates: gameData.coordinates,
-          invitedPlayers: gameData.invitedPlayers || [],
-        };
       }
 
       try { store.refreshSessions?.(); } catch {}

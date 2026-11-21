@@ -468,31 +468,47 @@ export async function createOpenPlaySession(
       ? sessionData.host_id
       : null;
 
-  const { data: newSession, error } = await supabase
+  const extendedPayload: Record<string, any> = {
+    venue_id: validVenueId,
+    host_id: validHostId,
+    title: sessionData.title,
+    description: sessionData.description,
+    sport: validSport,
+    session_type: 'open_play',
+    allowed_formats: sessionData.allowed_formats || ['doubles', 'singles'],
+    skill_level: sessionData.skill_level || 'all_levels',
+    court_ids: validCourtUuids,
+    start_time: startTimeIso,
+    end_time: endTimeIso,
+    fee_cents: Math.round(Number(sessionData.fee_cents) || 0),
+    max_players: Math.max(2, Math.min(24, Number(sessionData.max_players) || 10)),
+    current_players_count: 0,
+    rotation_format: sessionData.rotation_format || '5v5',
+    status: 'active',
+    visibility: sessionData.visibility || 'Public',
+    invite_code: sessionData.invite_code ? sessionData.invite_code.trim().toUpperCase() : null,
+    location_details: sessionData.location_details || null,
+  };
+
+  let { data: newSession, error } = await supabase
     .from('sessions')
-    .insert({
-      venue_id: validVenueId,
-      host_id: validHostId,
-      title: sessionData.title,
-      description: sessionData.description,
-      sport: validSport,
-      session_type: 'open_play',
-      allowed_formats: sessionData.allowed_formats || ['doubles', 'singles'],
-      skill_level: sessionData.skill_level || 'all_levels',
-      court_ids: validCourtUuids,
-      start_time: startTimeIso,
-      end_time: endTimeIso,
-      fee_cents: Math.round(Number(sessionData.fee_cents) || 0),
-      max_players: Math.max(2, Math.min(24, Number(sessionData.max_players) || 10)),
-      current_players_count: 0,
-      rotation_format: sessionData.rotation_format || '5v5',
-      status: 'active',
-      visibility: sessionData.visibility || 'Public',
-      invite_code: sessionData.invite_code ? sessionData.invite_code.trim().toUpperCase() : null,
-      location_details: sessionData.location_details || null,
-    })
+    .insert(extendedPayload)
     .select('*')
     .single();
+
+  if (error && (error.code === '42703' || error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
+    const corePayload = { ...extendedPayload };
+    delete corePayload.visibility;
+    delete corePayload.invite_code;
+    delete corePayload.location_details;
+    const retry = await supabase
+      .from('sessions')
+      .insert(corePayload)
+      .select('*')
+      .single();
+    newSession = retry.data;
+    error = retry.error;
+  }
 
   if (error || !newSession) {
     console.error('[Sessions] Session insert failed:', {

@@ -622,7 +622,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (!participantUserId) {
-        const newProfile = {
+        const newProfile: Record<string, any> = {
           email: participant.email || `player_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@sportsync.ph`,
           full_name: participant.name || 'Invited Player',
           nickname: participant.name?.split(' ')[0] || 'Player',
@@ -630,11 +630,24 @@ export async function POST(req: NextRequest) {
           role: 'player' as const,
           onboarding_completed: true,
         };
-        const { data: createdUser, error: createErr } = await supabase
+        let { data: createdUser, error: createErr } = await supabase
           .from('users')
           .insert(newProfile)
           .select('id')
           .single();
+
+        if (createErr && (createErr.code === 'PGRST204' || createErr.code === '42703' || createErr.message?.includes('schema cache'))) {
+          const minimalProfile = { ...newProfile };
+          delete minimalProfile.onboarding_completed;
+          const retry = await supabase
+            .from('users')
+            .insert(minimalProfile)
+            .select('id')
+            .single();
+          createdUser = retry.data;
+          createErr = retry.error;
+        }
+
         if (createErr) {
           return NextResponse.json({ success: false, error: 'Database write failed: ' + createErr.message }, { status: 500 });
         }

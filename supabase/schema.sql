@@ -225,6 +225,11 @@ CREATE TABLE IF NOT EXISTS public.sessions (
     current_players_count INT NOT NULL DEFAULT 0,
     rotation_format TEXT DEFAULT 'King of the Court Doubles',
     status TEXT NOT NULL DEFAULT 'active',
+    visibility TEXT DEFAULT 'Public',
+    invite_code TEXT,
+    invited_players JSONB DEFAULT '[]'::jsonb,
+    location_details TEXT,
+    coordinates DOUBLE PRECISION[] DEFAULT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
