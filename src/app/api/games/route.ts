@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken } from '@/lib/auth/serverAuth';
+import { verifySessionToken, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 function getSupabase() {
@@ -16,16 +16,6 @@ function isValidUuid(val?: string | null): val is string {
   return Boolean(val && UUID_REGEX.test(val.trim()));
 }
 
-function isMissingColumnError(err: any): boolean {
-  if (!err) return false;
-  const msg = (err.message || '').toLowerCase();
-  return (
-    err.code === '42703' ||
-    err.code === 'PGRST204' ||
-    msg.includes('schema cache') ||
-    msg.includes('could not find the')
-  );
-}
 
 const MOCK_TITLES = [
   'friday night smash',
@@ -622,7 +612,6 @@ export async function POST(req: NextRequest) {
         description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}]`,
         sport: validSport,
         session_type: 'open_play',
-        allowed_formats: ['doubles', 'singles'],
         skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
         court_ids: [],
         start_time: startIso,
@@ -634,7 +623,11 @@ export async function POST(req: NextRequest) {
         status: 'active',
       };
 
-      const extendedPayload: Record<string, any> = {
+      if ((game as any).allowed_formats && Array.isArray((game as any).allowed_formats)) {
+        basePayload.allowed_formats = (game as any).allowed_formats;
+      }
+
+      let activePayload: Record<string, any> = {
         ...basePayload,
         visibility: game.visibility || 'Public',
         invite_code: inviteCode,
@@ -643,20 +636,33 @@ export async function POST(req: NextRequest) {
 
       let { data: inserted, error: insertErr } = await supabase
         .from('sessions')
-        .insert(extendedPayload)
+        .insert(activePayload)
         .select('*')
         .single();
 
-      // Handle case where extended columns (visibility/invite_code/location_details) aren't migrated yet
-      if (insertErr && isMissingColumnError(insertErr)) {
-        console.warn('[/api/games POST] Extended session columns missing, retrying with core columns:', insertErr.message);
-        const retryCore = await supabase
+      // Handle case where optional session columns (allowed_formats/visibility/invite_code/location_details) aren't in schema cache
+      while (insertErr && isMissingColumnError(insertErr)) {
+        const missing = extractMissingColumn(insertErr);
+        if (missing && missing in activePayload) {
+          console.warn(`[/api/games POST] sessions.${missing} missing from schema cache, retrying without it:`, insertErr.message);
+          delete activePayload[missing];
+        } else {
+          delete activePayload.allowed_formats;
+          delete activePayload.visibility;
+          delete activePayload.invite_code;
+          delete activePayload.location_details;
+          delete activePayload.coordinates;
+          delete activePayload.rotation_format;
+        }
+
+        const retry = await supabase
           .from('sessions')
-          .insert(basePayload)
+          .insert(activePayload)
           .select('*')
           .single();
-        inserted = retryCore.data;
-        insertErr = retryCore.error;
+        inserted = retry.data;
+        insertErr = retry.error;
+        if (inserted || !isMissingColumnError(insertErr)) break;
       }
 
       // Handle case where venue_id NOT NULL constraint (23502) is still active in Postgres before SQL migration is executed
@@ -670,19 +676,29 @@ export async function POST(req: NextRequest) {
         console.warn('[/api/games POST] sessions.venue_id is still NOT NULL in DB; using fallback venue.');
         const systemVenueId = await getOrCreateSystemCommunityVenueId(supabase);
         if (systemVenueId) {
-          extendedPayload.venue_id = systemVenueId;
-          basePayload.venue_id = systemVenueId;
+          activePayload.venue_id = systemVenueId;
 
           let retryWithSystemVenue = await supabase
             .from('sessions')
-            .insert(extendedPayload)
+            .insert(activePayload)
             .select('*')
             .single();
 
-          if (retryWithSystemVenue.error && isMissingColumnError(retryWithSystemVenue.error)) {
+          while (retryWithSystemVenue.error && isMissingColumnError(retryWithSystemVenue.error)) {
+            const missing = extractMissingColumn(retryWithSystemVenue.error);
+            if (missing && missing in activePayload) {
+              delete activePayload[missing];
+            } else {
+              delete activePayload.allowed_formats;
+              delete activePayload.visibility;
+              delete activePayload.invite_code;
+              delete activePayload.location_details;
+              delete activePayload.coordinates;
+              delete activePayload.rotation_format;
+            }
             retryWithSystemVenue = await supabase
               .from('sessions')
-              .insert(basePayload)
+              .insert(activePayload)
               .select('*')
               .single();
           }
@@ -694,18 +710,35 @@ export async function POST(req: NextRequest) {
       // If still error due to enum constraint (e.g. sport_type or match_format not supported in remote DB yet)
       if (insertErr && (insertErr.code === '22P02' || insertErr.message?.includes('enum'))) {
         console.warn('[/api/games POST] Enum constraint failure, retrying with baseline basketball:', insertErr.message);
-        const fallbackEnumPayload = {
-          ...basePayload,
+        const fallbackEnumPayload: Record<string, any> = {
+          ...activePayload,
           sport: 'basketball',
           session_type: 'open_play',
-          allowed_formats: ['doubles', 'singles'],
           skill_level: 'all_levels',
         };
-        const retryEnum = await supabase
+        delete fallbackEnumPayload.allowed_formats;
+
+        let retryEnum = await supabase
           .from('sessions')
           .insert(fallbackEnumPayload)
           .select('*')
           .single();
+
+        while (retryEnum.error && isMissingColumnError(retryEnum.error)) {
+          const missing = extractMissingColumn(retryEnum.error);
+          if (missing && missing in fallbackEnumPayload) {
+            delete fallbackEnumPayload[missing];
+          } else {
+            delete fallbackEnumPayload.visibility;
+            delete fallbackEnumPayload.invite_code;
+            delete fallbackEnumPayload.location_details;
+          }
+          retryEnum = await supabase
+            .from('sessions')
+            .insert(fallbackEnumPayload)
+            .select('*')
+            .single();
+        }
         inserted = retryEnum.data;
         insertErr = retryEnum.error;
       }

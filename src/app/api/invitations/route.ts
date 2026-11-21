@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
+import { verifySessionToken, serverGetUser, SanitizedUser, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -511,31 +511,57 @@ export async function POST(req: NextRequest) {
       const { startIso, endIso } = parseIsoSchedule(game.date, game.time);
       const inviteCode = (game.inviteCode || Math.random().toString(36).substring(2, 8)).trim().toUpperCase();
 
-      const { data: inserted, error: insertErr } = await supabase
+      const sessionPayload: Record<string, any> = {
+        venue_id: null,
+        host_id: authUser.id,
+        title: game.title || 'Community Match',
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${authUser.full_name}]`,
+        sport: validSport,
+        session_type: 'open_play',
+        skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
+        court_ids: [],
+        start_time: startIso,
+        end_time: endIso,
+        fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
+        max_players: game.spotsTotal || 10,
+        current_players_count: 1,
+        rotation_format: game.format || '5v5',
+        status: 'active',
+        visibility: game.visibility || 'Public',
+        invite_code: inviteCode,
+        location_details: game.locationDetails || game.locationName || null,
+      };
+
+      if ((game as any).allowed_formats && Array.isArray((game as any).allowed_formats)) {
+        sessionPayload.allowed_formats = (game as any).allowed_formats;
+      }
+
+      let { data: inserted, error: insertErr } = await supabase
         .from('sessions')
-        .insert({
-          venue_id: null,
-          host_id: authUser.id,
-          title: game.title || 'Community Match',
-          description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${authUser.full_name}]`,
-          sport: validSport,
-          session_type: 'open_play',
-          allowed_formats: ['doubles', 'singles'],
-          skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
-          court_ids: [],
-          start_time: startIso,
-          end_time: endIso,
-          fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
-          max_players: game.spotsTotal || 10,
-          current_players_count: 1,
-          rotation_format: game.format || '5v5',
-          status: 'active',
-          visibility: game.visibility || 'Public',
-          invite_code: inviteCode,
-          location_details: game.locationDetails || game.locationName || null,
-        })
+        .insert(sessionPayload)
         .select('*')
         .single();
+
+      while (insertErr && isMissingColumnError(insertErr)) {
+        const missing = extractMissingColumn(insertErr);
+        if (missing && missing in sessionPayload) {
+          delete sessionPayload[missing];
+        } else {
+          delete sessionPayload.allowed_formats;
+          delete sessionPayload.visibility;
+          delete sessionPayload.invite_code;
+          delete sessionPayload.location_details;
+          delete sessionPayload.rotation_format;
+        }
+        const retry = await supabase
+          .from('sessions')
+          .insert(sessionPayload)
+          .select('*')
+          .single();
+        inserted = retry.data;
+        insertErr = retry.error;
+        if (inserted || !isMissingColumnError(insertErr)) break;
+      }
 
       if (insertErr || !inserted) {
         console.error('[/api/invitations POST create_game] Insert failed:', insertErr);

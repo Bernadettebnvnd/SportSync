@@ -39,6 +39,26 @@ export function markSessionDeleted(sessionId: string, _sessionTitle?: string) {
   }
 }
 
+function isMissingColumnError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    err.code === '42703' ||
+    err.code === 'PGRST204' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the')
+  );
+}
+
+function extractMissingColumn(err: any): string | null {
+  if (!err || !err.message) return null;
+  const match =
+    err.message.match(/Could not find the '([^']+)' column/i) ||
+    err.message.match(/column "?([^"\s]+)"? of relation/i) ||
+    err.message.match(/column "?([^"\s]+)"? does not exist/i);
+  return match ? match[1] : null;
+}
+
 /**
  * Generate a cryptographically strong, collision-free unique session ID.
  * Avoids timestamp-only collisions (e.g. session_1793605585154).
@@ -475,7 +495,7 @@ export async function createOpenPlaySession(
     description: sessionData.description,
     sport: validSport,
     session_type: 'open_play',
-    allowed_formats: sessionData.allowed_formats || ['doubles', 'singles'],
+    ...(sessionData.allowed_formats ? { allowed_formats: sessionData.allowed_formats } : {}),
     skill_level: sessionData.skill_level || 'all_levels',
     court_ids: validCourtUuids,
     start_time: startTimeIso,
@@ -490,24 +510,33 @@ export async function createOpenPlaySession(
     location_details: sessionData.location_details || null,
   };
 
+  let activePayload = { ...extendedPayload };
   let { data: newSession, error } = await supabase
     .from('sessions')
-    .insert(extendedPayload)
+    .insert(activePayload)
     .select('*')
     .single();
 
-  if (error && (error.code === '42703' || error.code === 'PGRST204' || error.message?.includes('schema cache'))) {
-    const corePayload = { ...extendedPayload };
-    delete corePayload.visibility;
-    delete corePayload.invite_code;
-    delete corePayload.location_details;
+  while (error && isMissingColumnError(error)) {
+    const missing = extractMissingColumn(error);
+    if (missing && missing in activePayload) {
+      delete activePayload[missing];
+    } else {
+      delete activePayload.allowed_formats;
+      delete activePayload.visibility;
+      delete activePayload.invite_code;
+      delete activePayload.location_details;
+      delete activePayload.court_ids;
+      delete activePayload.rotation_format;
+    }
     const retry = await supabase
       .from('sessions')
-      .insert(corePayload)
+      .insert(activePayload)
       .select('*')
       .single();
     newSession = retry.data;
     error = retry.error;
+    if (newSession || !isMissingColumnError(error)) break;
   }
 
   if (error || !newSession) {
