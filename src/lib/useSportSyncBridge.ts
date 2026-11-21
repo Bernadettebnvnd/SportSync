@@ -787,6 +787,24 @@ export function useSportSyncBridge() {
             initialMembers.length
           );
 
+          const locTagMatch = s.description?.match(/\[LOCATION:(.*?)\]/i);
+          const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
+          const coordsTagMatch = s.description?.match(/\[COORDS:(.*?)\]/i);
+          let parsedCoords: [number, number] | undefined = undefined;
+          if (coordsTagMatch) {
+            try {
+              parsedCoords = JSON.parse(coordsTagMatch[1]);
+            } catch {}
+          }
+
+          const resolvedLocName = taggedLoc || s.location_details || venue?.name || 'Naga Sports Venue';
+          const cleanSessionNotes = (s.description || '')
+            .replace(/\[INVITE:.*?\]/gi, '')
+            .replace(/\[HOST:.*?\]/gi, '')
+            .replace(/\[LOCATION:.*?\]/gi, '')
+            .replace(/\[COORDS:.*?\]/gi, '')
+            .trim();
+
           added.push({
             id: s.id,
             sessionId: s.id,
@@ -796,8 +814,9 @@ export function useSportSyncBridge() {
             skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
             date: formattedDate || 'Today',
             time: formattedTime || s.start_time || '18:00',
-            locationName: s.location_details || venue?.name || 'Naga Sports Venue',
-            locationDetails: s.location_details,
+            locationName: resolvedLocName,
+            locationDetails: s.location_details || taggedLoc || resolvedLocName,
+            coordinates: (s as any).coordinates || parsedCoords,
             distance: '0.9 km away',
             hostId: isUserHost ? userProfile.id : s.host_id,
             hostName: resolvedHostName,
@@ -805,7 +824,7 @@ export function useSportSyncBridge() {
             spotsTotal: s.max_players || 12,
             spotsJoined: initialSpotsJoined,
             pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
-            notes: s.description || 'Verified SportSync session',
+            notes: cleanSessionNotes || 'Verified SportSync session',
             isPublic: s.visibility ? s.visibility !== 'Invite' : true,
             visibility: (s.visibility as any) || 'Public',
             inviteCode: s.invite_code,
@@ -3130,14 +3149,24 @@ export function useSportSyncBridge() {
           type: 'match',
           title: 'Player Joined Your Game',
           desc: hostNotifDesc,
-          linkScreen: 'social-home',
+          linkScreen: 'match-detail',
           recipientName: hostName,
           recipientId: hostId,
+          senderName: userName,
+          senderAvatar: userAvatar,
           meta: {
             event: 'player_joined',
             gameId: targetGame.id,
+            sessionId: targetGame.sessionId || targetGame.id,
+            matchId: targetGame.id,
             gameTitle,
+            sport: targetGame.sport,
+            locationName: targetGame.locationName,
+            joiningPlayerId: userProfile.id,
             joiningPlayerName: userName,
+            joiningPlayerAvatar: userAvatar,
+            sender_name: userName,
+            sender_avatar: userAvatar,
             hostName,
             hostId,
             dedupeKey,
@@ -3153,12 +3182,20 @@ export function useSportSyncBridge() {
               type: 'match',
               title: 'Player Joined Your Game',
               description: hostNotifDesc,
-              link_screen: 'social-home',
+              link_screen: 'match-detail',
               metadata: {
                 event: 'player_joined',
                 game_id: targetGame.id,
+                sessionId: targetGame.sessionId || targetGame.id,
                 game_title: gameTitle,
+                sport: targetGame.sport,
+                location_name: targetGame.locationName,
+                joining_player_id: userProfile.id,
                 joining_player_name: userName,
+                joining_player_avatar: userAvatar,
+                sender_name: userName,
+                sender_avatar: userAvatar,
+                dedupeKey,
               },
             });
           } catch (e) {

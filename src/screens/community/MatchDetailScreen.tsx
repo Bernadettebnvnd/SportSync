@@ -502,7 +502,8 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
               <span className="font-semibold text-[#F4F7F0] block">
                 {game.locationName} {game.distance && `(${game.distance})`}
               </span>
-              {game.locationDetails && (
+              {game.locationDetails &&
+                game.locationDetails.trim().toLowerCase() !== game.locationName.trim().toLowerCase() && (
                 <span className="text-[11px] text-[#A5B0A6] block mt-0.5">
                   {game.locationDetails}
                 </span>

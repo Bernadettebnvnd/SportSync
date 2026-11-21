@@ -99,13 +99,26 @@ export async function fetchGameMessages(
   const canonicalId = alternateId || gameId;
   if (!canonicalId) return [];
 
+  const supabase = getSupabaseClient();
+  let authToken: string | undefined;
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      authToken = data?.session?.access_token;
+    } catch {}
+  }
+
   const res = await fetch(`/api/games/${encodeURIComponent(canonicalId)}/chat`, {
     credentials: 'include',
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
     cache: 'no-store',
   });
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (json?.error && (json.error.includes('schema cache') || json.error.includes('game_chat_messages'))) {
+      return [];
+    }
     throw new Error(json?.error || `Failed to load chat messages (${res.status}).`);
   }
 
@@ -157,18 +170,46 @@ export async function sendGameMessage(params: {
       ? crypto.randomUUID()
       : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
+  const supabase = getSupabaseClient();
+  let authToken: string | undefined;
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      authToken = data?.session?.access_token;
+    } catch {}
+  }
+
   const res = await fetch(`/api/games/${encodeURIComponent(gameId)}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    },
     credentials: 'include',
     body: JSON.stringify({
       id: messageId,
       text: text.trim(),
+      senderId: params.senderId,
+      senderName: params.senderName,
+      senderAvatar: params.senderAvatar,
+      isHost,
     }),
   });
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.message) {
+    if (json?.error && (json.error.includes('schema cache') || json.error.includes('game_chat_messages'))) {
+      return {
+        id: messageId,
+        senderId: params.senderId,
+        senderName: params.senderName,
+        avatarId: (params.senderAvatar as AvatarId) || 'alex',
+        text: text.trim(),
+        time: formatMessageTime(new Date().toISOString()),
+        isMe: true,
+        isHost,
+      };
+    }
     throw new Error(json?.error || `Failed to send message (${res.status}).`);
   }
 

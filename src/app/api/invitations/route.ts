@@ -355,7 +355,18 @@ export async function GET(req: NextRequest) {
     const joinedCount = Math.max(allMembers.length, dbSession.current_players_count || 0);
     const { date: formattedDate, time: formattedTime } = formatSessionDateTime(dbSession.start_time ?? undefined);
 
+    const locTagMatch = dbSession.description?.match(/\[LOCATION:(.*?)\]/i);
+    const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
+    const coordsTagMatch = dbSession.description?.match(/\[COORDS:(.*?)\]/i);
+    let parsedCoords: [number, number] | undefined = undefined;
+    if (coordsTagMatch) {
+      try {
+        parsedCoords = JSON.parse(coordsTagMatch[1]);
+      } catch {}
+    }
+
     const resolvedLocation =
+      taggedLoc ||
       dbSession.location_details ||
       (venueData?.name && venueData.name !== 'Community / Open Court' ? venueData.name : '') ||
       'Verified Court Facility';
@@ -363,6 +374,8 @@ export async function GET(req: NextRequest) {
     const cleanNotes = (dbSession.description || '')
       .replace(/\[INVITE:.*?\]/gi, '')
       .replace(/\[HOST:.*?\]/gi, '')
+      .replace(/\[LOCATION:.*?\]/gi, '')
+      .replace(/\[COORDS:.*?\]/gi, '')
       .trim();
 
     const mappedGame: CommunityGame = {
@@ -375,7 +388,8 @@ export async function GET(req: NextRequest) {
       date: formattedDate,
       time: formattedTime,
       locationName: resolvedLocation,
-      locationDetails: dbSession.location_details || resolvedLocation,
+      locationDetails: dbSession.location_details || taggedLoc || resolvedLocation,
+      coordinates: (dbSession as any).coordinates || parsedCoords,
       distance: '0.8 km away',
       hostId: dbSession.host_id ?? undefined,
       hostName,
@@ -499,11 +513,15 @@ export async function POST(req: NextRequest) {
       const { startIso, endIso } = parseIsoSchedule(game.date, game.time);
       const inviteCode = (game.inviteCode || Math.random().toString(36).substring(2, 8)).trim().toUpperCase();
 
+      const venueLocationName = (game.locationName || game.locationDetails || 'Naga Sports Venue').trim();
+      const venueLocationDetails = (game.locationDetails || game.locationName || venueLocationName).trim();
+      const coordinates = game.coordinates || [13.6218, 123.1948];
+
       const sessionPayload: Record<string, any> = {
         venue_id: null,
         host_id: (game.hostId && UUID_REGEX.test(game.hostId)) ? game.hostId : authUser.id,
         title: game.title || 'Community Match',
-        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || authUser.full_name}]`,
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || authUser.full_name}] [LOCATION:${venueLocationName}] [COORDS:${JSON.stringify(coordinates)}]`,
         sport: validSport,
         session_type: 'open_play',
         skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
@@ -517,7 +535,7 @@ export async function POST(req: NextRequest) {
         status: 'active',
         visibility: game.visibility || 'Public',
         invite_code: inviteCode,
-        location_details: game.locationDetails || game.locationName || null,
+        location_details: venueLocationName,
       };
 
       if ((game as any).allowed_formats && Array.isArray((game as any).allowed_formats)) {
@@ -671,6 +689,88 @@ export async function POST(req: NextRequest) {
 
       if (updateErr) {
         console.error('[/api/invitations POST accept] session count update error:', updateErr);
+      }
+
+      // Notify the Game Host immediately via Supabase notifications table & realtime broadcast
+      const hostUserId = dbSession.host_id || game.hostId;
+      if (hostUserId && hostUserId !== authUser.id) {
+        try {
+          let hostIdentifier = hostUserId;
+          let hostName = game.hostName || '';
+          if (UUID_REGEX.test(hostUserId)) {
+            const { data: hostProfile } = await supabase
+              .from('users')
+              .select('id, full_name, nickname, email')
+              .eq('id', hostUserId)
+              .maybeSingle();
+            if (hostProfile) {
+              hostIdentifier = hostProfile.full_name || hostProfile.nickname || hostProfile.email || hostUserId;
+              if (!hostName) hostName = hostProfile.full_name || hostProfile.nickname || '';
+            }
+          }
+          if (!hostName && dbSession.description) {
+            const hostMatch = dbSession.description.match(/\[HOST:(.*?)\]/i);
+            if (hostMatch) hostName = hostMatch[1].trim();
+          }
+
+          const joiningPlayerName = authUser.full_name || body.participant?.name || 'A player';
+          const joiningPlayerAvatar = (authUser.avatar_url || body.participant?.avatar || 'alex') as string;
+          const gameTitle = dbSession.title || game.title || 'Community Match';
+          const gameSport = dbSession.sport || game.sport || 'Basketball';
+
+          const locMatch = dbSession.description?.match(/\[LOCATION:(.*?)\]/i);
+          const gameLocation = dbSession.location_details || (locMatch ? locMatch[1].trim() : '') || game.locationName || 'Naga Sports Venue';
+
+          const notifDedupeKey = `join_${dbSession.id}_${authUser.id}_${Date.now()}`;
+          const notifDesc = `${joiningPlayerName} joined your game, ${gameTitle}.`;
+
+          const notifPayload = {
+            user_id: UUID_REGEX.test(hostUserId) ? hostUserId : null,
+            user_identifier: hostIdentifier,
+            type: 'match',
+            title: 'Player Joined Your Game',
+            description: notifDesc,
+            read: false,
+            link_screen: 'match-detail',
+            metadata: {
+              event: 'player_joined',
+              game_id: dbSession.id,
+              gameId: dbSession.id,
+              sessionId: dbSession.id,
+              matchId: dbSession.id,
+              game_title: gameTitle,
+              gameTitle,
+              sport: gameSport,
+              location_name: gameLocation,
+              locationName: gameLocation,
+              joining_player_id: authUser.id,
+              joiningPlayerId: authUser.id,
+              joining_player_name: joiningPlayerName,
+              joiningPlayerName,
+              joining_player_avatar: joiningPlayerAvatar,
+              joiningPlayerAvatar,
+              sender_name: joiningPlayerName,
+              sender_avatar: joiningPlayerAvatar,
+              dedupeKey: notifDedupeKey,
+            },
+            created_at: nowIso,
+          };
+
+          const { error: notifErr } = await supabase.from('notifications').insert(notifPayload);
+          if (notifErr) {
+            console.warn('[/api/invitations POST accept] notification insert notice:', notifErr.message);
+          }
+
+          const hostChannelName = `sportsync-notifs-${hostUserId || hostIdentifier}`;
+          const hostChannel = supabase.channel(hostChannelName);
+          await hostChannel.send({
+            type: 'broadcast',
+            event: 'new_notification',
+            payload: notifPayload,
+          });
+        } catch (notifEx) {
+          console.warn('[/api/invitations POST accept] Host notification delivery exception:', notifEx);
+        }
       }
 
       return NextResponse.json({

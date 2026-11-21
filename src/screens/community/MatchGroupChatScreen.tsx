@@ -157,9 +157,16 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       return;
     }
 
-    // Reset when switching games to keep chats strictly separate
-    setMessages([]);
-    setLoadingMessages(true);
+    // Initialize from local cache first if available
+    let initialCached: ChatMessage[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`sportsync_chat_${chatRoomId}`);
+        if (raw) initialCached = JSON.parse(raw);
+      } catch {}
+    }
+    setMessages(initialCached);
+    setLoadingMessages(initialCached.length === 0);
 
     let isMounted = true;
     const hostInfo = { hostId: game?.hostId, hostName: game?.hostName };
@@ -169,7 +176,6 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         const persisted = await fetchGameMessages(chatRoomId, game?.id, hostInfo);
         if (!isMounted) return;
         setMessages((prev) => {
-          if (isInitial) return persisted;
           const byId = new Map(prev.map((m) => [m.id, m]));
           let changed = false;
           for (const m of persisted) {
@@ -178,7 +184,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
               changed = true;
             }
           }
-          return changed ? Array.from(byId.values()) : prev;
+          const nextList = changed ? Array.from(byId.values()) : prev;
+          if (changed && typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(`sportsync_chat_${chatRoomId}`, JSON.stringify(nextList.slice(-100)));
+            } catch {}
+          }
+          return nextList;
         });
         if (isInitial) setLoadingMessages(false);
         markGameChatAsRead(chatRoomId);
@@ -201,7 +213,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         if (prev.some((m) => m.id === incoming.id)) {
           return prev;
         }
-        return [...prev, incoming];
+        const nextList = [...prev, incoming];
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`sportsync_chat_${chatRoomId}`, JSON.stringify(nextList.slice(-100)));
+          } catch {}
+        }
+        return nextList;
       });
 
       scrollToBottom();
@@ -315,7 +333,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       // Optimistic update if not already received via subscription
       setMessages((prev) => {
         if (prev.some((m) => m.id === sentMsg.id)) return prev;
-        return [...prev, { ...sentMsg, isMe: true }];
+        const nextList = [...prev, { ...sentMsg, isMe: true }];
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(`sportsync_chat_${chatRoomId}`, JSON.stringify(nextList.slice(-100)));
+          } catch {}
+        }
+        return nextList;
       });
 
       // Broadcast to all peers connected to the active subscribed channel

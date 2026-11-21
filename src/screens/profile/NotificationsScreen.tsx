@@ -17,10 +17,11 @@ import {
   Radio,
 } from 'lucide-react';
 import { useNotifications, NotificationItem, NotificationType } from '../../lib/notifications';
+import { UserAvatar } from '../../illustrations/Avatars';
 
 interface NotificationsScreenProps {
   onBack: () => void;
-  onNavigate?: (screenId: string) => void;
+  onNavigate?: (screenId: string, item?: NotificationItem) => void;
   currentUserId?: string;
   currentUserName?: string;
 }
@@ -80,7 +81,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
       markAsRead(item.id);
     }
     if (item.linkScreen && onNavigate) {
-      onNavigate(item.linkScreen);
+      onNavigate(item.linkScreen, item);
     }
   };
 
@@ -245,9 +246,22 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                       }`}
                   >
                     <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <div className="w-8 h-8 rounded-xl bg-[#141A15] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                        {getTypeIcon(item.type)}
-                      </div>
+                      {item.senderAvatar || item.meta?.sender_avatar || item.meta?.joining_player_avatar || item.meta?.joiningPlayerAvatar ? (
+                        <div className="shrink-0 mt-0.5 relative">
+                          <UserAvatar
+                            id={(item.senderAvatar || item.meta?.sender_avatar || item.meta?.joining_player_avatar || item.meta?.joiningPlayerAvatar || 'alex') as any}
+                            name={item.senderName || item.meta?.joiningPlayerName || 'Player'}
+                            size={34}
+                          />
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0B0F0C] border border-white/10 flex items-center justify-center scale-90">
+                            {getTypeIcon(item.type)}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 rounded-xl bg-[#141A15] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                          {getTypeIcon(item.type)}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <h4 className="font-display font-bold text-xs text-[#F4F7F0] truncate">
@@ -260,13 +274,32 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
+                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            {(item.meta?.gameTitle || item.meta?.game_title) && (
+                              <span className="text-[10px] text-[#C8FF2E] font-medium bg-[#C8FF2E]/10 px-1.5 py-0.5 rounded border border-[#C8FF2E]/20 truncate max-w-[200px]">
+                                {item.meta.gameTitle || item.meta.game_title}
+                              </span>
+                            )}
+                            {(item.meta?.sport) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded">
+                                {item.meta.sport}
+                              </span>
+                            )}
+                            {(item.meta?.locationName || item.meta?.location_name) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                                📍 {item.meta.locationName || item.meta.location_name}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
                           {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>From: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                              <span>Player: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
                             </span>
                           )}
                           {item.linkScreen && (
@@ -312,9 +345,22 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                       }`}
                   >
                     <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <div className="w-8 h-8 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-                        {getTypeIcon(item.type)}
-                      </div>
+                      {item.senderAvatar || item.meta?.sender_avatar || item.meta?.joining_player_avatar || item.meta?.joiningPlayerAvatar ? (
+                        <div className="shrink-0 mt-0.5 relative">
+                          <UserAvatar
+                            id={(item.senderAvatar || item.meta?.sender_avatar || item.meta?.joining_player_avatar || item.meta?.joiningPlayerAvatar || 'alex') as any}
+                            name={item.senderName || item.meta?.joiningPlayerName || 'Player'}
+                            size={34}
+                          />
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0B0F0C] border border-white/10 flex items-center justify-center scale-90">
+                            {getTypeIcon(item.type)}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-8 h-8 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                          {getTypeIcon(item.type)}
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <h4 className="font-display font-semibold text-xs text-[#F4F7F0] truncate">
@@ -327,13 +373,32 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
+                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            {(item.meta?.gameTitle || item.meta?.game_title) && (
+                              <span className="text-[10px] text-[#C8FF2E] font-medium bg-[#C8FF2E]/10 px-1.5 py-0.5 rounded border border-[#C8FF2E]/20 truncate max-w-[200px]">
+                                {item.meta.gameTitle || item.meta.game_title}
+                              </span>
+                            )}
+                            {(item.meta?.sport) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded">
+                                {item.meta.sport}
+                              </span>
+                            )}
+                            {(item.meta?.locationName || item.meta?.location_name) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                                📍 {item.meta.locationName || item.meta.location_name}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
                           {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#1C241E] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>From: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                              <span>Player: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
                             </span>
                           )}
                           {item.linkScreen && (

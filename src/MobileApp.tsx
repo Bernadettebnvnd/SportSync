@@ -1770,7 +1770,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         return (
           <NotificationsScreen
             onBack={goBack}
-            onNavigate={(screenId) => navigateTo(screenId as ScreenId)}
+            onNavigate={(screenId, item) => {
+              if (item?.meta) {
+                const targetGameId = item.meta.gameId || item.meta.game_id || item.meta.sessionId;
+                if (targetGameId) {
+                  const target = bridge.games.find(
+                    (g) => g.id === targetGameId || g.sessionId === targetGameId
+                  );
+                  if (target) {
+                    setSelectedGame(target);
+                  }
+                }
+              }
+              navigateTo(screenId as ScreenId);
+            }}
             currentUserId={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.id : undefined}
             currentUserName={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : undefined}
           />

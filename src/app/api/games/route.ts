@@ -409,7 +409,18 @@ export async function GET(req: NextRequest) {
           Math.max(members.length, s.current_players_count || 0)
         );
 
+        const locTagMatch = s.description?.match(/\[LOCATION:(.*?)\]/i);
+        const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
+        const coordsTagMatch = s.description?.match(/\[COORDS:(.*?)\]/i);
+        let parsedCoords: [number, number] | undefined = undefined;
+        if (coordsTagMatch) {
+          try {
+            parsedCoords = JSON.parse(coordsTagMatch[1]);
+          } catch {}
+        }
+
         const resolvedLocation =
+          taggedLoc ||
           s.location_details ||
           (venue?.name && venue.name !== 'Community / Open Court' ? venue.name : '') ||
           'Naga Sports Venue';
@@ -417,6 +428,8 @@ export async function GET(req: NextRequest) {
         const cleanNotes = (s.description || '')
           .replace(/\[INVITE:.*?\]/gi, '')
           .replace(/\[HOST:.*?\]/gi, '')
+          .replace(/\[LOCATION:.*?\]/gi, '')
+          .replace(/\[COORDS:.*?\]/gi, '')
           .trim();
 
         const gameObj: CommunityGame = {
@@ -429,8 +442,9 @@ export async function GET(req: NextRequest) {
           date: fDate,
           time: fTime,
           locationName: resolvedLocation,
-          locationDetails: s.location_details || resolvedLocation,
+          locationDetails: s.location_details || taggedLoc || resolvedLocation,
           distance: 'Naga City • 0.5 km away',
+          coordinates: s.coordinates || parsedCoords,
           hostId: s.host_id,
           hostName: resolvedHostName,
           hostAvatar: resolvedHostAvatar,
@@ -593,7 +607,10 @@ export async function POST(req: NextRequest) {
       const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
       const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
 
-      const locationLabel = (game.locationDetails || game.locationName || 'Naga Sports Venue').trim();
+      const venueLocationName = (game.locationName || game.locationDetails || 'Naga Sports Venue').trim();
+      const venueLocationDetails = (game.locationDetails || game.locationName || venueLocationName).trim();
+      const coordinates = game.coordinates || [13.6218, 123.1948];
+
       const initialMembers =
         Array.isArray(game.members) && game.members.length > 0
           ? game.members
@@ -609,7 +626,7 @@ export async function POST(req: NextRequest) {
         venue_id: venueId,
         host_id: hostUserId,
         title: game.title.trim(),
-        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}]`,
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}] [LOCATION:${venueLocationName}] [COORDS:${JSON.stringify(coordinates)}]`,
         sport: validSport,
         session_type: 'open_play',
         skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
@@ -631,7 +648,7 @@ export async function POST(req: NextRequest) {
         ...basePayload,
         visibility: game.visibility || 'Public',
         invite_code: inviteCode,
-        location_details: locationLabel,
+        location_details: venueLocationName,
       };
 
       let { data: inserted, error: insertErr } = await supabase
@@ -770,7 +787,6 @@ export async function POST(req: NextRequest) {
             queue_number: 1,
             partner_names: [game.hostName || 'Host'],
             status: 'waiting',
-            match_format: 'doubles',
           });
         } catch {
           // Non-fatal if queue row already exists or schema differs
@@ -794,8 +810,9 @@ export async function POST(req: NextRequest) {
         id: inserted.id,
         sessionId: inserted.id,
         hostId: hostUserId || game.hostId,
-        locationName: locationLabel,
-        locationDetails: locationLabel,
+        locationName: venueLocationName,
+        locationDetails: venueLocationDetails,
+        coordinates: coordinates,
         inviteCode,
         isPublic: game.visibility ? game.visibility !== 'Invite' : true,
         visibility: game.visibility || 'Public',
