@@ -141,10 +141,38 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (isLoggingOutRef.current) return false;
     if (!isUserAuthenticated()) return false;
 
-    if (typeof window !== 'undefined') {
-      if (localStorage.getItem('sportsync_pending_onboarding') === 'true') {
-        return false;
+    // Check explicit profile completion flags first
+    const hasStoredCompletion = typeof window !== 'undefined' && (
+      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
+      localStorage.getItem('sportsync_onboarding_completed') === 'true'
+    );
+
+    const isExplicitlyComplete = Boolean(
+      bridge.userProfile.onboardingCompleted === true ||
+      bridge.store.currentUser.onboarding_completed === true ||
+      bridge.store.currentUser.has_completed_onboarding === true ||
+      hasStoredCompletion
+    );
+
+    if (isExplicitlyComplete) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_pending_onboarding');
+        sessionStorage.removeItem('sportsync_just_registered');
+        localStorage.setItem('sportsync_onboarding_completed', 'true');
+        localStorage.setItem('matchi_onboarding_completed', 'true');
       }
+      return true;
+    }
+
+    const isPending = typeof window !== 'undefined' && (
+      localStorage.getItem('sportsync_pending_onboarding') === 'true' ||
+      sessionStorage.getItem('sportsync_just_registered') === 'true'
+    );
+    if (isPending) return false;
+
+    // Explicit check for incomplete onboarding
+    if (bridge.store.currentUser.onboarding_completed === false) {
+      return false;
     }
 
     const userRoleStr = (bridge.store.currentUser.role as string) || '';
@@ -159,14 +187,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         localStorage.getItem('sportsync_user_role') === 'organizer' ||
         localStorage.getItem('sportsync_user_role') === 'faculty'
       ));
-
-    const isPending = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-
-    // Check explicit profile completion flags
-    const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
-      localStorage.getItem('matchi_onboarding_completed') === 'true' ||
-      localStorage.getItem('sportsync_onboarding_completed') === 'true'
-    );
 
     const storedUserId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id')) : null;
     const storedEmail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : null;
@@ -207,21 +227,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
     const hasOwnedVenue = hasOwnedVenueInStore || hasOwnedVenueInStorage;
 
-    const isExplicitlyComplete = Boolean(
-      !isPending && (
-        bridge.userProfile.onboardingCompleted === true ||
-        bridge.store.currentUser.onboarding_completed === true ||
-        bridge.store.currentUser.has_completed_onboarding === true ||
-        hasStoredCompletion
-      )
-    );
-
     if (isOwner) {
-      return isExplicitlyComplete || hasOwnedVenue;
-    }
-
-    if (isPending) {
-      return false;
+      return hasOwnedVenue;
     }
 
     // Check whether existing profile has required setup fields filled
@@ -230,24 +237,28 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       effectiveName &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(effectiveName)
     );
-    const sports = bridge.store.currentUser.preferred_sports || bridge.userProfile.preferredSports;
-    const hasSports = (Array.isArray(sports) && sports.length > 0) || Boolean(bridge.store.currentUser.primary_sport);
+    const sports = bridge.store.currentUser.preferred_sports;
+    const hasSports = Array.isArray(sports) && sports.length > 0;
     const hasLocationOrSkill = Boolean(
       bridge.store.currentUser.city ||
-      bridge.userProfile.city ||
-      bridge.store.currentUser.skill_level ||
-      bridge.userProfile.skillLevel
+      bridge.store.currentUser.skill_level
     );
 
     const hasRequiredPlayerFields = Boolean(
-      !isOwner && hasValidName && hasSports && hasLocationOrSkill
+      !isOwner &&
+      !isPending &&
+      bridge.store.currentUser.onboarding_completed === true &&
+      hasValidName &&
+      hasSports &&
+      hasLocationOrSkill
     );
 
-    const isComplete = isExplicitlyComplete || hasRequiredPlayerFields;
+    const isComplete = hasRequiredPlayerFields;
 
     if (isComplete) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_pending_onboarding');
+        sessionStorage.removeItem('sportsync_just_registered');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
         localStorage.setItem('matchi_onboarding_completed', 'true');
       }
@@ -646,11 +657,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     if (!isUserOnboarded()) {
       const allowedScreens: ScreenId[] = ['landing', 'personalization', 'auth', 'invitation-landing', 'splash', 'reset-password'];
       if (!allowedScreens.includes(currentScreen)) {
-        if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-          window.location.href = '/onboarding';
-        } else {
-          setCurrentScreen('personalization');
-        }
+        setCurrentScreen('personalization');
+        setScreenHistory(['personalization']);
       }
     }
   }, [bridge.store.isLoading, bridge.userProfile.onboardingCompleted, bridge.store.currentUser.onboarding_completed, bridge.store.currentUser.role, bridge.store.venues.length, currentScreen]);
@@ -1089,11 +1097,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     navigateTo('faculty-setup');
                   }
                 } else {
-                  if (typeof window !== 'undefined' && !window.location.port.includes('5173')) {
-                    window.location.href = '/onboarding';
-                  } else {
-                    navigateTo('personalization');
-                  }
+                  setCurrentScreen('personalization');
+                  setScreenHistory(['personalization']);
                 }
                 return;
               }
@@ -1166,35 +1171,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         );
       }
       case 'personalization': {
-        const isEditing = isEditingFromProfile || Boolean(
-          bridge.userProfile.onboardingCompleted ||
-          (screenHistory.length > 1 && screenHistory[screenHistory.length - 2] === 'profile')
-        );
+        const isEditing = isEditingFromProfile;
         const resolvedSkill = bridge.userProfile.skillLevel?.toLowerCase();
         const initialSkillIndex = resolvedSkill === 'beginner' ? 0 : (resolvedSkill === 'advanced' || resolvedSkill === 'competitive') ? 2 : 1;
 
         return (
           <PersonalizationScreen
-            onBack={async () => {
+            onBack={isEditing ? async () => {
               setIsEditingFromProfile(false);
-              if (isEditing) {
-                goBack();
-              } else {
-                // User exited onboarding: allow access to dashboard without redirect loop
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem('sportsync_skipped_onboarding', 'true');
-                  sessionStorage.removeItem('sportsync_just_registered');
-                }
-                navigateTo('home');
-              }
-            }}
-            onSkip={() => {
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('sportsync_skipped_onboarding', 'true');
-                sessionStorage.removeItem('sportsync_just_registered');
-              }
-              navigateTo('home');
-            }}
+              goBack();
+            } : undefined}
+            onSkip={undefined}
             isEditing={isEditing}
             initialValues={isEditing ? (personalizationDraft || {
               displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name)
@@ -1219,7 +1206,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
             onDraftChange={setPersonalizationDraft}
             onComplete={async (prefs) => {
-              const wasEditing = isEditing;
+              const wasEditing = isEditingFromProfile;
+
+              // Immediately and synchronously clear pending onboarding flags
+              // and mark completed in storage to prevent any route guards bouncing back
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('sportsync_pending_onboarding');
+                sessionStorage.removeItem('sportsync_just_registered');
+                localStorage.removeItem('sportsync_skipped_onboarding');
+                localStorage.setItem('sportsync_onboarding_completed', 'true');
+                localStorage.setItem('matchi_onboarding_completed', 'true');
+                try {
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('screen');
+                  url.searchParams.delete('onboarding');
+                  window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+                } catch {}
+              }
+
               if (prefs) {
                 await bridge.completeOnboarding({
                   fullName: prefs.fullName || bridge.userProfile.name,
@@ -1240,7 +1244,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               } else if (wasEditing) {
                 navigateTo('profile');
               } else {
-                navigateTo('home');
+                setCurrentScreen('home');
+                setScreenHistory(['home']);
+                setActiveTab('home');
+                onScreenChange?.('home');
               }
             }}
           />
@@ -1452,12 +1459,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               if (!activeTargetGame) return;
               if (!requireAuth('Join Game Roster', 'Create an account to join this game and reserve your roster spot.', async () => {
                 const result = await bridge.joinCommunityGame(activeTargetGame.id);
-                if (result.game) setSelectedGame(result.game);
-                setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
+                if (result.success && result.game) {
+                  setSelectedGame(result.game);
+                  bridge.syncSessionRoster(result.game.id, true);
+                  setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
+                } else if (!result.success && !result.alreadyParticipant) {
+                  setToastMessage(result.error || result.message || 'Failed to join match.');
+                  throw new Error(result.error || result.message || 'Failed to join match.');
+                }
               })) return;
               const result = await bridge.joinCommunityGame(activeTargetGame.id);
-              if (result.game) setSelectedGame(result.game);
-              setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
+              if (result.success && result.game) {
+                setSelectedGame(result.game);
+                bridge.syncSessionRoster(result.game.id, true);
+                setToastMessage(result.xpResult?.message || result.message || 'Joined game roster!');
+              } else if (!result.success && !result.alreadyParticipant) {
+                setToastMessage(result.error || result.message || 'Failed to join match.');
+                throw new Error(result.error || result.message || 'Failed to join match.');
+              }
             }}
             onOpenChat={() => {
               if (!requireAuth('Team Chat', 'Sign in to participate in the match team chat.')) return;

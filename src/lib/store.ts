@@ -671,20 +671,10 @@ export function useMatchiStore() {
       const cleanAvailability = data.availability || globalState.currentUser.availability || 'Weekday Evenings & Weekends';
 
 
-      if (globalState.currentUser.auth_id || globalState.currentUser.id || globalState.currentUser.email) {
-        await updatePlayerProfile({
-          fullName: data.fullName,
-          nickname: data.nickname,
-          primarySport,
-          preferredSports: data.preferredSports,
-          preferredFormat: data.preferredFormat || 'doubles',
-          skillLevel: data.skillLevel,
-          city: cleanCity,
-        });
-      }
-
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_pending_onboarding');
+        sessionStorage.removeItem('sportsync_just_registered');
+        localStorage.removeItem('sportsync_skipped_onboarding');
         localStorage.setItem('matchi_onboarding_completed', 'true');
         localStorage.setItem('sportsync_onboarding_completed', 'true');
         if (data.fullName) {
@@ -723,7 +713,6 @@ export function useMatchiStore() {
         };
         localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
         localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
-
       }
 
       globalState = {
@@ -737,7 +726,6 @@ export function useMatchiStore() {
           skill_level: cleanSkill,
           availability: cleanAvailability,
           city: cleanCity,
-
           preferred_format: data.preferredFormat || 'doubles',
           onboarding_completed: true,
           has_completed_onboarding: true,
@@ -745,6 +733,22 @@ export function useMatchiStore() {
         },
       };
       notify();
+
+      if (globalState.currentUser.auth_id || globalState.currentUser.id || globalState.currentUser.email) {
+        try {
+          await updatePlayerProfile({
+            fullName: data.fullName,
+            nickname: data.nickname,
+            primarySport,
+            preferredSports: data.preferredSports,
+            preferredFormat: data.preferredFormat || 'doubles',
+            skillLevel: data.skillLevel,
+            city: cleanCity,
+          });
+        } catch (e) {
+          console.warn('updatePlayerProfile error in completePlayerOnboarding:', e);
+        }
+      }
     },
     []
   );

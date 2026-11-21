@@ -192,6 +192,8 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
       setIsJoined(true);
     } catch (err: any) {
       console.warn('[MatchDetailScreen] Join click error:', err);
+      setFeedbackMessage({ type: 'error', text: err?.message || 'Failed to join match roster.' });
+      setTimeout(() => setFeedbackMessage(null), 4000);
     }
   };
 

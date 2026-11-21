@@ -31,7 +31,7 @@ interface PersonalizationScreenProps {
     preferredArea?: string;
     availability?: string;
     avatarUrl?: string;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
@@ -61,6 +61,7 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
   const [isLocating, setIsLocating] = useState(false);
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
   const [availability, setAvailability] = useState(initialValues?.availability ?? '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -190,7 +191,8 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 
   const hasOther = selectedSports.includes('Other');
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    if (isSubmitting) return;
     if (selectedSports.length === 0) {
       alert('Please select at least one sport to continue.');
       return;
@@ -213,14 +215,20 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
       const normalizedCustom = customSportInput.trim();
       finalSports = finalSports.filter((s) => s !== 'Other').concat(normalizedCustom);
     }
-    onComplete({
-      fullName: displayName.trim() || 'Player',
-      selectedSports: finalSports,
-      skillLevel: skillLabels[skillLevel],
-      preferredArea: preferredArea.trim(),
-      availability,
-      avatarUrl: selectedAvatar,
-    });
+    setIsSubmitting(true);
+    try {
+      await onComplete({
+        fullName: displayName.trim() || 'Player',
+        selectedSports: finalSports,
+        skillLevel: skillLabels[skillLevel],
+        preferredArea: preferredArea.trim(),
+        availability,
+        avatarUrl: selectedAvatar,
+      });
+    } catch (e) {
+      console.error('Error completing onboarding:', e);
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -513,11 +521,13 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
         <Button
           variant="primary"
           size="lg"
+          isLoading={isSubmitting}
+          disabled={isSubmitting}
           onClick={handleFinish}
           className="w-full text-base font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)]"
         >
-          <span>{isEditing ? 'Save Changes' : 'Complete Onboarding & Play'}</span>
-          <ArrowRight className="w-4 h-4 ml-1" />
+          <span>{isSubmitting ? 'Saving Profile...' : isEditing ? 'Save Changes' : 'Complete Onboarding & Play'}</span>
+          {!isSubmitting && <ArrowRight className="w-4 h-4 ml-1" />}
         </Button>
         {!isEditing && onSkip && (
           <button

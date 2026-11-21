@@ -348,27 +348,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: partData, error: partErr } = await supabase
-      .from('session_participants')
-      .select('user_id, user_name, user_avatar')
-      .eq('session_id', dbSession.id)
-      .neq('status', 'cancelled');
-
-    if (partErr) {
-      console.error('[/api/invitations GET] session_participants lookup error:', partErr);
-    } else if (Array.isArray(partData)) {
-      partData.forEach((p: { user_id?: string | null; user_name?: string | null; user_avatar?: string | null }) => {
-        const mName = p.user_name || 'Player';
-        const key = p.user_id || mName.toLowerCase();
-        if (!membersMap.has(key)) {
-          membersMap.set(key, {
-            id: p.user_id ?? undefined,
-            name: mName,
-            avatar: (p.user_avatar as CommunityGame['hostAvatar']) || 'alex',
-          });
-        }
-      });
-    }
+    // queues is the authoritative session participant table in Supabase
 
     const allMembers = Array.from(membersMap.values());
     const totalSpots = dbSession.max_players || 10;
@@ -498,13 +478,13 @@ export async function POST(req: NextRequest) {
     }
 
     const lookupKey = (game.sessionId || game.id || game.inviteCode || body.inviteCode || '').trim();
-    const { session: dbSession, error: lookupErr } = await resolveSessionByCodeOrId(supabase, lookupKey);
+    let { session: dbSession, error: lookupErr } = await resolveSessionByCodeOrId(supabase, lookupKey);
 
     if (lookupErr) {
       return NextResponse.json({ success: false, error: lookupErr.message }, { status: 500 });
     }
 
-    if (!dbSession && (action === 'create_game' || !action)) {
+    if (!dbSession && (action === 'create_game' || action === 'accept' || !action)) {
       const sLower = (game.sport || '').toLowerCase();
       const validSport = sLower.includes('basket')
         ? 'basketball'
@@ -521,9 +501,9 @@ export async function POST(req: NextRequest) {
 
       const sessionPayload: Record<string, any> = {
         venue_id: null,
-        host_id: authUser.id,
+        host_id: (game.hostId && UUID_REGEX.test(game.hostId)) ? game.hostId : authUser.id,
         title: game.title || 'Community Match',
-        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${authUser.full_name}]`,
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || authUser.full_name}]`,
         sport: validSport,
         session_type: 'open_play',
         skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
@@ -532,7 +512,7 @@ export async function POST(req: NextRequest) {
         end_time: endIso,
         fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
         max_players: game.spotsTotal || 10,
-        current_players_count: 1,
+        current_players_count: game.spotsJoined || 1,
         rotation_format: game.format || '5v5',
         status: 'active',
         visibility: game.visibility || 'Public',
@@ -542,6 +522,9 @@ export async function POST(req: NextRequest) {
 
       if ((game as any).allowed_formats && Array.isArray((game as any).allowed_formats)) {
         sessionPayload.allowed_formats = (game as any).allowed_formats;
+      }
+      if (UUID_REGEX.test(game.id)) {
+        sessionPayload.id = game.id;
       }
 
       let { data: inserted, error: insertErr } = await supabase
@@ -572,18 +555,23 @@ export async function POST(req: NextRequest) {
       }
 
       if (insertErr || !inserted) {
-        console.error('[/api/invitations POST create_game] Insert failed:', insertErr);
-        return NextResponse.json(
-          { success: false, error: insertErr?.message || 'Failed to create game.' },
-          { status: 500 }
-        );
+        console.error('[/api/invitations POST session creation] Insert failed:', insertErr);
+        if (action !== 'accept') {
+          return NextResponse.json(
+            { success: false, error: insertErr?.message || 'Failed to create game.' },
+            { status: 500 }
+          );
+        }
+      } else {
+        dbSession = inserted;
+        if (action === 'create_game' || !action) {
+          return NextResponse.json({
+            success: true,
+            game: { ...game, id: inserted.id, sessionId: inserted.id, inviteCode },
+            session: inserted,
+          });
+        }
       }
-
-      return NextResponse.json({
-        success: true,
-        game: { ...game, id: inserted.id, sessionId: inserted.id, inviteCode },
-        session: inserted,
-      });
     }
 
     if (!dbSession) {
@@ -626,23 +614,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const { error: partErr } = await supabase
-        .from('session_participants')
-        .upsert(
-          {
-            session_id: dbSession.id,
-            user_id: authUser.id,
-            user_name: authUser.full_name,
-            user_avatar: authUser.avatar_url || 'alex',
-            status: 'joined',
-            joined_at: nowIso,
-          },
-          { onConflict: 'session_id,user_id' }
-        );
-
-      if (partErr) {
-        console.error('[/api/invitations POST accept] session_participants upsert warning (non-fatal):', partErr);
-      }
+      // Ensure authUser exists in public.users to satisfy foreign key constraint queues_user_id_fkey
+      await supabase.from('users').upsert(
+        {
+          id: authUser.id,
+          auth_id: authUser.id,
+          email: authUser.email,
+          full_name: authUser.full_name || 'Player',
+          role: authUser.role || 'player',
+          updated_at: nowIso,
+        },
+        { onConflict: 'id' }
+      );
 
       const { count: activeQueueCount } = await supabase
         .from('queues')
@@ -650,15 +633,15 @@ export async function POST(req: NextRequest) {
         .eq('session_id', dbSession.id)
         .neq('status', 'cancelled');
 
+      // Upsert into queues table with valid schema (match_format column removed)
       const { error: queueErr } = await supabase.from('queues').upsert(
         {
           session_id: dbSession.id,
           user_id: authUser.id,
           queue_number: (activeQueueCount || 0) + 1,
           group_size: 1,
-          match_format: 'doubles',
           status: 'waiting',
-          partner_names: [authUser.full_name],
+          partner_names: [authUser.full_name || 'Player'],
           joined_at: nowIso,
         },
         { onConflict: 'session_id,user_id' }
@@ -666,15 +649,16 @@ export async function POST(req: NextRequest) {
 
       if (queueErr) {
         console.error('[/api/invitations POST accept] queues upsert error:', queueErr);
+        return NextResponse.json({ success: false, error: queueErr.message }, { status: 500 });
       }
 
       const updatedMembers = [
         ...(game.members || []),
-        { id: authUser.id, name: authUser.full_name, avatar: (authUser.avatar_url as CommunityGame['hostAvatar']) || 'alex' },
+        { id: authUser.id, name: authUser.full_name || 'Player', avatar: (authUser.avatar_url as CommunityGame['hostAvatar']) || 'alex' },
       ];
       const dedupedMap = new Map<string, CommunityGame['members'][number]>();
       updatedMembers.forEach((m) => {
-        const key = m.id || m.name;
+        const key = m.id || m.name.toLowerCase();
         if (!dedupedMap.has(key)) dedupedMap.set(key, m);
       });
       const finalMembers = Array.from(dedupedMap.values());
@@ -687,7 +671,6 @@ export async function POST(req: NextRequest) {
 
       if (updateErr) {
         console.error('[/api/invitations POST accept] session count update error:', updateErr);
-        return NextResponse.json({ success: false, error: updateErr.message }, { status: 500 });
       }
 
       return NextResponse.json({

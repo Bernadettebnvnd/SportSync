@@ -103,25 +103,34 @@ function OnboardingContent() {
     currentUser.role === 'organizer' ||
     (currentUser.role as string) === 'faculty' ||
     (currentUser.role as string) === 'facility_owner';
-  const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true');
+  const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && (
+    localStorage.getItem('sportsync_pending_onboarding') === 'true' ||
+    sessionStorage.getItem('sportsync_just_registered') === 'true'
+  ));
 
-  const hasStoredCompletion = typeof window !== 'undefined' && (
+  const isExplicitlyIncomplete = currentUser.onboarding_completed === false || isPending;
+
+  const hasStoredCompletion = typeof window !== 'undefined' && !isExplicitlyIncomplete && (
     localStorage.getItem('matchi_onboarding_completed') === 'true' ||
     localStorage.getItem('sportsync_onboarding_completed') === 'true'
   );
 
   const hasExplicitCompletion = Boolean(
-    currentUser.onboarding_completed === true ||
-    currentUser.has_completed_onboarding === true ||
-    (!isPending && hasStoredCompletion)
+    !isExplicitlyIncomplete && (
+      currentUser.onboarding_completed === true ||
+      currentUser.has_completed_onboarding === true ||
+      hasStoredCompletion
+    )
   );
 
   // Existing player with completed profile
-  const hasRequiredPlayerFields = !isOwner && Boolean(
+  const hasRequiredPlayerFields = !isOwner && !isExplicitlyIncomplete && Boolean(
     currentUser.full_name &&
     !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-    ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-    (currentUser.skill_level || currentUser.city)
+    Array.isArray(currentUser.preferred_sports) &&
+    currentUser.preferred_sports.length > 0 &&
+    (currentUser.skill_level || currentUser.city) &&
+    currentUser.onboarding_completed === true
   );
 
   const activeOwnerIds = [currentUser.id, currentUser.auth_id, storedUserId].filter(
@@ -161,9 +170,9 @@ function OnboardingContent() {
 
   const hasOwnedVenue = hasOwnedVenueInStore || hasOwnedVenueInStorage;
 
-  const hasRequiredOwnerFields = isOwner && Boolean(hasExplicitCompletion || hasOwnedVenue);
+  const hasRequiredOwnerFields = isOwner && !isExplicitlyIncomplete && Boolean(hasExplicitCompletion || hasOwnedVenue);
 
-  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
+  const isCompleted = !isGuest && !isExplicitlyIncomplete && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
   React.useEffect(() => {
     if (isCompleted && typeof window !== 'undefined') {
