@@ -302,6 +302,7 @@ async function upsertCanonicalPublicUser(
     if (updateErr && isMissingColumnError(updateErr)) {
       const sanitizedUpdate = { ...updateData };
       delete sanitizedUpdate.onboarding_completed;
+      delete sanitizedUpdate.preferred_format;
       const retry = await dbClient
         .from('users')
         .update(sanitizedUpdate)
@@ -330,7 +331,6 @@ async function upsertCanonicalPublicUser(
     onboarding_completed: Boolean(params.onboardingCompleted),
     primary_sport: null,
     preferred_sports: [],
-    preferred_format: null,
     skill_level: null,
     city: params.city || null,
   };
@@ -344,7 +344,7 @@ async function upsertCanonicalPublicUser(
   if (insertErr && isMissingColumnError(insertErr)) {
     console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying without problematic fields:', insertErr.message);
     const sanitizedPayload = { ...newPayload };
-    // Remove columns that may be missing in the schema cache
+    // Remove columns that may be missing in the database schema
     delete sanitizedPayload.onboarding_completed;
     delete sanitizedPayload.preferred_format;
     const retry = await dbClient
@@ -354,8 +354,6 @@ async function upsertCanonicalPublicUser(
       .maybeSingle();
     inserted = retry.data;
     insertErr = retry.error;
-  }
-
   }
 
   if (insertErr) {
@@ -971,6 +969,7 @@ export async function serverUpdateUserProfile(
       if (isMissingColumnError(error)) {
         delete fallbackPayload.onboarding_completed;
         delete fallbackPayload.has_completed_onboarding;
+        delete fallbackPayload.preferred_format;
       }
 
       const retryRes = await db
