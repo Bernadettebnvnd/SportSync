@@ -351,9 +351,12 @@ function OrganizerDashboardContent() {
   const verifiedPayments = payments.filter((p) => p.status === 'approved');
 
   // Revenue & Accounting metrics
-  const facilityBookings = bookings.filter((b) =>
-    primaryVenue ? (b.venue_id === primaryVenue.id || b.venue_id === primaryVenue.slug || !b.venue_id) : true
-  );
+  const facilityBookings = useMemo(() => {
+    if (!primaryVenue) return [];
+    return bookings.filter(
+      (b) => Boolean(b.venue_id) && (b.venue_id === primaryVenue.id || b.venue_id === primaryVenue.slug)
+    );
+  }, [bookings, primaryVenue]);
 
   const pendingBookings = useMemo(
     () => facilityBookings.filter((b) => b.status === 'pending'),

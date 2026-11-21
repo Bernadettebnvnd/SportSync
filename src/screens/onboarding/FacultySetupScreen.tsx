@@ -80,8 +80,8 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     (currentUser.phone && !currentUser.phone.startsWith('pwd_hash:') ? currentUser.phone : '')
   );
 
-  // Step 2: Location
-  const [city, setCity] = useState(initialValues?.city || (currentUser.city !== 'Naga City' && currentUser.city ? currentUser.city : ''));
+  // Step 2: Location (Locked to Naga City pilot market)
+  const [city] = useState('Naga City, Camarines Sur');
   const [address, setAddress] = useState(initialValues?.address || '');
   const [district, setDistrict] = useState(initialValues?.district || '');
   const [landmark, setLandmark] = useState(initialValues?.landmark || '');
@@ -186,10 +186,6 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     }
 
     if (step === 2) {
-      if (!city.trim()) {
-        setValidationError('Please enter your facility city or municipality.');
-        return;
-      }
       if (!address.trim()) {
         setValidationError('Please enter your campus or street address.');
         return;
@@ -215,7 +211,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     if (step === 5) {
       setIsSubmitting(true);
       try {
-        const fullAddress = [address.trim(), district, city.trim(), landmark.trim() ? `(${landmark.trim()})` : '']
+        const fullAddress = [address.trim(), district, 'Naga City', landmark.trim() ? `(${landmark.trim()})` : '']
           .filter(Boolean)
           .join(', ');
 
@@ -234,9 +230,9 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           ownerEmail: email.trim() || 'partner@facility.ph',
           ownerPhone: phone.trim(),
           facilityName: facilityName.trim(),
-          description: `${facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'} in ${city.trim()} featuring ${selectedSports.join(', ')}.`,
+          description: `${facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'} in Naga City featuring ${selectedSports.join(', ')}.`,
           address: fullAddress,
-          city: city.trim(),
+          city: 'Naga City',
           featuredSports: normalizedSports,
           operatingHours: operatingHours.trim() || '06:00 - 23:00',
           amenities,
@@ -465,22 +461,26 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
         {step === 2 && (
           <div className="space-y-4 animate-fadeIn">
             <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-              <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
-                1. City / Municipality / Province
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider block">
+                  1. Operating City &amp; Market
+                </label>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold">
+                  Pilot Market
+                </span>
+              </div>
               <div className="relative flex items-center">
                 <MapPin className="absolute left-3 w-4 h-4 text-[#C8FF2E]" />
                 <input
                   type="text"
+                  readOnly
                   value={city}
-                  onChange={(e) => {
-                    setCity(e.target.value);
-                    if (validationError) setValidationError(null);
-                  }}
-                  placeholder="e.g. Naga City, Makati, Cebu City"
-                  className="w-full h-11 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E] font-semibold"
+                  className="w-full h-11 pl-9 pr-4 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:outline-none cursor-default font-semibold"
                 />
               </div>
+              <p className="text-[11px] text-[#A5B0A6]">
+                Currently available in Naga City.
+              </p>
             </div>
 
             <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5">

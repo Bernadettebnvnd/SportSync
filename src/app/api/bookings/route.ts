@@ -232,13 +232,35 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Validate duration and calculate end time
+    // 3. Validate startTime, duration, and compute midnight-safe Date timestamps
     const duration = Math.max(30, Math.min(240, Number(durationMinutes) || 60));
-    const [startH, startM] = startTime.split(':').map(Number);
-    const endTotalM = (startH || 0) * 60 + (startM || 0) + duration;
-    const endH = Math.floor(endTotalM / 60);
-    const endMin = endTotalM % 60;
-    const endTime = `${String(endH).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+    const timeMatch = typeof startTime === 'string' ? startTime.trim().match(/^(\d{1,2}):(\d{2})$/) : null;
+    if (!timeMatch) {
+      return NextResponse.json(
+        { error: 'Invalid startTime format. Expected HH:MM.' },
+        { status: 400 }
+      );
+    }
+    const startH = Number(timeMatch[1]);
+    const startM = Number(timeMatch[2]);
+    if (startH < 0 || startH > 23 || startM < 0 || startM > 59) {
+      return NextResponse.json(
+        { error: 'Invalid startTime hours or minutes.' },
+        { status: 400 }
+      );
+    }
+    const normalizedStartTime = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+    const startDateTime = new Date(`${bookingDate}T${normalizedStartTime}:00Z`);
+    if (Number.isNaN(startDateTime.getTime())) {
+      return NextResponse.json(
+        { error: 'Invalid bookingDate or startTime.' },
+        { status: 400 }
+      );
+    }
+    const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
+    const startIso = startDateTime.toISOString();
+    const endIso = endDateTime.toISOString();
+    const endTime = `${String(endDateTime.getUTCHours()).padStart(2, '0')}:${String(endDateTime.getUTCMinutes()).padStart(2, '0')}`;
 
     // 4. Authenticate User
     const resolvedSession = resolveUserFromRequest(request);
@@ -341,9 +363,6 @@ export async function POST(request: Request) {
           const actualFees = calculateBookingFees(actualRate, duration);
 
           // Overlap check against confirmed bookings only (pending requests do NOT block slots)
-          const startIso = new Date(`${bookingDate}T${startTime}:00Z`).toISOString();
-          const endIso = new Date(`${bookingDate}T${endTime}:00Z`).toISOString();
-
           const { data: confirmedConflicts } = await dbClient
             .from('bookings')
             .select('id')

@@ -47,33 +47,8 @@ const AVAILABLE_SPORTS: { id: SportType; label: string; icon: string }[] = [
   { id: 'padel', label: 'Padel', icon: '🎾' },
 ];
 
-const PHILIPPINE_AREAS = [
-  'Naga City, Camarines Sur',
-  'Legazpi City, Albay',
-  'Quezon City, Metro Manila',
-  'Makati, Metro Manila',
-  'Taguig (BGC), Metro Manila',
-  'Pasig, Metro Manila',
-  'Manila, Metro Manila',
-  'Mandaluyong, Metro Manila',
-  'Cebu City, Cebu',
-  'Mandaue City, Cebu',
-  'Davao City, Davao del Sur',
-  'Iloilo City, Iloilo',
-  'Bacolod, Negros Occidental',
-  'Baguio City, Benguet',
-  'San Fernando, Pampanga',
-  'Angeles City, Pampanga',
-  'Antipolo, Rizal',
-  'Santa Rosa, Laguna',
-  'Calamba, Laguna',
-  'Batangas City, Batangas',
-  'Cagayan de Oro, Misamis Oriental',
-  'General Santos, South Cotabato',
-  'Iriga City, Camarines Sur',
-  'Daet, Camarines Norte',
-  'Sorsogon City, Sorsogon',
-];
+const PILOT_CITY = 'Naga City';
+const PILOT_CITY_LABEL = 'Naga City, Camarines Sur';
 
 const NICKNAME_SUGGESTIONS = [
   'Ace',
@@ -82,16 +57,6 @@ const NICKNAME_SUGGESTIONS = [
   'The Maestro',
   'Rookie',
   'Deadeye',
-];
-
-const FACILITY_LOCATIONS = [
-  'Naga City, Camarines Sur',
-  'Legazpi City, Albay',
-  'Quezon City, Metro Manila',
-  'Makati, Metro Manila',
-  'Taguig, Metro Manila',
-  'Cebu City, Cebu',
-  'Davao City, Davao del Sur',
 ];
 
 function OnboardingContent() {
@@ -277,12 +242,7 @@ function OnboardingContent() {
     }
     return '';
   });
-  const [selectedArea, setSelectedArea] = useState<string>(() => {
-    if (currentUser.onboarding_completed && currentUser.city) {
-      return currentUser.city;
-    }
-    return '';
-  });
+  const [selectedArea, setSelectedArea] = useState<string>(PILOT_CITY);
   const [skillLevel, setSkillLevel] = useState<SkillLevel | ''>(() => {
     if (currentUser.onboarding_completed && currentUser.skill_level && currentUser.skill_level !== 'all_levels') {
       return currentUser.skill_level;
@@ -329,7 +289,7 @@ function OnboardingContent() {
   const [facilityAddress, setFacilityAddress] = useState('');
   const [facilityDistrict, setFacilityDistrict] = useState('');
   const [facilityLandmark, setFacilityLandmark] = useState('');
-  const [facilityCity, setFacilityCity] = useState(FACILITY_LOCATIONS[0]);
+  const [facilityCity] = useState(PILOT_CITY_LABEL);
   const [facilitySports, setFacilitySports] = useState<SportType[]>([]);
   const [courtCount, setCourtCount] = useState<number | ''>('');
   const [courtSurface, setCourtSurface] = useState('');
@@ -371,44 +331,8 @@ function OnboardingContent() {
   };
 
   const handleUseCurrentLocation = () => {
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      setSelectedArea('Current Location');
-      setLocationSearch('Current Location');
-      return;
-    }
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1`
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const addr = data.address || {};
-            const city = addr.city || addr.town || addr.municipality || addr.county || '';
-            const state = addr.state || addr.province || '';
-            const detected = city && state ? `${city}, ${state}` : city || state || 'Current Location';
-            setSelectedArea(detected);
-            setLocationSearch(detected);
-          } else {
-            setSelectedArea('Current Location');
-            setLocationSearch('Current Location');
-          }
-        } catch {
-          setSelectedArea('Current Location');
-          setLocationSearch('Current Location');
-        } finally {
-          setIsLocating(false);
-        }
-      },
-      () => {
-        setIsLocating(false);
-      },
-      { timeout: 7000 }
-    );
+    setSelectedArea(PILOT_CITY_LABEL);
+    setLocationSearch(PILOT_CITY_LABEL);
   };
 
   const handleSearchLocation = async (q: string) => {
@@ -417,12 +341,7 @@ function OnboardingContent() {
       setLocationSuggestions([]);
       return;
     }
-    const matches = PHILIPPINE_AREAS.filter((d) => d.toLowerCase().includes(q.trim().toLowerCase()));
-    if (q.trim() && !matches.some((m) => m.toLowerCase() === q.trim().toLowerCase())) {
-      setLocationSuggestions([q.trim(), ...matches]);
-    } else {
-      setLocationSuggestions(matches);
-    }
+    setLocationSuggestions([PILOT_CITY_LABEL]);
   };
 
   // =========================================================================
@@ -465,10 +384,7 @@ function OnboardingContent() {
 
       const finalFullName = fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = nickname.trim() || finalFullName.split(' ')[0] || currentUser.nickname || 'Player';
-      const rawCity = selectedArea || locationSearch || currentUser.city || '';
-      const cleanCity = rawCity === 'Current Location'
-        ? (currentUser.city || 'Philippines')
-        : (rawCity.replace(/\s*\(Pilot Area\)/i, '').trim());
+      const cleanCity = PILOT_CITY;
 
       await completePlayerOnboarding({
         fullName: finalFullName,
@@ -683,7 +599,7 @@ function OnboardingContent() {
 
       const finalFullName = prefs.fullName?.trim() || fullName.trim() || currentUser.full_name || 'Player';
       const finalNickname = finalFullName.split(' ')[0] || 'Player';
-      const cleanCity = prefs.preferredArea?.trim() || selectedArea || currentUser.city || '';
+      const cleanCity = PILOT_CITY;
       const rawSkill = (prefs.skillLevel || 'intermediate').toLowerCase();
       const mappedSkill: SkillLevel = rawSkill === 'advanced' ? 'advanced' : rawSkill === 'beginner' ? 'beginner' : 'intermediate';
 
@@ -735,7 +651,7 @@ function OnboardingContent() {
                       ? currentUser.full_name.trim()
                       : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
                 selectedSports: [],
-                preferredArea: '',
+                preferredArea: PILOT_CITY,
                 availability: '',
                 skillLevel: undefined,
               }}
@@ -1177,7 +1093,7 @@ function OnboardingContent() {
                   />
                 </div>
                 <p className="text-[11px] text-[#A5B0A6]">
-                  SportSync facility portal is actively live across Naga City. All pilot bookings are zero commission during launch.
+                  Currently available in Naga City. All pilot bookings are zero commission during launch.
                 </p>
               </div>
 
