@@ -64,10 +64,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const admin = createAdminClient();
+    const admin = createAdminClient() || createServerClient();
     if (!admin) {
       return NextResponse.json(
-        { error: 'Server admin client is unavailable. Please configure SUPABASE_SERVICE_ROLE_KEY.' },
+        { error: 'Server database client is unavailable.' },
         { status: 500 }
       );
     }
@@ -214,10 +214,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const admin = createAdminClient();
+    const admin = createAdminClient() || createServerClient();
     if (!admin) {
       return NextResponse.json(
-        { error: 'Server admin client is unavailable. Please configure SUPABASE_SERVICE_ROLE_KEY.' },
+        { error: 'Server database client is unavailable.' },
         { status: 500 }
       );
     }

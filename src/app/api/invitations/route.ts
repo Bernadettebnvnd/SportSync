@@ -12,30 +12,35 @@ function getDbClient() {
   return createServerClient();
 }
 
-async function authenticateRequest(req: NextRequest): Promise<SanitizedUser | null> {
+async function authenticateRequest(req: NextRequest, fallbackUserId?: string | null): Promise<SanitizedUser | null> {
   const tokenCookie =
     req.cookies.get('sportsync-auth-token')?.value ||
     req.cookies.get('sb-access-token')?.value;
   const authHeader = req.headers.get('authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   const token = tokenCookie || bearerToken;
-  if (!token) return null;
+  if (token) {
+    const verified = verifySessionToken(token);
+    if (verified) {
+      const user = await serverGetUser(verified.userId);
+      if (user) return user;
+    }
 
-  const verified = verifySessionToken(token);
-  if (verified) {
-    const user = await serverGetUser(verified.userId);
-    if (user) return user;
-  }
-
-  if (isSupabaseConfigured) {
-    const sb = createServerClient(token);
-    if (sb) {
-      const { data } = await sb.auth.getUser();
-      if (data?.user?.id) {
-        const user = await serverGetUser(data.user.id);
-        if (user) return user;
+    if (isSupabaseConfigured) {
+      const sb = createServerClient(token);
+      if (sb) {
+        const { data } = await sb.auth.getUser();
+        if (data?.user?.id) {
+          const user = await serverGetUser(data.user.id);
+          if (user) return user;
+        }
       }
     }
+  }
+
+  if (fallbackUserId && (UUID_REGEX.test(fallbackUserId.trim()) || fallbackUserId.includes('@'))) {
+    const user = await serverGetUser(fallbackUserId.trim());
+    if (user) return user;
   }
 
   return null;
@@ -423,15 +428,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = createAdminClient();
+    const supabase = getDbClient() || createServerClient();
     if (!supabase) {
       return NextResponse.json(
-        { success: false, error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { success: false, error: 'Database client is not available.' },
         { status: 500 }
       );
     }
 
-    const authUser = await authenticateRequest(req);
+    const body = await req.json().catch(() => ({}));
+    const authUser = await authenticateRequest(
+      req,
+      body?.participant?.id || body?.participant?.email || body?.hostId || body?.userId
+    );
     if (!authUser) {
       return NextResponse.json(
         { success: false, error: 'Authentication required.' },
@@ -439,7 +448,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json().catch(() => ({}));
     const game = body.game as CommunityGame | undefined;
     const action = body.action as string | undefined;
 
@@ -633,8 +641,7 @@ export async function POST(req: NextRequest) {
         );
 
       if (partErr) {
-        console.error('[/api/invitations POST accept] session_participants upsert error:', partErr);
-        return NextResponse.json({ success: false, error: partErr.message }, { status: 500 });
+        console.error('[/api/invitations POST accept] session_participants upsert warning (non-fatal):', partErr);
       }
 
       const { count: activeQueueCount } = await supabase

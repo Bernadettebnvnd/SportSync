@@ -153,10 +153,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const dbClient = createAdminClient();
+    const dbClient = createAdminClient() || createServerClient();
     if (!dbClient) {
       return NextResponse.json(
-        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { error: 'Database client is not available.' },
         { status: 500 }
       );
     }
@@ -365,10 +365,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Supabase is not configured on the server.' }, { status: 500 });
     }
 
-    const dbClient = createAdminClient();
+    const dbClient = createAdminClient() || createServerClient();
     if (!dbClient) {
       return NextResponse.json(
-        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { error: 'Database client is not available.' },
         { status: 500 }
       );
     }

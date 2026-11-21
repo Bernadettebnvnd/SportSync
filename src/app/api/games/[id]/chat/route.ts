@@ -38,7 +38,7 @@ async function authenticateRequest(request: NextRequest): Promise<SanitizedUser 
 }
 
 async function resolveSession(
-  supabase: NonNullable<ReturnType<typeof createAdminClient>>,
+  supabase: NonNullable<ReturnType<typeof createServerClient>>,
   gameId: string
 ): Promise<{ id: string; host_id: string | null } | null> {
   if (isUuid(gameId)) {
@@ -69,7 +69,7 @@ async function resolveSession(
 }
 
 async function isUserHostOrParticipant(
-  supabase: NonNullable<ReturnType<typeof createAdminClient>>,
+  supabase: NonNullable<ReturnType<typeof createServerClient>>,
   session: { id: string; host_id: string | null },
   userId: string
 ): Promise<boolean> {
@@ -127,10 +127,10 @@ export async function GET(
       return NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 });
     }
 
-    const supabase = createAdminClient();
+    const supabase = createAdminClient() || createServerClient();
     if (!supabase) {
       return NextResponse.json(
-        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { error: 'Database client is not available.' },
         { status: 500 }
       );
     }
@@ -218,10 +218,10 @@ export async function POST(
       return NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 });
     }
 
-    const supabase = createAdminClient();
+    const supabase = createAdminClient() || createServerClient();
     if (!supabase) {
       return NextResponse.json(
-        { error: 'Server admin database client unavailable (missing SUPABASE_SERVICE_ROLE_KEY).' },
+        { error: 'Database client is not available.' },
         { status: 500 }
       );
     }
