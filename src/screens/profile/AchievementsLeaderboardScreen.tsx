@@ -1,22 +1,52 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Trophy, Flame, Target, Award, Crown, Sparkles, CheckCircle2, ChevronRight, Zap } from 'lucide-react';
-import { FRIENDS, CURRENT_USER } from '../../mock/mockData';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, Trophy, Flame, Target, Award, Crown, Sparkles, CheckCircle2, Zap } from 'lucide-react';
 import { BadgeItem } from '../../mock/types';
-import { UserAvatar } from '../../illustrations/Avatars';
-import { DEFAULT_BADGES, SQUAD_FRIENDS_BASE } from '../../lib/useSportSyncBridge';
+import { UserAvatar, AvatarId } from '../../illustrations/Avatars';
+import { DEFAULT_BADGES } from '../../lib/useSportSyncBridge';
+
+interface LeaderboardPlayerEntry {
+  id?: string;
+  rank: number;
+  name: string;
+  username?: string;
+  avatar: AvatarId;
+  xp: number;
+  level: number;
+  isMe?: boolean;
+  color?: string;
+}
+
+interface UserProfileSummary {
+  id?: string;
+  name: string;
+  username?: string;
+  avatarId?: AvatarId;
+  xp?: number;
+  level?: number;
+  streakWeeks?: number;
+}
 
 interface AchievementsLeaderboardScreenProps {
   onBack: () => void;
-  userProfile?: any;
+  userProfile?: UserProfileSummary;
   badges?: BadgeItem[];
-  leaderboardPlayers?: any[];
+  leaderboardPlayers?: LeaderboardPlayerEntry[];
   onClaimBadge?: (badgeId: string) => { success: boolean; earnedXp?: number; message: string };
   onAwardXp?: (amount: number, reason: string) => void;
 }
 
+const FALLBACK_PROFILE: UserProfileSummary = {
+  id: '',
+  name: 'Player',
+  username: '@player',
+  avatarId: 'alex',
+  xp: 0,
+  level: 1,
+};
+
 export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScreenProps> = ({
   onBack,
-  userProfile = CURRENT_USER,
+  userProfile = FALLBACK_PROFILE,
   badges = DEFAULT_BADGES,
   leaderboardPlayers,
   onClaimBadge,
@@ -24,25 +54,91 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
 }) => {
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'streaks' | 'challenges'>('leaderboard');
   const [claimedToast, setClaimedToast] = useState<string | null>(null);
+  const [remotePlayers, setRemotePlayers] = useState<LeaderboardPlayerEntry[]>([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
 
-  // Compute dynamic player list if not provided directly
-  const dynamicPlayers = leaderboardPlayers || [
-    ...SQUAD_FRIENDS_BASE,
-    {
-      rank: 4,
-      name: `${userProfile.name} (You)`,
-      username: userProfile.username,
-      avatar: userProfile.avatarId || ('alex' as const),
-      xp: userProfile.xp,
-      level: userProfile.level,
-      isMe: true,
-      color: '#C8FF2E',
-    },
-  ].sort((a, b) => b.xp - a.xp).map((p, idx) => ({ ...p, rank: idx + 1 }));
+  useEffect(() => {
+    let active = true;
+    fetch('/api/players', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { players: [] }))
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data?.players) ? data.players : [];
+        setRemotePlayers(
+          list.map((p: { id: string; name: string; username?: string; avatarId?: string; xp?: number; level?: number }, idx: number) => ({
+            id: p.id,
+            rank: idx + 1,
+            name: p.name,
+            username: p.username,
+            avatar: (p.avatarId || 'alex') as AvatarId,
+            xp: typeof p.xp === 'number' ? p.xp : 0,
+            level: typeof p.level === 'number' ? p.level : 1,
+          }))
+        );
+      })
+      .catch(() => {
+        if (active) setRemotePlayers([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingPlayers(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const myXp = typeof userProfile?.xp === 'number' ? userProfile.xp : 0;
+
+  // Merge real DB players with current user profile
+  const dynamicPlayers = useMemo(() => {
+    const sourcePlayers =
+      remotePlayers.length > 0
+        ? remotePlayers
+        : (leaderboardPlayers || []).filter((p) => p.isMe);
+
+    const normalizedMyName = (userProfile?.name || 'Player').trim().toLowerCase();
+    const myId = userProfile?.id;
+
+    const mergedMap = new Map<string, LeaderboardPlayerEntry>();
+
+    for (const p of sourcePlayers) {
+      const isMe = Boolean(
+        p.isMe ||
+          (myId && p.id && p.id === myId) ||
+          (p.name && normalizedMyName && p.name.trim().toLowerCase() === normalizedMyName)
+      );
+      const key = p.id || p.name.trim().toLowerCase();
+      mergedMap.set(key, {
+        ...p,
+        name: isMe ? `${userProfile.name} (You)` : p.name,
+        xp: isMe ? Math.max(p.xp, myXp) : p.xp,
+        isMe,
+        color: isMe ? '#C8FF2E' : p.color,
+      });
+    }
+
+    const hasMe = Array.from(mergedMap.values()).some((p) => p.isMe);
+    if (!hasMe) {
+      mergedMap.set(myId || normalizedMyName || 'me', {
+        id: myId,
+        rank: 1,
+        name: `${userProfile?.name || 'Player'} (You)`,
+        username: userProfile?.username || '@player',
+        avatar: (userProfile?.avatarId || 'alex') as AvatarId,
+        xp: myXp,
+        level: userProfile?.level || 1,
+        isMe: true,
+        color: '#C8FF2E',
+      });
+    }
+
+    return Array.from(mergedMap.values())
+      .sort((a, b) => b.xp - a.xp)
+      .map((p, idx) => ({ ...p, rank: idx + 1 }));
+  }, [remotePlayers, leaderboardPlayers, userProfile, myXp]);
 
   const myPlayer = dynamicPlayers.find((p) => p.isMe);
-  const myRank = myPlayer?.rank || 4;
-  const myXp = userProfile.xp || 7240;
+  const myRank = myPlayer?.rank || 1;
 
   // Next player to overtake calculation
   const nextPlayerAhead = myRank > 1 ? dynamicPlayers[myRank - 2] : null;
@@ -77,7 +173,7 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as 'leaderboard' | 'streaks' | 'challenges')}
               className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all ${
                 isActive
                   ? 'bg-[#C8FF2E] text-[#0B0F0C] font-bold shadow-sm'
@@ -217,36 +313,48 @@ export const AchievementsLeaderboardScreen: React.FC<AchievementsLeaderboardScre
             )}
           </div>
 
-          {/* Leaderboard List (Rank 4 and below) */}
+          {/* Leaderboard List (Rank 4 and below, or empty/loading note) */}
           <div className="p-3.5 rounded-3xl bg-[#141A15] border border-white/5 space-y-2">
             <span className="text-[10px] uppercase font-bold text-[#6F7B71] tracking-wider px-1 block">
               Squad Standings
             </span>
-            {dynamicPlayers.slice(3).map((player) => (
-              <div
-                key={player.rank}
-                className={`p-3 rounded-2xl flex items-center justify-between text-xs transition-colors ${
-                  player.isMe
-                    ? 'bg-[#C8FF2E]/10 border border-[#C8FF2E]/40 shadow-sm'
-                    : 'bg-[#1C241E] border border-white/5'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`font-display font-bold text-xs w-4 ${player.isMe ? 'text-[#C8FF2E]' : 'text-[#A5B0A6]'}`}>
-                    #{player.rank}
-                  </span>
-                  <UserAvatar id={player.avatar} name={player.name} size={28} />
-                  <div>
-                    <span className={`font-semibold ${player.isMe ? 'text-[#C8FF2E] font-bold' : 'text-[#F4F7F0]'}`}>
-                      {player.name}
+            {isLoadingPlayers ? (
+              <p className="text-xs text-[#A5B0A6] py-3 text-center">Loading player rankings...</p>
+            ) : dynamicPlayers.length <= 1 ? (
+              <p className="text-xs text-[#A5B0A6] py-3 text-center">
+                No other players ranked yet. Play community matches to climb the leaderboard!
+              </p>
+            ) : dynamicPlayers.slice(3).length === 0 ? (
+              <p className="text-xs text-[#A5B0A6] py-2 text-center">
+                All active players are shown on the podium above.
+              </p>
+            ) : (
+              dynamicPlayers.slice(3).map((player) => (
+                <div
+                  key={player.rank}
+                  className={`p-3 rounded-2xl flex items-center justify-between text-xs transition-colors ${
+                    player.isMe
+                      ? 'bg-[#C8FF2E]/10 border border-[#C8FF2E]/40 shadow-sm'
+                      : 'bg-[#1C241E] border border-white/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`font-display font-bold text-xs w-4 ${player.isMe ? 'text-[#C8FF2E]' : 'text-[#A5B0A6]'}`}>
+                      #{player.rank}
                     </span>
+                    <UserAvatar id={player.avatar} name={player.name} size={28} />
+                    <div>
+                      <span className={`font-semibold ${player.isMe ? 'text-[#C8FF2E] font-bold' : 'text-[#F4F7F0]'}`}>
+                        {player.name}
+                      </span>
+                    </div>
                   </div>
+                  <span className="font-display font-bold text-xs text-[#F4F7F0] tabular-nums font-mono">
+                    {player.xp} XP
+                  </span>
                 </div>
-                <span className="font-display font-bold text-xs text-[#F4F7F0] tabular-nums font-mono">
-                  {player.xp} XP
-                </span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}

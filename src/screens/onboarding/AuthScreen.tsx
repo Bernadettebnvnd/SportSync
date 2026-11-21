@@ -6,6 +6,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabase';
 import { useMatchiStore } from '../../lib/store';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 
 export type AuthRole = 'player' | 'facility_owner';
 
@@ -360,13 +361,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </button>
         )}
 
-        {/* Brand Header - Centered In The Middle, Not In A Pill */}
+        {/* Brand Header - Centered In The Middle */}
         <div className="flex flex-col items-center text-center mb-6 pt-1">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center mb-3">
-            <img
-              src="/sportsync-logo.svg"
+          <div className="flex items-center justify-center mb-3">
+            <SportSyncBrandLogo
+              variant="mark"
+              imgClassName="w-14 h-14 sm:w-16 sm:h-16"
               alt="SportSync Logo"
-              className="w-full h-full object-contain select-none pointer-events-none"
             />
           </div>
           <h2 className="font-display font-bold text-2xl text-[#F4F7F0] tracking-tight">

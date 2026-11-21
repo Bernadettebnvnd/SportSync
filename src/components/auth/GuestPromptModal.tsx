@@ -3,6 +3,7 @@
 import React from 'react';
 import { X, Shield, ArrowRight, UserPlus, LogIn } from 'lucide-react';
 import { APP_CONFIG } from '@/config/appConfig';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 
 interface GuestPromptModalProps {
   isOpen: boolean;
@@ -37,8 +38,8 @@ export function GuestPromptModal({
         </button>
 
         {/* Brand Logo */}
-        <div className="mx-auto h-12 flex items-center justify-center">
-          <img src="/sportsync-name.svg" alt="SportSync" className="h-full w-auto object-contain" />
+        <div className="mx-auto flex items-center justify-center">
+          <SportSyncBrandLogo variant="wordmark" imgClassName="h-9" />
         </div>
 
         {/* Copy */}

@@ -7,6 +7,8 @@ import { useMatchiStore } from '@/lib/store';
 import { ReceiptReviewModal } from '@/components/payments/ReceiptReviewModal';
 import { ScoreModal } from '@/components/queue/ScoreModal';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
+import { useTheme } from '@/lib/theme';
 import { getLocalStoredVenues } from '@/lib/services/venues';
 import { Venue, Payment, Match, EmptyCourtOpportunity, SportType, Court, Booking } from '@/types';
 import { addNotification } from '@/lib/notifications';
@@ -72,6 +74,7 @@ function OrganizerDashboardContent() {
     updateVenueProfile,
     logoutUser,
   } = useMatchiStore();
+  const { isLightMode } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
@@ -197,7 +200,15 @@ function OrganizerDashboardContent() {
   const [newCourtSport, setNewCourtSport] = useState<SportType>('basketball');
   const [newCourtRate, setNewCourtRate] = useState('600');
   const [newCourtSurface, setNewCourtSurface] = useState('');
+  const [newCourtIsIndoor, setNewCourtIsIndoor] = useState(true);
   const [courtStatusMap, setCourtStatusMap] = useState<Record<string, boolean>>({});
+  const [editingCourt, setEditingCourt] = useState<Court | null>(null);
+  const [editCourtName, setEditCourtName] = useState('');
+  const [editCourtFloorType, setEditCourtFloorType] = useState('');
+  const [editCourtRate, setEditCourtRate] = useState('600');
+  const [editCourtIsIndoor, setEditCourtIsIndoor] = useState(true);
+  const [isSavingCourtEdit, setIsSavingCourtEdit] = useState(false);
+  const [editCourtError, setEditCourtError] = useState<string | null>(null);
 
   // Hosted Games state
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
@@ -585,10 +596,10 @@ function OrganizerDashboardContent() {
         venue_id: primaryVenue.id,
         name: newCourtName.trim(),
         sport: newCourtSport,
-        floor_type: newCourtSurface,
+        floor_type: newCourtSurface.trim() || 'Standard Court Surface',
         court_type: 'standard',
         hourly_rate_cents: Math.round(Number(newCourtRate || '600') * 100),
-        is_indoor: true,
+        is_indoor: newCourtIsIndoor,
         is_active: true,
         supports_doubles: true,
         supports_singles: true,
@@ -596,10 +607,54 @@ function OrganizerDashboardContent() {
       setIsAddCourtOpen(false);
       setNewCourtName('');
       setNewCourtSurface('');
+      setNewCourtIsIndoor(true);
       setMonetizeSuccessMessage(`Court "${created.name}" registered and published to player search!`);
       setTimeout(() => setMonetizeSuccessMessage(null), 4000);
     } catch (err) {
       console.error('Failed to add court:', err);
+    }
+  };
+
+  const openEditCourtModal = (court: Court) => {
+    setEditingCourt(court);
+    setEditCourtName(court.name || '');
+    setEditCourtFloorType(court.floor_type || court.surface || '');
+    setEditCourtRate(String(Math.round((court.hourly_rate_cents || 60000) / 100)));
+    setEditCourtIsIndoor(court.is_indoor !== false);
+    setEditCourtError(null);
+  };
+
+  const handleSaveCourtEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourt) return;
+    setEditCourtError(null);
+    setIsSavingCourtEdit(true);
+    try {
+      const res = await fetch('/api/courts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: editingCourt.id,
+          name: editCourtName.trim(),
+          floor_type: editCourtFloorType.trim() || 'Standard Court Surface',
+          hourly_rate_cents: Math.round(Math.max(0, Number(editCourtRate) || 0) * 100),
+          is_indoor: editCourtIsIndoor,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to update court details.');
+      }
+      setEditingCourt(null);
+      setMonetizeSuccessMessage(`Court "${data.court?.name || editCourtName}" updated successfully!`);
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+      await refreshVenues();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save court changes.';
+      setEditCourtError(msg);
+    } finally {
+      setIsSavingCourtEdit(false);
     }
   };
 
@@ -744,10 +799,13 @@ function OrganizerDashboardContent() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12" suppressHydrationWarning>
       {/* Executive Operations Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
+      <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-5 ${isLightMode ? 'border-black/10' : 'border-white/10'}`}>
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl sm:text-3xl font-black text-[#F4F7F0] tracking-tight">
+          <div className="mb-2">
+            <SportSyncBrandLogo variant="wordmark" imgClassName="h-6 sm:h-7" />
+          </div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className={`text-2xl sm:text-3xl font-black tracking-tight ${isLightMode ? 'text-[#0B0F0C]' : 'text-[#F4F7F0]'}`}>
               Facility Ops &amp; Management
             </h1>
             {primaryVenue?.is_verified ? (
@@ -762,7 +820,7 @@ function OrganizerDashboardContent() {
               </span>
             )}
           </div>
-          <p className="text-xs sm:text-sm text-[#A5B0A6] mt-1">
+          <p className={`text-xs sm:text-sm mt-1 ${isLightMode ? 'text-[#4B5A4F]' : 'text-[#A5B0A6]'}`}>
             {primaryVenue?.name || 'Sports Facility'} &bull; Real-time court utilization, bookings ledger &amp; cash desk.
           </p>
         </div>
@@ -2316,13 +2374,39 @@ function OrganizerDashboardContent() {
                   </div>
                 </div>
 
-                <div className="space-y-1 sm:col-span-2 lg:col-span-2">
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-[#1A241E]">Playing Surface</label>
-                    <span className="text-xs font-semibold text-[#2D724E]">{newCourtSurface || 'Select Surface'}</span>
+                    <label className="text-xs font-bold text-[#1A241E]">Playing Surface / Description</label>
+                    <div className="inline-flex rounded-xl bg-white border border-[#E8E5DF] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setNewCourtIsIndoor(true)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                          newCourtIsIndoor ? 'bg-[#2D724E] text-white' : 'text-[#65756B]'
+                        }`}
+                      >
+                        Indoor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewCourtIsIndoor(false)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                          !newCourtIsIndoor ? 'bg-[#2D724E] text-white' : 'text-[#65756B]'
+                        }`}
+                      >
+                        Outdoor
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {['Hard Court', 'BWF Taraflex Rubber', 'Wood Parquet', 'Cushioned Acrylic', 'Synthetic Turf'].map((surf) => (
+                  <input
+                    type="text"
+                    value={newCourtSurface}
+                    onChange={(e) => setNewCourtSurface(e.target.value)}
+                    placeholder="e.g. Cushioned Acrylic, Hardwood, Rubber Mat"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E8E5DF] bg-white text-xs text-[#1A241E] focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                  <div className="flex gap-1.5 flex-wrap pt-1">
+                    {['Hard Court', 'Rubber Cushion', 'Wood Parquet', 'Cushioned Acrylic', 'Synthetic Turf'].map((surf) => (
                       <button
                         key={surf}
                         type="button"
@@ -2399,7 +2483,7 @@ function OrganizerDashboardContent() {
 
                       <h3 className="font-bold text-base text-[#1A241E]">{court.name}</h3>
                       <p className="text-xs text-[#65756B] mt-0.5">
-                        Surface: {court.floor_type || court.surface || 'Standard'} &bull; Indoor
+                        Surface: {court.floor_type || court.surface || 'Standard'} &bull; {court.is_indoor === false ? 'Outdoor' : 'Indoor'}
                       </p>
 
                       <div className="mt-3 pt-3 border-t border-[#E8E5DF] flex items-center justify-between">
@@ -2410,11 +2494,19 @@ function OrganizerDashboardContent() {
                       </div>
                     </div>
 
-                    <div className="pt-2">
+                    <div className="pt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditCourtModal(court)}
+                        className="py-2 px-3 rounded-xl text-xs font-bold border border-[#E8E5DF] bg-[#FAF8F5] text-[#1A241E] hover:border-[#2D724E] hover:text-[#2D724E] transition-all inline-flex items-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => toggleCourtStatus(court.id, court.is_active !== false)}
-                        className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all border ${isCurrentlyActive
+                        className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${isCurrentlyActive
                           ? 'border-[#E8E5DF] text-[#65756B] hover:bg-red-50 hover:text-red-700 hover:border-red-200'
                           : 'bg-[#2D724E] text-white hover:bg-[#1E4A32] border-transparent'
                           }`}
@@ -3002,6 +3094,113 @@ function OrganizerDashboardContent() {
                 {isProcessingBookingAction ? 'Declining...' : 'Decline Booking'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Court Modal */}
+      {editingCourt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-[#E8E5DF] p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E8E5DF] pb-3">
+              <div>
+                <h3 className="font-black text-lg text-[#1A241E]">Edit Court Details</h3>
+                <p className="text-xs text-[#65756B]">Update surface, rate, or indoor/outdoor classification.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCourt(null)}
+                className="w-8 h-8 rounded-full bg-[#FAF8F5] text-[#65756B] hover:text-[#1A241E] flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCourtEdit} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#1A241E] block">Court Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editCourtName}
+                  onChange={(e) => setEditCourtName(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#E8E5DF] text-xs text-[#1A241E] focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#1A241E] block">Playing Surface / Description</label>
+                <input
+                  type="text"
+                  value={editCourtFloorType}
+                  onChange={(e) => setEditCourtFloorType(e.target.value)}
+                  placeholder="e.g. Cushioned Acrylic, Wood Parquet"
+                  className="w-full px-3 py-2.5 rounded-xl border border-[#E8E5DF] text-xs text-[#1A241E] focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E] block">Hourly Rate (₱)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    required
+                    value={editCourtRate}
+                    onChange={(e) => setEditCourtRate(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#E8E5DF] text-xs font-mono text-[#1A241E] focus:ring-2 focus:ring-[#2D724E] focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1A241E] block">Environment</label>
+                  <div className="flex rounded-xl border border-[#E8E5DF] bg-[#FAF8F5] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditCourtIsIndoor(true)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        editCourtIsIndoor ? 'bg-[#2D724E] text-white' : 'text-[#65756B]'
+                      }`}
+                    >
+                      Indoor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditCourtIsIndoor(false)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        !editCourtIsIndoor ? 'bg-[#2D724E] text-white' : 'text-[#65756B]'
+                      }`}
+                    >
+                      Outdoor
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {editCourtError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+                  {editCourtError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingCourt(null)}
+                  className="px-4 py-2.5 rounded-xl border border-[#E8E5DF] bg-white text-xs font-bold text-[#1A241E] hover:bg-[#FAF8F5]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCourtEdit}
+                  className="px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-black shadow-sm disabled:opacity-50"
+                >
+                  {isSavingCourtEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -382,14 +382,18 @@ export default function VenueDetailPage({ params }: VenuePageProps) {
           </span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {venue.featured_sports?.map((sport) => (
-            <SportCourtVisualizer
-              key={sport}
-              sport={sport}
-              courtName={`${venue.name} &bull; ${getSportDisplayName(sport)}`}
-              floorType={sport === 'badminton' ? 'BWF Taraflex Rubber Mat' : 'Cushioned Tournament Surface'}
-            />
-          ))}
+          {venue.featured_sports?.map((sport) => {
+            const matchingCourt = courts.find((c) => c.sport === sport);
+            return (
+              <SportCourtVisualizer
+                key={sport}
+                sport={sport}
+                courtName={matchingCourt?.name || `${venue.name} • ${getSportDisplayName(sport)}`}
+                floorType={matchingCourt?.floor_type || 'Standard Court Surface'}
+                isIndoor={matchingCourt?.is_indoor ?? true}
+              />
+            );
+          })}
         </div>
       </div>
 

@@ -28,6 +28,7 @@ import { useTimeGreeting } from '../../lib/useGreeting';
 import { useMatchiStore } from '../../lib/store';
 import { useNotifications } from '../../lib/notifications';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 
 
 // Single Pilot Market Location
@@ -232,11 +233,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* 3. Official SportSync Tagline: Find Players. Play Together. */}
       <div className="px-5 pt-2 pb-1">
         <div className="flex items-center gap-2 mb-1">
-          <img
-            src="/sportsync-name.svg"
-            alt="SportSync"
-            className="h-6 w-auto object-contain select-none pointer-events-none"
-          />
+          <SportSyncBrandLogo variant="wordmark" imgClassName="h-6" />
           <span className="w-1.5 h-1.5 rounded-full bg-[#C8FF2E]/60" />
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#A5B0A6]">
             Play &bull; Connect &bull; Compete

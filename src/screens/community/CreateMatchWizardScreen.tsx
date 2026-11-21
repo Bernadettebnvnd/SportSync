@@ -23,7 +23,6 @@ import {
   Lock,
   Link as LinkIcon,
 } from 'lucide-react';
-import { FRIENDS } from '../../mock/mockData';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { AvatarId, CommunityGame } from '../../mock/types';
 import type * as LeafletType from 'leaflet';
@@ -238,6 +237,47 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   onMatchCreated,
 }) => {
   const [step, setStep] = useState(1); // 1 to 4, then 5 = Success
+  const [availablePlayers, setAvailablePlayers] = useState<
+    Array<{ id: string; name: string; avatarId: AvatarId }>
+  >([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/players?excludeSelf=true', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { players: [] }))
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data?.players) ? data.players : [];
+        const filtered = list.filter((p: { id?: string; name?: string }) => {
+          if (currentUserId && p.id === currentUserId) return false;
+          if (
+            currentUserName &&
+            p.name &&
+            p.name.trim().toLowerCase() === currentUserName.trim().toLowerCase()
+          ) {
+            return false;
+          }
+          return true;
+        });
+        setAvailablePlayers(
+          filtered.map((p: { id: string; name: string; avatarId?: string }) => ({
+            id: p.id,
+            name: p.name,
+            avatarId: (p.avatarId || 'alex') as AvatarId,
+          }))
+        );
+      })
+      .catch(() => {
+        if (active) setAvailablePlayers([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingPlayers(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUserId, currentUserName]);
 
   // Date & Time helpers for valid scheduling
   const now = new Date();
@@ -860,11 +900,13 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         inviteCode,
         invitedPlayers:
           visibility === 'Invite'
-            ? FRIENDS.filter((f) => invitedFriendIds.includes(f.id)).map((f) => ({
-                id: f.id,
-                name: f.name,
-                avatarId: f.avatarId,
-              }))
+            ? availablePlayers
+                .filter((f) => invitedFriendIds.includes(f.id))
+                .map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  avatarId: f.avatarId,
+                }))
             : undefined,
       });
 
@@ -1721,29 +1763,37 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                     )}
                   </div>
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                    {FRIENDS.slice(0, 5).map((f) => {
-                      const isInvited = invitedFriendIds.includes(f.id);
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => toggleInvitedFriend(f.id)}
-                          className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all press-scale ${isInvited ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]' : 'bg-[#0B0F0C] border-white/5 text-[#A5B0A6]'}`}
-                        >
-                          <div className="relative">
-                            <UserAvatar id={f.avatarId} name={f.name} size={32} />
-                            {isInvited && (
-                              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
-                                <Check className="w-2 h-2 stroke-[3]" />
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] mt-1 truncate max-w-[54px] font-medium">
-                            {f.name.split(' ')[0]}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    {isLoadingPlayers ? (
+                      <span className="text-[11px] text-[#A5B0A6] py-1">Loading players...</span>
+                    ) : availablePlayers.length === 0 ? (
+                      <span className="text-[11px] text-[#A5B0A6] py-1">
+                        No other players found yet &mdash; share an invite link instead.
+                      </span>
+                    ) : (
+                      availablePlayers.slice(0, 8).map((f) => {
+                        const isInvited = invitedFriendIds.includes(f.id);
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => toggleInvitedFriend(f.id)}
+                            className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all press-scale ${isInvited ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]' : 'bg-[#0B0F0C] border-white/5 text-[#A5B0A6]'}`}
+                          >
+                            <div className="relative">
+                              <UserAvatar id={f.avatarId} name={f.name} size={32} />
+                              {isInvited && (
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
+                                  <Check className="w-2 h-2 stroke-[3]" />
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] mt-1 truncate max-w-[54px] font-medium">
+                              {f.name.split(' ')[0]}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </div>

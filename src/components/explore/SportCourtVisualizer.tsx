@@ -105,15 +105,15 @@ export function SportCourtVisualizer({
             <div className="h-full w-full border border-white/40 flex justify-between">
               <div className="w-1.5 bg-white/20" title="Doubles tramline" />
               <div className="flex-1 flex items-center justify-center">
-                <span className="text-[9px] font-bold opacity-75">Yonex BWF Taraflex</span>
+                <span className="text-[9px] font-bold opacity-75">{floorType || 'Standard Court Surface'}</span>
               </div>
               <div className="w-1.5 bg-white/20" title="Doubles tramline" />
             </div>
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-100">
-            <span>{courtName || 'BWF Court'}</span>
-            <span className="font-bold text-white">{floorType || 'Taraflex Rubber Mat'}</span>
+            <span>{courtName || 'Standard Court'}</span>
+            <span className="font-bold text-white">{floorType || 'Standard Court Surface'}</span>
           </div>
         </div>
       );

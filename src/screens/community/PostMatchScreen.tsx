@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Star, Trophy, Award, Share2, Check, Sparkles } from 'lucide-react';
-import { UserAvatar } from '../../illustrations/Avatars';
+import React, { useState, useMemo } from 'react';
+import { ArrowLeft, Star, Trophy, Share2 } from 'lucide-react';
+import { UserAvatar, AvatarId } from '../../illustrations/Avatars';
 import { Button } from '../../design-system/components/Button';
 import { StadiumScene } from '../../illustrations/Scenes';
-import { FRIENDS, CURRENT_USER } from '../../mock/mockData';
 import { APP_CONFIG } from '../../config/appConfig';
 import { CommunityGame } from '../../mock/types';
+import { useMatchiStore } from '../../lib/store';
 
 interface PostMatchScreenProps {
   onBack: () => void;
@@ -14,12 +14,36 @@ interface PostMatchScreenProps {
 }
 
 export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone, game }) => {
+  const { currentUser } = useMatchiStore();
   const [rating, setRating] = useState(5);
   const [selectedTags, setSelectedTags] = useState<string[]>(['Great passer', 'Fair play']);
-  const [selectedMvp, setSelectedMvp] = useState<string>('marcus');
-  const [scoreHome, setScoreHome] = useState(7);
-  const [scoreAway, setScoreAway] = useState(4);
+  const [selectedMvp, setSelectedMvp] = useState<string>('');
+  const [scoreHome] = useState(7);
+  const [scoreAway] = useState(4);
   const [showStoryModal, setShowStoryModal] = useState(false);
+
+  const mvpCandidates = useMemo(() => {
+    const members = Array.isArray(game?.members) ? game.members : [];
+    const currentId = currentUser?.id;
+    const currentName = currentUser?.full_name?.trim().toLowerCase();
+
+    const filtered = members.filter((m) => {
+      if (!m?.name) return false;
+      if (currentId && m.id && m.id === currentId) return false;
+      if (currentName && m.name.trim().toLowerCase() === currentName) return false;
+      return true;
+    });
+
+    const seen = new Set<string>();
+    return filtered.filter((m) => {
+      const key = (m.id || m.name).toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [game, currentUser]);
+
+  const selectedMvpPlayer = mvpCandidates.find((p) => (p.id || p.name) === selectedMvp) || null;
 
   const tagsList = ['Great passer', 'Fair play', 'Clinical finisher', 'Iron defender', 'Speed demon'];
 
@@ -98,35 +122,46 @@ export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone
             <span className="text-[10px] text-[#A5B0A6]">+100 Playmaker XP</span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {FRIENDS.slice(0, 3).map((player) => {
-              const isSelected = selectedMvp === player.avatarId;
-              return (
-                <button
-                  key={player.id}
-                  onClick={() => setSelectedMvp(player.avatarId)}
-                  className={`p-3 rounded-2xl border flex flex-col items-center text-center transition-all press-scale ${
-                    isSelected
-                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.2)]'
-                      : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
-                  }`}
-                >
-                  <UserAvatar id={player.avatarId} name={player.name} size={32} />
-                  <span className="text-xs font-semibold text-[#F4F7F0] mt-1 truncate w-full">
-                    {player.name.split(' ')[0]}
-                  </span>
-                  <span className="text-[9px] text-[#6F7B71]">Striker</span>
-                </button>
-              );
-            })}
-          </div>
+          {mvpCandidates.length === 0 ? (
+            <p className="text-xs text-[#A5B0A6] py-3 text-center">
+              No other participants joined this match yet.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {mvpCandidates.map((player) => {
+                const candidateKey = player.id || player.name;
+                const isSelected = selectedMvp === candidateKey;
+                return (
+                  <button
+                    key={candidateKey}
+                    onClick={() => setSelectedMvp(candidateKey)}
+                    className={`p-3 rounded-2xl border flex flex-col items-center text-center transition-all press-scale ${
+                      isSelected
+                        ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-[0_0_12px_rgba(200,255,46,0.2)]'
+                        : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
+                    }`}
+                  >
+                    <UserAvatar
+                      id={(player.avatar || 'alex') as AvatarId}
+                      name={player.name}
+                      size={32}
+                    />
+                    <span className="text-xs font-semibold text-[#F4F7F0] mt-1 truncate w-full">
+                      {player.name.split(' ')[0]}
+                    </span>
+                    <span className="text-[9px] text-[#6F7B71]">Player</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 4. Rate Spirit & Fair Play (5 Stars + Badges) */}
         <div className="p-4 rounded-3xl bg-[#141A15] border border-white/5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-display font-bold text-xs uppercase tracking-wider text-[#F4F7F0]">
-              Game Spirit & Fair Play
+              Game Spirit &amp; Fair Play
             </h3>
             <span className="text-xs font-bold text-[#C8FF2E]">{rating} / 5</span>
           </div>
@@ -193,7 +228,7 @@ export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone
                 {APP_CONFIG.appName} MATCHDAY
               </span>
               <h3 className="font-display font-black text-xl text-white mt-1">
-                Sunset 5v5 Victory!
+                {game?.title || 'Match Complete!'}
               </h3>
             </div>
 
@@ -202,13 +237,17 @@ export const PostMatchScreen: React.FC<PostMatchScreenProps> = ({ onBack, onDone
                 {scoreHome} - {scoreAway}
               </div>
               <span className="text-xs font-semibold text-white/90 mt-1 block">
-                MVP: Marcus Bell • 4 Goals
+                {selectedMvpPlayer
+                  ? `MVP: ${selectedMvpPlayer.name}`
+                  : game?.sport
+                  ? `${game.sport} • Full-Time`
+                  : 'Full-Time Result'}
               </span>
             </div>
 
             <div className="relative z-10 text-center space-y-2">
               <p className="font-editorial text-xl text-white">
-                "Gather your friends. Play more."
+                &ldquo;Gather your friends. Play more.&rdquo;
               </p>
               <Button
                 variant="primary"

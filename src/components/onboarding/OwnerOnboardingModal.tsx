@@ -166,13 +166,13 @@ export function OwnerOnboardingModal({ isOpen, onClose, onLogout }: OwnerOnboard
       name: 'Court 1',
       sport: 'pickleball',
       hourlyRateCents: 50000,
-      floorType: 'Tournament Hardwood Parquet',
+      floorType: 'Cushioned Acrylic Surface',
     },
     {
       name: 'Court 2',
       sport: 'badminton',
       hourlyRateCents: 45000,
-      floorType: 'BWF Taraflex Rubber Cushion',
+      floorType: 'Rubber Cushion Surface',
     },
   ]);
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ArrowLeft, KeyRound, Info } from 'lucide-react';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 
 interface ResetPasswordScreenProps {
   onSuccess?: () => void;
@@ -162,14 +163,10 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-[#0B0F0C] text-[#F4F7F0] flex flex-col items-center justify-center p-4 sm:p-6 select-none">
       <div className="w-full max-w-md bg-[#141A15] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative">
-        {/* Brand Header - Centered In The Middle Without A Pill */}
+        {/* Brand Header - Centered In The Middle */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center mb-3">
-            <img
-              src="/sportsync-name.svg"
-              alt="SportSync"
-              className="w-full h-auto object-contain max-h-12"
-            />
+          <div className="flex items-center justify-center mb-3">
+            <SportSyncBrandLogo variant="wordmark" imgClassName="h-10 sm:h-11" />
           </div>
           <h1 className="font-display font-extrabold text-xl sm:text-2xl text-white tracking-tight">
             Reset Password

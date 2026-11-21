@@ -196,3 +196,162 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const user = await resolveAuthenticatedUser(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Authentication required to edit a court.' },
+        { status: 401 }
+      );
+    }
+
+    if (!isSupabaseConfigured) {
+      return NextResponse.json(
+        { error: 'Supabase database is not configured on the server.' },
+        { status: 500 }
+      );
+    }
+
+    const admin = createAdminClient();
+    if (!admin) {
+      return NextResponse.json(
+        { error: 'Server admin client is unavailable. Please configure SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 500 }
+      );
+    }
+
+    const canonicalUserId = user.id;
+    if (!isValidUuid(canonicalUserId)) {
+      return NextResponse.json(
+        { error: 'Authenticated user does not have a valid database user ID.' },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const {
+      id,
+      courtId,
+      name,
+      floor_type,
+      hourly_rate_cents,
+      is_indoor,
+      is_active,
+    } = (body || {}) as {
+      id?: string;
+      courtId?: string;
+      name?: string;
+      floor_type?: string;
+      hourly_rate_cents?: number;
+      is_indoor?: boolean;
+      is_active?: boolean;
+    };
+
+    const targetCourtId = id || courtId;
+    if (!isValidUuid(targetCourtId)) {
+      return NextResponse.json(
+        { error: 'A valid court UUID is required.' },
+        { status: 400 }
+      );
+    }
+
+    const { data: existingCourt, error: courtLookupErr } = await admin
+      .from('courts')
+      .select('id, venue_id')
+      .eq('id', targetCourtId!)
+      .maybeSingle();
+
+    if (courtLookupErr) {
+      console.error('[PATCH /api/courts] Postgres court lookup error:', courtLookupErr);
+      return NextResponse.json({ error: courtLookupErr.message }, { status: 500 });
+    }
+
+    if (!existingCourt) {
+      return NextResponse.json({ error: 'Court not found.' }, { status: 404 });
+    }
+
+    const { data: targetVenue, error: venueLookupErr } = await admin
+      .from('venues')
+      .select('id, owner_id')
+      .eq('id', existingCourt.venue_id)
+      .maybeSingle();
+
+    if (venueLookupErr) {
+      console.error('[PATCH /api/courts] Postgres venue lookup error:', venueLookupErr);
+      return NextResponse.json({ error: venueLookupErr.message }, { status: 500 });
+    }
+
+    if (!targetVenue) {
+      return NextResponse.json({ error: 'Associated venue not found.' }, { status: 404 });
+    }
+
+    const { data: staffRow, error: staffLookupErr } = await admin
+      .from('facility_staff')
+      .select('id')
+      .eq('facility_id', targetVenue.id)
+      .eq('user_id', canonicalUserId)
+      .maybeSingle();
+
+    if (staffLookupErr) {
+      console.error('[PATCH /api/courts] facility_staff lookup error:', staffLookupErr);
+      return NextResponse.json({ error: staffLookupErr.message }, { status: 500 });
+    }
+
+    if (targetVenue.owner_id !== canonicalUserId && !staffRow) {
+      return NextResponse.json(
+        { error: 'You are not authorized to edit courts for this facility.' },
+        { status: 403 }
+      );
+    }
+
+    const updateFields: {
+      name?: string;
+      floor_type?: string;
+      hourly_rate_cents?: number;
+      is_indoor?: boolean;
+      is_active?: boolean;
+      updated_at: string;
+    } = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (typeof name === 'string' && name.trim()) {
+      updateFields.name = name.trim();
+    }
+    if (typeof floor_type === 'string') {
+      updateFields.floor_type = floor_type.trim() || 'Standard Court Surface';
+    }
+    if (typeof hourly_rate_cents === 'number' && Number.isFinite(hourly_rate_cents) && hourly_rate_cents >= 0) {
+      updateFields.hourly_rate_cents = Math.round(hourly_rate_cents);
+    }
+    if (typeof is_indoor === 'boolean') {
+      updateFields.is_indoor = is_indoor;
+    }
+    if (typeof is_active === 'boolean') {
+      updateFields.is_active = is_active;
+    }
+
+    const { data: updatedCourt, error: updateErr } = await admin
+      .from('courts')
+      .update(updateFields)
+      .eq('id', targetCourtId!)
+      .select('*')
+      .single();
+
+    if (updateErr || !updatedCourt) {
+      console.error('[PATCH /api/courts] Postgres court update error:', updateErr);
+      return NextResponse.json(
+        { error: updateErr?.message || 'Failed to update court in database.' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, court: updatedCourt });
+  } catch (err: unknown) {
+    console.error('[PATCH /api/courts] Unexpected server error:', err);
+    const msg = err instanceof Error ? err.message : 'Failed to update court.';
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

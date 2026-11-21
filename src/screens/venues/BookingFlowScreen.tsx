@@ -1,10 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ArrowLeft, Clock, Calendar, Check, Users, ArrowRight } from 'lucide-react';
-import { Venue } from '../../mock/types';
+import { Venue, AvatarId } from '../../mock/types';
 import { DateStrip, generateUpcomingDates, DateItem } from '../../design-system/components/DateStrip';
 import { Stepper } from '../../design-system/components/SegmentedControl';
 import { Button } from '../../design-system/components/Button';
-import { FRIENDS } from '../../mock/mockData';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { APP_CONFIG } from '../../config/appConfig';
 import { useMatchiStore } from '../../lib/store';
@@ -27,7 +26,48 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   onBack,
   onProceedToPayment,
 }) => {
-  const { bookings } = useMatchiStore();
+  const { bookings, currentUser } = useMatchiStore();
+  const [availablePlayers, setAvailablePlayers] = useState<
+    Array<{ id: string; name: string; avatarId: AvatarId }>
+  >([]);
+  const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/players?excludeSelf=true', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { players: [] }))
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data?.players) ? data.players : [];
+        const filtered = list.filter((p: { id?: string; name?: string }) => {
+          if (currentUser?.id && p.id === currentUser.id) return false;
+          if (
+            currentUser?.full_name &&
+            p.name &&
+            p.name.trim().toLowerCase() === currentUser.full_name.trim().toLowerCase()
+          ) {
+            return false;
+          }
+          return true;
+        });
+        setAvailablePlayers(
+          filtered.map((p: { id: string; name: string; avatarId?: string }) => ({
+            id: p.id,
+            name: p.name,
+            avatarId: (p.avatarId || 'alex') as AvatarId,
+          }))
+        );
+      })
+      .catch(() => {
+        if (active) setAvailablePlayers([]);
+      })
+      .finally(() => {
+        if (active) setIsLoadingPlayers(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id, currentUser?.full_name]);
   const [upcomingDates] = useState<DateItem[]>(() => generateUpcomingDates(14));
   const [selectedDateId, setSelectedDateId] = useState<string>(() => upcomingDates[0]?.id || new Date().toISOString().split('T')[0]);
   const [selectedDateItem, setSelectedDateItem] = useState<DateItem>(() => upcomingDates[0]);
@@ -243,29 +283,37 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
             Invite Friends to Court
           </label>
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            {FRIENDS.slice(0, 5).map((f) => {
-              const isInvited = invitedFriends.includes(f.id);
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => toggleFriend(f.id)}
-                  className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all ${isInvited
-                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
-                      : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
-                    }`}
-                >
-                  <div className="relative">
-                    <UserAvatar id={f.avatarId} name={f.name} size={30} />
-                    {isInvited && (
-                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
-                        <Check className="w-2 h-2 stroke-[3]" />
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] mt-1 truncate max-w-[50px]">{f.name.split(' ')[0]}</span>
-                </button>
-              );
-            })}
+            {isLoadingPlayers ? (
+              <span className="text-[11px] text-[#A5B0A6] py-1">Loading players...</span>
+            ) : availablePlayers.length === 0 ? (
+              <span className="text-[11px] text-[#A5B0A6] py-1">
+                No other players found yet &mdash; share an invite link instead.
+              </span>
+            ) : (
+              availablePlayers.slice(0, 8).map((f) => {
+                const isInvited = invitedFriends.includes(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => toggleFriend(f.id)}
+                    className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all ${isInvited
+                        ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                        : 'bg-[#141A15] border-white/5 text-[#A5B0A6]'
+                      }`}
+                  >
+                    <div className="relative">
+                      <UserAvatar id={f.avatarId} name={f.name} size={30} />
+                      {isInvited && (
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center">
+                          <Check className="w-2 h-2 stroke-[3]" />
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] mt-1 truncate max-w-[50px]">{f.name.split(' ')[0]}</span>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 

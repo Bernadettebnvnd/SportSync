@@ -20,17 +20,11 @@ import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/theme';
 import { OwnerOnboardingModal } from '@/components/onboarding/OwnerOnboardingModal';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 import { APP_CONFIG } from '@/config/appConfig';
 
 export function SportSyncLogo({ size = 32 }: { size?: number }) {
-  return (
-    <img
-      src="/sportsync-name.svg"
-      alt="SportSync"
-      style={{ height: size }}
-      className="w-auto object-contain select-none"
-    />
-  );
+  return <SportSyncBrandLogo variant="wordmark" size={size} />;
 }
 
 export function Navbar() {
@@ -115,11 +109,7 @@ export function Navbar() {
           {/* SportSync Brand Logo & Context */}
           <div className="flex items-center gap-3">
             <Link href={isOwnerOrAdmin ? '/organizer' : '/'} className="flex items-center gap-2.5 select-none shrink-0 group">
-              <img
-                src="/sportsync-name.svg"
-                alt="SportSync"
-                className="h-8 w-auto object-contain select-none"
-              />
+              <SportSyncBrandLogo variant="wordmark" imgClassName="h-7 sm:h-8" />
               {isFacilityView && (
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-[#1C241E] text-[#C8FF2E] px-2 py-0.5 rounded-md border border-[#C8FF2E]/30">
                   Facility Console
