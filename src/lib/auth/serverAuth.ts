@@ -643,15 +643,7 @@ export async function serverLogin(data: {
 
   // 2. If signInWithPassword returned an error, attempt auto-confirm if admin client is available
   if (error || !supaData?.user) {
-    const isUnconfirmedEmail = Boolean(
-      error &&
-        (error.message?.toLowerCase().includes('email not confirmed') ||
-          error.message?.toLowerCase().includes('not confirmed') ||
-          (error as any).code === 'email_not_confirmed' ||
-          error.message?.toLowerCase().includes('confirm'))
-    );
-
-    if (isUnconfirmedEmail && admin) {
+    if (admin) {
       try {
         let targetAuthUserId: string | null = null;
         const { data: dbUserRow } = await admin
@@ -664,6 +656,15 @@ export async function serverLogin(data: {
           targetAuthUserId = dbUserRow.auth_id;
         } else if (dbUserRow && isValidUuid(dbUserRow.id)) {
           targetAuthUserId = dbUserRow.id;
+        } else {
+          // Fallback: look up user directly in auth users list
+          const { data: authList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          const authMatch = authList?.users?.find(
+            (u) => u.email?.toLowerCase() === normalizedEmail
+          );
+          if (authMatch) {
+            targetAuthUserId = authMatch.id;
+          }
         }
 
         if (targetAuthUserId) {
@@ -701,7 +702,6 @@ export async function serverLogin(data: {
           .from('users')
           .select('*')
           .ilike('email', normalizedEmail)
-          .order('onboarding_completed', { ascending: false })
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
