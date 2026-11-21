@@ -582,15 +582,37 @@ export async function POST(
       const normSender = resolvedName.trim().toLowerCase();
       const senderUserId = validSenderUuid || authUser.id;
 
+      const addRecipient = (id?: string | null, name?: string | null) => {
+        if (!name && !id) return;
+        const normName = (name || '').trim().toLowerCase();
+        if (normName && normName === normSender) return;
+        if (id && senderUserId && id.toLowerCase() === senderUserId.toLowerCase()) return;
+
+        // Check if already in recipientMap by ID or Name
+        for (const [key, existing] of recipientMap.entries()) {
+          const matchId = Boolean(id && existing.id && existing.id.toLowerCase() === id.toLowerCase());
+          const matchName = Boolean(normName && existing.name && existing.name.trim().toLowerCase() === normName);
+          if (matchId || matchName) {
+            // Merge: prefer valid UUID for ID, and prefer non-empty name
+            if (!existing.id && id) existing.id = id;
+            if (id && isUuid(id) && !isUuid(existing.id)) existing.id = id;
+            if (name && (!existing.name || existing.name === 'Player' || existing.name === 'Organizer')) {
+              existing.name = name;
+            }
+            return;
+          }
+        }
+
+        const mapKey = (id || normName || 'recipient').toLowerCase();
+        recipientMap.set(mapKey, { id: id || undefined, name: name?.trim() || 'Player' });
+      };
+
       // 6a. Explicit recipients passed from client
       const bodyAny = body as any;
       if (Array.isArray(bodyAny.recipients)) {
         bodyAny.recipients.forEach((r: any) => {
-          if (!r?.name) return;
-          const rName = r.name.trim();
-          if (rName.toLowerCase() !== normSender && (!r.id || !senderUserId || r.id !== senderUserId)) {
-            recipientMap.set((r.id || rName).toLowerCase(), { id: r.id, name: rName });
-          }
+          if (!r?.name && !r?.id) return;
+          addRecipient(r.id, r.name);
         });
       }
 
@@ -603,14 +625,11 @@ export async function POST(
           .maybeSingle();
 
         const hostName = hostUser?.full_name || hostUser?.nickname || 'Organizer';
-        if (hostName.trim().toLowerCase() !== normSender) {
-          recipientMap.set(session.host_id.toLowerCase(), { id: session.host_id, name: hostName });
-        }
+        addRecipient(session.host_id, hostName);
       } else if (session.description) {
         const hostMatch = session.description.match(/\[HOST:(.*?)\]/i);
-        if (hostMatch && hostMatch[1].trim().toLowerCase() !== normSender) {
-          const hName = hostMatch[1].trim();
-          recipientMap.set(hName.toLowerCase(), { name: hName });
+        if (hostMatch) {
+          addRecipient(null, hostMatch[1].trim());
         }
       }
 
@@ -631,14 +650,12 @@ export async function POST(
                 .eq('id', q.user_id)
                 .maybeSingle();
               const qName = qUser?.full_name || qUser?.nickname || 'Player';
-              if (qName.trim().toLowerCase() !== normSender) {
-                recipientMap.set(q.user_id.toLowerCase(), { id: q.user_id, name: qName });
-              }
+              addRecipient(q.user_id, qName);
             }
             if (Array.isArray(q.partner_names)) {
               for (const pn of q.partner_names) {
-                if (typeof pn === 'string' && pn.trim().toLowerCase() !== normSender) {
-                  recipientMap.set(pn.trim().toLowerCase(), { name: pn.trim() });
+                if (typeof pn === 'string') {
+                  addRecipient(null, pn.trim());
                 }
               }
             }
@@ -656,10 +673,7 @@ export async function POST(
 
         if (Array.isArray(partRows)) {
           for (const p of partRows) {
-            const pName = p.user_name || 'Player';
-            if (pName.trim().toLowerCase() !== normSender && (!p.user_id || p.user_id !== senderUserId)) {
-              recipientMap.set((p.user_id || pName).toLowerCase(), { id: p.user_id, name: pName });
-            }
+            addRecipient(p.user_id, p.user_name);
           }
         }
       }
@@ -703,26 +717,38 @@ export async function POST(
             senderAvatar: resolvedAvatar,
             recipientId,
             recipientName,
-            dedupeKey: `chat_${insertedRow.id}_${(recipientId || recipientName).toLowerCase()}`,
+            dedupeKey: `chat_${insertedRow.id}`,
           },
         };
 
         // Dual persistence: public.notifications or fallback to public.users
         let tableSaved = false;
         try {
-          const { error: insertErr } = await supabase.from('notifications').insert({
-            id: isUuid(notifId) ? notifId : undefined,
-            user_id: recipientId,
-            user_identifier: recipientName || recipientId || null,
-            type: 'chat',
-            title: notifItem.title,
-            description: notifItem.desc,
-            read: false,
-            link_screen: 'match-chat',
-            metadata: notifItem.meta,
-            created_at: nowIso,
-          });
-          if (!insertErr) tableSaved = true;
+          // Idempotency: Check if a notification for this chat message already exists for this recipient
+          const { data: existingChatNotif } = await supabase
+            .from('notifications')
+            .select('id')
+            .filter('metadata->>messageId', 'eq', insertedRow.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingChatNotif) {
+            const { error: insertErr } = await supabase.from('notifications').insert({
+              id: isUuid(notifId) ? notifId : undefined,
+              user_id: recipientId,
+              user_identifier: recipientName || recipientId || null,
+              type: 'chat',
+              title: notifItem.title,
+              description: notifItem.desc,
+              read: false,
+              link_screen: 'match-chat',
+              metadata: notifItem.meta,
+              created_at: nowIso,
+            });
+            if (!insertErr) tableSaved = true;
+          } else {
+            tableSaved = true;
+          }
         } catch {}
 
         if (!tableSaved) {
@@ -741,7 +767,7 @@ export async function POST(
                 ? (currentGear as any)._sportsync_notifications
                 : [];
 
-              if (!existingNotifs.some((n: any) => n.id === notifItem.id || (n.meta?.dedupeKey && n.meta.dedupeKey === notifItem.meta.dedupeKey))) {
+              if (!existingNotifs.some((n: any) => n.id === notifItem.id || (n.meta?.messageId && n.meta.messageId === insertedRow.id) || (n.meta?.dedupeKey && n.meta.dedupeKey === notifItem.meta.dedupeKey))) {
                 const updated = [notifItem, ...existingNotifs].slice(0, 50);
                 await supabase
                   .from('users')
@@ -755,15 +781,14 @@ export async function POST(
           } catch {}
         }
 
-        // Broadcast to targeted recipient via Realtime (exclude sportsync-notifs-all to avoid duplicating to unintended users)
-        const targetChannels = [
-          ...(recipientId ? [`sportsync-notifs-${recipientId}`] : []),
-          ...(recipientName ? [`sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`] : []),
-        ];
+        // Broadcast strictly to ONE targeted channel per recipient to avoid multiplying notifications
+        const targetChannel = recipientId && isUuid(recipientId)
+          ? `sportsync-notifs-${recipientId}`
+          : (recipientName ? `sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}` : null);
 
-        for (const chName of targetChannels) {
+        if (targetChannel) {
           try {
-            const ch = supabase.channel(chName);
+            const ch = supabase.channel(targetChannel);
             await ch.send({
               type: 'broadcast',
               event: 'new_notification',

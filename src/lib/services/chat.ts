@@ -511,10 +511,17 @@ export async function fetchGameParticipants(params: {
 /**
  * Get the last read timestamp for a specific game chat from localStorage.
  */
-export function getGameChatLastRead(gameId: string): string | null {
-  if (typeof window === 'undefined' || !gameId) return null;
+/**
+ * Get the last read timestamp for a specific game chat from localStorage.
+ */
+export function getGameChatLastRead(gameId?: string, alternateId?: string): string | null {
+  if (typeof window === 'undefined' || (!gameId && !alternateId)) return null;
   try {
-    return localStorage.getItem(`sportsync_chat_read_${gameId}`);
+    const time1 = gameId ? localStorage.getItem(`sportsync_chat_read_${gameId}`) : null;
+    const time2 = alternateId ? localStorage.getItem(`sportsync_chat_read_${alternateId}`) : null;
+    if (!time1) return time2;
+    if (!time2) return time1;
+    return new Date(time1).getTime() >= new Date(time2).getTime() ? time1 : time2;
   } catch {
     return null;
   }
@@ -526,21 +533,41 @@ const lastMarkedReadMap = new Map<string, number>();
  * Mark a specific game chat as read. Removes the unread count for that conversation.
  * Throttled to prevent infinite event ping-pong loops.
  */
-export function markGameChatAsRead(gameId: string, force = false): void {
-  if (typeof window === 'undefined' || !gameId) return;
+export function markGameChatAsRead(
+  gameId?: string,
+  alternateId?: string,
+  gameTitle?: string,
+  userFilter?: { id?: string; name?: string },
+  force = false
+): void {
+  if (typeof window === 'undefined' || (!gameId && !alternateId)) return;
   const now = Date.now();
-  const lastTime = lastMarkedReadMap.get(gameId) || 0;
-  if (!force && now - lastTime < 1500) {
-    return; // Already marked read within last 1.5s, skip redundant dispatch
+  const key = [gameId, alternateId].filter(Boolean).sort().join('_');
+  const lastTime = lastMarkedReadMap.get(key) || 0;
+  if (!force && now - lastTime < 300) {
+    return; // Already marked read within last 300ms, skip redundant dispatch
   }
-  lastMarkedReadMap.set(gameId, now);
+  lastMarkedReadMap.set(key, now);
 
   try {
     const nowIso = new Date(now).toISOString();
-    localStorage.setItem(`sportsync_chat_read_${gameId}`, nowIso);
-    markGameChatNotificationsAsRead(gameId);
+    if (gameId) localStorage.setItem(`sportsync_chat_read_${gameId}`, nowIso);
+    if (alternateId && alternateId !== gameId) {
+      localStorage.setItem(`sportsync_chat_read_${alternateId}`, nowIso);
+    }
+
+    const ids = [gameId, alternateId].filter(Boolean) as string[];
+    markGameChatNotificationsAsRead(ids, gameTitle, userFilter);
+
     window.dispatchEvent(
-      new CustomEvent('sportsync:chat_read', { detail: { gameId, timestamp: nowIso } })
+      new CustomEvent('sportsync:chat_read', {
+        detail: {
+          gameId,
+          alternateId,
+          gameTitle,
+          timestamp: nowIso,
+        },
+      })
     );
   } catch {}
 }
@@ -593,21 +620,23 @@ export async function fetchUnreadCountsForAuthorizedGames(
       try {
         const normUser = userName?.trim().toLowerCase();
         for (const g of authorizedGames) {
-          const cacheKey = `sportsync_chat_${g.id}`;
-          const raw = localStorage.getItem(cacheKey);
+          const raw =
+            localStorage.getItem(`sportsync_chat_${g.id}`) ||
+            (g.sessionId ? localStorage.getItem(`sportsync_chat_${g.sessionId}`) : null);
           if (raw) {
             const msgs = JSON.parse(raw);
-            const lastRead = getGameChatLastRead(g.id);
+            const lastRead = getGameChatLastRead(g.id, g.sessionId);
             const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
 
             const unread = msgs.filter((m: any) => {
               if (m.senderId && userId && m.senderId === userId) return false;
               if (m.senderName && normUser && m.senderName.trim().toLowerCase() === normUser) return false;
               if (!lastReadTime) return true;
-              return new Date(m.time).getTime() > lastReadTime;
+              return new Date(m.time || m.created_at).getTime() > lastReadTime;
             }).length;
 
             byGame[g.id] = unread;
+            if (g.sessionId) byGame[g.sessionId] = unread;
             total += unread;
           }
         }
@@ -617,21 +646,25 @@ export async function fetchUnreadCountsForAuthorizedGames(
   }
 
   try {
-    const gameIds = authorizedGames.map((g) => g.id);
+    const queryIds = Array.from(
+      new Set(
+        authorizedGames.flatMap((g) => [g.id, g.sessionId].filter(Boolean) as string[])
+      )
+    );
     const { data: messages, error } = await supabase
       .from('game_chat_messages')
       .select('id, game_id, sender_id, sender_name, created_at')
-      .in('game_id', gameIds);
+      .in('game_id', queryIds);
 
     if (!error && Array.isArray(messages)) {
       const normUser = userName?.trim().toLowerCase();
 
       for (const g of authorizedGames) {
-        const lastRead = getGameChatLastRead(g.id);
+        const lastRead = getGameChatLastRead(g.id, g.sessionId);
         const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
 
         const unreadList = messages.filter((m) => {
-          if (m.game_id !== g.id) return false;
+          if (m.game_id !== g.id && (!g.sessionId || m.game_id !== g.sessionId)) return false;
           // Ignore messages sent by the user themselves
           if (m.sender_id && userId && m.sender_id === userId) return false;
           if (m.sender_name && normUser && m.sender_name.trim().toLowerCase() === normUser) return false;
@@ -642,6 +675,7 @@ export async function fetchUnreadCountsForAuthorizedGames(
 
         const count = unreadList.length;
         byGame[g.id] = count;
+        if (g.sessionId) byGame[g.sessionId] = count;
         total += count;
       }
     }
@@ -653,7 +687,7 @@ export async function fetchUnreadCountsForAuthorizedGames(
   try {
     for (const g of authorizedGames) {
       const notifCount = getUnreadChatNotificationsCount(
-        g.sessionId || g.id,
+        [g.id, g.sessionId].filter(Boolean) as string[],
         g.title,
         { id: userId, name: userName }
       );
@@ -682,8 +716,10 @@ export function useChatUnread(params: {
   currentUserId?: string;
   currentUserName?: string;
   activeChatGameId?: string | null;
+  activeChatSessionId?: string | null;
+  activeChatGameTitle?: string | null;
 }) {
-  const { games, currentUserId, currentUserName, activeChatGameId } = params;
+  const { games, currentUserId, currentUserName, activeChatGameId, activeChatSessionId, activeChatGameTitle } = params;
 
   // Use refs to decouple Realtime subscription and listeners from component re-renders
   const gamesRef = useRef<any[]>(games);
@@ -697,6 +733,12 @@ export function useChatUnread(params: {
 
   const activeChatGameIdRef = useRef<string | null | undefined>(activeChatGameId);
   activeChatGameIdRef.current = activeChatGameId;
+
+  const activeChatSessionIdRef = useRef<string | null | undefined>(activeChatSessionId);
+  activeChatSessionIdRef.current = activeChatSessionId;
+
+  const activeChatGameTitleRef = useRef<string | null | undefined>(activeChatGameTitle);
+  activeChatGameTitleRef.current = activeChatGameTitle;
 
   const [unreadState, setUnreadState] = useState<{ total: number; byGame: Record<string, number> }>({
     total: 0,
@@ -740,30 +782,48 @@ export function useChatUnread(params: {
 
   // 2. Mark active game chat read if open
   useEffect(() => {
-    if (activeChatGameId) {
-      markGameChatAsRead(activeChatGameId);
+    if (activeChatGameId || activeChatSessionId) {
+      const gId = activeChatGameId || undefined;
+      const sId = activeChatSessionId || undefined;
+      markGameChatAsRead(gId, sId, activeChatGameTitle || undefined, {
+        id: currentUserId,
+        name: currentUserName,
+      });
+
       setUnreadState((prev) => {
-        const prevGameCount = prev.byGame[activeChatGameId] || 0;
+        const c1 = gId ? (prev.byGame[gId] || 0) : 0;
+        const c2 = sId ? (prev.byGame[sId] || 0) : 0;
+        const prevGameCount = Math.max(c1, c2);
         if (prevGameCount === 0) return prev; // Avoid unnecessary re-render
+        const nextByGame = { ...prev.byGame };
+        if (gId) nextByGame[gId] = 0;
+        if (sId) nextByGame[sId] = 0;
         return {
           total: Math.max(0, prev.total - prevGameCount),
-          byGame: { ...prev.byGame, [activeChatGameId]: 0 },
+          byGame: nextByGame,
         };
       });
     }
-  }, [activeChatGameId]);
+  }, [activeChatGameId, activeChatSessionId, activeChatGameTitle, currentUserId, currentUserName]);
 
   // 3. Listen to local read events and incoming chat notification events
   useEffect(() => {
     const handleReadEvent = (e: any) => {
       const readGameId = e.detail?.gameId;
-      if (!readGameId) return;
+      const readSessionId = e.detail?.alternateId;
+      if (!readGameId && !readSessionId) return;
+
       setUnreadState((prev) => {
-        const prevGameCount = prev.byGame[readGameId] || 0;
+        const c1 = readGameId ? (prev.byGame[readGameId] || 0) : 0;
+        const c2 = readSessionId ? (prev.byGame[readSessionId] || 0) : 0;
+        const prevGameCount = Math.max(c1, c2);
         if (prevGameCount === 0) return prev; // Avoid unnecessary re-render
+        const nextByGame = { ...prev.byGame };
+        if (readGameId) nextByGame[readGameId] = 0;
+        if (readSessionId) nextByGame[readSessionId] = 0;
         return {
           total: Math.max(0, prev.total - prevGameCount),
-          byGame: { ...prev.byGame, [readGameId]: 0 },
+          byGame: nextByGame,
         };
       });
     };
@@ -778,6 +838,7 @@ export function useChatUnread(params: {
       const uId = currentUserIdRef.current;
       const uName = currentUserNameRef.current;
       const activeId = activeChatGameIdRef.current;
+      const activeAltId = activeChatSessionIdRef.current;
 
       const targetGame = latestGames.find((g) => g.id === gameId || g.sessionId === gameId);
       if (!targetGame || !isUserAuthorizedForChat(targetGame, uId, uName)) return;
@@ -788,19 +849,25 @@ export function useChatUnread(params: {
       if (uId && notif.senderId && notif.senderId === uId) return;
 
       // If currently viewing this chat, mark as read immediately
-      if (activeId && (activeId === gameId || targetGame.id === activeId || targetGame.sessionId === activeId)) {
-        markGameChatAsRead(targetGame.id);
+      const isOpen =
+        (activeId && (activeId === gameId || targetGame.id === activeId || targetGame.sessionId === activeId)) ||
+        (activeAltId && (activeAltId === gameId || targetGame.id === activeAltId || targetGame.sessionId === activeAltId));
+
+      if (isOpen) {
+        markGameChatAsRead(targetGame.id, targetGame.sessionId, targetGame.title, { id: uId, name: uName });
         return;
       }
 
       setUnreadState((prev) => {
         const currentForGame = prev.byGame[targetGame.id] || 0;
+        const nextCount = currentForGame + 1;
+        const nextByGame: Record<string, number> = { ...prev.byGame, [targetGame.id]: nextCount };
+        if (targetGame.sessionId) {
+          nextByGame[String(targetGame.sessionId)] = nextCount;
+        }
         return {
           total: prev.total + 1,
-          byGame: {
-            ...prev.byGame,
-            [targetGame.id]: currentForGame + 1,
-          },
+          byGame: nextByGame,
         };
       });
     };
@@ -838,6 +905,7 @@ export function useChatUnread(params: {
           const uId = currentUserIdRef.current;
           const uName = currentUserNameRef.current;
           const activeId = activeChatGameIdRef.current;
+          const activeAltId = activeChatSessionIdRef.current;
 
           // Check if user is authorized for this game
           const targetGame = latestGames.find((g) => g.id === row.game_id || g.sessionId === row.game_id);
@@ -851,20 +919,26 @@ export function useChatUnread(params: {
           if (row.sender_name && normUser && row.sender_name.trim().toLowerCase() === normUser) return;
 
           // If currently viewing this chat, mark as read immediately
-          if (activeId && (activeId === row.game_id || targetGame.id === activeId)) {
-            markGameChatAsRead(targetGame.id);
+          const isOpen =
+            (activeId && (activeId === row.game_id || targetGame.id === activeId || targetGame.sessionId === activeId)) ||
+            (activeAltId && (activeAltId === row.game_id || targetGame.id === activeAltId || targetGame.sessionId === activeAltId));
+
+          if (isOpen) {
+            markGameChatAsRead(targetGame.id, targetGame.sessionId, targetGame.title, { id: uId, name: uName });
             return;
           }
 
           // Otherwise increment unread count in real-time
           setUnreadState((prev) => {
             const currentForGame = prev.byGame[targetGame.id] || 0;
+            const nextCount = currentForGame + 1;
+            const nextByGame: Record<string, number> = { ...prev.byGame, [targetGame.id]: nextCount };
+            if (targetGame.sessionId) {
+              nextByGame[String(targetGame.sessionId)] = nextCount;
+            }
             return {
               total: prev.total + 1,
-              byGame: {
-                ...prev.byGame,
-                [targetGame.id]: currentForGame + 1,
-              },
+              byGame: nextByGame,
             };
           });
         }

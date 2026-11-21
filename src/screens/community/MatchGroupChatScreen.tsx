@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
   Send,
@@ -149,6 +149,14 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
   // Standardized canonical chat room key across all devices
   const chatRoomId = game?.sessionId || game?.id || '';
+  const altId = game?.id && game?.id !== chatRoomId ? game?.id : (game?.sessionId && game?.sessionId !== chatRoomId ? game?.sessionId : undefined);
+
+  const markCurrentChatRead = useCallback(() => {
+    markGameChatAsRead(game?.id || chatRoomId, altId, game?.title, {
+      id: currentUserId,
+      name: currentUserName,
+    }, true);
+  }, [chatRoomId, altId, game?.id, game?.title, currentUserId, currentUserName]);
 
   // 3. Fetch actual messages and subscribe to real-time updates + clean fallback poll
   useEffect(() => {
@@ -194,7 +202,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
           return nextList;
         });
         if (isInitial) setLoadingMessages(false);
-        markGameChatAsRead(chatRoomId);
+        markCurrentChatRead();
       } catch (err) {
         console.warn('[MatchChat] Error loading messages:', err);
         if (isMounted && isInitial) setLoadingMessages(false);
@@ -202,13 +210,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     };
 
     loadMessages(true);
-    markGameChatAsRead(chatRoomId);
+    markCurrentChatRead();
 
     // Subscribe to real-time message changes
     const unsubscribe = subscribeToGameChat(game?.id || chatRoomId, chatRoomId, hostInfo, (incoming) => {
       if (!isMounted) return;
 
-      markGameChatAsRead(chatRoomId);
+      markCurrentChatRead();
 
       setMessages((prev) => {
         if (prev.some((m) => m.id === incoming.id)) {

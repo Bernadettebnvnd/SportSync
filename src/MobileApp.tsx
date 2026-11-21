@@ -45,7 +45,7 @@ import { useSportSyncBridge } from './lib/useSportSyncBridge';
 import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
-import { useChatUnread, isUserAuthorizedForChat } from './lib/services/chat';
+import { useChatUnread, isUserAuthorizedForChat, markGameChatAsRead } from './lib/services/chat';
 import {
   resetNotificationCache,
   isNotificationForUser,
@@ -982,11 +982,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   };
 
   // Real-time unread messages tracking across authorized match chats
+  const isMatchChatActive = currentScreen === 'match-chat';
   const chatUnread = useChatUnread({
     games: bridge.games,
     currentUserId: bridge.userProfile.id,
     currentUserName: bridge.userProfile.name,
-    activeChatGameId: currentScreen === 'match-chat' ? (selectedGame?.id || null) : null,
+    activeChatGameId: isMatchChatActive ? (selectedGame?.id || selectedGame?.sessionId || null) : null,
+    activeChatSessionId: isMatchChatActive ? (selectedGame?.sessionId || null) : null,
+    activeChatGameTitle: isMatchChatActive ? (selectedGame?.title || null) : null,
   });
 
   const userNotificationFilter = useMemo(
@@ -1000,6 +1003,19 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const [chatNotifsCount, setChatNotifsCount] = useState<number>(() =>
     getUnreadChatNotificationsCount(undefined, undefined, userNotificationFilter)
   );
+
+  // Automatically mark the conversation as read whenever match-chat is opened
+  useEffect(() => {
+    if (currentScreen === 'match-chat' && selectedGame) {
+      markGameChatAsRead(
+        selectedGame.id,
+        selectedGame.sessionId,
+        selectedGame.title,
+        userNotificationFilter,
+        true
+      );
+    }
+  }, [currentScreen, selectedGame?.id, selectedGame?.sessionId, selectedGame?.title, userNotificationFilter]);
 
   useEffect(() => {
     const updateNotifs = () => {
@@ -1016,7 +1032,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     };
   }, [userNotificationFilter]);
 
-  const effectiveGlobalChatUnread = Math.max(chatUnread.totalUnread, chatNotifsCount);
+  const effectiveGlobalChatUnread = useMemo(() => {
+    let unreadFromChat = chatUnread.totalUnread;
+    let unreadFromNotifs = chatNotifsCount;
+
+    if (currentScreen === 'match-chat' && selectedGame) {
+      // Exclude currently open conversation's unread from the global count
+      const openCount1 = chatUnread.unreadByGame[selectedGame.id] || 0;
+      const openCount2 = selectedGame.sessionId ? (chatUnread.unreadByGame[selectedGame.sessionId] || 0) : 0;
+      const openChatCount = Math.max(openCount1, openCount2);
+      unreadFromChat = Math.max(0, unreadFromChat - openChatCount);
+
+      const openNotifCount = getUnreadChatNotificationsCount(
+        [selectedGame.id, selectedGame.sessionId].filter(Boolean) as string[],
+        selectedGame.title,
+        userNotificationFilter
+      );
+      unreadFromNotifs = Math.max(0, unreadFromNotifs - openNotifCount);
+    }
+
+    return Math.max(unreadFromChat, unreadFromNotifs);
+  }, [chatUnread.totalUnread, chatUnread.unreadByGame, chatNotifsCount, currentScreen, selectedGame, userNotificationFilter]);
 
   const handleOpenChatFromHeader = useCallback(() => {
     if (!requireAuth('Match Chat', 'Sign in to access your match chats.')) return;
@@ -1034,12 +1070,23 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       const fromMap =
         (chatUnread.unreadByGame[g.id] || 0) ||
         (g.sessionId ? chatUnread.unreadByGame[g.sessionId] || 0 : 0);
-      const fromNotif = getUnreadChatNotificationsCount(g.sessionId || g.id, g.title, userNotificationFilter);
+      const fromNotif = getUnreadChatNotificationsCount(
+        [g.id, g.sessionId].filter(Boolean) as string[],
+        g.title,
+        userNotificationFilter
+      );
       return fromMap > 0 || fromNotif > 0;
     });
     const targetGame = gameWithUnread || selectedGame || authorizedGames[0];
 
     setSelectedGame(targetGame);
+    markGameChatAsRead(
+      targetGame.id,
+      targetGame.sessionId,
+      targetGame.title,
+      userNotificationFilter,
+      true
+    );
     navigateTo('match-chat');
   }, [bridge.games, bridge.userProfile.id, bridge.userProfile.name, chatUnread.unreadByGame, selectedGame, userNotificationFilter]);
 
@@ -1569,6 +1616,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
             onOpenChat={() => {
               if (!requireAuth('Team Chat', 'Sign in to participate in the match team chat.')) return;
+              if (activeTargetGame) {
+                setSelectedGame(activeTargetGame);
+                markGameChatAsRead(
+                  activeTargetGame.id,
+                  activeTargetGame.sessionId,
+                  activeTargetGame.title,
+                  userNotificationFilter,
+                  true
+                );
+              }
               navigateTo('match-chat');
             }}
             onRemovePlayer={async (player) => {
@@ -1877,6 +1934,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   );
                   if (target) {
                     setSelectedGame(target);
+                    if (screenId === 'match-chat') {
+                      markGameChatAsRead(
+                        target.id,
+                        target.sessionId,
+                        target.title,
+                        userNotificationFilter,
+                        true
+                      );
+                    }
                   }
                 }
               }

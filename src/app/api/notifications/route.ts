@@ -160,7 +160,74 @@ export async function POST(request: NextRequest) {
 
     const recipientId = notif.recipientId && isUuid(notif.recipientId) ? notif.recipientId : null;
     const recipientName = notif.recipientName || notif.meta?.recipientName || notif.meta?.hostName || '';
+    const dedupeKey = notif.meta?.dedupeKey || notif.id;
     const nowIso = new Date().toISOString();
+
+    // 1. Idempotency Check: Don't insert if dedupeKey already exists in public.notifications
+    if (dedupeKey) {
+      try {
+        const { data: existing } = await supabase
+          .from('notifications')
+          .select('id, read, created_at')
+          .filter('metadata->>dedupeKey', 'eq', dedupeKey)
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          return NextResponse.json({
+            success: true,
+            deduplicated: true,
+            id: existing.id,
+          });
+        }
+      } catch {}
+    }
+
+    // 1b. Chat Message ID Deduplication
+    const msgId = notif.meta?.messageId || notif.meta?.message_id;
+    if (msgId) {
+      try {
+        const { data: existingMsg } = await supabase
+          .from('notifications')
+          .select('id')
+          .filter('metadata->>messageId', 'eq', msgId)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingMsg) {
+          return NextResponse.json({
+            success: true,
+            deduplicated: true,
+            id: existingMsg.id,
+          });
+        }
+      } catch {}
+    }
+
+    // 2. Secondary Deduplication: Avoid duplicate rapid notifications for the same recipient
+    if (notif.title && notif.desc && (recipientId || recipientName)) {
+      try {
+        let dupQuery = supabase.from('notifications').select('id');
+        if (recipientId) {
+          dupQuery = dupQuery.eq('user_id', recipientId);
+        } else {
+          dupQuery = dupQuery.ilike('user_identifier', recipientName);
+        }
+        const { data: recentDup } = await dupQuery
+          .eq('title', notif.title)
+          .eq('description', notif.desc)
+          .limit(1)
+          .maybeSingle();
+
+        if (recentDup) {
+          return NextResponse.json({
+            success: true,
+            deduplicated: true,
+            id: recentDup.id,
+          });
+        }
+      } catch {}
+    }
 
     const notifRow = {
       id: notif.id && isUuid(notif.id) ? notif.id : undefined,
@@ -173,6 +240,7 @@ export async function POST(request: NextRequest) {
       link_screen: notif.linkScreen || null,
       metadata: {
         ...(notif.meta || {}),
+        dedupeKey,
         host_name: notif.meta?.hostName || notif.meta?.host_name || recipientName,
         host_id: notif.meta?.hostId || notif.meta?.host_id || recipientId,
         recipient_name: recipientName || notif.meta?.recipientName,
@@ -184,15 +252,17 @@ export async function POST(request: NextRequest) {
     };
 
     let tableSaved = false;
-    // 1. Try public.notifications table
+    // 3. Try public.notifications table
     try {
       const { error: insertErr } = await supabase.from('notifications').insert(notifRow);
       if (!insertErr) {
         tableSaved = true;
+      } else if (insertErr.code === '23505' || insertErr.message?.includes('duplicate key')) {
+        return NextResponse.json({ success: true, deduplicated: true });
       }
     } catch {}
 
-    // 2. Fallback to public.users table if notifications table does not exist
+    // 4. Fallback to public.users table if notifications table does not exist
     if (!tableSaved) {
       try {
         let userQuery = supabase.from('users').select('id, equipped_gear');
@@ -209,8 +279,8 @@ export async function POST(request: NextRequest) {
             ? (currentGear as any)._sportsync_notifications
             : [];
 
-          if (!existingNotifs.some((n: any) => n.id === notif.id || (n.meta?.dedupeKey && n.meta.dedupeKey === notif.meta?.dedupeKey))) {
-            const updated = [notif, ...existingNotifs].slice(0, MAX_NOTIFICATIONS);
+          if (!existingNotifs.some((n: any) => n.id === notif.id || (n.meta?.dedupeKey && n.meta.dedupeKey === dedupeKey))) {
+            const updated = [{ ...notif, meta: { ...(notif.meta || {}), dedupeKey } }, ...existingNotifs].slice(0, MAX_NOTIFICATIONS);
             await supabase
               .from('users')
               .update({
@@ -228,24 +298,21 @@ export async function POST(request: NextRequest) {
     // In-memory server cache update
     const memKey = (recipientId || recipientName || 'global').toLowerCase();
     const currentMem = notifStore.get(memKey) || [];
-    if (!currentMem.some((n: any) => n.id === notif.id)) {
-      notifStore.set(memKey, [notif, ...currentMem].slice(0, MAX_NOTIFICATIONS));
+    if (!currentMem.some((n: any) => n.id === notif.id || (n.meta?.dedupeKey && n.meta.dedupeKey === dedupeKey))) {
+      notifStore.set(memKey, [{ ...notif, meta: { ...(notif.meta || {}), dedupeKey } }, ...currentMem].slice(0, MAX_NOTIFICATIONS));
     }
 
-    // 3. Broadcast across Supabase Realtime channels (chat notifications only go to recipient channels)
+    // 5. Broadcast to recipient's primary channel
     const isChat = notif.type === 'chat';
-    const targetChannels = [
-      ...(!isChat ? ['sportsync-notifs-all'] : []),
-      ...(recipientId ? [`sportsync-notifs-${recipientId}`] : []),
-      ...(recipientName ? [`sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`] : []),
-    ];
+    const targetChannel = recipientId
+      ? `sportsync-notifs-${recipientId}`
+      : recipientName
+        ? `sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`
+        : (!isChat ? 'sportsync-notifs-all' : null);
 
-    for (const chName of targetChannels) {
+    if (targetChannel) {
       try {
-        const ch = supabase.channel(chName);
-        if (typeof (ch as any).httpSend === 'function') {
-          await (ch as any).httpSend('new_notification', notifRow).catch(() => {});
-        }
+        const ch = supabase.channel(targetChannel);
         ch.subscribe((status: string) => {
           if (status === 'SUBSCRIBED') {
             ch.send({
@@ -276,7 +343,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, all, userId, userName } = body;
+    const { id, all, action, gameIds, gameTitle, userId, userName } = body;
 
     if (!isSupabaseConfigured) {
       return NextResponse.json({ success: true });
@@ -287,9 +354,42 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    const isChatRead = action === 'mark_chat_read';
+    const targetGameIds: string[] = Array.isArray(gameIds) ? gameIds.map((g: any) => String(g).toLowerCase().trim()) : [];
+    const cleanGameTitle = typeof gameTitle === 'string' ? gameTitle.toLowerCase().trim() : '';
+
     // 1. Try public.notifications table
     try {
-      if (all) {
+      if (isChatRead && (targetGameIds.length > 0 || cleanGameTitle)) {
+        // Query unread chat notifications for this user
+        let q = supabase.from('notifications').select('id, metadata').eq('type', 'chat').eq('read', false);
+        if (userId && isUuid(userId)) {
+          q = q.eq('user_id', userId);
+        } else if (userName) {
+          q = q.ilike('user_identifier', userName.trim());
+        }
+        const { data: chatRows } = await q;
+        if (Array.isArray(chatRows) && chatRows.length > 0) {
+          const matchIds = chatRows.filter((r) => {
+            const meta = r.metadata || {};
+            const nGId = String(meta.gameId || meta.game_id || '').toLowerCase().trim();
+            const nSId = String(meta.sessionId || meta.session_id || '').toLowerCase().trim();
+            const nTitle = String(meta.gameTitle || meta.game_title || '').toLowerCase().trim();
+
+            const idMatch = targetGameIds.some((tId) => tId && (nGId === tId || nSId === tId));
+            const titleMatch = Boolean(
+              cleanGameTitle &&
+              nTitle &&
+              (cleanGameTitle === nTitle || cleanGameTitle.includes(nTitle) || nTitle.includes(cleanGameTitle))
+            );
+            return idMatch || titleMatch;
+          }).map((r) => r.id);
+
+          if (matchIds.length > 0) {
+            await supabase.from('notifications').update({ read: true }).in('id', matchIds);
+          }
+        }
+      } else if (all) {
         const conditions: string[] = [];
         if (userId && isUuid(userId)) conditions.push(`user_id.eq.${userId}`);
         if (userName) conditions.push(`user_identifier.ilike.*${userName}*`);
@@ -318,6 +418,19 @@ export async function PATCH(request: NextRequest) {
           : [];
 
         const updated = savedNotifs.map((n: any) => {
+          if (isChatRead && n.type === 'chat') {
+            const meta = n.meta || {};
+            const nGId = String(meta.gameId || meta.game_id || '').toLowerCase().trim();
+            const nSId = String(meta.sessionId || meta.session_id || '').toLowerCase().trim();
+            const nTitle = String(meta.gameTitle || meta.game_title || '').toLowerCase().trim();
+            const idMatch = targetGameIds.some((tId) => tId && (nGId === tId || nSId === tId));
+            const titleMatch = Boolean(
+              cleanGameTitle &&
+              nTitle &&
+              (cleanGameTitle === nTitle || cleanGameTitle.includes(nTitle) || nTitle.includes(cleanGameTitle))
+            );
+            if (idMatch || titleMatch) return { ...n, read: true };
+          }
           if (all || (id && n.id === id)) {
             return { ...n, read: true };
           }

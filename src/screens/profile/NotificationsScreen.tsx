@@ -16,7 +16,7 @@ import {
   ChevronRight,
   Radio,
 } from 'lucide-react';
-import { useNotifications, NotificationItem, NotificationType } from '../../lib/notifications';
+import { useNotifications, NotificationItem, NotificationType, getSemanticKey } from '../../lib/notifications';
 import { UserAvatar } from '../../illustrations/Avatars';
 
 interface NotificationsScreenProps {
@@ -62,11 +62,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
 
     const seen = new Set<string>();
     return filtered.filter((n) => {
-      const msgId = n.meta?.messageId || n.meta?.message_id;
-      const key =
-        n.type === 'chat' && msgId
-          ? `chat_${msgId}_${(n.recipientName || n.recipientId || '').toLowerCase()}`
-          : n.meta?.dedupeKey || n.id;
+      const key = getSemanticKey(n) || n.meta?.dedupeKey || n.id;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

@@ -2607,8 +2607,10 @@ export function useSportSyncBridge() {
             ? `${updatedGame.date} • ${updatedGame.time}`
             : updatedGame.date || updatedGame.time || '';
 
+        const cleanMember = (m.id || m.name).trim().toLowerCase();
+        const dedupeKey = `game_updated_${updatedGame.id}_${cleanMember}`;
         addNotification({
-          id: `notif_update_${gameId}_${m.name.replace(/\s+/g, '_')}_${Date.now()}`,
+          id: `notif_update_${gameId}_${(m.id || m.name).replace(/\s+/g, '_')}`,
           type: 'match',
           title: 'Game Details Updated',
           desc: `${targetGame.hostName || 'The host'} updated details for ${updatedGame.title}.`,
@@ -2634,7 +2636,7 @@ export function useSportSyncBridge() {
             senderAvatar: targetGame.hostAvatar || 'alex',
             recipientId: m.id,
             recipientName: m.name,
-            dedupeKey: `update_${updatedGame.id}_${(m.id || m.name).toLowerCase()}_${Date.now()}`,
+            dedupeKey,
           },
         });
       });
@@ -2722,10 +2724,11 @@ export function useSportSyncBridge() {
           : targetGame.date || targetGame.time || '';
 
       const deletionNotifs = affectedParticipants.map((p) => {
-        const dedupeKey = `delete_game_${targetGame.id}_${p.name.trim().toLowerCase()}_${Date.now()}`;
+        const cleanPlayerKey = (p.id || p.name).trim().toLowerCase();
+        const dedupeKey = `game_deleted_${targetGame.id}_${cleanPlayerKey}`;
         const desc = `The host has cancelled ${titleToDelete}, a game you joined.`;
         return {
-          id: `notif_del_${targetGame.id}_${p.name.replace(/\s+/g, '_')}_${Date.now()}`,
+          id: `notif_del_${targetGame.id}_${(p.id || p.name).replace(/\s+/g, '_')}`,
           type: 'match' as const,
           title: 'Game Cancelled',
           desc,
@@ -2756,26 +2759,7 @@ export function useSportSyncBridge() {
         };
       });
 
-      // 3. Ensure the notification is saved in Supabase BEFORE the game and its related records are deleted
-      if (supabase && isSupabaseConfigured && deletionNotifs.length > 0) {
-        try {
-          await supabase.from('notifications').insert(
-            deletionNotifs.map((n) => ({
-              user_id: n.recipientId && n.recipientId.length === 36 ? n.recipientId : null,
-              user_identifier: n.recipientName,
-              type: n.type,
-              title: n.title,
-              description: n.desc,
-              link_screen: n.linkScreen,
-              metadata: n.meta,
-            }))
-          );
-        } catch (e) {
-          console.warn('[SportSyncBridge] Supabase notification batch insert before deletion notice:', e);
-        }
-      }
-
-      // 4. Deliver notifications immediately to client notification system
+      // 3. Deliver notifications immediately to client notification system (which handles API persistence & broadcast)
       deletionNotifs.forEach((n) => addNotification(n));
 
       // 5. Mark canonical game ID in permanent tombstone storage to prevent local reappearance
@@ -3289,15 +3273,18 @@ export function useSportSyncBridge() {
       );
 
       if (!isHostSelf && (resolvedHostName || resolvedHostId)) {
-        const dedupeKey = `join_${targetGame.id}_${userName.trim().toLowerCase()}_${Date.now()}`;
+        const cleanHost = (resolvedHostId || resolvedHostName).trim().toLowerCase();
+        const cleanJoiner = (userProfile.id || userName).trim().toLowerCase();
+        const dedupeKey = `player_joined_${targetGame.id}_${cleanJoiner}_${cleanHost}`;
+        const notifId = `notif_join_${targetGame.id}_${(userProfile.id || userName).replace(/\s+/g, '_')}`;
         const hostNotifDesc = `${userName} joined your game, ${gameTitle}.`;
         const scheduleStr =
           targetGame.date && targetGame.time
             ? `${targetGame.date} • ${targetGame.time}`
             : targetGame.date || targetGame.time || '';
 
-        const hostNotif = addNotification({
-          id: `notif_join_${targetGame.id}_${userName.replace(/\s+/g, '_')}_${Date.now()}`,
+        addNotification({
+          id: notifId,
           type: 'match',
           title: 'Player Joined Your Game',
           desc: hostNotifDesc,
@@ -3338,9 +3325,6 @@ export function useSportSyncBridge() {
             dedupeKey,
           },
         });
-
-        // Broadcast across multi-tab BroadcastChannel and Supabase Realtime channels
-        broadcastNotification(hostNotif).catch(() => {});
       }
 
       // 6. Notify the joining player
@@ -3356,6 +3340,7 @@ export function useSportSyncBridge() {
           event: 'match_joined',
           gameId: targetGame.id,
           gameTitle,
+          dedupeKey: `match_joined_${targetGame.id}_${(userProfile.id || userName).trim().toLowerCase()}`,
         },
       });
 
@@ -3556,8 +3541,10 @@ export function useSportSyncBridge() {
             ? `${targetGame.date} • ${targetGame.time}`
             : targetGame.date || targetGame.time || '';
 
+        const cleanParticipant = (participant.id || participant.name || 'player').trim().toLowerCase();
+        const dedupeKey = `participant_removed_${gameId}_${cleanParticipant}`;
         addNotification({
-          id: `notif_rem_${gameId}_${(participant.name || 'player').replace(/\s+/g, '_')}_${Date.now()}`,
+          id: `notif_rem_${gameId}_${(participant.id || participant.name || 'player').replace(/\s+/g, '_')}`,
           type: 'match',
           title: 'Removed from Match Roster',
           desc: `The match organizer removed you from ${targetGame.title}.`,
@@ -3581,7 +3568,7 @@ export function useSportSyncBridge() {
             senderAvatar: targetGame.hostAvatar || 'alex',
             recipientId: participant.id,
             recipientName: participant.name,
-            dedupeKey: `rem_${targetGame.id}_${(participant.id || participant.name).toLowerCase()}_${Date.now()}`,
+            dedupeKey,
           },
         });
 

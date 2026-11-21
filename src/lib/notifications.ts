@@ -64,6 +64,160 @@ export interface UserNotificationFilter {
 }
 
 /**
+ * Canonical semantic identifier for any notification.
+ * Normalizes dedupe keys, strips non-deterministic trailing timestamps (e.g. _1712345678901),
+ * and creates deterministic identities for player join actions, matches, bookings, and chats.
+ */
+export function getSemanticKey(n?: Partial<NotificationItem> | null): string {
+  if (!n) return '';
+
+  const meta = n.meta || {};
+  const rawKey = String(meta.dedupeKey || meta.dedupe_key || n.id || '').trim();
+
+  // Strip trailing millisecond timestamps like _1732248900000 or -1732248900000
+  const normalizedKey = rawKey.replace(/[_-]\d{10,14}$/, '');
+
+  // 1. Specific canonical handler for chat notifications
+  const isChatNotif =
+    n.type === 'chat' ||
+    n.linkScreen === 'match-chat' ||
+    meta.event === 'new_chat_message' ||
+    Boolean(n.title && n.title.toLowerCase().includes('new message')) ||
+    rawKey.startsWith('chat_') ||
+    rawKey.startsWith('notif_chat_');
+
+  if (isChatNotif) {
+    const directMsgId = meta.messageId || meta.message_id;
+    if (directMsgId) {
+      return `chat_${directMsgId}`;
+    }
+
+    // Try extracting UUID from rawKey / dedupeKey
+    const uuidMatch = rawKey.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuidMatch) {
+      return `chat_${uuidMatch[0]}`;
+    }
+
+    // Try extracting msgId from chat_<msgId>_<recipient> or notif_chat_<msgId>_<recipient>
+    const chatPrefixMatch = rawKey.match(/(?:notif_)?chat_([a-zA-Z0-9-]+?)(?:_[a-zA-Z0-9-_]+)?$/);
+    if (chatPrefixMatch && chatPrefixMatch[1] && chatPrefixMatch[1] !== 'notif') {
+      return `chat_${chatPrefixMatch[1]}`;
+    }
+
+    // Fallback: match by game and content preview
+    const gId = meta.gameId || meta.game_id || meta.sessionId || meta.session_id || meta.gameTitle || 'game';
+    const content = (n.desc || meta.messageText || n.title || '').trim().toLowerCase().replace(/\s+/g, '_');
+    return `chat_${gId}_${content}`;
+  }
+
+  if (
+    normalizedKey &&
+    (normalizedKey.startsWith('player_joined_') ||
+      normalizedKey.startsWith('match_joined_') ||
+      normalizedKey.startsWith('player_confirmed_') ||
+      normalizedKey.startsWith('join_') ||
+      normalizedKey.startsWith('booking_') ||
+      normalizedKey.startsWith('roster_') ||
+      normalizedKey.startsWith('game_updated_') ||
+      normalizedKey.startsWith('update_') ||
+      normalizedKey.startsWith('game_deleted_') ||
+      normalizedKey.startsWith('delete_game_') ||
+      normalizedKey.startsWith('del_') ||
+      normalizedKey.startsWith('participant_removed_') ||
+      normalizedKey.startsWith('rem_') ||
+      normalizedKey.startsWith('match_invitation_') ||
+      normalizedKey.startsWith('invites_') ||
+      normalizedKey.startsWith('member_left_') ||
+      normalizedKey.startsWith('left_match_') ||
+      normalizedKey.startsWith('achievement_') ||
+      normalizedKey.startsWith('wager_'))
+  ) {
+    return normalizedKey;
+  }
+
+  // Handle player joined match / session notifications
+  const gameId = meta.gameId || meta.game_id || meta.sessionId || meta.session_id;
+  const joiner = (
+    meta.joiningPlayerName ||
+    meta.joining_player_name ||
+    meta.joiningPlayerId ||
+    meta.joining_player_id ||
+    n.senderName ||
+    meta.senderName ||
+    meta.sender_name ||
+    ''
+  )
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  const host = (
+    meta.hostName ||
+    meta.host_name ||
+    meta.hostId ||
+    meta.host_id ||
+    meta.recipientName ||
+    meta.recipient_name ||
+    n.recipientName ||
+    n.recipientId ||
+    ''
+  )
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  const titleLower = (n.title || '').toLowerCase();
+  const descLower = (n.desc || '').toLowerCase();
+
+  if (gameId && (n.type === 'match' || titleLower.includes('joined') || descLower.includes('joined'))) {
+    if (titleLower.includes('confirmed') || descLower.includes('confirmed') || meta.event === 'match_joined') {
+      return `match_joined_${gameId}_${joiner || host || 'unknown'}`;
+    }
+    if (meta.event === 'player_joined' || titleLower.includes('joined')) {
+      return `player_joined_${gameId}_${joiner || 'unknown'}_${host || 'unknown'}`;
+    }
+  }
+
+  // Handle game update notifications
+  if (gameId && (meta.event === 'game_updated' || titleLower.includes('details updated'))) {
+    const targetRecipient = (n.recipientId || n.recipientName || meta.recipientId || meta.recipientName || 'player')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    return `game_updated_${gameId}_${targetRecipient}`;
+  }
+
+  // Handle game cancellation / deletion notifications
+  if (gameId && (meta.event === 'game_deleted' || titleLower.includes('game cancelled') || descLower.includes('cancelled'))) {
+    const targetRecipient = (n.recipientId || n.recipientName || meta.recipientId || meta.recipientName || 'player')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    return `game_deleted_${gameId}_${targetRecipient}`;
+  }
+
+  // Handle participant removal notifications
+  if (gameId && (meta.event === 'participant_removed' || titleLower.includes('removed from match'))) {
+    const targetRecipient = (n.recipientId || n.recipientName || meta.recipientId || meta.recipientName || 'player')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    return `participant_removed_${gameId}_${targetRecipient}`;
+  }
+
+  return (
+    normalizedKey ||
+    n.id ||
+    `${n.type || 'notif'}_${n.title || ''}_${n.desc || ''}`.toLowerCase().replace(/\s+/g, '_')
+  );
+}
+
+/**
  * Filter out legacy mock notifications, test items, or orphaned personal notifications
  * that have no recipient, preventing newly registered users from seeing false notifications.
  */
@@ -103,22 +257,12 @@ function sanitizeNotifications(list: NotificationItem[]): NotificationItem[] {
       if (sName && rName && sName === rName) {
         return false;
       }
-      // Deduplicate chat notifications by messageId + recipient, or dedupeKey
-      const msgId = n.meta?.messageId || n.meta?.message_id;
-      const dedupeKey = n.meta?.dedupeKey || (msgId ? `chat_${msgId}_${rName}` : null);
-      if (dedupeKey) {
-        if (seenKeys.has(dedupeKey)) return false;
-        seenKeys.add(dedupeKey);
-      } else {
-        const fallbackKey = `chat_${n.desc}_${n.meta?.gameId || ''}_${rName}`;
-        if (seenKeys.has(fallbackKey)) return false;
-        seenKeys.add(fallbackKey);
-      }
-    } else {
-      // General notification deduplication
-      const dedupeKey = n.meta?.dedupeKey || n.id;
-      if (seenKeys.has(dedupeKey)) return false;
-      seenKeys.add(dedupeKey);
+    }
+
+    const semKey = getSemanticKey(n);
+    if (semKey) {
+      if (seenKeys.has(semKey)) return false;
+      seenKeys.add(semKey);
     }
 
     return true;
@@ -296,7 +440,11 @@ export async function broadcastNotification(notif: NotificationItem): Promise<vo
     } catch {}
   }
 
-  // 2. Supabase Realtime WebSocket broadcast to host and universal notification channels
+  // 2. Supabase Realtime WebSocket broadcast
+  // We send strictly to ONE targeted channel to prevent fan-out multiplication:
+  // - If recipientId is present, send to sportsync-notifs-${recipientId}
+  // - Else if recipientName is present, send to sportsync-notifs-${cleanName}
+  // - Otherwise, send to sportsync-notifs-all (only for non-chat system notifications)
   const sb = getSupabaseClient();
   if (sb && isSupabaseConfigured) {
     try {
@@ -307,32 +455,34 @@ export async function broadcastNotification(notif: NotificationItem): Promise<vo
         .replace(/\s+/g, '_');
 
       const isChat = notif.type === 'chat';
-      const targetChannels = [
-        ...(!isChat ? ['sportsync-notifs-all'] : []),
-        ...(targetId ? [`sportsync-notifs-${targetId}`] : []),
-        ...(targetName ? [`sportsync-notifs-${targetName}`] : []),
-      ];
+      let primaryChannel = '';
 
-      for (const chName of targetChannels) {
-        try {
-          const ch = sb.channel(chName);
-          if (typeof (ch as any).httpSend === 'function') {
-            await (ch as any).httpSend('new_notification', notif).catch(() => {});
+      if (targetId) {
+        primaryChannel = `sportsync-notifs-${targetId}`;
+      } else if (targetName) {
+        primaryChannel = `sportsync-notifs-${targetName}`;
+      } else if (!isChat) {
+        primaryChannel = 'sportsync-notifs-all';
+      }
+
+      if (primaryChannel) {
+        const ch = sb.channel(primaryChannel);
+        if (typeof (ch as any).httpSend === 'function') {
+          await (ch as any).httpSend('new_notification', notif).catch(() => {});
+        }
+        ch.subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            ch.send({
+              type: 'broadcast',
+              event: 'new_notification',
+              payload: notif,
+            }).catch(() => {}).finally(() => {
+              setTimeout(() => {
+                try { sb.removeChannel(ch); } catch {}
+              }, 1500);
+            });
           }
-          ch.subscribe((status: string) => {
-            if (status === 'SUBSCRIBED') {
-              ch.send({
-                type: 'broadcast',
-                event: 'new_notification',
-                payload: notif,
-              }).catch(() => {}).finally(() => {
-                setTimeout(() => {
-                  try { sb.removeChannel(ch); } catch {}
-                }, 2000);
-              });
-            }
-          });
-        } catch {}
+        });
       }
     } catch (e) {
       console.warn('[Notifications] Realtime broadcast notice:', e);
@@ -527,48 +677,87 @@ export async function fetchUserNotificationsFromSupabase(
 }
 
 export async function persistNotificationToSupabase(item: NotificationItem): Promise<boolean> {
-  // 1. Send via server API route
+  const semKey = getSemanticKey(item);
+  const itemMeta: Record<string, any> = {
+    ...(item.meta || {}),
+    dedupeKey: item.meta?.dedupeKey || semKey,
+  };
+  const itemWithDedupe: NotificationItem = {
+    ...item,
+    meta: itemMeta,
+  };
+
+  // 1. Primary: Send via server API route (handles admin client, users fallback, and idempotency)
   if (typeof window !== 'undefined') {
     try {
-      fetch('/api/notifications', {
+      const res = await fetch('/api/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notification: item }),
-      }).catch(() => {});
-    } catch {}
+        body: JSON.stringify({ notification: itemWithDedupe }),
+      });
+      if (res.ok) {
+        return true;
+      }
+    } catch (apiErr) {
+      console.warn('[Notifications] API persist fallback to client:', apiErr);
+    }
   }
 
-  // 2. Also try direct client insert if Supabase configured
+  // 2. Direct client insert fallback ONLY if server API was unreachable
   const sb = getSupabaseClient();
   if (!sb || !isSupabaseConfigured) return false;
   try {
     const isUuid = (val?: string) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    const recipientId = item.recipientId && isUuid(item.recipientId) ? item.recipientId : null;
-    await sb.from('notifications').insert({
-      id: item.id && isUuid(item.id) ? item.id : undefined,
+    // Client idempotency check before insert
+    if (semKey) {
+      const { data: existing } = await sb
+        .from('notifications')
+        .select('id')
+        .filter('metadata->>dedupeKey', 'eq', semKey)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        return true;
+      }
+    }
+
+    const recipientId = itemWithDedupe.recipientId && isUuid(itemWithDedupe.recipientId) ? itemWithDedupe.recipientId : null;
+    const { error: insertErr } = await sb.from('notifications').insert({
+      id: itemWithDedupe.id && isUuid(itemWithDedupe.id) ? itemWithDedupe.id : undefined,
       user_id: recipientId,
-      user_identifier: item.recipientName || item.recipientId || null,
-      type: item.type,
-      title: item.title,
-      description: item.desc,
-      read: item.read ?? false,
-      link_screen: item.linkScreen || null,
+      user_identifier: itemWithDedupe.recipientName || itemWithDedupe.recipientId || null,
+      type: itemWithDedupe.type,
+      title: itemWithDedupe.title,
+      description: itemWithDedupe.desc,
+      read: itemWithDedupe.read ?? false,
+      link_screen: itemWithDedupe.linkScreen || null,
       metadata: {
-        ...(item.meta || {}),
-        host_name: item.meta?.hostName || item.meta?.host_name || item.recipientName,
-        host_id: item.meta?.hostId || item.meta?.host_id || item.recipientId,
-        recipient_name: item.recipientName || item.meta?.recipientName,
-        recipient_id: item.recipientId || item.meta?.recipientId,
-        sender_name: item.senderName || item.meta?.senderName || item.meta?.joiningPlayerName,
-        sender_avatar: item.senderAvatar || item.meta?.senderAvatar || item.meta?.joiningPlayerAvatar,
+        ...itemMeta,
+        dedupeKey: semKey,
+        host_name: itemMeta.hostName || itemMeta.host_name || itemWithDedupe.recipientName,
+        host_id: itemMeta.hostId || itemMeta.host_id || itemWithDedupe.recipientId,
+        recipient_name: itemWithDedupe.recipientName || itemMeta.recipientName,
+        recipient_id: itemWithDedupe.recipientId || itemMeta.recipientId,
+        sender_name: itemWithDedupe.senderName || itemMeta.senderName || itemMeta.joiningPlayerName,
+        sender_avatar: itemWithDedupe.senderAvatar || itemMeta.senderAvatar || itemMeta.joiningPlayerAvatar,
       },
     });
-    return true;
+
+    if (insertErr && (insertErr.code === '23505' || insertErr.message?.includes('duplicate key'))) {
+      return true;
+    }
+    return !insertErr;
   } catch (err) {
     return false;
   }
+}
+
+export interface AddNotificationOptions {
+  skipPersist?: boolean;
+  skipBroadcast?: boolean;
 }
 
 export function addNotification(
@@ -581,40 +770,45 @@ export function addNotification(
     recipientName?: string;
     senderName?: string;
     senderAvatar?: string;
-  }
+  },
+  options: AddNotificationOptions = {}
 ): NotificationItem {
   const current = getNotifications();
   const timestamp = input.timestamp || Date.now();
   const isChat = input.type === 'chat';
-  const dedupeKey = input.meta?.dedupeKey || input.id;
+  const semKey = getSemanticKey(input as any);
 
-  // Strict deduplication: check if already exists in memory or delivered keys
+  // Strict deduplication: check if already exists in memory by ID or semantic key
   if (input.id && current.some((n) => n.id === input.id)) {
     return current.find((n) => n.id === input.id)!;
   }
-  const metaKey = input.meta?.dedupeKey;
-  if (metaKey && current.some((n) => n.meta?.dedupeKey === metaKey)) {
-    return current.find((n) => n.meta?.dedupeKey === metaKey)!;
-  }
-  if (isChat && input.meta?.messageId) {
-    const existingMsg = current.find(
-      (n) =>
-        n.type === 'chat' &&
-        n.meta?.messageId === input.meta?.messageId &&
-        ((!input.recipientName || n.recipientName === input.recipientName) ||
-          (!input.recipientId || n.recipientId === input.recipientId))
-    );
-    if (existingMsg) return existingMsg;
-  }
-  if (dedupeKey && getDeliveredNotificationKeys().has(dedupeKey)) {
-    const existing = current.find(
-      (n) => n.id === input.id || (Boolean(metaKey) && n.meta?.dedupeKey === metaKey)
-    );
-    if (existing) return existing;
+  if (semKey && current.some((n) => getSemanticKey(n) === semKey)) {
+    return current.find((n) => getSemanticKey(n) === semKey)!;
   }
 
-  if (dedupeKey) {
-    recordDeliveredNotificationKey(dedupeKey);
+  // Deduplicate against delivered notification keys
+  if (semKey && getDeliveredNotificationKeys().has(semKey)) {
+    const existing = current.find((n) => getSemanticKey(n) === semKey || n.id === input.id);
+    if (existing) return existing;
+    return {
+      id: input.id || `notif_${semKey}`,
+      type: input.type,
+      title: input.title,
+      desc: input.desc,
+      timestamp,
+      time: input.time || formatRelativeTime(timestamp),
+      read: input.read ?? false,
+      linkScreen: input.linkScreen,
+      recipientId: input.recipientId,
+      recipientName: input.recipientName,
+      senderName: input.senderName,
+      senderAvatar: input.senderAvatar,
+      meta: { ...(input.meta || {}), dedupeKey: semKey },
+    };
+  }
+
+  if (semKey) {
+    recordDeliveredNotificationKey(semKey);
   }
 
   const newNotif: NotificationItem = {
@@ -632,6 +826,7 @@ export function addNotification(
     senderAvatar: input.senderAvatar || input.meta?.senderAvatar || input.meta?.joiningPlayerAvatar,
     meta: {
       ...(input.meta || {}),
+      dedupeKey: semKey,
       ...(isChat
         ? {}
         : {
@@ -646,11 +841,15 @@ export function addNotification(
   const updated = [newNotif, ...current].slice(0, MAX_NOTIFICATIONS);
   persistNotifications(updated);
 
-  // Background persist to Supabase / API
-  persistNotificationToSupabase(newNotif).catch(() => {});
+  // Background persist to Supabase / API only if not skipped
+  if (!options.skipPersist) {
+    persistNotificationToSupabase(newNotif).catch(() => {});
+  }
 
-  // Broadcast cross-tab and cross-device
-  broadcastNotification(newNotif).catch(() => {});
+  // Broadcast cross-tab and cross-device only if not skipped
+  if (!options.skipBroadcast) {
+    broadcastNotification(newNotif).catch(() => {});
+  }
 
   if (typeof window !== 'undefined') {
     try {
@@ -677,7 +876,15 @@ function item_meta_host_name(meta?: Record<string, any>): string | undefined {
 
 export function markAsRead(id: string, userFilter?: UserNotificationFilter): void {
   const current = getNotifications();
-  const updated = current.map((n) => (n.id === id ? { ...n, read: true } : n));
+  const target = current.find((n) => n.id === id);
+  const targetSemKey = target ? getSemanticKey(target) : '';
+
+  const updated = current.map((n) => {
+    if (n.id === id || (targetSemKey && getSemanticKey(n) === targetSemKey)) {
+      return { ...n, read: true };
+    }
+    return n;
+  });
   persistNotifications(updated);
 
   if (typeof window !== 'undefined') {
@@ -730,7 +937,14 @@ export function markAllAsRead(userFilter?: UserNotificationFilter): void {
 
 export function dismissNotification(id: string): void {
   const current = getNotifications();
-  const updated = current.filter((n) => n.id !== id);
+  const target = current.find((n) => n.id === id);
+  const targetSemKey = target ? getSemanticKey(target) : '';
+
+  const updated = current.filter((n) => {
+    if (n.id === id) return false;
+    if (targetSemKey && getSemanticKey(n) === targetSemKey) return false;
+    return true;
+  });
   persistNotifications(updated);
 
   if (typeof window !== 'undefined') {
@@ -788,19 +1002,24 @@ export function getUnreadCount(userFilter?: UserNotificationFilter): number {
  * Returns the count of unread chat notifications, either globally or scoped to a specific match.
  */
 export function getUnreadChatNotificationsCount(
-  gameIdentifier?: string,
+  gameIdentifier?: string | string[],
   gameTitle?: string,
   userFilter?: UserNotificationFilter
 ): number {
   const all = getNotifications();
-  const cleanId = gameIdentifier?.toLowerCase().trim();
+  const rawIds = Array.isArray(gameIdentifier) ? gameIdentifier : [gameIdentifier];
+  const cleanIds = rawIds.filter(Boolean).map((id) => (id as string).toLowerCase().trim());
   const cleanTitle = gameTitle?.toLowerCase().trim();
 
+  const seen = new Set<string>();
   return all.filter((n) => {
     if (n.read || n.type !== 'chat') return false;
     if (userFilter && !isNotificationForUser(n, userFilter)) return false;
 
-    if (!cleanId && !cleanTitle) {
+    if (cleanIds.length === 0 && !cleanTitle) {
+      const key = getSemanticKey(n) || n.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true; // Global unread chat notifications count
     }
 
@@ -808,11 +1027,20 @@ export function getUnreadChatNotificationsCount(
     const nSId = (n.meta?.sessionId || '').toLowerCase().trim();
     const nTitle = (n.meta?.gameTitle || '').toLowerCase().trim();
 
-    const idMatches = cleanId && (nGId === cleanId || nSId === cleanId);
-    const titleMatches =
-      cleanTitle && nTitle && (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle));
+    const idMatches = cleanIds.some((cId) => cId && (nGId === cId || nSId === cId));
+    const titleMatches = Boolean(
+      cleanTitle &&
+      nTitle &&
+      (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle))
+    );
 
-    return idMatches || titleMatches;
+    if (idMatches || titleMatches) {
+      const key = getSemanticKey(n) || n.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }
+    return false;
   }).length;
 }
 
@@ -820,14 +1048,16 @@ export function getUnreadChatNotificationsCount(
  * Marks all chat notifications for a specific game as read (e.g. when opening that match chat).
  */
 export function markGameChatNotificationsAsRead(
-  gameIdentifier: string,
+  gameIdentifier?: string | string[],
   gameTitle?: string,
   userFilter?: UserNotificationFilter
 ): void {
-  if (!gameIdentifier && !gameTitle) return;
   const current = getNotifications();
-  const cleanId = gameIdentifier?.toLowerCase().trim();
+  const rawIds = Array.isArray(gameIdentifier) ? gameIdentifier : [gameIdentifier];
+  const cleanIds = rawIds.filter(Boolean).map((id) => (id as string).toLowerCase().trim());
   const cleanTitle = gameTitle?.toLowerCase().trim();
+
+  if (cleanIds.length === 0 && !cleanTitle) return;
   const readIds: string[] = [];
 
   const updated = current.map((n) => {
@@ -838,9 +1068,12 @@ export function markGameChatNotificationsAsRead(
     const nSId = (n.meta?.sessionId || '').toLowerCase().trim();
     const nTitle = (n.meta?.gameTitle || '').toLowerCase().trim();
 
-    const idMatches = cleanId && (nGId === cleanId || nSId === cleanId);
-    const titleMatches =
-      cleanTitle && nTitle && (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle));
+    const idMatches = cleanIds.some((cId) => cId && (nGId === cId || nSId === cId));
+    const titleMatches = Boolean(
+      cleanTitle &&
+      nTitle &&
+      (cleanTitle === nTitle || cleanTitle.includes(nTitle) || nTitle.includes(cleanTitle))
+    );
 
     if (idMatches || titleMatches) {
       readIds.push(n.id);
@@ -861,6 +1094,19 @@ export function markGameChatNotificationsAsRead(
           body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
         }).catch(() => {});
       });
+
+      // Also tell the server to mark all matching chat notifications as read for this game
+      fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'mark_chat_read',
+          gameIds: cleanIds,
+          gameTitle: cleanTitle,
+          userId: userFilter?.id,
+          userName: userFilter?.name,
+        }),
+      }).catch(() => {});
     }
 
     const sb = getSupabaseClient();
@@ -869,6 +1115,16 @@ export function markGameChatNotificationsAsRead(
     }
   }
 }
+
+// Shared Realtime Subscription Manager to prevent duplicate channels and handlers across component mounts
+interface SharedRealtimeSub {
+  subKey: string;
+  refCount: number;
+  channels: any[];
+  cleanupTimer: any;
+}
+
+let activeSharedRealtime: SharedRealtimeSub | null = null;
 
 /**
  * React Hook for real-time notification subscriptions with authentic recipient filtering,
@@ -914,19 +1170,26 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
       const current = getNotifications();
       const mergedMap = new Map<string, NotificationItem>();
 
-      // 1. Seed with remote items fetched from Supabase
-      remoteItems.forEach((r) => mergedMap.set(r.id, r));
+      // 1. Seed with remote items fetched from Supabase, keyed by semantic key
+      remoteItems.forEach((r) => {
+        const key = getSemanticKey(r);
+        if (key) mergedMap.set(key, r);
+      });
 
-      // 2. Merge local items, preserving newest data and read status
+      // 2. Merge local items, collapsing identical semantic keys
       current.forEach((c) => {
-        if (!mergedMap.has(c.id)) {
-          mergedMap.set(c.id, c);
+        const key = getSemanticKey(c);
+        if (!key) return;
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, c);
         } else {
-          const rem = mergedMap.get(c.id)!;
-          mergedMap.set(c.id, {
+          const rem = mergedMap.get(key)!;
+          mergedMap.set(key, {
             ...rem,
             ...c,
             read: c.read || rem.read,
+            // Keep the UUID from Supabase if available so database operations like markAsRead work
+            id: (rem.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rem.id)) ? rem.id : c.id,
           });
         }
       });
@@ -940,7 +1203,7 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
     };
   }, [userFilter?.id, userFilter?.name, userFilter?.email]);
 
-  // 3. Real-time updates via Supabase WebSocket for this user (broadcasts & postgres_changes)
+  // 3. Real-time updates via Supabase WebSocket (Shared singleton manager across all component instances)
   useEffect(() => {
     const sb = getSupabaseClient();
     if (!sb || !isSupabaseConfigured || (!userFilter?.id && !userFilter?.name && !userFilter?.email)) return;
@@ -948,6 +1211,7 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
     const uId = userFilter.id?.trim();
     const uName = userFilter.name?.trim().toLowerCase();
     const cleanName = uName?.replace(/\s+/g, '_');
+    const subKey = [uId || '', cleanName || '', (userFilter.email || '').trim().toLowerCase()].join('|');
 
     const handleIncoming = (rawPayload: any) => {
       if (!rawPayload) return;
@@ -981,22 +1245,53 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
       };
 
       if (isNotificationForUser(notifItem, userFilter)) {
-        addNotification(notifItem);
+        // Break echo loops: skip persist and broadcast since originator already did so
+        addNotification(notifItem, { skipPersist: true, skipBroadcast: true });
         notifyAll();
       }
     };
 
-    const channelNames = [
-      'sportsync-notifs-all',
-      ...(uId ? [`sportsync-notifs-${uId}`] : []),
-      ...(cleanName ? [`sportsync-notifs-${cleanName}`] : []),
-    ];
+    if (activeSharedRealtime && activeSharedRealtime.subKey === subKey) {
+      if (activeSharedRealtime.cleanupTimer) {
+        clearTimeout(activeSharedRealtime.cleanupTimer);
+        activeSharedRealtime.cleanupTimer = null;
+      }
+      activeSharedRealtime.refCount++;
+    } else {
+      if (activeSharedRealtime) {
+        if (activeSharedRealtime.cleanupTimer) {
+          clearTimeout(activeSharedRealtime.cleanupTimer);
+        }
+        activeSharedRealtime.channels.forEach((ch) => {
+          try { sb.removeChannel(ch); } catch {}
+        });
+        activeSharedRealtime = null;
+      }
 
-    const activeChannels = channelNames.map((cName) => {
-      return sb
-        .channel(cName)
+      const channels: any[] = [];
+
+      // A. Targeted channel for this user
+      const userChannelName = uId ? `sportsync-notifs-${uId}` : (cleanName ? `sportsync-notifs-${cleanName}` : null);
+      if (userChannelName) {
+        const uCh = sb
+          .channel(userChannelName)
+          .on('broadcast', { event: 'new_notification' }, handleIncoming)
+          .on('broadcast', { event: 'notification' }, handleIncoming)
+          .subscribe();
+        channels.push(uCh);
+      }
+
+      // B. Universal channel for system alerts
+      const allCh = sb
+        .channel('sportsync-notifs-all')
         .on('broadcast', { event: 'new_notification' }, handleIncoming)
         .on('broadcast', { event: 'notification' }, handleIncoming)
+        .subscribe();
+      channels.push(allCh);
+
+      // C. Database change listener registered strictly ONCE per client
+      const dbCh = sb
+        .channel(`sportsync-db-notifs-${uId || cleanName || 'all'}`)
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'notifications' },
@@ -1026,20 +1321,43 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
           }
         )
         .subscribe();
-    });
+      channels.push(dbCh);
+
+      activeSharedRealtime = {
+        subKey,
+        refCount: 1,
+        channels,
+        cleanupTimer: null,
+      };
+    }
 
     return () => {
-      activeChannels.forEach((ch) => {
-        try {
-          sb.removeChannel(ch);
-        } catch {}
-      });
+      if (activeSharedRealtime && activeSharedRealtime.subKey === subKey) {
+        activeSharedRealtime.refCount--;
+        if (activeSharedRealtime.refCount <= 0) {
+          activeSharedRealtime.cleanupTimer = setTimeout(() => {
+            if (activeSharedRealtime && activeSharedRealtime.refCount <= 0) {
+              activeSharedRealtime.channels.forEach((ch) => {
+                try { sb.removeChannel(ch); } catch {}
+              });
+              activeSharedRealtime = null;
+            }
+          }, 3000);
+        }
+      }
     };
   }, [userFilter?.id, userFilter?.name, userFilter?.email]);
 
   // 4. Strict recipient filtering to guarantee newly registered users never see false notifications
   const notifications = useMemo(() => {
-    return allNotifications.filter((n: NotificationItem) => isNotificationForUser(n, userFilter));
+    const list = allNotifications.filter((n: NotificationItem) => isNotificationForUser(n, userFilter));
+    const seen = new Set<string>();
+    return list.filter((n) => {
+      const key = getSemanticKey(n) || n.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [allNotifications, userFilter?.id, userFilter?.name, userFilter?.email, userFilter?.username]);
 
   const unreadCount = notifications.filter((n: NotificationItem) => !n.read).length;

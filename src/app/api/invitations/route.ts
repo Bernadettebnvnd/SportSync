@@ -547,6 +547,8 @@ export async function POST(req: NextRequest) {
           if (q.user_id && q.user_id !== authUser.id) {
             try {
               const pName = q.partner_names?.[0] || 'Player';
+              const cleanUserId = (q.user_id || pName || '').toLowerCase().trim();
+              const notifDedupeKey = `game_deleted_${idToDelete}_${cleanUserId}`;
               const notifPayload = {
                 user_id: (q.user_id && UUID_REGEX.test(q.user_id)) ? q.user_id : null,
                 user_identifier: pName,
@@ -563,15 +565,31 @@ export async function POST(req: NextRequest) {
                   hostId: authUser.id,
                   recipientId: q.user_id,
                   recipientName: pName,
-                  dedupeKey: `del_${idToDelete}_${q.user_id}_${Date.now()}`,
+                  dedupeKey: notifDedupeKey,
                 },
                 created_at: new Date().toISOString(),
               };
-              await supabase.from('notifications').insert(notifPayload);
+
+              // Idempotency check: don't insert duplicate notification if already exists
+              const { data: existingNotif } = await supabase
+                .from('notifications')
+                .select('id')
+                .filter('metadata->>dedupeKey', 'eq', notifDedupeKey)
+                .limit(1)
+                .maybeSingle();
+
+              if (!existingNotif) {
+                const { error: notifErr } = await supabase.from('notifications').insert(notifPayload);
+                if (notifErr && notifErr.code !== '23505') {
+                  console.warn('[/api/invitations DELETE] notification insert notice:', notifErr.message);
+                }
+              }
 
               // Broadcast to player channel
-              const ch = supabase.channel(`sportsync-notifs-${q.user_id}`);
-              ch.send({ type: 'broadcast', event: 'new_notification', payload: notifPayload }).catch(() => {});
+              if (q.user_id) {
+                const ch = supabase.channel(`sportsync-notifs-${q.user_id}`);
+                ch.send({ type: 'broadcast', event: 'new_notification', payload: notifPayload }).catch(() => {});
+              }
             } catch {}
           }
         }
@@ -827,7 +845,9 @@ export async function POST(req: NextRequest) {
           const gameTime = game.time || sessionSchedule.time;
           const scheduleStr = gameDate && gameTime ? `${gameDate} • ${gameTime}` : gameDate || gameTime || '';
 
-          const notifDedupeKey = `join_${dbSession.id}_${authUser.id}_${Date.now()}`;
+          const cleanHostKey = (hostUserId || hostName || '').toLowerCase().trim();
+          const cleanJoinerKey = (authUser.id || joiningPlayerName || '').toLowerCase().trim();
+          const notifDedupeKey = `player_joined_${dbSession.id}_${cleanJoinerKey}_${cleanHostKey}`;
           const notifDesc = `${joiningPlayerName} joined your game, ${gameTitle}.`;
 
           const notifPayload = {
@@ -873,39 +893,44 @@ export async function POST(req: NextRequest) {
             created_at: nowIso,
           };
 
-          const { error: notifErr } = await supabase.from('notifications').insert(notifPayload);
-          if (notifErr) {
-            console.warn('[/api/invitations POST accept] notification insert notice:', notifErr.message);
+          // Idempotency check: don't insert duplicate notification if already exists
+          const { data: existingNotif } = await supabase
+            .from('notifications')
+            .select('id')
+            .filter('metadata->>dedupeKey', 'eq', notifDedupeKey)
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingNotif) {
+            const { error: notifErr } = await supabase.from('notifications').insert(notifPayload);
+            if (notifErr && notifErr.code !== '23505') {
+              console.warn('[/api/invitations POST accept] notification insert notice:', notifErr.message);
+            }
           }
 
-          // Broadcast across global notification channel, host ID channel, and host Name channel
-          const candidateChannels = [
-            'sportsync-notifs-all',
-            ...(hostUserId ? [`sportsync-notifs-${hostUserId}`] : []),
-            ...(hostName ? [`sportsync-notifs-${hostName.toLowerCase().replace(/\s+/g, '_')}`] : []),
-          ];
+          // Broadcast to recipient's primary channel
+          const primaryChannel = hostUserId
+            ? `sportsync-notifs-${hostUserId}`
+            : hostName
+              ? `sportsync-notifs-${hostName.toLowerCase().replace(/\s+/g, '_')}`
+              : 'sportsync-notifs-all';
 
-          for (const chName of candidateChannels) {
-            try {
-              const hostChannel = supabase.channel(chName);
-              if (typeof (hostChannel as any).httpSend === 'function') {
-                await (hostChannel as any).httpSend('new_notification', notifPayload).catch(() => {});
+          try {
+            const hostChannel = supabase.channel(primaryChannel);
+            hostChannel.subscribe((status: string) => {
+              if (status === 'SUBSCRIBED') {
+                hostChannel.send({
+                  type: 'broadcast',
+                  event: 'new_notification',
+                  payload: notifPayload,
+                }).catch(() => {}).finally(() => {
+                  setTimeout(() => {
+                    try { supabase.removeChannel(hostChannel); } catch {}
+                  }, 1500);
+                });
               }
-              hostChannel.subscribe((status: string) => {
-                if (status === 'SUBSCRIBED') {
-                  hostChannel.send({
-                    type: 'broadcast',
-                    event: 'new_notification',
-                    payload: notifPayload,
-                  }).catch(() => {}).finally(() => {
-                    setTimeout(() => {
-                      try { supabase.removeChannel(hostChannel); } catch {}
-                    }, 1500);
-                  });
-                }
-              });
-            } catch {}
-          }
+            });
+          } catch {}
         } catch (notifEx) {
           console.warn('[/api/invitations POST accept] Host notification delivery exception:', notifEx);
         }
