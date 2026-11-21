@@ -1,24 +1,60 @@
 import { NextResponse } from 'next/server';
+import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { serverSyncOAuthUser } from '@/lib/auth/serverAuth';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const { authId, email, fullName, avatarUrl, mock } = body;
+    const authHeader = request.headers.get('authorization') || '';
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    const accessToken = match?.[1]?.trim();
 
-    if (!email || typeof email !== 'string' || !email.trim()) {
+    if (!accessToken) {
+      return NextResponse.json(
+        { error: 'Authorization Bearer token is required for OAuth synchronization.' },
+        { status: 401 }
+      );
+    }
+
+    if (!isSupabaseConfigured) {
+      return NextResponse.json(
+        { error: 'Supabase authentication is not configured.' },
+        { status: 500 }
+      );
+    }
+
+    const supabase = createServerClient(accessToken) || createAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Authentication client unavailable.' },
+        { status: 500 }
+      );
+    }
+
+    const { data: authData, error: authError } = await supabase.auth.getUser(accessToken);
+    if (authError || !authData?.user) {
+      return NextResponse.json(
+        { error: 'Invalid or expired authentication session.' },
+        { status: 401 }
+      );
+    }
+
+    const verifiedUser = authData.user;
+    if (!verifiedUser.email) {
       return NextResponse.json(
         { error: 'Email address is required for Google OAuth synchronization.' },
         { status: 400 }
       );
     }
 
+    const meta = verifiedUser.user_metadata || {};
     const syncResult = await serverSyncOAuthUser({
-      authId: authId || `usr_google_${Date.now()}`,
-      email: email.trim(),
-      fullName: fullName?.trim(),
-      avatarUrl: avatarUrl?.trim(),
-      mock: Boolean(mock),
+      authId: verifiedUser.id,
+      email: verifiedUser.email,
+      fullName: (meta.full_name || meta.name || '').trim() || undefined,
+      avatarUrl: (meta.avatar_url || meta.picture || '').trim() || undefined,
+      provider: verifiedUser.app_metadata?.provider || 'google',
+      accessToken,
+      authMetadata: meta,
     });
 
     const response = NextResponse.json(

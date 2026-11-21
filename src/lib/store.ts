@@ -313,15 +313,15 @@ function setupGlobalAuthListener() {
       if (session?.user && !isLoggedOut) {
         const user = await getCurrentUser();
         if (user) {
-          const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
-          const isUserOnboarded = !hasPendingOnboarding && Boolean(
-            user.onboarding_completed ?? user.has_completed_onboarding ?? false
+          const isUserOnboarded = Boolean(
+            user.onboarding_completed === true || user.has_completed_onboarding === true
           );
           user.onboarding_completed = isUserOnboarded;
           user.has_completed_onboarding = isUserOnboarded;
           globalState.currentUser = user;
           if (typeof window !== 'undefined') {
             if (isUserOnboarded) {
+              localStorage.removeItem('sportsync_pending_onboarding');
               localStorage.setItem('matchi_onboarding_completed', 'true');
               localStorage.setItem('sportsync_onboarding_completed', 'true');
             } else {
@@ -338,7 +338,7 @@ function setupGlobalAuthListener() {
           globalState.bookings = bookings;
           notify();
         }
-      } else {
+      } else if (_event === 'SIGNED_OUT') {
         globalState.currentUser = GUEST_USER;
         globalState.bookings = [];
         notify();

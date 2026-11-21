@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { Session } from '@supabase/supabase-js';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { useMatchiStore } from '@/lib/store';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -13,10 +14,115 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let isCancelled = false;
+    let didSync = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    const handleUserSync = async (session: Session) => {
+      if (isCancelled || didSync) return;
+      didSync = true;
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      // Do not sync or route to onboarding if user is in password recovery mode
+      if (typeof window !== 'undefined' && sessionStorage.getItem('sportsync_recovery_mode') === 'true') {
+        router.replace('/reset-password');
+        return;
+      }
+
+      if (!session?.access_token || !session?.user) {
+        throw new Error('Verified Google authentication session is missing.');
+      }
+
+      const res = await fetch('/api/auth/oauth-sync', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const syncResult = await res.json().catch(() => ({}));
+      if (!res.ok || !syncResult.user) {
+        throw new Error(syncResult.error || 'Failed to sync user profile.');
+      }
+
+      const isComplete = Boolean(syncResult.isComplete === true);
+      const isOwner = syncResult.user.role === 'venue_owner' || syncResult.user.role === 'organizer';
+
+      // Update in-memory user store
+      setAuthenticatedUser({
+        ...syncResult.user,
+        onboarding_completed: isComplete,
+        has_completed_onboarding: isComplete,
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_logged_out');
+        localStorage.setItem('sportsync_user_id', syncResult.user.id);
+        localStorage.setItem('sportsync_user_email', syncResult.user.email);
+        localStorage.setItem('sportsync_user_role', syncResult.user.role || 'player');
+        localStorage.setItem('sportsync_user_name', syncResult.user.full_name || '');
+        localStorage.setItem('matchi_user_name', syncResult.user.full_name || '');
+
+        if (!isComplete) {
+          localStorage.setItem('sportsync_pending_onboarding', 'true');
+          localStorage.removeItem('matchi_onboarding_completed');
+          localStorage.removeItem('sportsync_onboarding_completed');
+          localStorage.removeItem('sportsync_user_profile');
+          localStorage.removeItem('sportsync_user_city');
+          localStorage.removeItem('sportsync_user_sports');
+        } else {
+          sessionStorage.removeItem('sportsync_just_registered');
+          localStorage.removeItem('sportsync_pending_onboarding');
+          localStorage.setItem('matchi_onboarding_completed', 'true');
+          localStorage.setItem('sportsync_onboarding_completed', 'true');
+          if (syncResult.user.city) {
+            localStorage.setItem('sportsync_user_city', syncResult.user.city);
+          }
+
+          const rawSports =
+            Array.isArray(syncResult.user.preferred_sports) && syncResult.user.preferred_sports.length > 0
+              ? syncResult.user.preferred_sports
+              : (syncResult.user.primary_sport ? [syncResult.user.primary_sport] : ['football']);
+          const formattedSports = rawSports.map(
+            (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+          );
+          const rawSkill = syncResult.user.skill_level || 'intermediate';
+          const formattedSkill = rawSkill.charAt(0).toUpperCase() + rawSkill.slice(1);
+
+          localStorage.setItem(
+            'sportsync_user_profile',
+            JSON.stringify({
+              id: syncResult.user.id,
+              name: syncResult.user.full_name,
+              username: `@${syncResult.user.nickname || syncResult.user.email.split('@')[0]}`,
+              role: syncResult.user.role || 'player',
+              city: syncResult.user.city || 'Naga City',
+              primarySport: syncResult.user.primary_sport || rawSports[0] || 'football',
+              preferredSports: formattedSports,
+              skillLevel: formattedSkill,
+              onboardingCompleted: true,
+              isGuest: false,
+            })
+          );
+        }
+
+        const target = !isComplete
+          ? (isOwner ? '/onboarding?role=owner' : '/onboarding')
+          : (isOwner ? '/organizer' : '/');
+        window.location.replace(target);
+      }
+    };
 
     const processOAuthCallback = async () => {
       try {
         if (typeof window !== 'undefined') {
+          localStorage.removeItem('sportsync_logged_out');
+
           const searchParams = new URLSearchParams(window.location.search);
           let hashParams = new URLSearchParams();
           if (window.location.hash) {
@@ -67,66 +173,84 @@ export default function AuthCallbackPage() {
 
         const supabase = getSupabaseClient();
         if (!supabase || !isSupabaseConfigured) {
-          // If Supabase is unconfigured, redirect to home
           router.replace('/');
           return;
         }
 
-        // Exchange code if PKCE code is in query params
-        if (typeof window !== 'undefined') {
+        // 1. Check whether detectSessionInUrl already established the session
+        const { data: initialData, error: initialError } = await supabase.auth.getSession();
+        if (initialError) {
+          throw initialError;
+        }
+
+        let activeSession: Session | null = initialData?.session ?? null;
+
+        // 2. If no session yet and PKCE code is in query params, exchange it explicitly
+        if (!activeSession && typeof window !== 'undefined') {
           const searchParams = new URLSearchParams(window.location.search);
           const code = searchParams.get('code');
           if (code) {
             try {
-              const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-              if (exchangeError) {
-                console.warn('[OAuth] Code exchange note:', exchangeError.message);
+              const { data: exchangedData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+              if (exchangedData?.session) {
+                activeSession = exchangedData.session;
+              } else {
+                if (exchangeError) {
+                  console.warn('[OAuth] Code exchange note:', exchangeError.message);
+                }
+                const { data: retrySessionData } = await supabase.auth.getSession();
+                activeSession = retrySessionData?.session ?? null;
               }
             } catch (exErr) {
               console.warn('[OAuth] Code exchange exception:', exErr);
+              const { data: retrySessionData } = await supabase.auth.getSession();
+              activeSession = retrySessionData?.session ?? null;
             }
           }
         }
 
-        // Retrieve active session from Supabase client
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        const session = sessionData?.session;
-        const authUser = session?.user;
-
-        if (!authUser) {
-          // Listen for onAuthStateChange in case session is being processed asynchronously
-          const { data: authListener } = supabase.auth.onAuthStateChange(
-            async (event, newSession) => {
-              if (isCancelled) return;
-              if (event === 'PASSWORD_RECOVERY') {
-                authListener.subscription.unsubscribe();
-                if (typeof window !== 'undefined') {
-                  sessionStorage.setItem('sportsync_recovery_mode', 'true');
-                }
-                router.replace('/reset-password');
-                return;
-              }
-              if (newSession?.user) {
-                authListener.subscription.unsubscribe();
-                await handleUserSync(newSession.user);
-              }
-            }
-          );
-
-          // Timeout after 5 seconds if no session found
-          setTimeout(() => {
-            if (!isCancelled) {
-              setErrorMessage('Google authentication session could not be established. Please try logging in again.');
-            }
-          }, 5000);
+        if (activeSession?.user) {
+          await handleUserSync(activeSession);
           return;
         }
 
-        await handleUserSync(authUser);
+        // 3. Fallback: wait for asynchronous auth state completion
+        const { data: authListener } = supabase.auth.onAuthStateChange(
+          async (event, newSession) => {
+            if (isCancelled) return;
+            if (event === 'PASSWORD_RECOVERY') {
+              authListener.subscription.unsubscribe();
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('sportsync_recovery_mode', 'true');
+              }
+              router.replace('/reset-password');
+              return;
+            }
+            if (newSession?.user && newSession?.access_token) {
+              authListener.subscription.unsubscribe();
+              try {
+                await handleUserSync(newSession);
+              } catch (syncErr: unknown) {
+                if (!isCancelled) {
+                  const msg = syncErr instanceof Error ? syncErr.message : 'Authentication verification failed.';
+                  setErrorMessage(msg);
+                }
+              }
+            }
+          }
+        );
+        subscription = authListener.subscription;
+
+        timeoutId = setTimeout(() => {
+          if (!isCancelled && !didSync) {
+            subscription?.unsubscribe();
+            setErrorMessage('Google authentication session could not be established. Please try logging in again.');
+          }
+        }, 5000);
       } catch (err: unknown) {
         if (!isCancelled) {
           const msg = err instanceof Error ? err.message : 'Authentication verification failed.';
@@ -135,91 +259,12 @@ export default function AuthCallbackPage() {
       }
     };
 
-    const handleUserSync = async (authUser: any) => {
-      // Do not sync or route to onboarding if user is in password recovery mode
-      if (typeof window !== 'undefined' && sessionStorage.getItem('sportsync_recovery_mode') === 'true') {
-        router.replace('/reset-password');
-        return;
-      }
-
-      const meta = authUser.user_metadata || {};
-      const res = await fetch('/api/auth/oauth-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          authId: authUser.id,
-          email: authUser.email,
-          fullName: meta.full_name || meta.name || '',
-          avatarUrl: meta.avatar_url || meta.picture || '',
-          provider: 'google',
-        }),
-      });
-
-      const syncResult = await res.json().catch(() => ({}));
-      if (!res.ok || !syncResult.user) {
-        throw new Error(syncResult.error || 'Failed to sync user profile.');
-      }
-
-      const isComplete = Boolean(syncResult.isComplete === true);
-
-      // Update in-memory user store
-      setAuthenticatedUser({
-        ...syncResult.user,
-        onboarding_completed: isComplete,
-        has_completed_onboarding: isComplete,
-      });
-
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_logged_out');
-        localStorage.setItem('sportsync_user_id', syncResult.user.id);
-        localStorage.setItem('sportsync_user_email', syncResult.user.email);
-        localStorage.setItem('sportsync_user_role', syncResult.user.role || 'player');
-        localStorage.setItem('sportsync_user_name', syncResult.user.full_name);
-
-        if (!isComplete) {
-          localStorage.setItem('sportsync_pending_onboarding', 'true');
-          localStorage.removeItem('matchi_onboarding_completed');
-          localStorage.removeItem('sportsync_onboarding_completed');
-          localStorage.removeItem('sportsync_user_profile');
-          localStorage.removeItem('sportsync_user_city');
-          localStorage.removeItem('sportsync_user_sports');
-        } else {
-          localStorage.removeItem('sportsync_pending_onboarding');
-          localStorage.setItem('matchi_onboarding_completed', 'true');
-          localStorage.setItem('sportsync_onboarding_completed', 'true');
-          localStorage.setItem(
-            'sportsync_user_profile',
-            JSON.stringify({
-              id: syncResult.user.id,
-              name: syncResult.user.full_name,
-              username: `@${syncResult.user.nickname || syncResult.user.email.split('@')[0]}`,
-              role: syncResult.user.role || 'player',
-              city: syncResult.user.city || 'Naga City',
-              primarySport: syncResult.user.primary_sport || 'football',
-              preferredSports: syncResult.user.preferred_sports || ['Football'],
-              skillLevel: syncResult.user.skill_level || 'Intermediate',
-              onboardingCompleted: true,
-              isGuest: false,
-            })
-          );
-        }
-      }
-
-      // STRICT ROUTING: If profile is missing or incomplete, MUST route to Profile Setup screen
-      const isOwner = syncResult.user.role === 'venue_owner' || syncResult.user.role === 'organizer';
-      if (!isComplete) {
-        const target = isOwner ? '/onboarding?role=owner' : '/onboarding';
-        router.replace(target);
-      } else {
-        const target = isOwner ? '/organizer' : '/';
-        router.replace(target);
-      }
-    };
-
     processOAuthCallback();
 
     return () => {
       isCancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (subscription) subscription.unsubscribe();
     };
   }, [router, setAuthenticatedUser]);
 

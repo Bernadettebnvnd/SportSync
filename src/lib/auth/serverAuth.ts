@@ -913,75 +913,57 @@ export async function serverSyncOAuthUser(data: {
   fullName?: string;
   avatarUrl?: string;
   provider?: string;
-  mock?: boolean;
+  accessToken?: string;
+  authMetadata?: Record<string, unknown> | null;
 }): Promise<{ user: SanitizedUser; token: string; isComplete: boolean }> {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase is not configured. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
   }
 
+  if (!isValidUuid(data.authId)) {
+    throw new Error('Verified Supabase Auth user ID is required for OAuth synchronization.');
+  }
+
   const normalizedEmail = data.email.trim().toLowerCase();
   const admin = createAdminClient();
   const serverClient = createServerClient();
-  const dbClient = admin || serverClient;
+  const dbClient = admin || createServerClient(data.accessToken) || serverClient;
 
   if (!dbClient) {
     throw new Error('Database client is not available for OAuth synchronization.');
   }
 
-  let resolvedAuthId = isValidUuid(data.authId) ? data.authId : null;
+  const targetAuthId = data.authId;
 
-  // Ensure a real auth.users account exists when admin client is available
-  if (admin) {
-    try {
-      const { data: existingByEmail } = await dbClient
-        .from('users')
-        .select('id, auth_id')
-        .ilike('email', normalizedEmail)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingByEmail && isValidUuid(existingByEmail.auth_id)) {
-        resolvedAuthId = existingByEmail.auth_id;
-      } else if (existingByEmail && isValidUuid(existingByEmail.id)) {
-        resolvedAuthId = existingByEmail.id;
-      } else {
-        const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        const foundAuth = userList?.users?.find((u) => u.email?.toLowerCase() === normalizedEmail);
-        if (foundAuth?.id) {
-          resolvedAuthId = foundAuth.id;
-        } else {
-          const { data: createdAuth } = await admin.auth.admin.createUser({
-            email: normalizedEmail,
-            email_confirm: true,
-            user_metadata: {
-              full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
-              avatar_url: data.avatarUrl || undefined,
-              role: 'player',
-              onboarding_completed: false,
-            },
-          });
-          if (createdAuth?.user?.id) {
-            resolvedAuthId = createdAuth.user.id;
-          }
-        }
-      }
-    } catch (authSyncErr) {
-      console.warn('[ServerAuth] OAuth auth.users lookup/create notice:', authSyncErr);
-    }
-  }
-
-  const targetAuthId = resolvedAuthId || (isValidUuid(data.authId) ? data.authId : crypto.randomUUID());
-
-  // Check if profile already existed before upsert
-  const { data: preExisting } = await dbClient
+  // Check if profile already existed before upsert (preserving existing role & completion state)
+  let preExisting: {
+    id?: string;
+    onboarding_completed?: boolean | string | null;
+    role?: string | null;
+  } | null = null;
+  const { data: preExistingById } = await dbClient
     .from('users')
     .select('id, onboarding_completed, full_name, preferred_sports, primary_sport, city, skill_level, role')
-    .or(`id.eq.${targetAuthId},auth_id.eq.${targetAuthId},email.ilike.${normalizedEmail}`)
+    .or(`id.eq.${targetAuthId},auth_id.eq.${targetAuthId}`)
     .order('onboarding_completed', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const isNewOAuthAccount = !preExisting;
+  if (preExistingById) {
+    preExisting = preExistingById;
+  } else {
+    const { data: preExistingByEmail } = await dbClient
+      .from('users')
+      .select('id, onboarding_completed, full_name, preferred_sports, primary_sport, city, skill_level, role')
+      .ilike('email', normalizedEmail)
+      .order('onboarding_completed', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (preExistingByEmail) {
+      preExisting = preExistingByEmail;
+    }
+  }
 
   const dbProfile = await upsertCanonicalPublicUser(dbClient, {
     authUserId: targetAuthId,
@@ -994,9 +976,8 @@ export async function serverSyncOAuthUser(data: {
   });
 
   const isComplete =
-    !isNewOAuthAccount &&
-    (Boolean(dbProfile?.onboarding_completed === true) ||
-      (await isProfileCompleteInDb(dbClient, dbProfile, null, dbProfile?.role)));
+    Boolean(dbProfile?.onboarding_completed === true) ||
+    (await isProfileCompleteInDb(dbClient, dbProfile, data.authMetadata || null, dbProfile?.role));
 
   const canonicalId = dbProfile?.id || targetAuthId;
   const parsedSports = parsePreferredSports(dbProfile?.preferred_sports);

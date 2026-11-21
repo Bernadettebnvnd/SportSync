@@ -50,14 +50,17 @@ export async function GET(request: Request) {
           email: authUser.email || '',
           fullName: meta.full_name || meta.name || '',
           avatarUrl: meta.avatar_url || meta.picture || '',
-          provider: 'google',
+          provider: authUser.app_metadata?.provider || 'google',
+          accessToken: data.session?.access_token,
+          authMetadata: meta,
         });
 
         // Strict Routing & Guard: If user's profile is missing or incomplete,
         // they MUST be routed directly to the Profile Setup screen (/onboarding).
+        const isOwner = syncResult.user.role === 'venue_owner' || syncResult.user.role === 'organizer';
         const targetPath = !syncResult.isComplete
-          ? '/onboarding'
-          : (next || (syncResult.user.role === 'venue_owner' ? '/organizer' : '/'));
+          ? (isOwner ? '/onboarding?role=owner' : '/onboarding')
+          : (next || (isOwner ? '/organizer' : '/'));
 
         const response = NextResponse.redirect(`${origin}${targetPath}`);
 
