@@ -76,8 +76,11 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') || '' : '')
   );
   const [phone, setPhone] = useState(
-    initialValues?.phone ||
-    (currentUser.phone && !currentUser.phone.startsWith('pwd_hash:') ? currentUser.phone : '')
+    initialValues?.phone &&
+      !initialValues.phone.startsWith('pwd_hash:') &&
+      !initialValues.phone.includes('hash')
+      ? initialValues.phone
+      : ''
   );
 
   // Step 2: Location (Locked to Naga City pilot market)
@@ -100,7 +103,9 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
   const [operatingHours, setOperatingHours] = useState<string>(
     initialValues?.operatingHours || ''
   );
-  const [hourlyRatePhp, setHourlyRatePhp] = useState<number>(initialValues?.hourlyRatePhp || 500);
+  const [hourlyRatePhp, setHourlyRatePhp] = useState<number | string>(
+    initialValues?.hourlyRatePhp !== undefined ? initialValues.hourlyRatePhp : 500
+  );
   const [amenities, setAmenities] = useState<string[]>(
     initialValues?.amenities || []
   );
@@ -204,6 +209,11 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     }
 
     if (step === 4) {
+      const parsedRate = typeof hourlyRatePhp === 'number' ? hourlyRatePhp : parseFloat(String(hourlyRatePhp));
+      if (hourlyRatePhp === '' || isNaN(parsedRate) || parsedRate <= 0) {
+        setValidationError('Please enter a valid standard hourly rate greater than 0.');
+        return;
+      }
       setStep(5);
       return;
     }
@@ -216,11 +226,12 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           .join(', ');
 
         const normalizedSports = selectedSports.map((s) => s.toLowerCase() as SportType);
+        const parsedRate = typeof hourlyRatePhp === 'number' ? hourlyRatePhp : (parseFloat(String(hourlyRatePhp)) || 500);
 
         const generatedCourts = Array.from({ length: courtCount }).map((_, idx) => ({
           name: `Court ${idx + 1}`,
           sport: normalizedSports[idx % normalizedSports.length] || 'pickleball',
-          hourlyRateCents: hourlyRatePhp * 100,
+          hourlyRateCents: Math.round(parsedRate * 100),
           floorType: surface,
           isIndoor,
         }));
@@ -254,7 +265,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           facilityType,
           adminName,
           email,
-          phone,
+          phone: phone.trim(),
           address,
           district,
           landmark,
@@ -262,7 +273,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           courtCount,
           surface,
           isIndoor,
-          hourlyRatePhp,
+          hourlyRatePhp: parsedRate,
           operatingHours,
           amenities,
           bookingMode,
@@ -448,8 +459,12 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
                 <input
                   type="tel"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Telephone / Mobile Contact"
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder="Mobile Phone Number (e.g. 0917-123-4567)"
+                  autoComplete="tel"
                   className="w-full h-10 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
                 />
               </div>
@@ -673,30 +688,68 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
             </div>
 
             {/* Hourly Rate */}
-            <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
+            <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
-                  2. Standard Court Rate
+                  2. Standard Hourly Rate
                 </label>
                 <span className="text-sm font-mono font-black text-[#C8FF2E]">
-                  ₱{hourlyRatePhp} / hr
+                  ₱{hourlyRatePhp !== '' && !isNaN(Number(hourlyRatePhp)) ? Number(hourlyRatePhp).toLocaleString('en-US') : '0'} / hr
                 </span>
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {[350, 450, 500, 600].map((rate) => (
-                  <button
-                    key={rate}
-                    type="button"
-                    onClick={() => setHourlyRatePhp(rate)}
-                    className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
-                      hourlyRatePhp === rate
-                        ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
-                        : 'bg-[#1C241E] text-[#A5B0A6] border-white/10'
-                    }`}
-                  >
-                    ₱{rate}
-                  </button>
-                ))}
+
+              {/* Custom Numeric Rate Input */}
+              <div className="relative flex items-center">
+                <span className="absolute left-3.5 font-bold font-mono text-sm text-[#C8FF2E]">
+                  ₱
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={hourlyRatePhp === '' ? '' : hourlyRatePhp}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setHourlyRatePhp('');
+                    } else {
+                      const num = parseFloat(val);
+                      setHourlyRatePhp(isNaN(num) ? '' : num);
+                    }
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder="Enter hourly rate (e.g. 450)"
+                  className="w-full h-11 pl-9 pr-16 rounded-xl bg-[#1C241E] border border-white/10 text-sm font-mono font-bold text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                />
+                <span className="absolute right-3.5 text-xs text-[#A5B0A6] font-medium pointer-events-none">
+                  PHP / hr
+                </span>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] text-[#A5B0A6] font-medium block">
+                  Quick Presets:
+                </span>
+                <div className="grid grid-cols-4 gap-2">
+                  {[350, 450, 500, 600].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => {
+                        setHourlyRatePhp(rate);
+                        if (validationError) setValidationError(null);
+                      }}
+                      className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                        Number(hourlyRatePhp) === rate
+                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] shadow-[0_0_10px_rgba(200,255,46,0.3)]'
+                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/10 hover:border-white/20 hover:text-white'
+                      }`}
+                    >
+                      ₱{rate}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -770,7 +823,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Admin Desk</span>
                   <p className="text-white font-medium truncate">{adminName}</p>
-                  <p className="text-[10px] text-[#A5B0A6] truncate">{phone}</p>
+                  <p className="text-[10px] text-[#A5B0A6] truncate">{phone.trim() || 'No phone entered'}</p>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
@@ -781,7 +834,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
 
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Rate &amp; Hours</span>
-                  <p className="text-[#C8FF2E] font-bold font-mono">₱{hourlyRatePhp} / hr</p>
+                  <p className="text-[#C8FF2E] font-bold font-mono">₱{hourlyRatePhp ? Number(hourlyRatePhp).toLocaleString('en-US') : '0'} / hr</p>
                   <p className="text-[10px] text-[#A5B0A6] truncate">{operatingHours}</p>
                 </div>
               </div>

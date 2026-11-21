@@ -220,6 +220,9 @@ export interface Booking {
   payment_id?: string;
   payment_method?: PaymentMethod;
   notes?: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_phone?: string;
   created_at: string;
 }
 

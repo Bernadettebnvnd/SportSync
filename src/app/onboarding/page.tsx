@@ -290,7 +290,7 @@ function OnboardingContent() {
     return '';
   });
   const [ownerPassword, setOwnerPassword] = useState('');
-  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '');
+  const [ownerPhone, setOwnerPhone] = useState('');
   const [ownerStep, setOwnerStep] = useState<number>(1);
   const totalOwnerSteps = 5;
   const [facilityName, setFacilityName] = useState('');
@@ -303,7 +303,7 @@ function OnboardingContent() {
   const [courtCount, setCourtCount] = useState<number | ''>('');
   const [courtSurface, setCourtSurface] = useState('');
   const [isIndoor, setIsIndoor] = useState(true);
-  const [hourlyRatePhp, setHourlyRatePhp] = useState<number | ''>('');
+  const [hourlyRatePhp, setHourlyRatePhp] = useState<number | string>(500);
   const [operatingHours, setOperatingHours] = useState('06:00 - 23:00');
   const [facilityAmenities, setFacilityAmenities] = useState<string[]>([]);
   const [bookingMode, setBookingMode] = useState<'instant' | 'inquiry' | ''>('');
@@ -467,7 +467,7 @@ function OnboardingContent() {
       await completeOwnerOnboarding({
         ownerName: resolvedOwnerName,
         ownerEmail: resolvedOwnerEmail,
-        ownerPhone: ownerPhone.trim() || '0917-555-0199',
+        ownerPhone: ownerPhone.trim(),
         facilityName: facilityName.trim() || 'Ateneo Sports Complex',
         description: `${typeLabels[facilityType] || 'Sports Facility'} in Naga City featuring ${facilitySports.join(', ')} with tournament-grade courts.`,
         address: fullAddress,
@@ -825,6 +825,11 @@ function OnboardingContent() {
 
     // STEP 4 VALIDATION
     if (ownerStep === 4) {
+      const parsedRate = typeof hourlyRatePhp === 'number' ? hourlyRatePhp : parseFloat(String(hourlyRatePhp));
+      if (hourlyRatePhp === '' || isNaN(parsedRate) || parsedRate <= 0) {
+        setOwnerValidationError('Please enter a valid standard hourly rate greater than 0.');
+        return;
+      }
       setOwnerStep(5);
       return;
     }
@@ -1351,28 +1356,64 @@ function OnboardingContent() {
               <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-[#F4F7F0] uppercase tracking-wider">
-                    2. Standard Hourly Rate (₱ / Hour)
+                    2. Standard Hourly Rate
                   </label>
                   <span className="text-sm font-mono font-black text-[#C8FF2E]">
-                    ₱{hourlyRatePhp} / hr
+                    ₱{hourlyRatePhp !== '' && !isNaN(Number(hourlyRatePhp)) ? Number(hourlyRatePhp).toLocaleString('en-US') : '0'} / hr
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {ratePresets.map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      onClick={() => setHourlyRatePhp(rate)}
-                      className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
-                        hourlyRatePhp === rate
-                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
-                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/10 hover:text-white'
-                      }`}
-                    >
-                      ₱{rate}
-                    </button>
-                  ))}
+                {/* Custom Numeric Rate Input */}
+                <div className="relative flex items-center">
+                  <span className="absolute left-3.5 font-bold font-mono text-sm text-[#C8FF2E]">
+                    ₱
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={hourlyRatePhp === '' ? '' : hourlyRatePhp}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setHourlyRatePhp('');
+                      } else {
+                        const num = parseFloat(val);
+                        setHourlyRatePhp(isNaN(num) ? '' : num);
+                      }
+                      if (ownerValidationError) setOwnerValidationError(null);
+                    }}
+                    placeholder="Enter hourly rate (e.g. 450)"
+                    className="w-full h-11 pl-9 pr-16 rounded-xl bg-[#1C241E] border border-white/10 text-sm font-mono font-bold text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
+                  />
+                  <span className="absolute right-3.5 text-xs text-[#A5B0A6] font-medium pointer-events-none">
+                    PHP / hr
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[10px] text-[#A5B0A6] font-medium block">
+                    Quick Presets:
+                  </span>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {ratePresets.map((rate) => (
+                      <button
+                        key={rate}
+                        type="button"
+                        onClick={() => {
+                          setHourlyRatePhp(rate);
+                          if (ownerValidationError) setOwnerValidationError(null);
+                        }}
+                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                          Number(hourlyRatePhp) === rate
+                            ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
+                            : 'bg-[#1C241E] text-[#A5B0A6] border-white/10 hover:text-white'
+                        }`}
+                      >
+                        ₱{rate}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1493,7 +1534,7 @@ function OnboardingContent() {
                       Desk Contact
                     </span>
                     <p className="text-white font-medium truncate">{fullName || currentUser.full_name || 'Facility Admin'}</p>
-                    <p className="text-[11px] text-[#A5B0A6] truncate">{ownerEmail || currentUser.email}</p>
+                    <p className="text-[11px] text-[#A5B0A6] truncate">{ownerPhone.trim() ? `${ownerPhone.trim()} • ` : ''}{ownerEmail || currentUser.email}</p>
                   </div>
 
                   <div className="p-3 rounded-xl bg-[#1C241E] border border-white/5 space-y-1">
@@ -1508,7 +1549,7 @@ function OnboardingContent() {
                     <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                       Operations &amp; Rate
                     </span>
-                    <p className="text-[#C8FF2E] font-bold font-mono">₱{hourlyRatePhp} / hour</p>
+                    <p className="text-[#C8FF2E] font-bold font-mono">₱{hourlyRatePhp !== '' && !isNaN(Number(hourlyRatePhp)) ? Number(hourlyRatePhp).toLocaleString('en-US') : '0'} / hour</p>
                     <p className="text-[11px] text-[#A5B0A6]">{operatingHours}</p>
                   </div>
                 </div>

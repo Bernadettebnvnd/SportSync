@@ -144,12 +144,19 @@ export async function getCurrentUser(): Promise<User | null> {
           };
         }
 
+        const rawPhone = profile.phone || meta.phone || '';
+        const sanitizedPhone =
+          rawPhone && !rawPhone.startsWith('pwd_hash:') && !rawPhone.includes('hash')
+            ? (rawPhone.includes('|') ? rawPhone.split('|')[1] : rawPhone)
+            : undefined;
+
         return {
           ...profile,
           id: profile.auth_id || profile.id || authUser.id,
           auth_id: profile.auth_id || authUser.id,
           full_name: profile.full_name || meta.full_name || 'Player',
           nickname: profile.nickname || meta.nickname || 'Player',
+          phone: sanitizedPhone,
           primary_sport: effectivePrimarySport,
           preferred_sports: effectiveSports,
           preferred_format: profile.preferred_format || meta.preferred_format || 'doubles',

@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
+import { verifySessionToken, serverGetUser, SanitizedUser, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 
 function isValidUuid(val?: string | null): boolean {
   return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
@@ -111,40 +111,71 @@ export async function POST(request: Request) {
         ? `${rawDescription}${rawDescription ? ' ' : ''}[Owner: ${user.email}]`
         : rawDescription;
 
-    const mergedPaymentInfo = {
+    const mergedPaymentInfo: Record<string, any> = {
       ...(venue.payment_info && typeof venue.payment_info === 'object' ? venue.payment_info : { accepts_cash: true }),
       accepts_cash: venue.payment_info?.accepts_cash ?? true,
       ...(venue.facility_type ? { facility_type: venue.facility_type } : {}),
       ...(venue.booking_mode ? { booking_mode: venue.booking_mode } : {}),
+      ...(venue.inventory_source ? { inventory_source: venue.inventory_source } : {}),
     };
 
-    // 1. Insert venue via Admin client (bypasses browser RLS safely after server auth check)
-    const { data: newVenue, error: venueError } = await admin
+    // 1. Insert venue via Admin client with schema cache resilience
+    const venuePayload: Record<string, any> = {
+      owner_id: canonicalUserId,
+      name: String(venue.name).trim(),
+      slug: uniqueSlug,
+      description: venueDescription,
+      address: String(venue.address).trim(),
+      city: 'Naga City',
+      latitude: typeof venue.latitude === 'number' ? venue.latitude : 13.6218,
+      longitude: typeof venue.longitude === 'number' ? venue.longitude : 123.1948,
+      operating_hours: venue.operating_hours || { mon_sun: '06:00 - 23:00' },
+      amenities: Array.isArray(venue.amenities)
+        ? venue.amenities
+        : ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
+      featured_sports:
+        Array.isArray(venue.featured_sports) && venue.featured_sports.length > 0
+          ? venue.featured_sports
+          : ['pickleball'],
+      images: Array.isArray(venue.images) ? venue.images : [],
+      payment_info: mergedPaymentInfo,
+      is_verified: true,
+      inventory_source: venue.inventory_source || 'manual',
+    };
+
+    let { data: newVenue, error: venueError } = await admin
       .from('venues')
-      .insert({
-        owner_id: canonicalUserId,
-        name: String(venue.name).trim(),
-        slug: uniqueSlug,
-        description: venueDescription,
-        address: String(venue.address).trim(),
-        city: 'Naga City',
-        latitude: typeof venue.latitude === 'number' ? venue.latitude : 13.6218,
-        longitude: typeof venue.longitude === 'number' ? venue.longitude : 123.1948,
-        operating_hours: venue.operating_hours || { mon_sun: '06:00 - 23:00' },
-        amenities: Array.isArray(venue.amenities)
-          ? venue.amenities
-          : ['Air Conditioning', 'Free Parking', 'Shower Rooms', 'Pro Shop'],
-        featured_sports:
-          Array.isArray(venue.featured_sports) && venue.featured_sports.length > 0
-            ? venue.featured_sports
-            : ['pickleball'],
-        images: Array.isArray(venue.images) ? venue.images : [],
-        payment_info: mergedPaymentInfo,
-        is_verified: true,
-        inventory_source: venue.inventory_source || 'manual',
-      })
+      .insert(venuePayload)
       .select()
       .single();
+
+    // Handle missing columns in Supabase schema cache (e.g. inventory_source)
+    while (venueError && isMissingColumnError(venueError)) {
+      const missing = extractMissingColumn(venueError);
+      console.warn(`[POST /api/venues] venues.${missing || 'unknown'} missing from schema cache, retrying:`, venueError.message);
+      if (missing && missing in venuePayload) {
+        if (missing === 'inventory_source') {
+          mergedPaymentInfo.inventory_source = venuePayload.inventory_source;
+          venuePayload.payment_info = mergedPaymentInfo;
+        }
+        delete venuePayload[missing];
+      } else {
+        if ('inventory_source' in venuePayload) {
+          mergedPaymentInfo.inventory_source = venuePayload.inventory_source;
+          venuePayload.payment_info = mergedPaymentInfo;
+          delete venuePayload.inventory_source;
+        }
+      }
+
+      const retry = await admin
+        .from('venues')
+        .insert(venuePayload)
+        .select()
+        .single();
+      newVenue = retry.data;
+      venueError = retry.error;
+      if (newVenue || !isMissingColumnError(venueError)) break;
+    }
 
     if (venueError || !newVenue) {
       console.error('[POST /api/venues] Postgres venue insert error:', venueError);
@@ -155,24 +186,45 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Insert courts via Admin client
+    // 2. Insert courts via Admin client (preserving exact custom hourly rates)
     const dbCourts = courts.map((c: Record<string, unknown>, idx: number) => ({
       venue_id: newVenue.id,
       name: String(c?.name || `Court ${idx + 1}`).trim(),
       sport: String(c?.sport || 'pickleball'),
       floor_type: String(c?.floor_type || 'Standard Playing Surface'),
       court_type: String(c?.court_type || 'standard'),
-      hourly_rate_cents: Number(c?.hourly_rate_cents) || 45000,
+      hourly_rate_cents:
+        c?.hourly_rate_cents !== undefined && c?.hourly_rate_cents !== null && !isNaN(Number(c.hourly_rate_cents))
+          ? Math.max(0, Math.round(Number(c.hourly_rate_cents)))
+          : 45000,
       supports_doubles: typeof c?.supports_doubles === 'boolean' ? c.supports_doubles : true,
       supports_singles: typeof c?.supports_singles === 'boolean' ? c.supports_singles : true,
       is_indoor: typeof c?.is_indoor === 'boolean' ? c.is_indoor : true,
       is_active: typeof c?.is_active === 'boolean' ? c.is_active : true,
     }));
 
-    const { data: createdCourts, error: courtsError } = await admin
+    let { data: createdCourts, error: courtsError } = await admin
       .from('courts')
       .insert(dbCourts)
       .select();
+
+    // Handle court missing column errors if any
+    while (courtsError && isMissingColumnError(courtsError)) {
+      const missing = extractMissingColumn(courtsError);
+      console.warn(`[POST /api/venues] courts.${missing || 'unknown'} missing from schema cache, retrying:`, courtsError.message);
+      if (missing) {
+        dbCourts.forEach((c: Record<string, any>) => {
+          delete c[missing];
+        });
+      }
+      const retry = await admin
+        .from('courts')
+        .insert(dbCourts)
+        .select();
+      createdCourts = retry.data;
+      courtsError = retry.error;
+      if (createdCourts || !isMissingColumnError(courtsError)) break;
+    }
 
     if (courtsError || !createdCourts) {
       console.error('[POST /api/venues] Postgres courts insert error:', courtsError);
@@ -195,12 +247,14 @@ export async function POST(request: Request) {
     );
 
     if (staffError) {
-      console.error('[POST /api/venues] Postgres facility_staff upsert error:', staffError);
-      await admin.from('venues').delete().eq('id', newVenue.id);
-      return NextResponse.json(
-        { error: `Failed to link facility staff: ${staffError.message}` },
-        { status: 500 }
-      );
+      console.warn('[POST /api/venues] Postgres facility_staff upsert notice:', staffError);
+      if (!isMissingColumnError(staffError) && !staffError.message?.includes('relation') && !staffError.message?.includes('schema cache')) {
+        await admin.from('venues').delete().eq('id', newVenue.id);
+        return NextResponse.json(
+          { error: `Failed to link facility staff: ${staffError.message}` },
+          { status: 500 }
+        );
+      }
     }
 
     // 4. Mark user as venue_owner with onboarding_completed = true in public.users & auth metadata
@@ -234,6 +288,7 @@ export async function POST(request: Request) {
 
     const fullVenue = {
       ...newVenue,
+      inventory_source: venue.inventory_source || newVenue?.inventory_source || 'manual',
       courts: createdCourts,
     };
 

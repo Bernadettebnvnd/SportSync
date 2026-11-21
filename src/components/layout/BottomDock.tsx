@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, Compass, Calendar, User, Building2, Users, Layers } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Home, Compass, Calendar, User, Building2, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -13,8 +13,9 @@ interface NavItem {
   badge?: number | null;
 }
 
-export function BottomDock() {
+function BottomDockContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // Never render bottom dock on auth routes, onboarding, prototypes, or main home app
   if (
@@ -45,6 +46,7 @@ export function BottomDock() {
   ];
 
   const items = isFacility ? facilityItems : playerItems;
+  const currentTab = searchParams ? searchParams.get('tab') : null;
 
   return (
     <nav
@@ -54,11 +56,12 @@ export function BottomDock() {
       <div className="flex items-center justify-around rounded-full border border-white/10 bg-[#141A15]/95 px-2 py-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
         {items.map((item) => {
           const Icon = item.icon;
-          const hasQuery = item.href.includes('?');
-          const currentUrl = typeof window !== 'undefined' ? pathname + window.location.search : pathname;
-          const isActive = hasQuery
-            ? currentUrl === item.href
-            : pathname === item.href && (typeof window === 'undefined' || !window.location.search);
+          const isActive = isFacility
+            ? item.href === '/organizer'
+              ? !currentTab || currentTab === 'overview'
+              : item.href.includes(`tab=${currentTab}`)
+            : pathname === item.href;
+
           return (
             <Link
               key={item.href}
@@ -87,6 +90,14 @@ export function BottomDock() {
         })}
       </div>
     </nav>
+  );
+}
+
+export function BottomDock() {
+  return (
+    <Suspense fallback={null}>
+      <BottomDockContent />
+    </Suspense>
   );
 }
 

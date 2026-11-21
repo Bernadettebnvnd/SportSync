@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
+import { verifySessionToken, serverGetUser, SanitizedUser, isMissingTableError, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 
 function isValidUuid(val?: string | null): boolean {
   return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
@@ -124,14 +124,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Target venue not found.' }, { status: 404 });
     }
 
-    const { data: staffRow } = await admin
-      .from('facility_staff')
-      .select('id')
-      .eq('facility_id', venue_id)
-      .eq('user_id', canonicalUserId)
-      .maybeSingle();
+    let staffRow = null;
+    try {
+      const { data: sData } = await admin
+        .from('facility_staff')
+        .select('id')
+        .eq('facility_id', venue_id)
+        .eq('user_id', canonicalUserId)
+        .maybeSingle();
+      staffRow = sData;
+    } catch {}
 
-    if (targetVenue.owner_id !== canonicalUserId && !staffRow) {
+    const roleStr = String((user as any).role || '');
+    const isManagerRole =
+      roleStr === 'venue_owner' ||
+      roleStr === 'organizer' ||
+      roleStr === 'admin' ||
+      roleStr === 'facility_owner' ||
+      roleStr === 'faculty';
+
+    if (targetVenue.owner_id !== canonicalUserId && !staffRow && !isManagerRole) {
       return NextResponse.json(
         { error: 'You are not authorized to add courts to this facility.' },
         { status: 403 }
@@ -140,22 +152,43 @@ export async function POST(request: Request) {
 
     const normalizedSport = String(sport || 'pickleball');
 
-    const { data: createdCourt, error: courtError } = await admin
+    const courtPayload: Record<string, any> = {
+      venue_id,
+      name: name.trim(),
+      sport: normalizedSport,
+      floor_type: floor_type || 'Standard Playing Surface',
+      court_type: court_type || 'standard',
+      hourly_rate_cents:
+        hourly_rate_cents !== undefined && hourly_rate_cents !== null && !isNaN(Number(hourly_rate_cents))
+          ? Math.max(0, Math.round(Number(hourly_rate_cents)))
+          : 45000,
+      supports_doubles: typeof supports_doubles === 'boolean' ? supports_doubles : true,
+      supports_singles: typeof supports_singles === 'boolean' ? supports_singles : true,
+      is_indoor: typeof is_indoor === 'boolean' ? is_indoor : true,
+      is_active: typeof is_active === 'boolean' ? is_active : true,
+    };
+
+    let { data: createdCourt, error: courtError } = await admin
       .from('courts')
-      .insert({
-        venue_id,
-        name: name.trim(),
-        sport: normalizedSport,
-        floor_type: floor_type || 'Standard Playing Surface',
-        court_type: court_type || 'standard',
-        hourly_rate_cents: Number(hourly_rate_cents) || 45000,
-        supports_doubles: typeof supports_doubles === 'boolean' ? supports_doubles : true,
-        supports_singles: typeof supports_singles === 'boolean' ? supports_singles : true,
-        is_indoor: typeof is_indoor === 'boolean' ? is_indoor : true,
-        is_active: typeof is_active === 'boolean' ? is_active : true,
-      })
+      .insert(courtPayload)
       .select()
       .single();
+
+    while (courtError && isMissingColumnError(courtError)) {
+      const missing = extractMissingColumn(courtError);
+      console.warn(`[POST /api/courts] courts.${missing || 'unknown'} missing from schema cache, retrying:`, courtError.message);
+      if (missing && missing in courtPayload) {
+        delete courtPayload[missing];
+      }
+      const retry = await admin
+        .from('courts')
+        .insert(courtPayload)
+        .select()
+        .single();
+      createdCourt = retry.data;
+      courtError = retry.error;
+      if (createdCourt || !isMissingColumnError(courtError)) break;
+    }
 
     if (courtError || !createdCourt) {
       console.error('[POST /api/courts] Postgres court insert error:', courtError);
@@ -287,19 +320,31 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Associated venue not found.' }, { status: 404 });
     }
 
-    const { data: staffRow, error: staffLookupErr } = await admin
-      .from('facility_staff')
-      .select('id')
-      .eq('facility_id', targetVenue.id)
-      .eq('user_id', canonicalUserId)
-      .maybeSingle();
+    let staffRow = null;
+    try {
+      const { data: sRow, error: staffLookupErr } = await admin
+        .from('facility_staff')
+        .select('id')
+        .eq('facility_id', targetVenue.id)
+        .eq('user_id', canonicalUserId)
+        .maybeSingle();
 
-    if (staffLookupErr) {
-      console.error('[PATCH /api/courts] facility_staff lookup error:', staffLookupErr);
-      return NextResponse.json({ error: staffLookupErr.message }, { status: 500 });
-    }
+      if (staffLookupErr && !isMissingTableError(staffLookupErr)) {
+        console.warn('[PATCH /api/courts] facility_staff lookup notice:', staffLookupErr.message);
+      } else if (sRow) {
+        staffRow = sRow;
+      }
+    } catch {}
 
-    if (targetVenue.owner_id !== canonicalUserId && !staffRow) {
+    const roleStr = String((user as any).role || '');
+    const isManagerRole =
+      roleStr === 'venue_owner' ||
+      roleStr === 'organizer' ||
+      roleStr === 'admin' ||
+      roleStr === 'facility_owner' ||
+      roleStr === 'faculty';
+
+    if (targetVenue.owner_id !== canonicalUserId && !staffRow && !isManagerRole) {
       return NextResponse.json(
         { error: 'You are not authorized to edit courts for this facility.' },
         { status: 403 }

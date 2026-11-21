@@ -53,6 +53,36 @@ import {
 
 export type OrganizerTab = 'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments';
 
+export function resolveCustomerInfo(b: any) {
+  if (!b) return { name: 'Customer', email: 'No email', phone: 'No phone' };
+
+  let customerName = b.user?.full_name;
+  let customerEmail = b.user?.email;
+  let customerPhone = b.user?.phone;
+
+  if (b.notes && typeof b.notes === 'string') {
+    const match = b.notes.match(/\[CUSTOMER:(.*?)\|(.*?)\|(.*?)\]/);
+    if (match) {
+      if (!customerName || customerName === 'Customer') customerName = match[1]?.trim();
+      if (!customerEmail) customerEmail = match[2]?.trim();
+      if (!customerPhone) customerPhone = match[3]?.trim();
+    }
+  }
+
+  const name =
+    customerName && customerName !== 'Customer'
+      ? customerName
+      : b.customer_name || b.customerName || (b.user_id ? `Player (${b.user_id.slice(0, 8)})` : 'Customer');
+
+  const email =
+    customerEmail || b.customer_email || b.customerEmail || 'No email';
+
+  const phone =
+    customerPhone || b.customer_phone || b.customerPhone || 'No phone';
+
+  return { name, email, phone };
+}
+
 function OrganizerDashboardContent() {
   const {
     currentUser,
@@ -1119,7 +1149,7 @@ function OrganizerDashboardContent() {
                           {pb.payment_method || 'Online'}
                         </span>
                       </div>
-                      <div className="text-xs font-bold text-[#1A241E] mt-1">{pb.user?.full_name || 'Customer'}</div>
+                      <div className="text-xs font-bold text-[#1A241E] mt-1">{resolveCustomerInfo(pb).name}</div>
                       <div className="text-[11px] text-[#65756B]">
                         {pb.court?.name || 'Court'} &bull; {pb.booking_date} &bull; {pb.start_time} - {pb.end_time}
                       </div>
@@ -1233,14 +1263,15 @@ function OrganizerDashboardContent() {
                           );
 
                           if (courtBooking && courtBooking.status === 'confirmed') {
+                            const courtCustomer = resolveCustomerInfo(courtBooking);
                             return (
                               <div
                                 key={sIdx}
                                 className="p-2 rounded-xl bg-[#1E4A32] text-white text-[10px] space-y-0.5 shadow-xs"
-                                title={`Confirmed reservation by ${courtBooking.user?.full_name || 'Player'}`}
+                                title={`Confirmed reservation by ${courtCustomer.name}`}
                               >
                                 <span className="font-extrabold block truncate">
-                                  {courtBooking.user?.full_name || 'Confirmed'}
+                                  {courtCustomer.name !== 'Customer' ? courtCustomer.name : 'Confirmed'}
                                 </span>
                                 <span className="text-[#E9C46A] text-[9px] block">{slot.time}</span>
                               </div>
@@ -1248,14 +1279,15 @@ function OrganizerDashboardContent() {
                           }
 
                           if (courtBooking && courtBooking.status === 'pending') {
+                            const courtCustomer = resolveCustomerInfo(courtBooking);
                             return (
                               <div
                                 key={sIdx}
                                 className="p-2 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-[10px] space-y-0.5 shadow-xs"
-                                title={`Pending request from ${courtBooking.user?.full_name || 'Player'}`}
+                                title={`Pending request from ${courtCustomer.name}`}
                               >
                                 <span className="font-extrabold block truncate">
-                                  {courtBooking.user?.full_name || 'Pending Review'}
+                                  {courtCustomer.name !== 'Customer' ? courtCustomer.name : 'Pending Review'}
                                 </span>
                                 <span className="text-amber-700 text-[9px] block">{slot.time}</span>
                               </div>
@@ -1382,7 +1414,7 @@ function OrganizerDashboardContent() {
                       </div>
                       <div>
                         <div className="font-bold text-[#1A241E]">
-                          {booking.user?.full_name || 'Player'}
+                          {resolveCustomerInfo(booking).name}
                           <span className="font-normal text-[#65756B] ml-1">
                             ({booking.court?.name || 'Court'})
                           </span>
@@ -1595,10 +1627,14 @@ function OrganizerDashboardContent() {
                         </td>
                         <td className="py-3.5 pr-3">
                           <span className="font-bold text-[#1A241E] block">
-                            {b.user?.full_name || 'Customer'}
+                            {resolveCustomerInfo(b).name}
                           </span>
                           <span className="text-[10px] text-[#65756B] block">
-                            {b.user?.email || b.user?.phone || 'Player'}
+                            {resolveCustomerInfo(b).email !== 'No email'
+                              ? resolveCustomerInfo(b).email
+                              : resolveCustomerInfo(b).phone !== 'No phone'
+                                ? resolveCustomerInfo(b).phone
+                                : 'Player'}
                           </span>
                         </td>
                         <td className="py-3.5 pr-3">
@@ -1646,7 +1682,7 @@ function OrganizerDashboardContent() {
                                 : 'bg-gray-100 text-gray-700'
                               }`}
                           >
-                            {b.payment_method ? `${b.payment_method} &bull; ` : ''}
+                            {b.payment_method ? `${b.payment_method} • ` : ''}
                             {b.payment_status.replace(/_/g, ' ')}
                           </span>
                         </td>
@@ -2878,6 +2914,13 @@ function OrganizerDashboardContent() {
               (other.start_time < b.end_time && other.end_time > b.start_time))
         );
 
+        const customer = resolveCustomerInfo(b);
+        const displayCustomerName = customer.name;
+        const displayCustomerEmail = customer.email;
+        const displayCustomerPhone = customer.phone;
+
+        const cleanNotes = (b.notes || '').replace(/\s*\[CUSTOMER:.*?\]/g, '').trim();
+
         return (
           <div className="fixed inset-0 z-[800] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
             <div className="w-full max-w-lg rounded-3xl bg-white border border-[#E8E5DF] shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
@@ -2926,7 +2969,7 @@ function OrganizerDashboardContent() {
                     <span>Double-Booking Conflict Detected</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    This court is already reserved by confirmed booking <strong>{conflictBooking.booking_reference}</strong> ({conflictBooking.user?.full_name || 'Player'}) for {conflictBooking.start_time} - {conflictBooking.end_time}. You cannot confirm this booking without overlap.
+                    This court is already reserved by confirmed booking <strong>{conflictBooking.booking_reference}</strong> ({resolveCustomerInfo(conflictBooking).name}) for {conflictBooking.start_time} - {conflictBooking.end_time}. You cannot confirm this booking without overlap.
                   </p>
                 </div>
               )}
@@ -2935,9 +2978,9 @@ function OrganizerDashboardContent() {
               <div className="grid grid-cols-2 gap-3.5 text-xs">
                 <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
                   <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Customer</span>
-                  <div className="font-bold text-[#1A241E]">{b.user?.full_name || 'Customer'}</div>
-                  <div className="text-[11px] text-[#65756B]">{b.user?.email || 'No email'}</div>
-                  <div className="text-[11px] text-[#65756B]">{b.user?.phone || 'No phone'}</div>
+                  <div className="font-bold text-[#1A241E]">{displayCustomerName}</div>
+                  <div className="text-[11px] text-[#65756B]">{displayCustomerEmail}</div>
+                  <div className="text-[11px] text-[#65756B]">{displayCustomerPhone}</div>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
@@ -2968,10 +3011,10 @@ function OrganizerDashboardContent() {
                 </div>
               </div>
 
-              {b.notes && (
+              {cleanNotes && (
                 <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] text-xs space-y-0.5">
                   <span className="text-[10px] font-bold text-[#65756B] uppercase tracking-wider block">Notes from Player</span>
-                  <p className="text-[#1A241E] italic">&ldquo;{b.notes}&rdquo;</p>
+                  <p className="text-[#1A241E] italic">&ldquo;{cleanNotes}&rdquo;</p>
                 </div>
               )}
 
@@ -3050,7 +3093,7 @@ function OrganizerDashboardContent() {
             </div>
 
             <p className="text-xs text-[#65756B]">
-              Are you sure you want to decline booking <strong>{bookingToReject.booking_reference}</strong> ({bookingToReject.user?.full_name || 'Customer'} on {bookingToReject.booking_date} at {bookingToReject.start_time})? The player will be notified immediately.
+              Are you sure you want to decline booking <strong>{bookingToReject.booking_reference}</strong> ({resolveCustomerInfo(bookingToReject).name} on {bookingToReject.booking_date} at {bookingToReject.start_time})? The player will be notified immediately.
             </p>
 
             <div>

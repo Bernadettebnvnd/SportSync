@@ -135,7 +135,7 @@ export function OwnerOnboardingModal({ isOpen, onClose, onLogout }: OwnerOnboard
     (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') ||
     ''
   );
-  const [ownerPhone, setOwnerPhone] = useState(currentUser.phone || '');
+  const [ownerPhone, setOwnerPhone] = useState('');
 
   useEffect(() => {
     if (currentUser.full_name && !['Guest', 'Guest Player'].includes(currentUser.full_name) && !ownerName) {

@@ -3888,17 +3888,36 @@ export function useSportSyncBridge() {
 
       try {
         const venueObj = store.venues.find((v) => v.id === details.venue.id) || details.venue;
+        const matchedCourt =
+          venueObj?.courts?.find((c: any) => c.name === details.court || c.id === (details as any).courtId) ||
+          venueObj?.courts?.[0];
+        const resolvedCourtId = matchedCourt?.id || (details as any).courtId || `${details.venue.id}_c1`;
+
+        const effectiveName =
+          store.currentUser.full_name ||
+          userProfile.name ||
+          (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') : '') ||
+          'Player';
+        const effectiveEmail =
+          store.currentUser.email ||
+          (userProfile as any).email ||
+          (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') : '') ||
+          '';
+        const effectivePhone = store.currentUser.phone || (userProfile as any).phone || '';
+
         store.createBooking({
           id: bookingId,
           booking_reference: bookingId,
           user_id: store.currentUser.id || userProfile.id || 'sportsync_player',
           user: {
             id: store.currentUser.id || userProfile.id || 'sportsync_player',
-            full_name: store.currentUser.full_name || userProfile.name,
-            email: store.currentUser.email || '',
+            full_name: effectiveName,
+            email: effectiveEmail,
+            phone: effectivePhone,
           } as any,
+          notes: `[CUSTOMER:${effectiveName}|${effectiveEmail}|${effectivePhone}]`,
           venue_id: details.venue.id,
-          court_id: `${details.venue.id}_c1`,
+          court_id: resolvedCourtId,
           sport: (details.venue as any)?.sport || 'pickleball',
           booking_date: cleanDate.includes('-') ? cleanDate : new Date().toISOString().split('T')[0],
           start_time: details.slot.split('–')[0]?.trim() || details.slot.split('-')[0]?.trim() || '10:00',
@@ -3913,7 +3932,7 @@ export function useSportSyncBridge() {
           created_at: new Date().toISOString(),
           venue: venueObj as any,
           court: {
-            id: `${details.venue.id}_c1`,
+            id: resolvedCourtId,
             name: details.court,
           } as any,
         });

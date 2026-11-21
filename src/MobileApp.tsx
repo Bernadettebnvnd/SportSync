@@ -1719,18 +1719,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             venue={selectedVenue}
             onBack={goBack}
             onProceedToPayment={(details) => {
+              const matchedCourt = selectedVenue.courts?.find(
+                (c) => c.name === details.court || c.id === (details as any).courtId
+              );
+              const resolvedCourtId =
+                matchedCourt?.id ||
+                (details as any).courtId ||
+                selectedVenue.courts?.[0]?.id ||
+                selectedVenue.id;
+
               setActiveBookingDetails({
                 venue: selectedVenue,
                 venueId: selectedVenue.id,
                 venueName: selectedVenue.name,
                 court: details.court,
-                courtId: `${selectedVenue.id}_c1`,
+                courtId: resolvedCourtId,
                 slot: details.slot,
                 totalPrice: details.totalPrice,
                 duration: details.duration,
                 date: details.date,
                 formattedDate: details.formattedDate,
-                sport: (selectedVenue as any)?.sport || 'pickleball',
+                sport: (selectedVenue as any)?.sport || matchedCourt?.sport || 'pickleball',
               });
               navigateTo('payment');
             }}

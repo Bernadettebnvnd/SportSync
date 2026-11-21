@@ -338,16 +338,18 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
       <div className="sticky bottom-0 w-full z-40 p-4 bg-[#0B0F0C]/95 backdrop-blur-2xl border-t border-white/10 mt-6">
         <Button
           variant="pill-arrow"
-          onClick={() =>
+          onClick={() => {
+            const matchedCourtObj = venue.courts?.find((c) => c.name === selectedCourt);
             onProceedToPayment({
               date: selectedDateItem?.fullDate || selectedDateId,
               formattedDate: selectedDateItem?.formatted || selectedDateId,
               slot: selectedSlot,
               duration: durationHours,
               court: selectedCourt,
+              courtId: matchedCourtObj?.id || venue.courts?.[0]?.id,
               totalPrice: calculatedTotal,
-            })
-          }
+            } as any);
+          }}
         >
           Booking Now • ₱{calculatedTotal}
         </Button>

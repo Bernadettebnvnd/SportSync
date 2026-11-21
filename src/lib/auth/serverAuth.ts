@@ -120,12 +120,28 @@ function isValidUuid(val?: string | null): boolean {
   return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 }
 
+export function isMissingTableError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = String(err.code || '');
+  return (
+    code === '42P01' || // undefined_table in PostgreSQL
+    code === 'PGRST200' ||
+    code === 'PGRST205' ||
+    msg.includes('could not find the table') ||
+    (msg.includes('relation') && msg.includes('does not exist')) ||
+    (msg.includes('schema cache') && (msg.includes('table') || !msg.includes('column')))
+  );
+}
+
 export function isMissingColumnError(err: any): boolean {
   if (!err) return false;
+  if (isMissingTableError(err)) return false;
   const msg = (err.message || '').toLowerCase();
   return (
     err.code === '42703' ||
     err.code === 'PGRST204' ||
+    (msg.includes('column') && (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the'))) ||
     msg.includes('schema cache') ||
     msg.includes('could not find the')
   );

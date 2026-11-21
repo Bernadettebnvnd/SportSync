@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import Script from 'next/script';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { AppShell } from '@/components/layout/AppShell';
@@ -78,9 +77,8 @@ export default function RootLayout({
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
         />
-        <Script
+        <script
           id="theme-init"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `(function() {
               try {
