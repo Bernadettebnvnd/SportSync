@@ -448,6 +448,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
                 <GoogleSignInButton
                   label={mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'}
                   onError={(err) => setErrorMsg(err)}
+                  onSuccess={(isNewUser, user) => {
+                    onClose();
+                  }}
                 />
                 <div className="relative flex items-center justify-center my-2">
                   <div className="border-t border-white/10 w-full" />

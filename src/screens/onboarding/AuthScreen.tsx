@@ -414,6 +414,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <GoogleSignInButton
               label={isSignUp ? 'Sign up with Google' : 'Continue with Google'}
               onError={(err) => setErrorMessage(err)}
+              onSuccess={(isNewUser, user) => {
+                const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer' || selectedRole === 'facility_owner';
+                onSuccess(isOwner ? 'facility_owner' : 'player', Boolean(isNewUser), user);
+              }}
             />
             <div className="relative flex items-center justify-center">
               <div className="border-t border-white/10 w-full" />

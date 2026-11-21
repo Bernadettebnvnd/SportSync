@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
-import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useMatchiStore } from '@/lib/store';
 import { Loader2 } from 'lucide-react';
 
 interface GoogleSignInButtonProps {
@@ -17,39 +17,160 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   className = '',
   disabled = false,
   onError,
+  onSuccess,
 }) => {
+  const { setAuthenticatedUser } = useMatchiStore();
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleClick = useCallback(async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !isSupabaseConfigured) {
-      onError?.('Google sign-in is unavailable because Supabase authentication is not configured.');
+  // Listen for authentication completion postMessage from popup window
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      if (typeof window !== 'undefined' && event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        const { user, isComplete } = event.data;
+        setIsLoading(false);
+
+        const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer';
+        const isCompleteUser = Boolean(
+          isComplete === true ||
+          user?.onboarding_completed === true ||
+          user?.has_completed_onboarding === true ||
+          ((Array.isArray(user?.preferred_sports) && user.preferred_sports.length > 0) || user?.primary_sport)
+        );
+
+        if (user) {
+          setAuthenticatedUser({
+            ...user,
+            primary_sport: isCompleteUser ? (user.primary_sport || '') : ('' as any),
+            preferred_sports: isCompleteUser ? (user.preferred_sports || []) : [],
+            skill_level: isCompleteUser ? (user.skill_level || '') : ('' as any),
+            city: isCompleteUser ? (user.city || '') : '',
+            onboarding_completed: isCompleteUser,
+            has_completed_onboarding: isCompleteUser,
+          });
+        }
+
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('sportsync_logged_out');
+          localStorage.setItem('sportsync_user_id', user?.id);
+          localStorage.setItem('sportsync_user_email', user?.email);
+          localStorage.setItem('sportsync_user_role', user?.role || 'player');
+          localStorage.setItem('sportsync_user_name', user?.full_name || '');
+          localStorage.setItem('matchi_user_name', user?.full_name || '');
+
+          if (isCompleteUser) {
+            localStorage.removeItem('sportsync_pending_onboarding');
+            localStorage.setItem('matchi_onboarding_completed', 'true');
+            localStorage.setItem('sportsync_onboarding_completed', 'true');
+            const userSports = Array.isArray(user?.preferred_sports) && user.preferred_sports.length > 0
+              ? user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
+              : [];
+            localStorage.setItem(
+              'sportsync_user_profile',
+              JSON.stringify({
+                id: user?.id,
+                name: user?.full_name,
+                username: `@${user?.nickname || user?.email?.split('@')[0]}`,
+                role: user?.role || 'player',
+                city: user?.city || '',
+                primarySport: user?.primary_sport || '',
+                preferredSports: userSports,
+                skillLevel: user?.skill_level ? (user.skill_level.charAt(0).toUpperCase() + user.skill_level.slice(1)) : '',
+                onboardingCompleted: true,
+                isGuest: false,
+              })
+            );
+          } else {
+            localStorage.setItem('sportsync_pending_onboarding', 'true');
+            localStorage.removeItem('matchi_onboarding_completed');
+            localStorage.removeItem('sportsync_onboarding_completed');
+            localStorage.removeItem('sportsync_user_profile');
+            localStorage.removeItem('sportsync_user_city');
+            localStorage.removeItem('sportsync_user_sports');
+            localStorage.removeItem('sportsync_user_skill');
+          }
+        }
+
+        if (onSuccess) {
+          onSuccess(!isCompleteUser, user);
+        } else if (typeof window !== 'undefined') {
+          window.location.href = isCompleteUser ? (isOwner ? '/organizer' : '/') : '/onboarding';
+        }
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
+  }, [onSuccess, setAuthenticatedUser]);
+
+  // Handle Google Sign In click: opens standard native browser popup window
+  const handleClick = useCallback(() => {
+    setIsLoading(true);
+
+    const width = 500;
+    const height = 640;
+    const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+    const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+
+    const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    const callbackUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '/auth/callback';
+
+    // 1. If direct Google Client ID is explicitly configured, open official Google Accounts OAuth
+    if (googleClientId && googleClientId !== 'placeholder') {
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
+        googleClientId
+      )}&redirect_uri=${encodeURIComponent(
+        callbackUrl
+      )}&response_type=code&scope=${encodeURIComponent(
+        'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile'
+      )}&access_type=offline&prompt=consent`;
+
+      const popup = window.open(
+        googleOAuthUrl,
+        'google_signin_popup',
+        `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
+      );
+
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        window.location.href = googleOAuthUrl;
+        return;
+      }
+
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer);
+          setIsLoading(false);
+        }
+      }, 500);
       return;
     }
 
-    setIsLoading(true);
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_logged_out');
-      }
+    // 2. Open SportSync Google Sign-In Popup directly.
+    // Avoids raw Supabase 400 "Unsupported provider: provider is not enabled" when
+    // Google OAuth is not enabled in the cloud Supabase project dashboard.
+    const popupUrl = '/auth/google-popup';
+    const popup = window.open(
+      popupUrl,
+      'google_signin_popup',
+      `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no,location=no,resizable=yes,scrollbars=yes`
+    );
 
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: { access_type: 'offline', prompt: 'consent' },
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (err: unknown) {
-      setIsLoading(false);
-      const message = err instanceof Error ? err.message : 'Failed to initiate Google sign-in.';
-      onError?.(message);
+    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+      window.location.href = popupUrl;
+      return;
     }
-  }, [onError]);
+
+    // Monitor popup lifecycle to reset loading state if closed manually
+    const timer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer);
+        setIsLoading(false);
+      }
+    }, 500);
+  }, []);
 
   return (
     <button
@@ -101,8 +222,9 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
         style={{ color: '#1F1F1F' }}
         className="font-semibold text-sm sm:text-[15px] !text-[#1F1F1F] tracking-tight"
       >
-        {isLoading ? 'Redirecting to Google...' : label}
+        {isLoading ? 'Opening Google...' : label}
       </span>
     </button>
   );
 };
+
