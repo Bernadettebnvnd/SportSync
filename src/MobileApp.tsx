@@ -943,7 +943,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       console.warn('Logout error:', err);
     }
 
-    resetNotificationCache();
+    resetNotificationCache(true);
 
     if (typeof window !== 'undefined' && window.location.pathname !== '/') {
       window.location.href = '/?auth=login';

@@ -2599,6 +2599,11 @@ export function useSportSyncBridge() {
 
       nonHostMembers.forEach((m) => {
         if (!m.name) return;
+        const scheduleStr =
+          updatedGame.date && updatedGame.time
+            ? `${updatedGame.date} • ${updatedGame.time}`
+            : updatedGame.date || updatedGame.time || '';
+
         addNotification({
           id: `notif_update_${gameId}_${m.name.replace(/\s+/g, '_')}_${Date.now()}`,
           type: 'match',
@@ -2607,11 +2612,26 @@ export function useSportSyncBridge() {
           linkScreen: 'match-detail',
           recipientId: m.id,
           recipientName: m.name,
+          senderName: targetGame.hostName || 'Organizer',
+          senderAvatar: targetGame.hostAvatar || 'alex',
           meta: {
             event: 'game_updated',
             gameId: updatedGame.id,
             gameTitle: updatedGame.title,
+            game_title: updatedGame.title,
+            sport: updatedGame.sport,
+            locationName: updatedGame.locationName,
+            location_name: updatedGame.locationName,
+            schedule: scheduleStr,
+            gameDate: updatedGame.date,
+            gameTime: updatedGame.time,
             hostName: targetGame.hostName,
+            hostId: targetGame.hostId,
+            senderName: targetGame.hostName || 'Organizer',
+            senderAvatar: targetGame.hostAvatar || 'alex',
+            recipientId: m.id,
+            recipientName: m.name,
+            dedupeKey: `update_${updatedGame.id}_${(m.id || m.name).toLowerCase()}_${Date.now()}`,
           },
         });
       });
@@ -2693,22 +2713,41 @@ export function useSportSyncBridge() {
       const affectedParticipants = Array.from(participantsMap.values());
 
       // 2. Prepare individual notifications for each affected player who joined
+      const scheduleStr =
+        targetGame.date && targetGame.time
+          ? `${targetGame.date} • ${targetGame.time}`
+          : targetGame.date || targetGame.time || '';
+
       const deletionNotifs = affectedParticipants.map((p) => {
-        const dedupeKey = `delete_game_${targetGame.id}_${p.name.trim().toLowerCase()}`;
-        const desc = `The host has deleted ${titleToDelete}, a game you joined.`;
+        const dedupeKey = `delete_game_${targetGame.id}_${p.name.trim().toLowerCase()}_${Date.now()}`;
+        const desc = `The host has cancelled ${titleToDelete}, a game you joined.`;
         return {
-          id: `notif_del_${targetGame.id}_${p.name.replace(/\s+/g, '_')}`,
+          id: `notif_del_${targetGame.id}_${p.name.replace(/\s+/g, '_')}_${Date.now()}`,
           type: 'match' as const,
-          title: 'Game Deleted',
+          title: 'Game Cancelled',
           desc,
           linkScreen: 'social-home',
           recipientName: p.name,
           recipientId: p.id,
+          senderName: targetGame.hostName || 'Organizer',
+          senderAvatar: targetGame.hostAvatar || 'alex',
           meta: {
             event: 'game_deleted',
             gameId: targetGame.id,
             gameTitle: titleToDelete,
+            game_title: titleToDelete,
+            sport: targetGame.sport,
+            locationName: targetGame.locationName,
+            location_name: targetGame.locationName,
+            schedule: scheduleStr,
+            gameDate: targetGame.date,
+            gameTime: targetGame.time,
+            hostName: targetGame.hostName,
+            hostId: targetGame.hostId,
+            senderName: targetGame.hostName || 'Organizer',
+            senderAvatar: targetGame.hostAvatar || 'alex',
             recipientName: p.name,
+            recipientId: p.id,
             dedupeKey,
           },
         };
@@ -3507,6 +3546,41 @@ export function useSportSyncBridge() {
             window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
           } catch {}
         }
+
+        // Notify the removed player
+        const scheduleStr =
+          targetGame.date && targetGame.time
+            ? `${targetGame.date} • ${targetGame.time}`
+            : targetGame.date || targetGame.time || '';
+
+        addNotification({
+          id: `notif_rem_${gameId}_${(participant.name || 'player').replace(/\s+/g, '_')}_${Date.now()}`,
+          type: 'match',
+          title: 'Removed from Match Roster',
+          desc: `The match organizer removed you from ${targetGame.title}.`,
+          linkScreen: 'social-home',
+          recipientId: participant.id,
+          recipientName: participant.name,
+          senderName: targetGame.hostName || 'Organizer',
+          senderAvatar: targetGame.hostAvatar || 'alex',
+          meta: {
+            event: 'participant_removed',
+            gameId: targetGame.id,
+            gameTitle: targetGame.title,
+            game_title: targetGame.title,
+            sport: targetGame.sport,
+            locationName: targetGame.locationName,
+            location_name: targetGame.locationName,
+            schedule: scheduleStr,
+            hostName: targetGame.hostName,
+            hostId: targetGame.hostId,
+            senderName: targetGame.hostName || 'Organizer',
+            senderAvatar: targetGame.hostAvatar || 'alex',
+            recipientId: participant.id,
+            recipientName: participant.name,
+            dedupeKey: `rem_${targetGame.id}_${(participant.id || participant.name).toLowerCase()}_${Date.now()}`,
+          },
+        });
 
         return { success: true, game: updatedGame };
       } catch (err: any) {

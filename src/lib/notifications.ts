@@ -299,8 +299,13 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export function resetNotificationCache(): void {
+export function resetNotificationCache(clearStorage: boolean = false): void {
   cachedNotifications = null;
+  if (clearStorage && typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }
   notifyAll();
 }
 
@@ -373,87 +378,114 @@ function persistNotifications(items: NotificationItem[]) {
 }
 
 /**
- * Fetch authenticated user notifications directly from Supabase.
+ * Fetch authenticated user notifications directly from Supabase / API.
  * Allows notifications to persist after refreshing, logging out, and logging back in.
  */
 export async function fetchUserNotificationsFromSupabase(
   userFilter?: UserNotificationFilter
 ): Promise<NotificationItem[]> {
-  const sb = getSupabaseClient();
-  if (!sb || !isSupabaseConfigured || (!userFilter?.id && !userFilter?.name && !userFilter?.email)) {
+  if (!userFilter?.id && !userFilter?.name && !userFilter?.email) {
     return [];
   }
-  try {
-    const uId = userFilter.id?.trim();
-    const uName = userFilter.name?.trim();
-    const uEmail = userFilter.email?.trim();
 
+  const uId = userFilter.id?.trim();
+  const uName = userFilter.name?.trim();
+  const uEmail = userFilter.email?.trim();
+
+  // 1. Fetch from server API endpoint (which handles admin client & users fallback)
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams();
+      if (uId) params.set('userId', uId);
+      if (uName) params.set('userName', uName);
+      if (uEmail) params.set('email', uEmail);
+
+      const res = await fetch(`/api/notifications?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.notifications)) {
+          return json.notifications
+            .map((item: any) => ({
+              ...item,
+              time: formatRelativeTime(item.timestamp || Date.now()),
+            }))
+            .filter((item: NotificationItem) => isNotificationForUser(item, userFilter));
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[Notifications] API fetch note:', apiErr);
+    }
+  }
+
+  // 2. Direct Supabase client query fallback
+  const sb = getSupabaseClient();
+  if (!sb || !isSupabaseConfigured) return [];
+
+  try {
     const isUuid = (val?: string) =>
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const conditions: string[] = ['type.eq.system'];
-    if (uId && isUuid(uId)) {
-      conditions.push(`user_id.eq.${uId}`);
-    }
-    if (uName) {
-      conditions.push(`user_identifier.ilike.%${uName}%`);
-      const firstName = uName.split(' ')[0];
-      if (firstName && firstName !== uName && firstName.length >= 3) {
-        conditions.push(`user_identifier.ilike.%${firstName}%`);
-      }
-    }
-    if (uId && !isUuid(uId)) {
-      conditions.push(`user_identifier.ilike.%${uId}%`);
-    }
-    if (uEmail) {
-      conditions.push(`user_identifier.ilike.%${uEmail}%`);
-    }
+    if (uId && isUuid(uId)) conditions.push(`user_id.eq.${uId}`);
+    if (uName) conditions.push(`user_identifier.ilike.*${uName}*`);
+    if (uEmail) conditions.push(`user_identifier.ilike.*${uEmail}*`);
 
-    let query = sb.from('notifications').select('*');
-    if (conditions.length > 0) {
-      query = query.or(conditions.join(','));
-    }
+    const { data, error } = await sb
+      .from('notifications')
+      .select('*')
+      .or(conditions.join(','))
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-    const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
-    if (error || !Array.isArray(data)) {
-      if (error) console.warn('[Notifications] Error fetching from Supabase:', error.message);
-      return [];
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data
+        .map((row: any) => ({
+          id: row.id,
+          type: (row.type as NotificationType) || 'match',
+          title: row.title,
+          desc: row.description,
+          timestamp: new Date(row.created_at).getTime(),
+          time: formatRelativeTime(new Date(row.created_at).getTime()),
+          read: Boolean(row.read),
+          linkScreen: row.link_screen,
+          recipientId: row.user_id,
+          recipientName: row.user_identifier,
+          senderName:
+            row.metadata?.sender_name ||
+            row.metadata?.senderName ||
+            row.metadata?.joining_player_name ||
+            row.metadata?.joiningPlayerName ||
+            row.metadata?.host_name ||
+            row.metadata?.hostName,
+          senderAvatar:
+            row.metadata?.sender_avatar ||
+            row.metadata?.senderAvatar ||
+            row.metadata?.joining_player_avatar ||
+            row.metadata?.joiningPlayerAvatar,
+          meta: row.metadata,
+        }))
+        .filter((item: NotificationItem) => isNotificationForUser(item, userFilter));
     }
-
-    return data
-      .map((row: any) => ({
-        id: row.id,
-        type: (row.type as NotificationType) || 'match',
-        title: row.title,
-        desc: row.description,
-        timestamp: new Date(row.created_at).getTime(),
-        time: formatRelativeTime(new Date(row.created_at).getTime()),
-        read: Boolean(row.read),
-        linkScreen: row.link_screen,
-        recipientId: row.user_id,
-        recipientName: row.user_identifier,
-        senderName:
-          row.metadata?.sender_name ||
-          row.metadata?.senderName ||
-          row.metadata?.joining_player_name ||
-          row.metadata?.joiningPlayerName ||
-          row.metadata?.host_name ||
-          row.metadata?.hostName,
-        senderAvatar:
-          row.metadata?.sender_avatar ||
-          row.metadata?.senderAvatar ||
-          row.metadata?.joining_player_avatar ||
-          row.metadata?.joiningPlayerAvatar,
-        meta: row.metadata,
-      }))
-      .filter((item: NotificationItem) => isNotificationForUser(item, userFilter));
   } catch (err) {
-    console.warn('[Notifications] Exception fetching user notifications from Supabase:', err);
-    return [];
+    console.warn('[Notifications] Direct Supabase fetch note:', err);
   }
+
+  return [];
 }
 
 export async function persistNotificationToSupabase(item: NotificationItem): Promise<boolean> {
+  // 1. Send via server API route
+  if (typeof window !== 'undefined') {
+    try {
+      fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notification: item }),
+      }).catch(() => {});
+    } catch {}
+  }
+
+  // 2. Also try direct client insert if Supabase configured
   const sb = getSupabaseClient();
   if (!sb || !isSupabaseConfigured) return false;
   try {
@@ -461,7 +493,7 @@ export async function persistNotificationToSupabase(item: NotificationItem): Pro
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const recipientId = item.recipientId && isUuid(item.recipientId) ? item.recipientId : null;
-    const { error } = await sb.from('notifications').insert({
+    await sb.from('notifications').insert({
       id: item.id && isUuid(item.id) ? item.id : undefined,
       user_id: recipientId,
       user_identifier: item.recipientName || item.recipientId || null,
@@ -480,13 +512,8 @@ export async function persistNotificationToSupabase(item: NotificationItem): Pro
         sender_avatar: item.senderAvatar || item.meta?.senderAvatar || item.meta?.joiningPlayerAvatar,
       },
     });
-    if (error) {
-      console.warn('[Notifications] Supabase insert warning (falling back to local):', error.message);
-      return false;
-    }
     return true;
   } catch (err) {
-    console.warn('[Notifications] Exception saving notification to Supabase:', err);
     return false;
   }
 }
@@ -551,7 +578,7 @@ export function addNotification(
   const updated = [newNotif, ...current].slice(0, MAX_NOTIFICATIONS);
   persistNotifications(updated);
 
-  // Background persist to Supabase if configured
+  // Background persist to Supabase / API
   persistNotificationToSupabase(newNotif).catch(() => {});
 
   // Broadcast cross-tab and cross-device
@@ -585,6 +612,14 @@ export function markAsRead(id: string, userFilter?: UserNotificationFilter): voi
   const updated = current.map((n) => (n.id === id ? { ...n, read: true } : n));
   persistNotifications(updated);
 
+  if (typeof window !== 'undefined') {
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
+    }).catch(() => {});
+  }
+
   const sb = getSupabaseClient();
   if (sb && isSupabaseConfigured) {
     sb.from('notifications').update({ read: true }).eq('id', id).then();
@@ -602,6 +637,14 @@ export function markAllAsRead(userFilter?: UserNotificationFilter): void {
   });
   persistNotifications(updated);
 
+  if (typeof window !== 'undefined') {
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
+    }).catch(() => {});
+  }
+
   const sb = getSupabaseClient();
   if (sb && isSupabaseConfigured && (userFilter?.id || userFilter?.name)) {
     const isUuid = (val?: string) =>
@@ -609,7 +652,7 @@ export function markAllAsRead(userFilter?: UserNotificationFilter): void {
 
     const conditions: string[] = [];
     if (userFilter.id && isUuid(userFilter.id)) conditions.push(`user_id.eq.${userFilter.id}`);
-    if (userFilter.name) conditions.push(`user_identifier.ilike.${userFilter.name}`);
+    if (userFilter.name) conditions.push(`user_identifier.ilike.*${userFilter.name}*`);
 
     if (conditions.length > 0) {
       sb.from('notifications').update({ read: true }).or(conditions.join(',')).then();
@@ -621,6 +664,14 @@ export function dismissNotification(id: string): void {
   const current = getNotifications();
   const updated = current.filter((n) => n.id !== id);
   persistNotifications(updated);
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/notifications', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  }
 
   const sb = getSupabaseClient();
   if (sb && isSupabaseConfigured) {
@@ -635,6 +686,14 @@ export function clearAllNotifications(userFilter?: UserNotificationFilter): void
     const current = getNotifications();
     const remaining = current.filter((n) => !isNotificationForUser(n, userFilter));
     persistNotifications(remaining);
+  }
+
+  if (typeof window !== 'undefined') {
+    fetch('/api/notifications', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: true, userId: userFilter?.id, userName: userFilter?.name }),
+    }).catch(() => {});
   }
 
   const sb = getSupabaseClient();
@@ -696,16 +755,30 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
 
     let isMounted = true;
     fetchUserNotificationsFromSupabase(userFilter).then((remoteItems) => {
-      if (!isMounted || remoteItems.length === 0) return;
+      if (!isMounted || !Array.isArray(remoteItems)) return;
 
       const current = getNotifications();
-      const existingIds = new Set(current.map((n) => n.id));
-      const newItemsFromRemote = remoteItems.filter((rn) => !existingIds.has(rn.id));
+      const mergedMap = new Map<string, NotificationItem>();
 
-      if (newItemsFromRemote.length > 0) {
-        const merged = [...newItemsFromRemote, ...current].sort((a, b) => b.timestamp - a.timestamp);
-        persistNotifications(merged);
-      }
+      // 1. Seed with remote items fetched from Supabase
+      remoteItems.forEach((r) => mergedMap.set(r.id, r));
+
+      // 2. Merge local items, preserving newest data and read status
+      current.forEach((c) => {
+        if (!mergedMap.has(c.id)) {
+          mergedMap.set(c.id, c);
+        } else {
+          const rem = mergedMap.get(c.id)!;
+          mergedMap.set(c.id, {
+            ...rem,
+            ...c,
+            read: c.read || rem.read,
+          });
+        }
+      });
+
+      const merged = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      persistNotifications(merged);
     });
 
     return () => {

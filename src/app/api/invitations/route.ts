@@ -504,7 +504,7 @@ export async function POST(req: NextRequest) {
 
       const { data: targetSession, error: fetchErr } = await supabase
         .from('sessions')
-        .select('id, host_id')
+        .select('id, host_id, title')
         .eq('id', idToDelete)
         .maybeSingle();
 
@@ -524,6 +524,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Query participants before deletion to notify them
+      const { data: qRows } = await supabase
+        .from('queues')
+        .select('user_id, partner_names')
+        .eq('session_id', idToDelete);
+
       await supabase.from('queues').delete().eq('session_id', idToDelete);
       const { error: cancelErr } = await supabase
         .from('sessions')
@@ -533,6 +539,42 @@ export async function POST(req: NextRequest) {
       if (cancelErr) {
         console.error('[/api/invitations POST delete_game] Cancel failed:', cancelErr);
         return NextResponse.json({ success: false, error: cancelErr.message }, { status: 500 });
+      }
+
+      // Notify joined participants
+      if (Array.isArray(qRows) && qRows.length > 0) {
+        for (const q of qRows) {
+          if (q.user_id && q.user_id !== authUser.id) {
+            try {
+              const pName = q.partner_names?.[0] || 'Player';
+              const notifPayload = {
+                user_id: (q.user_id && UUID_REGEX.test(q.user_id)) ? q.user_id : null,
+                user_identifier: pName,
+                type: 'match',
+                title: 'Game Cancelled',
+                description: `The host has cancelled ${targetSession.title || 'your match'}, a game you joined.`,
+                read: false,
+                link_screen: 'social-home',
+                metadata: {
+                  event: 'game_deleted',
+                  gameId: idToDelete,
+                  gameTitle: targetSession.title,
+                  hostName: authUser.full_name,
+                  hostId: authUser.id,
+                  recipientId: q.user_id,
+                  recipientName: pName,
+                  dedupeKey: `del_${idToDelete}_${q.user_id}_${Date.now()}`,
+                },
+                created_at: new Date().toISOString(),
+              };
+              await supabase.from('notifications').insert(notifPayload);
+
+              // Broadcast to player channel
+              const ch = supabase.channel(`sportsync-notifs-${q.user_id}`);
+              ch.send({ type: 'broadcast', event: 'new_notification', payload: notifPayload }).catch(() => {});
+            } catch {}
+          }
+        }
       }
 
       return NextResponse.json({ success: true, deleted: true });

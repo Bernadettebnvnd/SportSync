@@ -310,7 +310,13 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                           </span>
                           {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>Player: {item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name}</span>
+                              <span>
+                                {item.meta?.event === 'player_joined' || item.title?.includes('Player Joined')
+                                  ? `Player: ${item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName}`
+                                  : item.meta?.event === 'game_updated' || item.meta?.event === 'game_deleted' || item.meta?.event === 'participant_removed'
+                                  ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
+                                  : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
+                              </span>
                             </span>
                           )}
                           {item.linkScreen && (
@@ -414,7 +420,13 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                           </span>
                           {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#1C241E] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>Player: {item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name}</span>
+                              <span>
+                                {item.meta?.event === 'player_joined' || item.title?.includes('Player Joined')
+                                  ? `Player: ${item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName}`
+                                  : item.meta?.event === 'game_updated' || item.meta?.event === 'game_deleted' || item.meta?.event === 'participant_removed'
+                                  ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
+                                  : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
+                              </span>
                             </span>
                           )}
                           {item.linkScreen && (
