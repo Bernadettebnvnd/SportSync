@@ -279,9 +279,16 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
           };
         }
       }
+      const locTagMatch = s.description?.match(/\[LOC:(.*?)\]/i);
+      const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
+      const v = s.venue_id ? venuesMap.get(s.venue_id) : undefined;
+      const vName = v?.name && !v.name.includes('Upper Deck') ? v.name : '';
+      const resolvedLocation = s.location_details || taggedLoc || vName || 'Metro Naga Sports Complex';
+
       return {
         ...s,
-        venue: s.venue_id ? venuesMap.get(s.venue_id) : undefined,
+        location_details: resolvedLocation,
+        venue: v,
         host: resolvedHost,
         queues: queuesMap.get(s.id) || [],
       };
@@ -584,6 +591,7 @@ export async function updateOpenPlaySession(
     if (updates.max_players !== undefined) dbUpdates.max_players = updates.max_players;
     if (updates.skill_level !== undefined) dbUpdates.skill_level = updates.skill_level;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.location_details !== undefined) dbUpdates.location_details = updates.location_details;
     dbUpdates.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase

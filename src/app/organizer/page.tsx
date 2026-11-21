@@ -662,10 +662,11 @@ function OrganizerDashboardContent() {
     e.preventDefault();
     if (!newGameTitle.trim() || !primaryVenue) return;
     const courtId = newGameCourtId || allFacilityCourts[0]?.id || 'court_default';
+    const facilityVenueName = primaryVenue.name || 'Metro Naga Sports Complex';
     createOpenPlaySession({
       venueId: primaryVenue.id,
       title: newGameTitle.trim(),
-      description: `Official facility hosted game at ${primaryVenue.name}. Open to all recreational players.`,
+      description: `Official facility hosted game at ${facilityVenueName}. Open to all recreational players.`,
       sport: newGameSport,
       courtIds: [courtId],
       startTime: newGameTime.split(' - ')[0] || '18:00',
@@ -674,6 +675,7 @@ function OrganizerDashboardContent() {
       maxPlayers: Number(newGamePlayers || '10'),
       rotationFormat: newGameRotation,
       skillLevel: 'all_levels',
+      locationDetails: facilityVenueName,
     });
     setIsCreateGameOpen(false);
     setNewGameTitle('');
@@ -776,10 +778,11 @@ function OrganizerDashboardContent() {
   };
 
   const handleConvertEmptyOpportunity = (opp: EmptyCourtOpportunity) => {
+    const facilityVenueName = primaryVenue?.name || 'Metro Naga Sports Complex';
     createOpenPlaySession({
-      venueId: primaryVenue?.id || 'venue_upper_deck',
+      venueId: primaryVenue?.id || 'venue_naga_facility',
       title: `${getSportDisplayName(opp.sport)} Flash Open Play`,
-      description: `Spontaneous open play session for court ${opp.courtName}. Instant rotation play!`,
+      description: `Spontaneous open play session for court ${opp.courtName} at ${facilityVenueName}. Instant rotation play!`,
       sport: opp.sport,
       courtIds: [opp.courtId],
       startTime: opp.timeRange.split(' - ')[0] || '14:00',
@@ -788,6 +791,7 @@ function OrganizerDashboardContent() {
       maxPlayers: 12,
       rotationFormat: '2v2 Doubles Rotation',
       skillLevel: 'all_levels',
+      locationDetails: facilityVenueName,
     });
 
     setMonetizeSuccessMessage(

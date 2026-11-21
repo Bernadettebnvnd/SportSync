@@ -557,16 +557,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               <span>Edit Playing Preferences (Sports &amp; City)</span>
             </button>
 
-            {!isGuest && (
-              <a
-                href="/onboarding"
-                className="w-full h-11 rounded-2xl bg-[#141A15] text-[#F4F7F0] hover:bg-[#1C241E] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold transition-all press-scale"
-              >
-                <Sparkles className="w-4 h-4 text-[#C8FF2E]" />
-                <span>Player Profile &amp; Preferences Setup</span>
-              </a>
-            )}
-
             <button
               type="button"
               onClick={onOpenSettings}

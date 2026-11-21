@@ -222,13 +222,32 @@ async function getOrCreateSystemCommunityVenueId(
     return existing.id;
   }
 
+  // Check for any verified venue located in Naga City before creating a fallback
+  const { data: nagaVenue } = await supabase
+    .from('venues')
+    .select('id')
+    .or('city.ilike.%naga%,address.ilike.%naga%')
+    .limit(1)
+    .maybeSingle();
+
+  if (nagaVenue?.id) {
+    return nagaVenue.id;
+  }
+
+  // Find any existing system/admin user ID to satisfy owner_id NOT NULL constraint
+  const { data: anyUser } = await supabase
+    .from('users')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
   const { data: created, error } = await supabase
     .from('venues')
     .insert({
-      owner_id: null,
+      owner_id: anyUser?.id || null,
       name: 'Community / Open Court',
       slug: SYSTEM_SLUG,
-      description: 'System fallback venue for custom community and open-court games',
+      description: 'System fallback venue for custom community and open-court games in Naga City',
       address: 'Naga City, Camarines Sur',
       city: 'Naga City',
       latitude: 13.6218,
@@ -248,13 +267,14 @@ async function getOrCreateSystemCommunityVenueId(
       code: error.code,
       message: error.message,
     });
-    // Fall back to ANY existing venue in the database
-    const { data: anyVenue } = await supabase
+    // Fall back to a Naga City venue or existing non-mock venue
+    const { data: anyNaga } = await supabase
       .from('venues')
-      .select('id')
+      .select('id, name')
+      .not('name', 'ilike', '%Upper Deck%')
       .limit(1)
       .maybeSingle();
-    if (anyVenue?.id) return anyVenue.id;
+    if (anyNaga?.id) return anyNaga.id;
   }
 
   return created?.id || null;
@@ -409,7 +429,7 @@ export async function GET(req: NextRequest) {
           Math.max(members.length, s.current_players_count || 0)
         );
 
-        const locTagMatch = s.description?.match(/\[LOCATION:(.*?)\]/i);
+        const locTagMatch = s.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
         const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
         const coordsTagMatch = s.description?.match(/\[COORDS:(.*?)\]/i);
         let parsedCoords: [number, number] | undefined = undefined;
@@ -418,17 +438,22 @@ export async function GET(req: NextRequest) {
             parsedCoords = JSON.parse(coordsTagMatch[1]);
           } catch {}
         }
+        const isUpperDeck = venue?.name && venue.name.includes('Upper Deck');
+        const validVenueName = venue?.name && venue.name !== 'Community / Open Court' && !isUpperDeck
+          ? venue.name
+          : '';
 
         const resolvedLocation =
           taggedLoc ||
           s.location_details ||
-          (venue?.name && venue.name !== 'Community / Open Court' ? venue.name : '') ||
-          'Naga Sports Venue';
+          validVenueName ||
+          'Metro Naga Sports Complex';
 
         const cleanNotes = (s.description || '')
           .replace(/\[INVITE:.*?\]/gi, '')
           .replace(/\[HOST:.*?\]/gi, '')
           .replace(/\[LOCATION:.*?\]/gi, '')
+          .replace(/\[LOC:.*?\]/gi, '')
           .replace(/\[COORDS:.*?\]/gi, '')
           .trim();
 
@@ -626,7 +651,7 @@ export async function POST(req: NextRequest) {
         venue_id: venueId,
         host_id: hostUserId,
         title: game.title.trim(),
-        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}] [LOCATION:${venueLocationName}] [COORDS:${JSON.stringify(coordinates)}]`,
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}] [LOCATION:${venueLocationName}] [LOC:${venueLocationName}] [COORDS:${JSON.stringify(coordinates)}]`,
         sport: validSport,
         session_type: 'open_play',
         skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
