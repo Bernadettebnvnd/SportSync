@@ -477,31 +477,160 @@ export async function PATCH(request: Request) {
 
     fallbackBookingsStore.set(bookingId, updatedBooking);
 
-    // 6. Insert persistent notification for the player on confirm / reject
-    if ((status === 'confirmed' || status === 'rejected') && currentBooking.user_id) {
-      const venueName = currentBooking.venue?.name || 'Venue';
-      const courtName = currentBooking.court?.name || 'Court';
-      const isConfirmed = status === 'confirmed';
+    // 6. Notify the player on confirm / reject
+    let notifItem: any = null;
+    if (status === 'confirmed' || status === 'rejected') {
+      try {
+        const venueName = currentBooking.venue?.name || 'Sports Venue';
+        const courtName = currentBooking.court?.name || 'Court';
+        const isConfirmed = status === 'confirmed';
 
-      const { error: notifErr } = await dbClient.from('notifications').insert({
-        user_id: currentBooking.user_id,
-        type: 'booking',
-        title: isConfirmed ? 'Booking Approved! 🎉' : 'Booking Request Declined',
-        description: isConfirmed
-          ? `${venueName} has confirmed your reservation for ${courtName} on ${currentBooking.booking_date} (${currentBooking.start_time} - ${currentBooking.end_time}). See you on the court!`
-          : `Your booking request at ${venueName} for ${courtName} on ${currentBooking.booking_date} (${currentBooking.start_time}) was declined by the venue.${cleanReason ? ` Reason: ${cleanReason}` : ''}`,
-        link_screen: 'my-bookings',
-        metadata: {
-          event: isConfirmed ? 'booking_approved' : 'booking_rejected',
-          bookingId: currentBooking.id,
-          reference: currentBooking.booking_reference,
-          status,
-          ...(cleanReason ? { reason: cleanReason } : {}),
-        },
-      });
+        // 6a. Resolve player user details
+        let targetUserId: string | null = isValidUuid(currentBooking.user_id) ? currentBooking.user_id : null;
+        let targetUserName = currentBooking.customer_name || currentBooking.user?.full_name || '';
 
-      if (notifErr && !isMissingTableError(notifErr)) {
-        console.error('[BookingsAPI PATCH] Notification insert failed:', notifErr);
+        if (currentBooking.user_id) {
+          const { data: pUser } = await dbClient
+            .from('users')
+            .select('id, auth_id, full_name, nickname, email')
+            .or(`id.eq.${currentBooking.user_id},auth_id.eq.${currentBooking.user_id}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (pUser) {
+            targetUserId = pUser.id || targetUserId;
+            targetUserName = pUser.full_name || pUser.nickname || targetUserName;
+          }
+        }
+
+        // Parse customer name from notes if needed
+        if ((!targetUserName || targetUserName === 'Customer') && currentBooking.notes) {
+          const match = currentBooking.notes.match(/\[CUSTOMER:(.*?)\|(.*?)\|(.*?)\]/);
+          if (match && match[1]) {
+            targetUserName = match[1].trim();
+          }
+        }
+
+        targetUserName = targetUserName || 'Player';
+
+        // 6b. Construct notification item
+        const notifTitle = isConfirmed ? 'Court Booking Confirmed 🎉' : 'Court Booking Declined';
+        const scheduleStr = currentBooking.booking_date
+          ? `${currentBooking.booking_date} (${currentBooking.start_time || ''}${currentBooking.end_time ? ` - ${currentBooking.end_time}` : ''})`.trim()
+          : '';
+
+        const notifDesc = isConfirmed
+          ? `Your reservation for ${courtName} at ${venueName} on ${scheduleStr} has been accepted by the faculty. See you on the court!`
+          : `Your reservation request for ${courtName} at ${venueName} on ${scheduleStr} was declined by the faculty.${cleanReason ? ` Reason: ${cleanReason}` : ''}`;
+
+        const dedupeKey = `booking_${status}_${currentBooking.id}`;
+        const notifId = `notif_bk_${status}_${currentBooking.id}`;
+
+        notifItem = {
+          id: notifId,
+          type: 'booking',
+          title: notifTitle,
+          desc: notifDesc,
+          time: 'Just now',
+          timestamp: Date.now(),
+          read: false,
+          linkScreen: 'my-bookings',
+          recipientId: targetUserId,
+          recipientName: targetUserName,
+          senderName: venueName,
+          meta: {
+            event: isConfirmed ? 'booking_confirmed' : 'booking_declined',
+            bookingId: currentBooking.id,
+            bookingReference: currentBooking.booking_reference,
+            reference: currentBooking.booking_reference,
+            venueId: currentBooking.venue_id,
+            venueName,
+            courtName,
+            schedule: scheduleStr,
+            bookingDate: currentBooking.booking_date,
+            startTime: currentBooking.start_time,
+            endTime: currentBooking.end_time,
+            status,
+            recipientId: targetUserId,
+            recipientName: targetUserName,
+            hostName: venueName,
+            dedupeKey,
+            ...(cleanReason ? { reason: cleanReason } : {}),
+          },
+        };
+
+        // 6c. Persist to public.notifications or fallback to public.users
+        let tableSaved = false;
+        try {
+          const { error: notifErr } = await dbClient.from('notifications').insert({
+            id: isValidUuid(notifId) ? notifId : undefined,
+            user_id: targetUserId,
+            user_identifier: targetUserName || targetUserId || null,
+            type: 'booking',
+            title: notifItem.title,
+            description: notifItem.desc,
+            read: false,
+            link_screen: 'my-bookings',
+            metadata: notifItem.meta,
+            created_at: new Date().toISOString(),
+          });
+
+          if (!notifErr) {
+            tableSaved = true;
+          } else if (notifErr.code === '23505' || notifErr.message?.includes('duplicate key')) {
+            tableSaved = true;
+          }
+        } catch {}
+
+        if (!tableSaved && targetUserId) {
+          try {
+            const { data: uRow } = await dbClient
+              .from('users')
+              .select('id, equipped_gear')
+              .or(`id.eq.${targetUserId},auth_id.eq.${targetUserId}`)
+              .limit(1)
+              .maybeSingle();
+
+            if (uRow?.id) {
+              const currentGear = typeof uRow.equipped_gear === 'object' && uRow.equipped_gear ? uRow.equipped_gear : {};
+              const existingNotifs = Array.isArray((currentGear as any)._sportsync_notifications)
+                ? (currentGear as any)._sportsync_notifications
+                : [];
+
+              if (!existingNotifs.some((n: any) => n.id === notifItem.id || (n.meta?.dedupeKey && n.meta.dedupeKey === notifItem.meta.dedupeKey))) {
+                const updated = [notifItem, ...existingNotifs].slice(0, 50);
+                await dbClient
+                  .from('users')
+                  .update({
+                    equipped_gear: { ...currentGear, _sportsync_notifications: updated },
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', uRow.id);
+              }
+            }
+          } catch {}
+        }
+
+        // 6d. Broadcast over Supabase Realtime so the player gets notified live
+        const targetChannels = [
+          ...(targetUserId ? [`sportsync-notifs-${targetUserId}`] : []),
+          ...(targetUserName && targetUserName !== 'Player' ? [`sportsync-notifs-${targetUserName.toLowerCase().replace(/\s+/g, '_')}`] : []),
+        ];
+
+        for (const chName of targetChannels) {
+          try {
+            const ch = dbClient.channel(chName);
+            await ch.send({
+              type: 'broadcast',
+              event: 'new_notification',
+              payload: notifItem,
+            });
+          } catch (bcErr) {
+            console.warn('[BookingsAPI PATCH] Realtime broadcast warning:', bcErr);
+          }
+        }
+      } catch (notifCatchErr) {
+        console.warn('[BookingsAPI PATCH] Player notification dispatch notice:', notifCatchErr);
       }
     }
 
@@ -510,6 +639,7 @@ export async function PATCH(request: Request) {
       booking: updatedBooking,
       bookingId,
       status,
+      notification: notifItem,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update booking status.';

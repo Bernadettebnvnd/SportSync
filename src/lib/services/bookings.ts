@@ -1,5 +1,6 @@
 import { Booking, BookingStatus, CourtAvailabilitySlot, SportType } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
+import { broadcastNotification } from '@/lib/notifications';
 
 /**
  * Compute hourly court slot availability by querying confirmed/pending bookings
@@ -149,6 +150,13 @@ export async function updateBookingStatus(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data?.error || `Failed to update booking status (${res.status}).`);
+  }
+
+  // Multi-tab and Realtime broadcast for instantaneous player notification
+  if (data?.notification && typeof window !== 'undefined') {
+    try {
+      broadcastNotification(data.notification).catch(() => {});
+    } catch {}
   }
 
   return true;

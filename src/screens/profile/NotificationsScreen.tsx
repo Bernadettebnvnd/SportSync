@@ -318,7 +318,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
-                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
+                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name || item.type === 'booking' || item.meta?.venueName) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
                               <span>
                                 {item.meta?.event === 'player_joined' || item.title?.includes('Player Joined')
@@ -327,13 +327,20 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
                                   : item.type === 'chat' || item.meta?.event === 'new_chat_message'
                                   ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
+                                  : item.type === 'booking' || item.meta?.event?.startsWith('booking_')
+                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Faculty'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              {item.type === 'chat' || item.linkScreen === 'match-chat' ? 'Open Chat' : 'View Match'} <ChevronRight className="w-2.5 h-2.5" />
+                              {item.type === 'chat' || item.linkScreen === 'match-chat'
+                                ? 'Open Chat'
+                                : item.type === 'booking' || item.linkScreen === 'my-bookings'
+                                ? 'View Booking'
+                                : 'View Match'}{' '}
+                              <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
@@ -430,7 +437,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
-                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
+                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name || item.type === 'booking' || item.meta?.venueName) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#1C241E] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
                               <span>
                                 {item.meta?.event === 'player_joined' || item.title?.includes('Player Joined')
@@ -439,13 +446,20 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   ? `Host: ${item.senderName || item.meta?.hostName || 'Organizer'}`
                                   : item.type === 'chat' || item.meta?.event === 'new_chat_message'
                                   ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
+                                  : item.type === 'booking' || item.meta?.event?.startsWith('booking_')
+                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Faculty'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              {item.type === 'chat' || item.linkScreen === 'match-chat' ? 'Open Chat' : 'View Match'} <ChevronRight className="w-2.5 h-2.5" />
+                              {item.type === 'chat' || item.linkScreen === 'match-chat'
+                                ? 'Open Chat'
+                                : item.type === 'booking' || item.linkScreen === 'my-bookings'
+                                ? 'View Booking'
+                                : 'View Match'}{' '}
+                              <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
