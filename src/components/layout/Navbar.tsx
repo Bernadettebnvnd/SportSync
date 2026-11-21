@@ -43,6 +43,43 @@ export function Navbar() {
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
+  const handleLogout = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sportsync_logged_out', 'true');
+      const authKeys = [
+        'sportsync_user_id',
+        'matchi_user_id',
+        'sportsync_user_email',
+        'sportsync_user_role',
+        'matchi_user_role',
+        'sportsync_user_name',
+        'matchi_user_name',
+        'sportsync_user_nickname',
+        'matchi_user_nickname',
+        'sportsync_user_profile',
+        'sideline_user_profile',
+        'sportsync_auth_user',
+        'sportsync_pending_onboarding',
+        'sportsync_onboarding_completed',
+        'matchi_onboarding_completed',
+        'sportsync_facility_venue_id',
+      ];
+      authKeys.forEach((k) => localStorage.removeItem(k));
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
+          localStorage.removeItem(key);
+        }
+      }
+      sessionStorage.clear();
+    }
+    await logoutUser();
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (typeof window !== 'undefined') {
+      window.location.href = '/?auth=signin';
+    }
+  };
+
   React.useEffect(() => {
     setMounted(true);
   }, []);
@@ -224,11 +261,21 @@ export function Navbar() {
                 <button
                   type="button"
                   onClick={() => setIsOwnerModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#b8f022] transition-all press-scale flex items-center gap-1.5 shadow-[0_0_14px_rgba(200,255,46,0.25)]"
-                  title="Configure Facility & Courts Setup"
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#b8f022] transition-all press-scale flex items-center gap-1.5 shadow-[0_0_14px_rgba(200,255,46,0.25)] cursor-pointer"
+                  title="Configure Facility & Courts Setup" 
                 >
                   <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
                   <span>Facility Setup</span>
+                </button>
+                {/* Quick Log Out Button */}
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 transition-all press-scale flex items-center gap-1.5 cursor-pointer"
+                  title="Log Out of Facility Account"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Log Out</span>
                 </button>
 
                 {/* Faculty Profile Dropdown */}
@@ -289,14 +336,8 @@ export function Navbar() {
                       <div className="pt-1 border-t border-white/5">
                         <button
                           type="button"
-                          onClick={async () => {
-                            setIsProfileDropdownOpen(false);
-                            try {
-                              await logoutUser();
-                            } catch {}
-                            window.location.href = '/?auth=signin';
-                          }}
-                          className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left"
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
                         >
                           <LogOut className="w-4 h-4 text-rose-400" />
                           <span>Log Out</span>

@@ -46,6 +46,7 @@ import {
   Layers,
   Phone,
   Mail,
+  Loader2,
 } from 'lucide-react';
 
 export type OrganizerTab = 'overview' | 'games' | 'courts' | 'profile' | 'bookings' | 'monetize' | 'queue_ops' | 'payments';
@@ -53,7 +54,6 @@ export type OrganizerTab = 'overview' | 'games' | 'courts' | 'profile' | 'bookin
 function OrganizerDashboardContent() {
   const {
     currentUser,
-    logoutUser,
     venues,
     courts,
     sessions,
@@ -70,20 +70,70 @@ function OrganizerDashboardContent() {
     refreshVenues,
     addCourt,
     updateVenueProfile,
+    logoutUser,
   } = useMatchiStore();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
 
   React.useEffect(() => {
     setMounted(true);
     const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
     const isGuest = isLoggedOut || !currentUser.id || currentUser.id === '' || currentUser.id === 'usr_guest_01' || currentUser.full_name === 'Guest Player';
-    if (isGuest && !storedRole) {
+    if (isLoggedOut || (isGuest && !storedRole)) {
       router.replace('/');
     }
   }, [currentUser.id, currentUser.full_name, storedRole, router]);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_logged_out', 'true');
+        const authKeys = [
+          'sportsync_user_id',
+          'matchi_user_id',
+          'sportsync_user_email',
+          'sportsync_user_role',
+          'matchi_user_role',
+          'sportsync_user_name',
+          'matchi_user_name',
+          'sportsync_user_nickname',
+          'matchi_user_nickname',
+          'sportsync_user_profile',
+          'sideline_user_profile',
+          'sportsync_auth_user',
+          'sportsync_pending_onboarding',
+          'sportsync_onboarding_completed',
+          'matchi_onboarding_completed',
+          'sportsync_user_city',
+          'sportsync_user_location',
+          'sportsync_user_sports',
+          'sportsync_user_skill',
+          'sportsync_user_availability',
+          'sportsync_facility_venue_id',
+        ];
+        authKeys.forEach((k) => localStorage.removeItem(k));
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
+            localStorage.removeItem(key);
+          }
+        }
+        sessionStorage.clear();
+      }
+      await logoutUser();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch (err) {
+      console.warn('Logout error:', err);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/?auth=signin';
+      }
+    }
+  };
 
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
@@ -426,14 +476,27 @@ function OrganizerDashboardContent() {
             <button
               type="button"
               onClick={() => setIsOwnerModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-bold transition-all shadow-sm"
+              className="px-4 py-2 rounded-xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-bold transition-all shadow-sm cursor-pointer"
             >
               List Facility
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="px-4 py-2 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5" />
+              )}
+              <span>{isLoggingOut ? 'Logging out...' : 'Log Out'}</span>
             </button>
           </div>
         </div>
         {isOwnerModalOpen && (
-          <OwnerOnboardingModal isOpen={isOwnerModalOpen} onClose={() => setIsOwnerModalOpen(false)} />
+          <OwnerOnboardingModal isOpen={isOwnerModalOpen} onClose={() => setIsOwnerModalOpen(false)} onLogout={handleLogout} />
         )}
       </div>
     );
@@ -462,22 +525,49 @@ function OrganizerDashboardContent() {
             <button
               type="button"
               onClick={() => setIsOwnerModalOpen(true)}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-black transition-all shadow-[0_0_24px_rgba(200,255,46,0.3)] flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#C8FF2E] hover:bg-[#b4eb25] text-black text-xs font-black transition-all shadow-[0_0_24px_rgba(200,255,46,0.3)] flex items-center justify-center gap-2 cursor-pointer press-scale"
             >
               <Building2 className="w-4 h-4" />
-              <span>Set Up Facility & Courts</span>
+              <span>Set Up Facility &amp; Courts</span>
             </button>
             <Link
               href="/onboarding?role=owner"
-              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-white/10 hover:bg-white/5 text-xs font-bold text-[#A5B0A6] hover:text-white transition-all text-center flex items-center justify-center gap-2 cursor-pointer press-scale"
             >
               <Building2 className="w-3.5 h-3.5 text-[#C8FF2E]" />
               <span>Launch Setup Wizard</span>
             </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-bold text-rose-400 hover:text-rose-300 transition-all text-center flex items-center justify-center gap-2 cursor-pointer press-scale disabled:opacity-50"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5" />
+              )}
+              <span>{isLoggingOut ? 'Logging Out...' : 'Log Out'}</span>
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-white/5">
+            <p className="text-xs text-[#A5B0A6]">
+              Don&apos;t want to set up a facility yet?{' '}
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="text-rose-400 hover:text-rose-300 underline font-semibold transition-colors cursor-pointer"
+              >
+                Log out of your account
+              </button>
+            </p>
           </div>
         </div>
         {isOwnerModalOpen && (
-          <OwnerOnboardingModal isOpen={isOwnerModalOpen} onClose={() => setIsOwnerModalOpen(false)} />
+          <OwnerOnboardingModal isOpen={isOwnerModalOpen} onClose={() => setIsOwnerModalOpen(false)} onLogout={handleLogout} />
         )}
       </div>
     );
@@ -708,13 +798,26 @@ function OrganizerDashboardContent() {
           <button
             type="button"
             onClick={() => setIsOwnerModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#b8f022] flex items-center gap-1.5 transition-all shadow-[0_0_16px_rgba(200,255,46,0.3)] press-scale"
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0B0F0C] bg-[#C8FF2E] hover:bg-[#b8f022] flex items-center gap-1.5 transition-all shadow-[0_0_16px_rgba(200,255,46,0.3)] press-scale cursor-pointer"
             title="Configure Facility & Courts Setup"
           >
             <Building2 className="w-3.5 h-3.5 text-[#0B0F0C]" />
             <span>Facility Setup</span>
           </button>
-
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 flex items-center gap-1.5 transition-all press-scale cursor-pointer disabled:opacity-50"
+            title="Log out of account"
+          >
+            {isLoggingOut ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <LogOut className="w-3.5 h-3.5" />
+            )}
+            <span>{isLoggingOut ? 'Logging Out...' : 'Log Out'}</span>
+          </button>
           <div className="flex items-center gap-1.5 p-1 bg-[#FAF8F5] border border-[#E8E5DF] rounded-2xl overflow-x-auto no-scrollbar max-w-full">
             <button
               type="button"
@@ -2506,6 +2609,30 @@ function OrganizerDashboardContent() {
                 </p>
                 <p className="text-[#65756B]">Cash accepted at venue counter &bull; Automated voucher verification.</p>
               </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-4 border-t border-[#E8E5DF] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={openEditProfile}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs font-bold text-center transition-colors shadow-sm cursor-pointer"
+              >
+                Edit Facility Profile
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isLoggingOut ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="w-3.5 h-3.5" />
+                )}
+                <span>{isLoggingOut ? 'Logging Out...' : 'Log Out'}</span>
+              </button>
             </div>
           </div>
 

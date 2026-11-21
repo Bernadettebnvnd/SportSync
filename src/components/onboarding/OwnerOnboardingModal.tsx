@@ -20,12 +20,14 @@ import {
   MapPin,
   Clock,
   Loader2,
+  LogOut,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface OwnerOnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onLogout?: () => void;
 }
 
 interface NewCourtInput {
@@ -65,10 +67,58 @@ const INVENTORY_OPTIONS: { id: FacilityInventorySource; title: string; desc: str
   },
 ];
 
-export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalProps) {
-  const { currentUser, completeOwnerOnboarding } = useMatchiStore();
+export function OwnerOnboardingModal({ isOpen, onClose, onLogout }: OwnerOnboardingModalProps) {
+  const { currentUser, completeOwnerOnboarding, logoutUser } = useMatchiStore();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+
+  const handleModalLogout = async () => {
+    if (onLogout) {
+      onLogout();
+      return;
+    }
+    setIsLoggingOut(true);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_logged_out', 'true');
+        const authKeys = [
+          'sportsync_user_id',
+          'matchi_user_id',
+          'sportsync_user_email',
+          'sportsync_user_role',
+          'matchi_user_role',
+          'sportsync_user_name',
+          'matchi_user_name',
+          'sportsync_user_nickname',
+          'matchi_user_nickname',
+          'sportsync_user_profile',
+          'sideline_user_profile',
+          'sportsync_auth_user',
+          'sportsync_pending_onboarding',
+          'sportsync_onboarding_completed',
+          'matchi_onboarding_completed',
+          'sportsync_facility_venue_id',
+        ];
+        authKeys.forEach((k) => localStorage.removeItem(k));
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
+            localStorage.removeItem(key);
+          }
+        }
+        sessionStorage.clear();
+      }
+      await logoutUser();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch (err) {
+      console.warn('Logout error:', err);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/?auth=signin';
+      }
+    }
+  };
 
   const initialStoredName =
     typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_name') || '' : '';
@@ -231,14 +281,30 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               List Facility on SportSync
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors"
-            aria-label="Close modal"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleModalLogout}
+              disabled={isLoggingOut}
+              className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              title="Log out of account"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <LogOut className="w-3 h-3" />
+              )}
+              <span>Log Out</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Stepper Progress Bar */}
@@ -560,7 +626,18 @@ export function OwnerOnboardingModal({ isOpen, onClose }: OwnerOnboardingModalPr
               <span>Back</span>
             </button>
           ) : (
-            <span className="text-[11px] text-[#A5B0A6] font-bold">Step 1 of 4</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-[#A5B0A6] font-bold">Step 1 of 4</span>
+              <span className="text-[#A5B0A6]/40 text-xs">•</span>
+              <button
+                type="button"
+                onClick={handleModalLogout}
+                disabled={isLoggingOut}
+                className="text-[11px] text-rose-400 hover:text-rose-300 font-bold underline transition-colors cursor-pointer"
+              >
+                Log Out
+              </button>
+            </div>
           )}
 
           {step < 4 ? (

@@ -19,14 +19,60 @@ import {
   RotateCcw,
   RefreshCw,
   Clock,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { currentUser, bookings, resetOnboardingState, activeMode, toggleMode } = useMatchiStore();
+  const { currentUser, bookings, resetOnboardingState, activeMode, toggleMode, logoutUser } = useMatchiStore();
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_logged_out', 'true');
+        const authKeys = [
+          'sportsync_user_id',
+          'matchi_user_id',
+          'sportsync_user_email',
+          'sportsync_user_role',
+          'matchi_user_role',
+          'sportsync_user_name',
+          'matchi_user_name',
+          'sportsync_user_nickname',
+          'matchi_user_nickname',
+          'sportsync_user_profile',
+          'sideline_user_profile',
+          'sportsync_auth_user',
+          'sportsync_pending_onboarding',
+          'sportsync_onboarding_completed',
+          'matchi_onboarding_completed',
+          'sportsync_facility_venue_id',
+        ];
+        authKeys.forEach((k) => localStorage.removeItem(k));
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
+            localStorage.removeItem(key);
+          }
+        }
+        sessionStorage.clear();
+      }
+      await logoutUser();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch (err) {
+      console.warn('Logout error:', err);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/?auth=signin';
+      }
+    }
+  };
 
   const myBookings = bookings.filter((b) => b.user_id === currentUser.id);
   const isHost = currentUser.role === 'venue_owner' || currentUser.role === 'organizer' || currentUser.role === 'admin';
@@ -201,13 +247,13 @@ export default function ProfilePage() {
         {/* Group 3: Account */}
         <div>
           <h3 className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] mb-2">
-            Account
+            Account &amp; Session
           </h3>
           <div className="rounded-2xl border border-white/10 bg-[#141A15] divide-y divide-white/10 overflow-hidden shadow-sm">
             <button
               type="button"
               onClick={() => setIsAuthModalOpen(true)}
-              className="w-full flex items-center justify-between p-4 hover:bg-white/[0.04] transition-colors text-left group"
+              className="w-full flex items-center justify-between p-4 hover:bg-white/[0.04] transition-colors text-left group cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white shrink-0">
@@ -223,6 +269,32 @@ export default function ProfilePage() {
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-[#A5B0A6] group-hover:text-[#F4F7F0] transition-colors" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="w-full flex items-center justify-between p-4 hover:bg-rose-500/10 transition-colors text-left group cursor-pointer disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400 shrink-0">
+                  {isLoggingOut ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                  ) : (
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                  )}
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-rose-400 block">
+                    {isLoggingOut ? 'Logging Out...' : 'Log Out'}
+                  </span>
+                  <span className="text-xs text-[#A5B0A6]">
+                    End your active session on this device
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-rose-400/50 group-hover:text-rose-400 transition-colors" />
             </button>
           </div>
         </div>

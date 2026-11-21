@@ -30,6 +30,7 @@ import {
   Layers,
   DollarSign,
   CheckCircle2,
+  LogOut,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
@@ -891,14 +892,25 @@ function OnboardingContent() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setRole('player')}
-              className="px-3 py-1.5 rounded-full bg-[#1C241E] hover:bg-[#253028] border border-white/10 text-[11px] font-semibold text-[#A5B0A6] hover:text-[#C8FF2E] transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <UserIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Player Setup?</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setRole('player')}
+                className="px-3 py-1.5 rounded-full bg-[#1C241E] hover:bg-[#253028] border border-white/10 text-[11px] font-semibold text-[#A5B0A6] hover:text-[#C8FF2E] transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Player Setup?</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleBackToLogin}
+                className="px-3 py-1.5 rounded-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-[11px] font-semibold text-rose-400 hover:text-rose-300 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Log out of account"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Log Out</span>
+              </button>
+            </div>
           </div>
 
           {/* 5-Step Progress Pills Bar */}

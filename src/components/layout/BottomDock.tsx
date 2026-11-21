@@ -54,7 +54,11 @@ export function BottomDock() {
       <div className="flex items-center justify-around rounded-full border border-white/10 bg-[#141A15]/95 px-2 py-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
         {items.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || (typeof window !== 'undefined' && item.href.includes('?') && pathname + window.location.search === item.href);
+          const hasQuery = item.href.includes('?');
+          const currentUrl = typeof window !== 'undefined' ? pathname + window.location.search : pathname;
+          const isActive = hasQuery
+            ? currentUrl === item.href
+            : pathname === item.href && (typeof window === 'undefined' || !window.location.search);
           return (
             <Link
               key={item.href}
