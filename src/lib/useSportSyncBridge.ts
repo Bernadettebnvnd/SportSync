@@ -2282,11 +2282,14 @@ export function useSportSyncBridge() {
         coordinates: gameData.coordinates,
       };
 
+      const requestedVenueId = (gameData as any).venueId;
       const matchedVenue = store.venues.find(
         (v) =>
-          v.name &&
-          gameData.locationName &&
-          v.name.trim().toLowerCase() === gameData.locationName.trim().toLowerCase()
+          (requestedVenueId && (v.id === requestedVenueId || (v as any).slug === requestedVenueId)) ||
+          (v.name &&
+            gameData.locationName &&
+            (v.name.trim().toLowerCase() === gameData.locationName.trim().toLowerCase() ||
+              gameData.locationName.trim().toLowerCase().includes(v.name.trim().toLowerCase())))
       );
 
       if (typeof window !== 'undefined') {
@@ -2297,7 +2300,7 @@ export function useSportSyncBridge() {
             action: 'create_game',
             game: {
               ...newGame,
-              venueId: matchedVenue?.id || null,
+              venueId: matchedVenue?.id || requestedVenueId || null,
             },
           }),
         });

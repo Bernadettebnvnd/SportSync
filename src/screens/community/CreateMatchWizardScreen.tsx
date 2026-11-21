@@ -224,6 +224,7 @@ interface CreateMatchWizardScreenProps {
     coordinates?: [number, number];
     visibility?: 'Public' | 'Friends' | 'Invite';
     inviteCode?: string;
+    venueId?: string;
     invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
   }) => Promise<any> | void;
 }
@@ -898,6 +899,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         coordinates,
         visibility,
         inviteCode,
+        venueId: selectedVenueId || undefined,
         invitedPlayers:
           visibility === 'Invite'
             ? availablePlayers

@@ -496,10 +496,19 @@ export async function createOpenPlaySession(
     throw new Error('Supabase is not configured.');
   }
 
-  const validVenueId =
+  let validVenueId =
     sessionData.venue_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionData.venue_id)
       ? sessionData.venue_id
       : null;
+
+  if (!validVenueId) {
+    try {
+      const { data: vRow } = await supabase.from('venues').select('id').limit(1).maybeSingle();
+      if (vRow?.id) {
+        validVenueId = vRow.id;
+      }
+    } catch {}
+  }
 
   const validHostId =
     sessionData.host_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionData.host_id)
