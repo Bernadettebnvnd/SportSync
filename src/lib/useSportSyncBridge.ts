@@ -15,7 +15,7 @@ import { SportType as DbSportType, SkillLevel } from '../types';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
 import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
-import { addNotification, resetNotificationCache } from './notifications';
+import { addNotification, resetNotificationCache, broadcastNotification } from './notifications';
 import { isGameExpired, isSessionExpired, filterActiveGames } from './utils/gameExpiration';
 
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
@@ -3166,10 +3166,18 @@ export function useSportSyncBridge() {
       let finalizedGame: CommunityGame = updatedGame;
 
       if (typeof window !== 'undefined') {
+        let authToken: string | null = null;
+        try {
+          authToken = localStorage.getItem('sportsync-auth-token') || localStorage.getItem('sb-access-token');
+        } catch {}
+
         try {
           const apiRes = await fetch('/api/invitations', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
             body: JSON.stringify({
               action: 'accept',
               game: updatedGame,
@@ -3184,13 +3192,16 @@ export function useSportSyncBridge() {
           });
           const apiData = await apiRes.json();
           if (!apiRes.ok || !apiData.success) {
-            return {
-              success: false,
-              error: apiData.error || 'Failed to accept invitation.',
-              message: apiData.error || 'Failed to accept invitation.',
-            };
-          }
-          if (apiData.game) {
+            console.warn('[SportSyncBridge] API invitation acceptance warning:', apiData?.error);
+            // If the game was officially deleted/cancelled, abort
+            if (apiData?.error === 'Event No Longer Available' || apiRes.status === 410) {
+              return {
+                success: false,
+                error: apiData.error,
+                message: apiData.error,
+              };
+            }
+          } else if (apiData.game) {
             finalizedGame = apiData.game;
             setGames((prev) =>
               prev.map((g) =>
@@ -3215,29 +3226,42 @@ export function useSportSyncBridge() {
         } catch {}
       }
 
-      // 5. Notify the Host When a Player Joins Their Game
+      // 5. Notify the Host Immediately When a Player Joins Their Game
       // Example notification: "John Doe joined your game, Basketball Match."
-      const hostName = targetGame.hostName;
-      const hostId = targetGame.hostId;
+      let resolvedHostName = targetGame.hostName || '';
+      let resolvedHostId = targetGame.hostId || '';
+      if (!resolvedHostName && (targetGame as any).notes) {
+        const m = (targetGame as any).notes.match(/\[HOST:(.*?)\]/i);
+        if (m) resolvedHostName = m[1].trim();
+      }
+      if (!resolvedHostName && targetGame.members && targetGame.members.length > 0) {
+        resolvedHostName = targetGame.members[0].name;
+        resolvedHostId = resolvedHostId || targetGame.members[0].id || '';
+      }
+
       const gameTitle = targetGame.title;
 
       const isHostSelf = Boolean(
-        (hostName && userName && hostName.trim().toLowerCase() === userName.trim().toLowerCase()) ||
-        (hostId && userProfile.id && hostId === userProfile.id)
+        (resolvedHostName && userName && resolvedHostName.trim().toLowerCase() === userName.trim().toLowerCase()) ||
+        (resolvedHostId && userProfile.id && resolvedHostId === userProfile.id)
       );
 
-      if (!isHostSelf) {
-        const dedupeKey = `join_${targetGame.id}_${userName.trim().toLowerCase()}`;
+      if (!isHostSelf && (resolvedHostName || resolvedHostId)) {
+        const dedupeKey = `join_${targetGame.id}_${userName.trim().toLowerCase()}_${Date.now()}`;
         const hostNotifDesc = `${userName} joined your game, ${gameTitle}.`;
+        const scheduleStr =
+          targetGame.date && targetGame.time
+            ? `${targetGame.date} • ${targetGame.time}`
+            : targetGame.date || targetGame.time || '';
 
-        addNotification({
-          id: `notif_join_${targetGame.id}_${userName.replace(/\s+/g, '_')}`,
+        const hostNotif = addNotification({
+          id: `notif_join_${targetGame.id}_${userName.replace(/\s+/g, '_')}_${Date.now()}`,
           type: 'match',
           title: 'Player Joined Your Game',
           desc: hostNotifDesc,
           linkScreen: 'match-detail',
-          recipientName: hostName,
-          recipientId: hostId,
+          recipientName: resolvedHostName,
+          recipientId: resolvedHostId,
           senderName: userName,
           senderAvatar: userAvatar,
           meta: {
@@ -3246,48 +3270,35 @@ export function useSportSyncBridge() {
             sessionId: targetGame.sessionId || targetGame.id,
             matchId: targetGame.id,
             gameTitle,
+            game_title: gameTitle,
             sport: targetGame.sport,
             locationName: targetGame.locationName,
+            location_name: targetGame.locationName,
+            schedule: scheduleStr,
+            gameDate: targetGame.date,
+            gameTime: targetGame.time,
             joiningPlayerId: userProfile.id,
+            joining_player_id: userProfile.id,
             joiningPlayerName: userName,
+            joining_player_name: userName,
             joiningPlayerAvatar: userAvatar,
+            joining_player_avatar: userAvatar,
             sender_name: userName,
             sender_avatar: userAvatar,
-            hostName,
-            hostId,
+            senderName: userName,
+            senderAvatar: userAvatar,
+            hostName: resolvedHostName,
+            host_name: resolvedHostName,
+            hostId: resolvedHostId,
+            host_id: resolvedHostId,
+            recipientName: resolvedHostName,
+            recipientId: resolvedHostId,
             dedupeKey,
           },
         });
 
-        // Also persist host notification to Supabase if configured
-        if (supabase && isSupabaseConfigured) {
-          try {
-            await supabase.from('notifications').insert({
-              user_id: hostId && hostId.length === 36 ? hostId : null,
-              user_identifier: hostName,
-              type: 'match',
-              title: 'Player Joined Your Game',
-              description: hostNotifDesc,
-              link_screen: 'match-detail',
-              metadata: {
-                event: 'player_joined',
-                game_id: targetGame.id,
-                sessionId: targetGame.sessionId || targetGame.id,
-                game_title: gameTitle,
-                sport: targetGame.sport,
-                location_name: targetGame.locationName,
-                joining_player_id: userProfile.id,
-                joining_player_name: userName,
-                joining_player_avatar: userAvatar,
-                sender_name: userName,
-                sender_avatar: userAvatar,
-                dedupeKey,
-              },
-            });
-          } catch (e) {
-            console.warn('[SportSyncBridge] Supabase notification insert notice:', e);
-          }
-        }
+        // Broadcast across multi-tab BroadcastChannel and Supabase Realtime channels
+        broadcastNotification(hostNotif).catch(() => {});
       }
 
       // 6. Notify the joining player

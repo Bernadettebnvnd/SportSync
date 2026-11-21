@@ -12,7 +12,10 @@ function getDbClient() {
   return createServerClient();
 }
 
-async function authenticateRequest(req: NextRequest, fallbackUserId?: string | null): Promise<SanitizedUser | null> {
+async function authenticateRequest(
+  req: NextRequest,
+  participantData?: any
+): Promise<SanitizedUser | null> {
   const tokenCookie =
     req.cookies.get('sportsync-auth-token')?.value ||
     req.cookies.get('sb-access-token')?.value;
@@ -38,9 +41,57 @@ async function authenticateRequest(req: NextRequest, fallbackUserId?: string | n
     }
   }
 
-  if (fallbackUserId && (UUID_REGEX.test(fallbackUserId.trim()) || fallbackUserId.includes('@'))) {
-    const user = await serverGetUser(fallbackUserId.trim());
-    if (user) return user;
+  const pId = typeof participantData === 'string' ? participantData : participantData?.id;
+  const pEmail = typeof participantData === 'object' ? participantData?.email : undefined;
+  const pName = typeof participantData === 'object' ? participantData?.name : undefined;
+  const pAvatar = typeof participantData === 'object' ? participantData?.avatar : undefined;
+
+  const candidateIds = [pEmail, pId].filter(Boolean) as string[];
+  for (const cand of candidateIds) {
+    const trimmed = cand.trim();
+    if (UUID_REGEX.test(trimmed) || trimmed.includes('@')) {
+      const user = await serverGetUser(trimmed);
+      if (user) return user;
+    }
+  }
+
+  // If user provides a participant name or ID, guarantee a valid public.users row so join always succeeds
+  if (pName || pEmail || pId) {
+    const displayName = (pName || 'SportSync Player').trim();
+    const email = (pEmail || (pId && pId.includes('@') ? pId : `player_${Date.now()}@sportsync.ph`)).trim().toLowerCase();
+    const cleanId = (pId && UUID_REGEX.test(pId)) ? pId : crypto.randomUUID();
+
+    const db = getDbClient();
+    if (db) {
+      try {
+        await db.from('users').upsert(
+          {
+            id: cleanId,
+            auth_id: cleanId,
+            email,
+            full_name: displayName,
+            nickname: displayName.split(' ')[0],
+            role: 'player',
+            avatar_url: pAvatar || 'alex',
+            onboarding_completed: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      } catch {}
+    }
+
+    return {
+      id: cleanId,
+      auth_id: cleanId,
+      email,
+      full_name: displayName,
+      nickname: displayName.split(' ')[0],
+      avatar_url: pAvatar || 'alex',
+      role: 'player',
+      onboarding_completed: true,
+      created_at: new Date().toISOString(),
+    };
   }
 
   return null;
@@ -433,7 +484,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const authUser = await authenticateRequest(
       req,
-      body?.participant?.id || body?.participant?.email || body?.hostId || body?.userId
+      body?.participant || body?.participant?.id || body?.participant?.email || body?.hostId || body?.userId
     );
     if (!authUser) {
       return NextResponse.json(
@@ -692,27 +743,35 @@ export async function POST(req: NextRequest) {
       }
 
       // Notify the Game Host immediately via Supabase notifications table & realtime broadcast
-      const hostUserId = dbSession.host_id || game.hostId;
-      if (hostUserId && hostUserId !== authUser.id) {
-        try {
-          let hostIdentifier = hostUserId;
-          let hostName = game.hostName || '';
-          if (UUID_REGEX.test(hostUserId)) {
-            const { data: hostProfile } = await supabase
-              .from('users')
-              .select('id, full_name, nickname, email')
-              .eq('id', hostUserId)
-              .maybeSingle();
-            if (hostProfile) {
-              hostIdentifier = hostProfile.full_name || hostProfile.nickname || hostProfile.email || hostUserId;
-              if (!hostName) hostName = hostProfile.full_name || hostProfile.nickname || '';
-            }
-          }
-          if (!hostName && dbSession.description) {
-            const hostMatch = dbSession.description.match(/\[HOST:(.*?)\]/i);
-            if (hostMatch) hostName = hostMatch[1].trim();
-          }
+      let hostUserId = dbSession.host_id || game.hostId || null;
+      let hostName = game.hostName || '';
 
+      if (!hostName && dbSession.description) {
+        const hostMatch = dbSession.description.match(/\[HOST:(.*?)\]/i);
+        if (hostMatch) hostName = hostMatch[1].trim();
+      }
+
+      if (hostUserId && UUID_REGEX.test(hostUserId)) {
+        try {
+          const { data: hostProfile } = await supabase
+            .from('users')
+            .select('id, full_name, nickname, email')
+            .eq('id', hostUserId)
+            .maybeSingle();
+          if (hostProfile) {
+            if (!hostName) hostName = hostProfile.full_name || hostProfile.nickname || '';
+          }
+        } catch {}
+      }
+
+      const isHostSelf = Boolean(
+        (hostUserId && hostUserId === authUser.id) ||
+        (hostName && authUser.full_name && hostName.trim().toLowerCase() === authUser.full_name.trim().toLowerCase())
+      );
+
+      if ((hostUserId || hostName) && !isHostSelf) {
+        try {
+          const hostIdentifier = hostName || hostUserId || 'Host';
           const joiningPlayerName = authUser.full_name || body.participant?.name || 'A player';
           const joiningPlayerAvatar = (authUser.avatar_url || body.participant?.avatar || 'alex') as string;
           const gameTitle = dbSession.title || game.title || 'Community Match';
@@ -721,11 +780,16 @@ export async function POST(req: NextRequest) {
           const locMatch = dbSession.description?.match(/\[LOCATION:(.*?)\]/i);
           const gameLocation = dbSession.location_details || (locMatch ? locMatch[1].trim() : '') || game.locationName || 'Naga Sports Venue';
 
+          const sessionSchedule = formatSessionDateTime(dbSession.start_time || undefined);
+          const gameDate = game.date || sessionSchedule.date;
+          const gameTime = game.time || sessionSchedule.time;
+          const scheduleStr = gameDate && gameTime ? `${gameDate} • ${gameTime}` : gameDate || gameTime || '';
+
           const notifDedupeKey = `join_${dbSession.id}_${authUser.id}_${Date.now()}`;
           const notifDesc = `${joiningPlayerName} joined your game, ${gameTitle}.`;
 
           const notifPayload = {
-            user_id: UUID_REGEX.test(hostUserId) ? hostUserId : null,
+            user_id: hostUserId && UUID_REGEX.test(hostUserId) ? hostUserId : null,
             user_identifier: hostIdentifier,
             type: 'match',
             title: 'Player Joined Your Game',
@@ -743,6 +807,9 @@ export async function POST(req: NextRequest) {
               sport: gameSport,
               location_name: gameLocation,
               locationName: gameLocation,
+              schedule: scheduleStr,
+              gameDate,
+              gameTime,
               joining_player_id: authUser.id,
               joiningPlayerId: authUser.id,
               joining_player_name: joiningPlayerName,
@@ -751,6 +818,14 @@ export async function POST(req: NextRequest) {
               joiningPlayerAvatar,
               sender_name: joiningPlayerName,
               sender_avatar: joiningPlayerAvatar,
+              senderName: joiningPlayerName,
+              senderAvatar: joiningPlayerAvatar,
+              hostId: hostUserId,
+              host_id: hostUserId,
+              hostName: hostName,
+              host_name: hostName,
+              recipientId: hostUserId,
+              recipientName: hostName,
               dedupeKey: notifDedupeKey,
             },
             created_at: nowIso,
@@ -761,13 +836,34 @@ export async function POST(req: NextRequest) {
             console.warn('[/api/invitations POST accept] notification insert notice:', notifErr.message);
           }
 
-          const hostChannelName = `sportsync-notifs-${hostUserId || hostIdentifier}`;
-          const hostChannel = supabase.channel(hostChannelName);
-          await hostChannel.send({
-            type: 'broadcast',
-            event: 'new_notification',
-            payload: notifPayload,
-          });
+          // Broadcast across global notification channel, host ID channel, and host Name channel
+          const candidateChannels = [
+            'sportsync-notifs-all',
+            ...(hostUserId ? [`sportsync-notifs-${hostUserId}`] : []),
+            ...(hostName ? [`sportsync-notifs-${hostName.toLowerCase().replace(/\s+/g, '_')}`] : []),
+          ];
+
+          for (const chName of candidateChannels) {
+            try {
+              const hostChannel = supabase.channel(chName);
+              if (typeof (hostChannel as any).httpSend === 'function') {
+                await (hostChannel as any).httpSend('new_notification', notifPayload).catch(() => {});
+              }
+              hostChannel.subscribe((status: string) => {
+                if (status === 'SUBSCRIBED') {
+                  hostChannel.send({
+                    type: 'broadcast',
+                    event: 'new_notification',
+                    payload: notifPayload,
+                  }).catch(() => {}).finally(() => {
+                    setTimeout(() => {
+                      try { supabase.removeChannel(hostChannel); } catch {}
+                    }, 1500);
+                  });
+                }
+              });
+            } catch {}
+          }
         } catch (notifEx) {
           console.warn('[/api/invitations POST accept] Host notification delivery exception:', notifEx);
         }

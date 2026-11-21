@@ -86,9 +86,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const effectiveUserName = user?.name || currentUser.full_name;
   const effectiveUserId = user?.id || currentUser.id;
+  const effectiveUserEmail = (user as any)?.email || currentUser.email;
   const { unreadCount } = useNotifications(
-    !effectiveIsGuest && (effectiveUserName || effectiveUserId)
-      ? { id: effectiveUserId, name: effectiveUserName }
+    !effectiveIsGuest && (effectiveUserName || effectiveUserId || effectiveUserEmail)
+      ? { id: effectiveUserId, name: effectiveUserName, email: effectiveUserEmail }
       : undefined
   );
   const [activeSport, setActiveSport] = useState<string>('All');

@@ -94,7 +94,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           localStorage.getItem('sportsync_user_role') === 'facility_owner')));
   const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
   const username = isGuest ? '@guest' : user?.username || '@player';
-  const { unreadCount } = useNotifications(!isGuest && (user?.name || user?.id) ? { id: user?.id, name: user?.name } : undefined);
+  const { unreadCount } = useNotifications(
+    !isGuest && (user?.name || user?.id || (user as any)?.email)
+      ? { id: user?.id, name: user?.name, email: (user as any)?.email }
+      : undefined
+  );
 
   // Local state for instant optimistic updates
   const initialCity = user?.city && user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';

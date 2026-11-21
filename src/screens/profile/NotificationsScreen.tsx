@@ -24,6 +24,7 @@ interface NotificationsScreenProps {
   onNavigate?: (screenId: string, item?: NotificationItem) => void;
   currentUserId?: string;
   currentUserName?: string;
+  currentUserEmail?: string;
 }
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
@@ -31,6 +32,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   onNavigate,
   currentUserId,
   currentUserName,
+  currentUserEmail,
 }) => {
   const {
     notifications,
@@ -40,7 +42,11 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     dismissNotification,
     clearAllNotifications,
     addNotification,
-  } = useNotifications(currentUserName || currentUserId ? { id: currentUserId, name: currentUserName } : undefined);
+  } = useNotifications(
+    currentUserName || currentUserId || currentUserEmail
+      ? { id: currentUserId, name: currentUserName, email: currentUserEmail }
+      : undefined
+  );
 
   const [filterType, setFilterType] = useState<'all' | 'unread'>('all');
 
@@ -274,7 +280,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
-                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name) && (
+                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name || item.meta?.sport || item.meta?.schedule || item.meta?.gameDate) && (
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             {(item.meta?.gameTitle || item.meta?.game_title) && (
                               <span className="text-[10px] text-[#C8FF2E] font-medium bg-[#C8FF2E]/10 px-1.5 py-0.5 rounded border border-[#C8FF2E]/20 truncate max-w-[200px]">
@@ -291,20 +297,25 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                 📍 {item.meta.locationName || item.meta.location_name}
                               </span>
                             )}
+                            {(item.meta?.schedule || item.meta?.gameDate) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded">
+                                🕒 {item.meta.schedule || `${item.meta.gameDate || ''} ${item.meta.gameTime || ''}`.trim()}
+                              </span>
+                            )}
                           </div>
                         )}
                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
-                          {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
+                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>Player: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                              <span>Player: {item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name}</span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              View <ChevronRight className="w-2.5 h-2.5" />
+                              View Match <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>
@@ -373,7 +384,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                         <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5 break-words">
                           {item.desc}
                         </p>
-                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name) && (
+                        {(item.meta?.gameTitle || item.meta?.game_title || item.meta?.locationName || item.meta?.location_name || item.meta?.sport || item.meta?.schedule || item.meta?.gameDate) && (
                           <div className="flex flex-wrap items-center gap-1.5 mt-1">
                             {(item.meta?.gameTitle || item.meta?.game_title) && (
                               <span className="text-[10px] text-[#C8FF2E] font-medium bg-[#C8FF2E]/10 px-1.5 py-0.5 rounded border border-[#C8FF2E]/20 truncate max-w-[200px]">
@@ -390,20 +401,25 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                 📍 {item.meta.locationName || item.meta.location_name}
                               </span>
                             )}
+                            {(item.meta?.schedule || item.meta?.gameDate) && (
+                              <span className="text-[10px] text-[#A5B0A6] bg-[#141A15] border border-white/10 px-1.5 py-0.5 rounded">
+                                🕒 {item.meta.schedule || `${item.meta.gameDate || ''} ${item.meta.gameTime || ''}`.trim()}
+                              </span>
+                            )}
                           </div>
                         )}
                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                           <span className="text-[10px] text-[#6F7B71] font-mono block">
                             {item.time}
                           </span>
-                          {(item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName) && (
+                          {(item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name) && (
                             <span className="text-[10px] text-[#8FA392] bg-[#1C241E] border border-white/10 px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
-                              <span>Player: {item.senderName || item.meta?.senderName || item.meta?.hostName || item.meta?.joiningPlayerName}</span>
+                              <span>Player: {item.meta?.joiningPlayerName || item.meta?.joining_player_name || item.senderName || item.meta?.senderName || item.meta?.sender_name}</span>
                             </span>
                           )}
                           {item.linkScreen && (
                             <span className="text-[10px] text-[#C8FF2E] font-semibold flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
-                              View <ChevronRight className="w-2.5 h-2.5" />
+                              View Match <ChevronRight className="w-2.5 h-2.5" />
                             </span>
                           )}
                         </div>

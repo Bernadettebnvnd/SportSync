@@ -46,7 +46,7 @@ import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 import { useChatUnread, isUserAuthorizedForChat } from './lib/services/chat';
-import { resetNotificationCache } from './lib/notifications';
+import { resetNotificationCache, isNotificationForUser, NotificationItem } from './lib/notifications';
 
 import { MATCHES, VENUES, COMMUNITY_GAMES, TEAMS } from './mock/mockData';
 import { Match, Venue, CommunityGame, Team } from './mock/types';
@@ -757,11 +757,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         });
       }
     };
+    const handleNotificationReceived = (e: Event) => {
+      const notif = (e as CustomEvent)?.detail as NotificationItem;
+      if (!notif) return;
+      const uFilter = {
+        id: !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.id : undefined,
+        name: !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : undefined,
+        email: !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? ((bridge.userProfile as any).email || bridge.store.currentUser.email) : undefined,
+        username: bridge.userProfile.username,
+      };
+      if (isNotificationForUser(notif, uFilter)) {
+        setToastMessage(`🔔 ${notif.desc || notif.title}`);
+      }
+    };
+
     window.addEventListener('sportsync:game-deleted', handleGameDeleted);
+    window.addEventListener('sportsync:notification-received', handleNotificationReceived);
     return () => {
       window.removeEventListener('sportsync:game-deleted', handleGameDeleted);
+      window.removeEventListener('sportsync:notification-received', handleNotificationReceived);
     };
-  }, []);
+  }, [bridge.userProfile.id, bridge.userProfile.name, bridge.userProfile.username, (bridge.userProfile as any).email, bridge.store.currentUser.email, bridge.userProfile.isGuest]);
 
   const requireAuth = (
     title: string,
@@ -1786,6 +1802,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
             currentUserId={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.id : undefined}
             currentUserName={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? bridge.userProfile.name : undefined}
+            currentUserEmail={!bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player' ? ((bridge.userProfile as any).email || bridge.store.currentUser.email) : undefined}
           />
         );
       case 'search':

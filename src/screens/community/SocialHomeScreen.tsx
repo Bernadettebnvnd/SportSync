@@ -61,8 +61,8 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
   const effectiveIsGuest = isGuest || !user?.id || user.isGuest;
   const userName = user?.name || (effectiveIsGuest ? 'Guest' : 'Player');
   const { unreadCount } = useNotifications(
-    !effectiveIsGuest && (user?.id || user?.name)
-      ? { id: user?.id, name: user?.name }
+    !effectiveIsGuest && (user?.id || user?.name || (user as any)?.email)
+      ? { id: user?.id, name: user?.name, email: (user as any)?.email }
       : undefined
   );
 
