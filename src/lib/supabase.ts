@@ -2,8 +2,15 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+function cleanEnvString(val?: string | null): string {
+  if (!val) return '';
+  const firstLine = val.split(/[\r\n]|\\n/)[0].trim();
+  const withoutComment = firstLine.split('#')[0].trim();
+  return withoutComment.replace(/^["']|["']$/g, '').trim();
+}
+
+const supabaseUrl = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 /**
  * Whether Supabase environment variables are configured.

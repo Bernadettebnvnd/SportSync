@@ -1,12 +1,20 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceKey =
+export function cleanEnvString(val?: string | null): string {
+  if (!val) return '';
+  const firstLine = val.split(/[\r\n]|\\n/)[0].trim();
+  const withoutComment = firstLine.split('#')[0].trim();
+  return withoutComment.replace(/^["']|["']$/g, '').trim();
+}
+
+const supabaseUrl = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const supabaseServiceKey = cleanEnvString(
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   process.env.SUPABASE_SECRET_KEY ||
-  process.env.SERVICE_ROLE_KEY;
+  process.env.SERVICE_ROLE_KEY
+);
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -22,23 +30,28 @@ export const isSupabaseConfigured = Boolean(
  * Returns null if Supabase is not configured.
  */
 export function createServerClient(accessToken?: string): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || supabaseUrl;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || supabaseAnonKey;
+  const url = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_URL) || supabaseUrl;
+  const anonKey = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) || supabaseAnonKey;
   if (!url || !anonKey || anonKey.startsWith('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...')) return null;
 
-  return createClient(url, anonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-    global: accessToken
-      ? {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      : undefined,
-  });
+  try {
+    return createClient(url, anonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: accessToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        : undefined,
+    });
+  } catch (err) {
+    console.warn('[Supabase Server] Failed initializing server client:', err);
+    return null;
+  }
 }
 
 /**
@@ -47,20 +60,26 @@ export function createServerClient(accessToken?: string): SupabaseClient | null 
  * Returns null if not configured.
  */
 export function createAdminClient(): SupabaseClient | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || supabaseUrl;
-  const serviceKey =
+  const url = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_URL) || supabaseUrl;
+  const serviceKey = cleanEnvString(
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_KEY ||
     process.env.SUPABASE_SECRET_KEY ||
     process.env.SERVICE_ROLE_KEY ||
-    supabaseServiceKey;
+    supabaseServiceKey
+  );
 
   if (!serviceKey || !url) return null;
 
-  return createClient(url, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+  try {
+    return createClient(url, serviceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  } catch (err) {
+    console.warn('[Supabase Server] Failed initializing admin client:', err);
+    return null;
+  }
 }

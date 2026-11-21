@@ -23,7 +23,8 @@ export interface SanitizedUser {
 
 export type StoredUser = SanitizedUser;
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
+const rawSecret = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
+const SESSION_SECRET = rawSecret.split(/[\r\n]|\\n/)[0].split('#')[0].replace(/^["']|["']$/g, '').trim() || 'sportsync-secure-session-key-2026';
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
