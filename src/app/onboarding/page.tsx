@@ -140,24 +140,23 @@ function OnboardingContent() {
     (currentUser.role as string) === 'facility_owner';
   const isPending = hasPendingOnboarding || (typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true');
 
-  const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
+  const hasStoredCompletion = typeof window !== 'undefined' && (
     localStorage.getItem('matchi_onboarding_completed') === 'true' ||
     localStorage.getItem('sportsync_onboarding_completed') === 'true'
   );
 
   const hasExplicitCompletion = Boolean(
-    !isPending &&
-    ((currentUser.onboarding_completed === true && currentUser.has_completed_onboarding !== false) ||
-    hasStoredCompletion)
+    currentUser.onboarding_completed === true ||
+    currentUser.has_completed_onboarding === true ||
+    hasStoredCompletion
   );
 
   // Existing player with completed profile
-  const hasRequiredPlayerFields = !isOwner && !isPending && Boolean(
+  const hasRequiredPlayerFields = !isOwner && Boolean(
     currentUser.full_name &&
     !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
     ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-    (currentUser.skill_level || currentUser.city) &&
-    currentUser.onboarding_completed !== false
+    (currentUser.skill_level || currentUser.city)
   );
 
   const hasStoredVenue = typeof window !== 'undefined' && Boolean(
@@ -165,11 +164,11 @@ function OnboardingContent() {
     localStorage.getItem('sportsync_user_venues')
   );
 
-  const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
-    hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.onboarding_completed !== false)
+  const hasRequiredOwnerFields = isOwner && Boolean(
+    hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player')
   );
 
-  const isCompleted = !isGuest && !isPending && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
+  const isCompleted = !isGuest && (hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields);
 
   React.useEffect(() => {
     if (isCompleted && typeof window !== 'undefined') {
@@ -679,11 +678,15 @@ function OnboardingContent() {
               onSkip={handleSkipOnboarding}
               isEditing={false}
               initialValues={{
-                displayName: fullName || currentUser.full_name || (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : ''),
-                selectedSports: selectedSports.length > 0 ? selectedSports : ['Football'],
-                preferredArea: selectedArea || currentUser.city || '',
-                availability: 'Weekday Evenings & Weekends',
-                skillLevel: initialSkillIndex,
+                displayName: (fullName && !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(fullName.trim()))
+                  ? fullName.trim()
+                  : ((currentUser.full_name && !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()))
+                      ? currentUser.full_name.trim()
+                      : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
+                selectedSports: [],
+                preferredArea: '',
+                availability: '',
+                skillLevel: undefined,
               }}
               onComplete={handlePlayerComplete}
             />

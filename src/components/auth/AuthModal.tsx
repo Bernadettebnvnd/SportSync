@@ -204,6 +204,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           });
 
           if (typeof window !== 'undefined') {
+            localStorage.removeItem('sportsync_logged_out');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
             localStorage.setItem('sportsync_user_role', isOwnerRole ? 'venue_owner' : (data.user.role || 'player'));
@@ -253,7 +254,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
               onClose();
               if (isOwnerRole) {
                 window.location.href = '/organizer';
-              } else if (typeof window !== 'undefined' && window.location.pathname.startsWith('/onboarding')) {
+              } else {
                 window.location.href = '/';
               }
             }, 600);

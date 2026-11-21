@@ -159,7 +159,7 @@ export function OwnerOnboardingModal({ isOpen, onClose, onLogout }: OwnerOnboard
   const [address, setAddress] = useState('');
   const [city, setCity] = useState(currentUser.city || 'Naga City');
 
-  const [selectedSports, setSelectedSports] = useState<SportType[]>(['pickleball', 'badminton']);
+  const [selectedSports, setSelectedSports] = useState<SportType[]>([]);
 
   const [courts, setCourts] = useState<NewCourtInput[]>([
     {

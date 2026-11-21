@@ -44,7 +44,9 @@ export const PersonalizationScreen: React.FC<PersonalizationScreenProps> = ({
 }) => {
   const skillLabels = ['Beginner', 'Intermediate', 'Advanced'];
 
-  const [displayName, setDisplayName] = useState(initialValues?.displayName ?? '');
+  const rawDisplayName = initialValues?.displayName ?? '';
+  const isGeneric = ['guest', 'guest player', 'player', 'sportsync player', 'google player'].includes(rawDisplayName.trim().toLowerCase());
+  const [displayName, setDisplayName] = useState(isGeneric ? '' : rawDisplayName);
   const [selectedAvatar, setSelectedAvatar] = useState<string>(initialValues?.selectedAvatar ?? 'alex');
   const [selectedSports, setSelectedSports] = useState<string[]>(initialValues?.selectedSports ?? []);
   const [customSportInput, setCustomSportInput] = useState<string>(initialValues?.customSportInput ?? '');

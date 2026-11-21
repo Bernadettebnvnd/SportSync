@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { UserRole } from '@/types';
 import { isSupabaseConfigured, createAdminClient, createServerClient } from '@/lib/supabase/server';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
@@ -78,6 +80,82 @@ const localDevUsers: Map<string, LocalDevRecord> =
   (globalThis as any).__sportsync_local_users ||
   ((globalThis as any).__sportsync_local_users = new Map<string, LocalDevRecord>());
 
+const USERS_FILE_PATH = path.join(process.cwd(), '.data', 'users.json');
+
+export function loadLocalUsersFromFile(): void {
+  try {
+    if (typeof fs !== 'undefined' && fs.existsSync && fs.existsSync(USERS_FILE_PATH)) {
+      const content = fs.readFileSync(USERS_FILE_PATH, 'utf-8');
+      if (content.trim()) {
+        const list = JSON.parse(content);
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            if (item.email) {
+              const normEmail = item.email.trim().toLowerCase();
+              const existingRecord = localDevUsers.get(normEmail);
+              localDevUsers.set(normEmail, {
+                user: {
+                  id: item.id || existingRecord?.user.id || `usr_${Date.now()}`,
+                  email: normEmail,
+                  full_name: item.full_name || item.name || existingRecord?.user.full_name || normEmail.split('@')[0],
+                  nickname: item.nickname || existingRecord?.user.nickname || normEmail.split('@')[0],
+                  avatar_url: item.avatar_url || item.avatarUrl || existingRecord?.user.avatar_url,
+                  role: item.role || existingRecord?.user.role || 'player',
+                  primary_sport: item.primary_sport || item.primarySport || existingRecord?.user.primary_sport,
+                  preferred_sports: item.preferred_sports || item.preferredSports || existingRecord?.user.preferred_sports || [],
+                  preferred_format: item.preferred_format || item.preferredFormat || existingRecord?.user.preferred_format,
+                  skill_level: item.skill_level || item.skillLevel || existingRecord?.user.skill_level,
+                  city: item.city || existingRecord?.user.city,
+                  onboarding_completed: item.onboarding_completed !== undefined ? Boolean(item.onboarding_completed) : Boolean(existingRecord?.user.onboarding_completed),
+                  created_at: item.created_at || existingRecord?.user.created_at || new Date().toISOString(),
+                },
+                passwordHash: item.passwordHash || existingRecord?.passwordHash || (item.plainPassword ? crypto.createHash('sha256').update(item.plainPassword).digest('hex') : ''),
+                plainPassword: item.plainPassword || item.password || existingRecord?.plainPassword,
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[ServerAuth] Error loading users from disk:', err);
+  }
+}
+
+export function saveLocalUsersToFile(): void {
+  try {
+    if (typeof fs === 'undefined' || !fs.writeFileSync) return;
+    const dir = path.dirname(USERS_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const arr: any[] = [];
+    for (const record of localDevUsers.values()) {
+      arr.push({
+        id: record.user.id,
+        email: record.user.email,
+        passwordHash: record.passwordHash,
+        plainPassword: record.plainPassword,
+        full_name: record.user.full_name,
+        nickname: record.user.nickname,
+        avatar_url: record.user.avatar_url,
+        role: record.user.role,
+        primary_sport: record.user.primary_sport,
+        preferred_sports: record.user.preferred_sports,
+        preferred_format: record.user.preferred_format,
+        city: record.user.city,
+        skill_level: record.user.skill_level,
+        onboarding_completed: record.user.onboarding_completed,
+        created_at: record.user.created_at,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(arr, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[ServerAuth] Error saving users to disk:', err);
+  }
+}
+
 // Pre-seed default test users for development testing if not yet initialized
 const initialPlayerUser: SanitizedUser = {
   id: 'usr_test_player_01',
@@ -125,6 +203,9 @@ if (!localDevUsers.has('owner@sportsync.ph')) {
   });
 }
 
+// Load any existing persistent users from disk
+loadLocalUsersFromFile();
+
 export async function serverRegister(data: {
   email: string;
   password: string;
@@ -143,6 +224,7 @@ export async function serverRegister(data: {
 
   // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
   if (!isSupabaseConfigured) {
+    loadLocalUsersFromFile();
     const existing = localDevUsers.get(normalizedEmail);
     if (existing) {
       throw new Error('An account with this email already exists. Please log in instead.');
@@ -169,6 +251,7 @@ export async function serverRegister(data: {
       passwordHash: crypto.createHash('sha256').update(data.password.trim()).digest('hex'),
       plainPassword: data.password.trim(),
     });
+    saveLocalUsersToFile();
 
     const token = createSessionToken(sanitized);
     return { user: sanitized, token };
@@ -334,6 +417,7 @@ export async function serverRegister(data: {
     passwordHash,
     plainPassword: data.password.trim(),
   });
+  saveLocalUsersToFile();
 
   const token = createSessionToken(sanitized);
   return { user: sanitized, token };
@@ -463,11 +547,6 @@ export async function isProfileCompleteInDb(
   const hasCity = Boolean(profile?.city || authMetadata?.city);
   const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
 
-  // If the profile is explicitly incomplete, require onboarding
-  if (profile?.onboarding_completed === false && authMetadata?.onboarding_completed === false) {
-    return false;
-  }
-
   // If the user has a real name and sports selected, and has city or skill, their profile is complete
   if (!isGenericName && hasSports && (hasCity || hasSkill)) {
     // If the database row has onboarding_completed as false, automatically heal it to true in the background
@@ -481,6 +560,11 @@ export async function isProfileCompleteInDb(
     return true;
   }
 
+  // If the profile is explicitly incomplete, require onboarding
+  if (profile?.onboarding_completed === false && authMetadata?.onboarding_completed === false) {
+    return false;
+  }
+
   return false;
 }
 
@@ -488,6 +572,7 @@ export async function serverLogin(data: {
   email: string;
   password: string;
 }): Promise<{ user: SanitizedUser; token: string }> {
+  loadLocalUsersFromFile();
   const normalizedEmail = data.email.trim().toLowerCase();
   const cleanPassword = (data.password || '').trim();
 
@@ -522,11 +607,11 @@ export async function serverLogin(data: {
       full_name: normalizedEmail.split('@')[0],
       nickname: normalizedEmail.split('@')[0],
       role: isOwner ? 'venue_owner' : 'player',
-      primary_sport: 'pickleball',
-      preferred_sports: ['pickleball', 'badminton'],
-      preferred_format: 'doubles',
-      skill_level: 'intermediate',
-      city: 'Naga City',
+      primary_sport: undefined,
+      preferred_sports: [],
+      preferred_format: undefined,
+      skill_level: undefined,
+      city: undefined,
       onboarding_completed: false,
       created_at: new Date().toISOString(),
     };
@@ -536,6 +621,7 @@ export async function serverLogin(data: {
       passwordHash: crypto.createHash('sha256').update(cleanPassword).digest('hex'),
       plainPassword: cleanPassword,
     });
+    saveLocalUsersToFile();
 
     const token = createSessionToken(autoUser);
     return { user: autoUser, token };
@@ -980,18 +1066,24 @@ export async function serverLogin(data: {
 }
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
+  loadLocalUsersFromFile();
+  for (const record of localDevUsers.values()) {
+    if (
+      record.user.id === userId ||
+      record.user.email.toLowerCase() === userId.toLowerCase() ||
+      (record.user as any).auth_id === userId
+    ) {
+      return record.user;
+    }
+  }
+  if (userId === 'usr_test_player_01') {
+    return initialPlayerUser;
+  }
+  if (userId === 'usr_test_owner_01') {
+    return initialOwnerUser;
+  }
+
   if (!isSupabaseConfigured) {
-    for (const record of localDevUsers.values()) {
-      if (record.user.id === userId) {
-        return record.user;
-      }
-    }
-    if (userId === 'usr_test_player_01') {
-      return initialPlayerUser;
-    }
-    if (userId === 'usr_test_owner_01') {
-      return initialOwnerUser;
-    }
     return null;
   }
 
@@ -1158,39 +1250,47 @@ export async function serverUpdateUserProfile(
   const resolvedSkillLevel = data.skillLevel || data.skill_level;
   const rawOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed;
 
-  if (!isSupabaseConfigured) {
-    for (const [email, record] of localDevUsers.entries()) {
-      if (record.user.id === userId) {
-        const updated: SanitizedUser = {
-          ...record.user,
-          full_name: resolvedFullName || record.user.full_name,
-          nickname: resolvedNickname || record.user.nickname,
-          avatar_url: resolvedAvatarUrl || record.user.avatar_url,
-          role: (data.role as UserRole) || record.user.role,
-          primary_sport: resolvedPrimarySport || record.user.primary_sport,
-          preferred_sports: resolvedPreferredSports || record.user.preferred_sports,
-          preferred_format: resolvedPreferredFormat || record.user.preferred_format,
-          city: resolvedCity || record.user.city,
-          skill_level: resolvedSkillLevel || record.user.skill_level,
-          onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : record.user.onboarding_completed,
-        };
-        localDevUsers.set(email, { ...record, user: updated });
+  loadLocalUsersFromFile();
+  for (const [email, record] of localDevUsers.entries()) {
+    if (
+      record.user.id === userId ||
+      record.user.email.toLowerCase() === userId.toLowerCase() ||
+      (record.user as any).auth_id === userId
+    ) {
+      const updated: SanitizedUser = {
+        ...record.user,
+        full_name: resolvedFullName || record.user.full_name,
+        nickname: resolvedNickname || record.user.nickname,
+        avatar_url: resolvedAvatarUrl || record.user.avatar_url,
+        role: (data.role as UserRole) || record.user.role,
+        primary_sport: resolvedPrimarySport || record.user.primary_sport,
+        preferred_sports: resolvedPreferredSports || record.user.preferred_sports,
+        preferred_format: resolvedPreferredFormat || record.user.preferred_format,
+        city: resolvedCity || record.user.city,
+        skill_level: resolvedSkillLevel || record.user.skill_level,
+        onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : record.user.onboarding_completed,
+      };
+      localDevUsers.set(email, { ...record, user: updated });
+      saveLocalUsersToFile();
+      if (!isSupabaseConfigured) {
         return updated;
       }
     }
+  }
 
+  if (!isSupabaseConfigured) {
     const dummyUser: SanitizedUser = {
       id: userId,
-      email: `${userId}@sportsync.ph`,
+      email: userId.includes('@') ? userId.toLowerCase() : `${userId}@sportsync.ph`,
       full_name: resolvedFullName || 'Player',
       nickname: resolvedNickname || 'Player',
       avatar_url: resolvedAvatarUrl,
       role: (data.role as UserRole) || 'player',
-      primary_sport: resolvedPrimarySport || 'pickleball',
-      preferred_sports: resolvedPreferredSports || ['pickleball', 'badminton'],
+      primary_sport: resolvedPrimarySport,
+      preferred_sports: resolvedPreferredSports || [],
       preferred_format: resolvedPreferredFormat || 'doubles',
-      skill_level: resolvedSkillLevel || 'intermediate',
-      city: resolvedCity || 'Naga City',
+      skill_level: resolvedSkillLevel,
+      city: resolvedCity,
       onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : false,
       created_at: new Date().toISOString(),
     };
@@ -1198,6 +1298,7 @@ export async function serverUpdateUserProfile(
       user: dummyUser,
       passwordHash: '',
     });
+    saveLocalUsersToFile();
     return dummyUser;
   }
 

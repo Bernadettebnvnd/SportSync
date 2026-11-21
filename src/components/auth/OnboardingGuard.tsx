@@ -102,24 +102,22 @@ export function OnboardingGuard() {
     const isPending = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
 
     // 2. Persistent Completion Check (authoritative from Supabase or verified local store)
-    const hasStoredCompletion = typeof window !== 'undefined' && !isPending && (
+    const hasStoredCompletion = typeof window !== 'undefined' && (
       localStorage.getItem('matchi_onboarding_completed') === 'true' ||
       localStorage.getItem('sportsync_onboarding_completed') === 'true'
     );
 
     const hasExplicitCompletion = Boolean(
-      !isPending &&
-      (currentUser.onboarding_completed === true ||
+      currentUser.onboarding_completed === true ||
       currentUser.has_completed_onboarding === true ||
-      hasStoredCompletion)
+      hasStoredCompletion
     );
 
-    const hasRequiredPlayerFields = !isOwner && !isPending && Boolean(
+    const hasRequiredPlayerFields = !isOwner && Boolean(
       currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
       ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-      (currentUser.city || currentUser.skill_level) &&
-      currentUser.onboarding_completed !== false
+      (currentUser.city || currentUser.skill_level)
     );
 
     const hasStoredVenue = typeof window !== 'undefined' && Boolean(
@@ -127,8 +125,8 @@ export function OnboardingGuard() {
       localStorage.getItem('sportsync_user_venues')
     );
 
-    const hasRequiredOwnerFields = isOwner && !isPending && Boolean(
-      hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player' && currentUser.onboarding_completed !== false)
+    const hasRequiredOwnerFields = isOwner && Boolean(
+      hasExplicitCompletion || hasStoredVenue || (currentUser.full_name && currentUser.full_name !== 'Guest Player')
     );
 
     const isProfileComplete = hasExplicitCompletion || hasRequiredPlayerFields || hasRequiredOwnerFields;
@@ -137,6 +135,7 @@ export function OnboardingGuard() {
     if (isProfileComplete && typeof window !== 'undefined') {
       localStorage.removeItem('sportsync_pending_onboarding');
       localStorage.setItem('sportsync_onboarding_completed', 'true');
+      localStorage.setItem('matchi_onboarding_completed', 'true');
     }
 
     // FACULTY RESTRICTION & PORTAL GUARD:

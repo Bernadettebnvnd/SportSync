@@ -75,36 +75,34 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
     currentUser.email ||
     (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_email') || '' : '')
   );
-  const [phone, setPhone] = useState(initialValues?.phone || currentUser.phone || '0917-555-0199');
+  const [phone, setPhone] = useState(
+    initialValues?.phone ||
+    (currentUser.phone && !currentUser.phone.startsWith('pwd_hash:') ? currentUser.phone : '')
+  );
 
   // Step 2: Location
-  const [city, setCity] = useState(initialValues?.city || currentUser.city || 'Naga City');
+  const [city, setCity] = useState(initialValues?.city || (currentUser.city !== 'Naga City' && currentUser.city ? currentUser.city : ''));
   const [address, setAddress] = useState(initialValues?.address || '');
-  const [district, setDistrict] = useState(initialValues?.district || 'Bagumbayan Sur');
+  const [district, setDistrict] = useState(initialValues?.district || '');
   const [landmark, setLandmark] = useState(initialValues?.landmark || '');
 
   // Step 3: Sports & Courts
   const [selectedSports, setSelectedSports] = useState<string[]>(
-    initialValues?.featuredSports || ['Basketball', 'Pickleball', 'Badminton']
+    initialValues?.featuredSports || []
   );
-  const [courtCount, setCourtCount] = useState<number>(initialValues?.courtCount || 4);
+  const [courtCount, setCourtCount] = useState<number>(initialValues?.courtCount || 1);
   const [surface, setSurface] = useState<string>(
-    initialValues?.surface || 'Tournament Hardwood Parquet'
+    initialValues?.surface || ''
   );
   const [isIndoor, setIsIndoor] = useState<boolean>(initialValues?.isIndoor !== false);
 
   // Step 4: Schedule, Rates & Amenities
   const [operatingHours, setOperatingHours] = useState<string>(
-    initialValues?.operatingHours || '06:00 - 23:00'
+    initialValues?.operatingHours || ''
   );
   const [hourlyRatePhp, setHourlyRatePhp] = useState<number>(initialValues?.hourlyRatePhp || 500);
   const [amenities, setAmenities] = useState<string[]>(
-    initialValues?.amenities || [
-      'Air Conditioning',
-      'Free Parking',
-      'Shower & Locker Rooms',
-      'High-Speed Wi-Fi',
-    ]
+    initialValues?.amenities || []
   );
   const [bookingMode, setBookingMode] = useState<'instant' | 'inquiry'>(
     initialValues?.bookingMode || 'instant'

@@ -186,7 +186,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       return isExplicitlyComplete || hasStoredVenue;
     }
 
-    if (isPending || (bridge.store.currentUser.onboarding_completed === false && !hasStoredCompletion)) {
+    if (isPending) {
       return false;
     }
 
@@ -1139,16 +1139,26 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               navigateTo('home');
             }}
             isEditing={isEditing}
-            initialValues={personalizationDraft || {
+            initialValues={isEditing ? (personalizationDraft || {
               displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name)
                 ? bridge.userProfile.name
                 : (bridge.store.currentUser.full_name && !['Guest', 'Guest Player', 'Player'].includes(bridge.store.currentUser.full_name)
                     ? bridge.store.currentUser.full_name
                     : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
-              selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : ['Football'],
+              selectedSports: bridge.userProfile.preferredSports && bridge.userProfile.preferredSports.length > 0 ? bridge.userProfile.preferredSports : [],
               preferredArea: bridge.userProfile.city || bridge.store.currentUser.city || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_city') || '' : ''),
-              availability: bridge.userProfile.availability || 'Weekday Evenings & Weekends',
+              availability: bridge.userProfile.availability || '',
               skillLevel: initialSkillIndex,
+            }) : {
+              displayName: !bridge.userProfile.isGuest && bridge.userProfile.name && !['Guest', 'Guest Player', 'Player'].includes(bridge.userProfile.name)
+                ? bridge.userProfile.name
+                : (bridge.store.currentUser.full_name && !['Guest', 'Guest Player', 'Player'].includes(bridge.store.currentUser.full_name)
+                    ? bridge.store.currentUser.full_name
+                    : (typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '')),
+              selectedSports: [],
+              preferredArea: '',
+              availability: '',
+              skillLevel: undefined,
             }}
             onDraftChange={setPersonalizationDraft}
             onComplete={async (prefs) => {

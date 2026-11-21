@@ -43,12 +43,12 @@ export const GUEST_USER: User = {
   nickname: 'Guest',
   role: 'player',
   active_mode: 'play',
-  primary_sport: 'pickleball',
-  preferred_sports: ['pickleball', 'badminton'],
+  primary_sport: '' as any,
+  preferred_sports: [],
   preferred_format: 'doubles',
-  skill_level: 'beginner',
-  availability: 'Weekday Evenings & Weekends',
-  city: 'Naga City',
+  skill_level: '' as any,
+  availability: '',
+  city: '',
   onboarding_completed: false,
   has_completed_onboarding: false,
   matches_played: 0,
@@ -151,10 +151,9 @@ async function initializeStore() {
       const storedNickname = localStorage.getItem('matchi_user_nickname') || localStorage.getItem('sportsync_user_nickname');
       if (storedNickname) globalState.currentUser.nickname = storedNickname;
 
-      globalState.currentUser.city = 'Naga City';
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('sportsync_user_city', 'Naga City');
-        localStorage.setItem('sportsync_user_location', 'Naga City');
+      const storedUserCity = localStorage.getItem('sportsync_user_city') || localStorage.getItem('sportsync_user_location');
+      if (storedUserCity) {
+        globalState.currentUser.city = storedUserCity;
       }
 
       const storedSportsRaw = localStorage.getItem('sportsync_user_sports');
@@ -235,14 +234,14 @@ async function initializeStore() {
         ? (storedSports! as SportType[])
         : (user.preferred_sports && user.preferred_sports.length > 0 ? (user.preferred_sports as SportType[]) : (isUserOnboarded ? (['football'] as SportType[]) : []));
 
-      user.city = storedCity || user.city || (isUserOnboarded ? 'Naga City' : '');
+      user.city = storedCity || user.city || '';
       user.preferred_sports = finalSports;
-      user.primary_sport = (finalSports[0] || user.primary_sport || (isUserOnboarded ? 'football' : '')) as SportType;
+      user.primary_sport = (finalSports[0] || user.primary_sport || '') as SportType;
 
       const storedUserSkill = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
       if (storedUserSkill && storedUserSkill !== 'all_levels') {
         user.skill_level = storedUserSkill as SkillLevel;
-      } else if (user.skill_level === 'all_levels' || !user.skill_level) {
+      } else if (user.skill_level === 'all_levels') {
         user.skill_level = isUserOnboarded ? 'beginner' : ('' as any);
       }
 
