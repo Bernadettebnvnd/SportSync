@@ -342,10 +342,11 @@ async function upsertCanonicalPublicUser(
     .maybeSingle();
 
   if (insertErr && isMissingColumnError(insertErr)) {
-    console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying without onboarding_completed:', insertErr.message);
+    console.warn('[ServerAuth] Missing column detected on public.users upsert, retrying without problematic fields:', insertErr.message);
     const sanitizedPayload = { ...newPayload };
+    // Remove columns that may be missing in the schema cache
     delete sanitizedPayload.onboarding_completed;
-
+    delete sanitizedPayload.preferred_format;
     const retry = await dbClient
       .from('users')
       .upsert(sanitizedPayload, { onConflict: 'id' })
@@ -353,6 +354,8 @@ async function upsertCanonicalPublicUser(
       .maybeSingle();
     inserted = retry.data;
     insertErr = retry.error;
+  }
+
   }
 
   if (insertErr) {
