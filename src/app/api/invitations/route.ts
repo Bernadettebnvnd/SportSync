@@ -3,6 +3,7 @@ import { CommunityGame } from '@/mock/types';
 import fs from 'fs';
 import path from 'path';
 import { createAdminClient, createServerClient } from '@/lib/supabase/server';
+import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 const DATA_DIR = path.join(process.cwd(), '.data');
 const CACHE_FILE = path.join(DATA_DIR, 'invitations.json');
@@ -84,7 +85,15 @@ export async function GET(req: NextRequest) {
   const rawCode = searchParams.get('code') || searchParams.get('invite');
 
   if (!rawCode || typeof rawCode !== 'string' || !rawCode.trim()) {
-    return NextResponse.json({ error: 'Invite code is required' }, { status: 400 });
+    const diskCache = loadCache();
+    const combined = { ...memoryStore, ...diskCache };
+    const games = Object.values(combined).filter((g) => g && g.id && !isGameExpired(g));
+    const dedupedMap = new Map<string, CommunityGame>();
+    games.forEach((g) => {
+      const key = g.sessionId || g.id;
+      if (!dedupedMap.has(key)) dedupedMap.set(key, g);
+    });
+    return NextResponse.json({ success: true, games: Array.from(dedupedMap.values()) });
   }
 
   const code = rawCode.trim().toUpperCase();
@@ -448,6 +457,17 @@ export async function POST(req: NextRequest) {
         }
         if (!venueId) {
           try {
+            const { data: nagaV } = await supabase
+              .from('venues')
+              .select('id')
+              .or('city.ilike.%naga%,name.ilike.%naga%')
+              .limit(1)
+              .maybeSingle();
+            if (nagaV?.id) venueId = nagaV.id;
+          } catch {}
+        }
+        if (!venueId) {
+          try {
             const { data: firstV } = await supabase.from('venues').select('id').limit(1).maybeSingle();
             if (firstV?.id) venueId = firstV.id;
           } catch {}
@@ -787,6 +807,27 @@ export async function POST(req: NextRequest) {
         }
 
         let queueIdToDelete: string | null = null;
+        let participantUserId: string | null = null;
+        if (participantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(participantId)) {
+          participantUserId = participantId;
+        }
+        if (!participantUserId && participantName) {
+          const { data: u } = await supabase.from('users').select('id').ilike('full_name', participantName).maybeSingle();
+          if (u?.id) participantUserId = u.id;
+        }
+
+        if (participantUserId) {
+          try {
+            await supabase.from('session_participants').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+          try {
+            await supabase.from('game_rosters').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+          try {
+            await supabase.from('queues').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+        }
+
         if (participantId) {
           const { data: qById } = await supabase
             .from('queues')
@@ -820,7 +861,137 @@ export async function POST(req: NextRequest) {
           .eq('session_id', dbSession.id)
           .neq('status', 'cancelled');
 
-        const nextSpots = activeQueueCount || 0;
+        const { count: activePartCount } = await supabase
+          .from('session_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const nextSpots = Math.max(activeQueueCount || 0, activePartCount || 0);
+        await supabase
+          .from('sessions')
+          .update({
+            current_players_count: nextSpots,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', dbSession.id);
+
+        const updatedMembers = (game.members || []).filter((m) => {
+          if (participantId && m.id && m.id === participantId) return false;
+          if (participantName && m.name && m.name.trim().toLowerCase() === participantName.toLowerCase()) return false;
+          return true;
+        });
+
+        const updatedGame: CommunityGame = {
+          ...game,
+          sessionId: dbSession.id,
+          spotsJoined: nextSpots,
+          members: updatedMembers,
+        };
+
+        if (game.inviteCode) {
+          const inviteKey = game.inviteCode.trim().toUpperCase();
+          diskCache[inviteKey] = updatedGame;
+          memoryStore[inviteKey] = updatedGame;
+        }
+        if (game.id) {
+          const idKey = game.id.trim().toUpperCase();
+          diskCache[idKey] = updatedGame;
+          memoryStore[idKey] = updatedGame;
+        }
+        saveCache(diskCache);
+
+        return NextResponse.json({ success: true, game: updatedGame, spotsJoined: nextSpots });
+      }
+
+      const updatedMembers = (game.members || []).filter((m) => {
+        if (participantId && m.id && m.id === participantId) return false;
+        if (participantName && m.name && m.name.trim().toLowerCase() === participantName.toLowerCase()) return false;
+        return true;
+      });
+
+      const nextSpots = updatedMembers.length;
+      const updatedGame: CommunityGame = {
+        ...game,
+        spotsJoined: nextSpots,
+        members: updatedMembers,
+      };
+
+      if (game.inviteCode) {
+        const inviteKey = game.inviteCode.trim().toUpperCase();
+        diskCache[inviteKey] = updatedGame;
+        memoryStore[inviteKey] = updatedGame;
+      }
+      if (game.id) {
+        const idKey = game.id.trim().toUpperCase();
+        diskCache[idKey] = updatedGame;
+        memoryStore[idKey] = updatedGame;
+      }
+      saveCache(diskCache);
+
+      return NextResponse.json({ success: true, game: updatedGame, spotsJoined: nextSpots });
+    }
+
+    if (action === 'leave_game') {
+      const participantId = body.participantId as string | undefined;
+      const participantName = (body.participantName as string | undefined || '').trim();
+
+      if (!participantId && !participantName) {
+        return NextResponse.json({ success: false, error: 'Participant identification required.' }, { status: 400 });
+      }
+
+      if (dbSession && supabase) {
+        let participantUserId: string | null = null;
+        if (participantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(participantId)) {
+          participantUserId = participantId;
+        }
+        if (!participantUserId && participantName) {
+          const { data: u } = await supabase.from('users').select('id').ilike('full_name', participantName).maybeSingle();
+          if (u?.id) participantUserId = u.id;
+        }
+
+        if (participantUserId) {
+          try {
+            await supabase.from('session_participants').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+          try {
+            await supabase.from('game_rosters').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+          try {
+            await supabase.from('queues').delete().eq('session_id', dbSession.id).eq('user_id', participantUserId);
+          } catch {}
+        }
+
+        let queueIdToDelete: string | null = null;
+        if (!participantUserId && participantName) {
+          const { data: allQueues } = await supabase
+            .from('queues')
+            .select('id, user_id, partner_names, user:users(id, full_name, nickname)')
+            .eq('session_id', dbSession.id);
+
+          const matched = (allQueues || []).find((q: any) => {
+            const uName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]);
+            return uName && uName.trim().toLowerCase() === participantName.toLowerCase();
+          });
+          if (matched?.id) queueIdToDelete = matched.id;
+        }
+        if (queueIdToDelete) {
+          await supabase.from('queues').delete().eq('id', queueIdToDelete);
+        }
+
+        const { count: activeQueueCount } = await supabase
+          .from('queues')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const { count: activePartCount } = await supabase
+          .from('session_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', dbSession.id)
+          .neq('status', 'cancelled');
+
+        const nextSpots = Math.max(activeQueueCount || 0, activePartCount || 0);
         await supabase
           .from('sessions')
           .update({

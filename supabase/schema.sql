@@ -504,44 +504,43 @@ CREATE POLICY "Staff can update facility bookings" ON public.bookings
         auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id)
     );
 
--- Sessions (Open Play)
+-- Sessions (Open Play & Community Matches)
 DROP POLICY IF EXISTS "Sessions are viewable by everyone" ON public.sessions;
 CREATE POLICY "Sessions are viewable by everyone" ON public.sessions
     FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Staff can manage sessions" ON public.sessions;
-CREATE POLICY "Staff can manage sessions" ON public.sessions
-    FOR ALL USING (
-        auth.uid() IN (
-            SELECT u.auth_id FROM public.users u
-            LEFT JOIN public.facility_staff fs ON fs.user_id = u.id AND fs.facility_id = venue_id
-            LEFT JOIN public.venues v ON v.id = venue_id AND v.owner_id = u.id
-            WHERE fs.id IS NOT NULL OR v.id IS NOT NULL OR u.role IN ('organizer', 'admin')
-        )
-    );
+DROP POLICY IF EXISTS "Anyone can create sessions" ON public.sessions;
+DROP POLICY IF EXISTS "Users can create sessions" ON public.sessions;
+CREATE POLICY "Anyone can create sessions" ON public.sessions
+    FOR INSERT WITH CHECK (true);
 
--- Queues
+DROP POLICY IF EXISTS "Users and staff can update sessions" ON public.sessions;
+CREATE POLICY "Users and staff can update sessions" ON public.sessions
+    FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Users and staff can delete sessions" ON public.sessions;
+CREATE POLICY "Users and staff can delete sessions" ON public.sessions
+    FOR DELETE USING (true);
+
+-- Queues (Waitlists & Roster for Open Play)
 DROP POLICY IF EXISTS "Queues viewable by everyone" ON public.queues;
 CREATE POLICY "Queues viewable by everyone" ON public.queues
     FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Players can insert into queue" ON public.queues;
-CREATE POLICY "Players can insert into queue" ON public.queues
-    FOR INSERT WITH CHECK (
-        auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id)
-    );
+DROP POLICY IF EXISTS "Anyone can insert into queue" ON public.queues;
+CREATE POLICY "Anyone can insert into queue" ON public.queues
+    FOR INSERT WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Players or staff can update queues" ON public.queues;
-CREATE POLICY "Players or staff can update queues" ON public.queues
-    FOR UPDATE USING (
-        auth.uid() IN (SELECT auth_id FROM public.users WHERE id = user_id) OR
-        auth.uid() IN (
-            SELECT u.auth_id FROM public.users u
-            JOIN public.sessions s ON s.id = session_id
-            LEFT JOIN public.facility_staff fs ON fs.facility_id = s.venue_id AND fs.user_id = u.id
-            WHERE fs.id IS NOT NULL OR u.role IN ('organizer', 'admin')
-        )
-    );
+DROP POLICY IF EXISTS "Anyone can update queues" ON public.queues;
+CREATE POLICY "Anyone can update queues" ON public.queues
+    FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Anyone can delete queues" ON public.queues;
+CREATE POLICY "Anyone can delete queues" ON public.queues
+    FOR DELETE USING (true);
 
 -- Payments
 DROP POLICY IF EXISTS "Users see own payments or facility payments" ON public.payments;

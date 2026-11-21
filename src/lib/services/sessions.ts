@@ -1,4 +1,4 @@
-import { Session, QueueEntry, MatchFormat } from '@/types';
+import { Session, QueueEntry, MatchFormat, SportType } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { isSessionExpired } from '@/lib/utils/gameExpiration';
 
@@ -80,21 +80,6 @@ export function isMockSession(s: Partial<Session> | null | undefined): boolean {
     'casual friday night 5v5',
   ];
   if (mockTitles.some((t) => title.includes(t))) return true;
-
-  const venueName = (s.venue?.name || '').toLowerCase();
-  const mockVenues = [
-    'the upper deck',
-    'pickleball playground qc',
-    'pickleball playground',
-    'smash zone bgc',
-    'padel club manila',
-    'bgc turf',
-    'kerry sports',
-    'makati sports club',
-    'spike zone',
-    'star billiards',
-  ];
-  if (mockVenues.some((v) => venueName.includes(v))) return true;
 
   return false;
 }
@@ -471,18 +456,39 @@ export async function createOpenPlaySession(
     }
   } catch {}
 
-  const isHostUuid = Boolean(
-    resolvedHostId &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedHostId)
-  );
+  let validHostUuid: string | null = null;
+  if (resolvedHostId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedHostId)) {
+    try {
+      const { data: userExists } = await supabase.from('users').select('id').eq('id', resolvedHostId).maybeSingle();
+      if (userExists?.id) validHostUuid = userExists.id;
+    } catch {}
+  }
 
   let resolvedVenueId = sessionData.venue_id;
   if (!resolvedVenueId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedVenueId)) {
     try {
-      const { data: firstVenue } = await supabase.from('venues').select('id').limit(1).maybeSingle();
-      if (firstVenue?.id) resolvedVenueId = firstVenue.id;
+      const { data: nagaVenue } = await supabase
+        .from('venues')
+        .select('id')
+        .or('city.ilike.%naga%,name.ilike.%naga%')
+        .limit(1)
+        .maybeSingle();
+      if (nagaVenue?.id) {
+        resolvedVenueId = nagaVenue.id;
+      } else {
+        const { data: firstVenue } = await supabase.from('venues').select('id').limit(1).maybeSingle();
+        if (firstVenue?.id) resolvedVenueId = firstVenue.id;
+      }
     } catch {}
   }
+
+  const validCourtUuids = (sessionData.court_ids || []).filter(
+    (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  );
+
+  const sLower = (sessionData.sport || '').toLowerCase();
+  const validSports = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'football', 'billiards', 'darts', 'table_tennis'];
+  const validSport = (validSports.find((vs) => sLower.includes(vs)) || 'basketball') as SportType;
 
   let startTimeIso = sessionData.start_time;
   if (!startTimeIso || (!startTimeIso.includes('T') && !startTimeIso.includes('-'))) {
@@ -498,24 +504,24 @@ export async function createOpenPlaySession(
     .from('sessions')
     .insert({
       venue_id: resolvedVenueId,
-      host_id: isHostUuid ? resolvedHostId : null,
+      host_id: validHostUuid,
       title: sessionData.title,
       description: sessionData.description,
-      sport: sessionData.sport,
+      sport: validSport,
       session_type: 'open_play',
-      allowed_formats: sessionData.allowed_formats,
-      skill_level: sessionData.skill_level,
-      court_ids: sessionData.court_ids || [],
+      allowed_formats: sessionData.allowed_formats || ['doubles', 'singles'],
+      skill_level: sessionData.skill_level || 'all_levels',
+      court_ids: validCourtUuids,
       start_time: startTimeIso,
       end_time: endTimeIso,
-      fee_cents: sessionData.fee_cents,
-      max_players: sessionData.max_players,
+      fee_cents: Math.round(Number(sessionData.fee_cents) || 0),
+      max_players: Math.max(2, Math.min(24, Number(sessionData.max_players) || 10)),
       current_players_count: 0,
-      rotation_format: sessionData.rotation_format,
+      rotation_format: sessionData.rotation_format || '5v5',
       status: 'active',
       visibility: sessionData.visibility || 'Public',
-      invite_code: sessionData.invite_code,
-      location_details: sessionData.location_details,
+      invite_code: sessionData.invite_code ? sessionData.invite_code.trim().toUpperCase() : null,
+      location_details: sessionData.location_details || null,
     })
     .select('*')
     .single();

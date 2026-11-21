@@ -366,8 +366,8 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       pricePerPlayer: splitCost ? pricePerPlayer : 0,
       notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
       coordinates,
-      isPublic: false,
-      visibility: 'Invite',
+      isPublic: visibility !== 'Invite',
+      visibility: visibility || 'Public',
       inviteCode,
       members: [],
     };

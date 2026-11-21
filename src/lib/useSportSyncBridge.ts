@@ -238,26 +238,6 @@ export function isMockGame(game: Partial<CommunityGame> | null | undefined): boo
   const titleLower = (game.title || '').toLowerCase().trim();
   if (mockTitles.some((t) => titleLower.includes(t))) return true;
 
-  const mockLocations = [
-    'the upper deck',
-    'the upper deck sports center',
-    'pickleball playground qc',
-    'pickleball playground',
-    'smash zone bgc',
-    'padel club manila',
-    'bgc turf',
-    'kerry sports',
-    'makati sports club',
-    'spike zone',
-    'star billiards',
-    'the pitchway',
-    'victoria park pitch',
-    'clay court club kensington',
-    'metro hoops shoreditch',
-  ];
-  const locLower = (game.locationName || '').toLowerCase().trim();
-  if (mockLocations.some((l) => locLower.includes(l))) return true;
-
   return false;
 }
 
@@ -818,7 +798,7 @@ export function useSportSyncBridge() {
             skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
             date: formattedDate || 'Today',
             time: formattedTime || s.start_time || '18:00',
-            locationName: venue?.name || 'Verified Court Facility',
+            locationName: s.location_details || venue?.name || 'Naga Sports Venue',
             locationDetails: s.location_details,
             distance: '0.9 km away',
             hostId: isUserHost ? userProfile.id : s.host_id,
@@ -1205,13 +1185,132 @@ export function useSportSyncBridge() {
                   window.dispatchEvent(new CustomEvent('sportsync:game-deleted', { detail: { gameId: sId, sessionId: sId } }));
                 }
               } else if (sId) {
+                try { store.refreshSessions?.(); } catch {}
                 syncSessionRoster(sId, true);
+                // Also fetch /api/games to seamlessly pull the newly created session
+                fetch('/api/games')
+                  .then((res) => res.json())
+                  .then((data) => {
+                    if (Array.isArray(data.games)) {
+                      setGames((prev) => {
+                        const existingMap = new Map(prev.map((g) => [g.id, g]));
+                        let changed = false;
+                        data.games.forEach((incoming: CommunityGame) => {
+                          if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
+                          if (!existingMap.has(incoming.id) && (!incoming.sessionId || !existingMap.has(incoming.sessionId))) {
+                            const normTitle = incoming.title.trim().toLowerCase();
+                            const titleExists = prev.some((p) => p.title.trim().toLowerCase() === normTitle);
+                            if (!titleExists) {
+                              existingMap.set(incoming.id, incoming);
+                              changed = true;
+                            }
+                          }
+                        });
+                        return changed ? Array.from(existingMap.values()) : prev;
+                      });
+                    }
+                  })
+                  .catch(() => {});
               }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'session_participants' },
+            (payload: any) => {
+              const sId = payload?.new?.session_id || payload?.old?.session_id;
+              if (sId) syncSessionRoster(sId, true);
             }
           )
           .subscribe();
       } catch {}
     }
+
+    // Cross-tab & Cross-window synchronization
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        broadcastChannel = new BroadcastChannel('sportsync_games_sync');
+        broadcastChannel.onmessage = (event) => {
+          const { type, game, gameId, sessionId } = event.data || {};
+          if (type === 'GAME_CREATED' && game) {
+            setGames((prev) => {
+              const normTitle = (game.title || '').trim().toLowerCase();
+              if (prev.some((g) => g.id === game.id || (game.sessionId && g.sessionId === game.sessionId) || g.title.trim().toLowerCase() === normTitle)) {
+                return prev.map((g) => (g.id === game.id || (game.sessionId && g.sessionId === game.sessionId) ? { ...g, ...game } : g));
+              }
+              return [game, ...prev];
+            });
+            try { store.refreshSessions?.(); } catch {}
+          } else if (type === 'ROSTER_UPDATED' && game) {
+            setGames((prev) =>
+              prev.map((g) => (g.id === game.id || (game.sessionId && g.sessionId === game.sessionId) ? { ...g, ...game } : g))
+            );
+          } else if (type === 'GAME_DELETED') {
+            const targetId = gameId || sessionId;
+            if (targetId) {
+              setGames((prev) => prev.filter((g) => g.id !== targetId && g.sessionId !== targetId));
+            }
+          }
+        };
+      } catch {}
+    }
+
+    // Background auto-sync across different accounts and browsers (every 10s + on focus)
+    const syncAllActiveGames = async () => {
+      try {
+        const res = await fetch('/api/games');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.games) && data.games.length > 0) {
+            const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+            setGames((prev) => {
+              const currentMap = new Map<string, CommunityGame>();
+              prev.forEach((g) => {
+                if (g && g.id) currentMap.set(g.id, g);
+              });
+              let hasNew = false;
+              data.games.forEach((incoming: CommunityGame) => {
+                if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
+                if (deletedIds.has(incoming.id) || (incoming.sessionId && deletedIds.has(incoming.sessionId)) || deletedTitles.has(incoming.title.trim().toLowerCase())) return;
+
+                const existing = currentMap.get(incoming.id) || (incoming.sessionId ? currentMap.get(incoming.sessionId) : null);
+                if (!existing) {
+                  const normTitle = incoming.title.trim().toLowerCase();
+                  const matchByTitle = prev.find((g) => g.title.trim().toLowerCase() === normTitle);
+                  if (!matchByTitle) {
+                    currentMap.set(incoming.id, incoming);
+                    hasNew = true;
+                  }
+                } else {
+                  if ((incoming.members?.length || 0) > (existing.members?.length || 0)) {
+                    currentMap.set(existing.id, {
+                      ...existing,
+                      ...incoming,
+                      spotsJoined: Math.max(existing.spotsJoined, incoming.spotsJoined),
+                      members: incoming.members,
+                    });
+                    hasNew = true;
+                  }
+                }
+              });
+              return hasNew ? Array.from(currentMap.values()) : prev;
+            });
+          }
+        }
+      } catch {}
+    };
+
+    // Initial sync
+    syncAllActiveGames();
+
+    // Auto-polling interval
+    const pollInterval = setInterval(syncAllActiveGames, 10000);
+
+    const handleWindowFocus = () => {
+      syncAllActiveGames();
+      try { store.refreshSessions?.(); } catch {}
+    };
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'sportsync_community_games' && e.newValue) {
@@ -1221,6 +1320,19 @@ export function useSportSyncBridge() {
             setGames(parsed);
           }
         } catch {}
+      }
+    };
+
+    const handleCustomGameAdded = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.game) {
+        setGames((prev) => {
+          const normTitle = (detail.game.title || '').trim().toLowerCase();
+          if (prev.some((g) => g.id === detail.game.id || (detail.game.sessionId && g.sessionId === detail.game.sessionId) || g.title.trim().toLowerCase() === normTitle)) {
+            return prev.map((g) => (g.id === detail.game.id ? { ...g, ...detail.game } : g));
+          }
+          return [detail.game, ...prev];
+        });
       }
     };
 
@@ -1259,18 +1371,28 @@ export function useSportSyncBridge() {
 
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handleStorage);
+      window.addEventListener('focus', handleWindowFocus);
+      window.addEventListener('sportsync:game-added', handleCustomGameAdded);
       window.addEventListener('sportsync:roster-updated', handleCustomRoster);
       window.addEventListener('sportsync:game-deleted', handleGameDeleted);
     }
 
     return () => {
+      clearInterval(pollInterval);
       if (channel && supabase) {
         try {
           supabase.removeChannel(channel);
         } catch {}
       }
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.close();
+        } catch {}
+      }
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handleStorage);
+        window.removeEventListener('focus', handleWindowFocus);
+        window.removeEventListener('sportsync:game-added', handleCustomGameAdded);
         window.removeEventListener('sportsync:roster-updated', handleCustomRoster);
         window.removeEventListener('sportsync:game-deleted', handleGameDeleted);
       }
@@ -1994,7 +2116,11 @@ export function useSportSyncBridge() {
         const targetVenue =
           store.venues.find((v) =>
             v.name.toLowerCase().includes(gameData.locationName.toLowerCase())
-          ) || store.venues[0];
+          ) ||
+          store.venues.find((v) =>
+            v.city?.toLowerCase().includes('naga') || v.name.toLowerCase().includes('naga')
+          ) ||
+          store.venues[0];
 
         if (targetVenue) {
           const createdSession = await store.createOpenPlaySession({
@@ -2012,7 +2138,7 @@ export function useSportSyncBridge() {
             hostId: userProfile.id,
             visibility: gameData.visibility,
             inviteCode: finalInviteCode,
-            locationDetails: gameData.locationDetails,
+            locationDetails: gameData.locationDetails || gameData.locationName,
           });
           if (createdSession?.id) {
             newGame.sessionId = createdSession.id;
@@ -2027,7 +2153,7 @@ export function useSportSyncBridge() {
 
       if (typeof window !== 'undefined') {
         try {
-          const res = await fetch('/api/invitations', {
+          const res = await fetch('/api/games', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ game: newGame, action: 'create_game' }),
@@ -2042,6 +2168,8 @@ export function useSportSyncBridge() {
                 hostName: userName || data.game.hostName,
                 hostAvatar: userAvatar || data.game.hostAvatar,
                 inviteCode: finalInviteCode,
+                visibility: gameData.visibility || newGame.visibility || 'Public',
+                isPublic: (gameData.visibility || newGame.visibility) !== 'Invite',
               };
               if (!newGame.sessionId && data.session?.id) {
                 newGame.sessionId = data.session.id;
@@ -2049,6 +2177,14 @@ export function useSportSyncBridge() {
               }
             }
           }
+        } catch {}
+
+        try {
+          await fetch('/api/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: newGame, action: 'create_game' }),
+          });
         } catch {}
       }
       try { store.refreshSessions?.(); } catch {}
@@ -2076,6 +2212,13 @@ export function useSportSyncBridge() {
           ];
           localStorage.setItem('sportsync_community_games', JSON.stringify(updated));
         } catch {}
+
+        try {
+          const bc = new BroadcastChannel('sportsync_games_sync');
+          bc.postMessage({ type: 'GAME_CREATED', game: newGame });
+          bc.close();
+        } catch {}
+        window.dispatchEvent(new CustomEvent('sportsync:game-added', { detail: { game: newGame } }));
       }
 
       if (typeof window !== 'undefined' && gameData.inviteCode) {
@@ -2931,6 +3074,12 @@ export function useSportSyncBridge() {
         } catch {}
 
         try {
+          const bc = new BroadcastChannel('sportsync_games_sync');
+          bc.postMessage({ type: 'ROSTER_UPDATED', game: updatedGame });
+          bc.close();
+        } catch {}
+
+        try {
           window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
         } catch {}
       }
@@ -3189,6 +3338,12 @@ export function useSportSyncBridge() {
           } catch {}
 
           try {
+            const bc = new BroadcastChannel('sportsync_games_sync');
+            bc.postMessage({ type: 'ROSTER_UPDATED', game: updatedGame });
+            bc.close();
+          } catch {}
+
+          try {
             window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
           } catch {}
         }
@@ -3274,6 +3429,12 @@ export function useSportSyncBridge() {
           } catch {}
 
           try {
+            const bc = new BroadcastChannel('sportsync_games_sync');
+            bc.postMessage({ type: 'ROSTER_UPDATED', game: updatedGame });
+            bc.close();
+          } catch {}
+
+          try {
             window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
           } catch {}
         }
@@ -3288,24 +3449,89 @@ export function useSportSyncBridge() {
 
   // 19. Leave Community Game
   const leaveCommunityGame = useCallback(
-    (gameId: string) => {
+    async (gameId: string) => {
       let updatedGame: CommunityGame | null = null;
+      const targetGame = games.find((g) => g.id === gameId || (g.sessionId && g.sessionId === gameId));
 
       setGames((prev) =>
         prev.map((g) => {
-          if (g.id === gameId) {
-            const isMember = g.members.some((m) => m.name === userProfile.name);
+          if (g.id === gameId || (targetGame?.sessionId && g.sessionId === targetGame.sessionId)) {
+            const isMember = g.members.some(
+              (m) =>
+                (userProfile.name && m.name.trim().toLowerCase() === userProfile.name.trim().toLowerCase()) ||
+                (userProfile.id && m.id && m.id === userProfile.id)
+            );
             if (!isMember) return g;
             updatedGame = {
               ...g,
-              spotsJoined: Math.max(1, g.spotsJoined - 1),
-              members: g.members.filter((m) => m.name !== userProfile.name),
+              spotsJoined: Math.max(0, g.spotsJoined - 1),
+              members: g.members.filter(
+                (m) =>
+                  (!userProfile.name || m.name.trim().toLowerCase() !== userProfile.name.trim().toLowerCase()) &&
+                  (!userProfile.id || !m.id || m.id !== userProfile.id)
+              ),
             };
             return updatedGame;
           }
           return g;
         })
       );
+
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_joined_games');
+          if (raw) {
+            const list: string[] = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              const next = list.filter(
+                (id) =>
+                  id !== gameId &&
+                  (!targetGame?.sessionId || id !== targetGame.sessionId) &&
+                  (!targetGame?.inviteCode || id !== targetGame.inviteCode.toUpperCase())
+              );
+              localStorage.setItem('sportsync_joined_games', JSON.stringify(next));
+            }
+          }
+        } catch {}
+
+        if (updatedGame) {
+          try {
+            const storedGames = localStorage.getItem('sportsync_community_games');
+            if (storedGames) {
+              const parsed = JSON.parse(storedGames);
+              if (Array.isArray(parsed)) {
+                const nextStored = parsed.map((g: any) =>
+                  g.id === gameId || (targetGame?.sessionId && g.sessionId === targetGame.sessionId) ? updatedGame : g
+                );
+                localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));
+              }
+            }
+          } catch {}
+
+          try {
+            const bc = new BroadcastChannel('sportsync_games_sync');
+            bc.postMessage({ type: 'ROSTER_UPDATED', game: updatedGame });
+            bc.close();
+          } catch {}
+
+          try {
+            window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
+          } catch {}
+
+          try {
+            await fetch('/api/invitations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'leave_game',
+                game: targetGame || updatedGame,
+                participantId: userProfile.id,
+                participantName: userProfile.name,
+              }),
+            });
+          } catch {}
+        }
+      }
 
       if (updatedGame) {
         const leftGame = updatedGame as CommunityGame;
@@ -3347,7 +3573,7 @@ export function useSportSyncBridge() {
         message: 'Successfully left game roster.',
       };
     },
-    [userProfile.name, userProfile.id]
+    [games, userProfile.name, userProfile.id]
   );
 
   // 17. Reserve Court / Venue Booking
