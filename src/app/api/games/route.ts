@@ -1,43 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
+import { verifySessionToken } from '@/lib/auth/serverAuth';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
-
-const DATA_DIR = path.join(process.cwd(), '.data');
-const CACHE_FILE = path.join(DATA_DIR, 'invitations.json');
-
-function ensureDataDir(): void {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch {}
-}
-
-function loadCache(): Record<string, CommunityGame> {
-  try {
-    ensureDataDir();
-    if (fs.existsSync(CACHE_FILE)) {
-      const raw = fs.readFileSync(CACHE_FILE, 'utf8');
-      return JSON.parse(raw) || {};
-    }
-  } catch {}
-  return {};
-}
-
-function saveCache(cache: Record<string, CommunityGame>): void {
-  try {
-    ensureDataDir();
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-  } catch {}
-}
 
 function getSupabase() {
   const admin = createAdminClient();
   if (admin) return admin;
   return createServerClient();
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(val?: string | null): val is string {
+  return Boolean(val && UUID_REGEX.test(val.trim()));
 }
 
 const MOCK_TITLES = [
@@ -92,329 +68,642 @@ function formatSessionDateTime(startTime?: string): { date: string; time: string
   }
 }
 
+function getAuthenticatedUserFromRequest(req: NextRequest): { sub: string; email: string; role?: string } | null {
+  const tokenCookie = req.cookies.get('sportsync-auth-token')?.value || req.cookies.get('sb-access-token')?.value;
+  const authHeader = req.headers.get('authorization');
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  const token = tokenCookie || bearerToken;
+  if (!token) return null;
+  const verified = verifySessionToken(token);
+  if (!verified || !verified.userId) return null;
+  return {
+    sub: verified.userId,
+    email: verified.email || '',
+    role: verified.role,
+  };
+}
+
+/**
+ * Ensures the host user exists in `public.users` and returns their canonical `public.users.id`
+ * so `public.sessions.host_id` never fails a foreign key constraint.
+ */
+async function resolveCanonicalHostUserId(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  authUser: { sub: string; email: string; role?: string } | null,
+  gameHostId?: string,
+  gameHostName?: string
+): Promise<string | null> {
+  const candidateIds = [
+    isValidUuid(gameHostId) ? gameHostId.trim() : null,
+    isValidUuid(authUser?.sub) ? authUser!.sub.trim() : null,
+  ].filter((id): id is string => Boolean(id));
+
+  // 1. Check public.users by id or auth_id
+  for (const candidateId of candidateIds) {
+    const { data: byId } = await supabase
+      .from('users')
+      .select('id')
+      .or(`id.eq.${candidateId},auth_id.eq.${candidateId}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (byId?.id) {
+      return byId.id;
+    }
+  }
+
+  // 2. Check public.users by authenticated email
+  if (authUser?.email) {
+    const normalizedEmail = authUser.email.trim().toLowerCase();
+    const { data: byEmail } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('email', normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (byEmail?.id) {
+      return byEmail.id;
+    }
+  }
+
+  // 3. If we have a valid UUID (from session cookie or game.hostId) that is missing from public.users,
+  // verify it in auth.users or upsert a corresponding public.users row first so FK never fails.
+  const primaryId = candidateIds[0];
+  if (primaryId) {
+    let email = authUser?.email?.trim().toLowerCase() || '';
+    let fullName = (gameHostName || '').trim() || 'SportSync Player';
+
+    try {
+      const admin = createAdminClient();
+      if (admin) {
+        const { data: authData } = await admin.auth.admin.getUserById(primaryId);
+        if (authData?.user) {
+          email = (authData.user.email || email).trim().toLowerCase();
+          fullName =
+            authData.user.user_metadata?.full_name ||
+            authData.user.user_metadata?.name ||
+            fullName;
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    if (email) {
+      const { data: upserted, error: upsertErr } = await supabase
+        .from('users')
+        .upsert(
+          {
+            id: primaryId,
+            auth_id: primaryId,
+            email,
+            full_name: fullName,
+            nickname: fullName.split(' ')[0] || 'Player',
+            role: authUser?.role === 'facility' || authUser?.role === 'venue_owner' ? 'venue_owner' : 'player',
+            skill_level: 'intermediate',
+            preferred_sports: ['basketball', 'badminton', 'pickleball'],
+            city: 'Naga City',
+            reliability_score: 100.0,
+          },
+          { onConflict: 'id' }
+        )
+        .select('id')
+        .single();
+
+      if (!upsertErr && upserted?.id) {
+        return upserted.id;
+      }
+    }
+  }
+
+  // 4. Fallback lookup by host name if provided
+  if (gameHostName && gameHostName.trim()) {
+    const { data: byName } = await supabase
+      .from('users')
+      .select('id')
+      .ilike('full_name', gameHostName.trim())
+      .limit(1)
+      .maybeSingle();
+
+    if (byName?.id) {
+      return byName.id;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Ensures a dedicated system fallback venue ("Community / Open Court") exists ONLY when
+ * the database still enforces `venue_id NOT NULL` (error code 23502 before migration execution).
+ * Never hijacks a facility owner's venue.
+ */
+async function getOrCreateSystemCommunityVenueId(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>
+): Promise<string | null> {
+  const SYSTEM_SLUG = 'community-open-court-naga';
+
+  const { data: existing } = await supabase
+    .from('venues')
+    .select('id')
+    .eq('slug', SYSTEM_SLUG)
+    .maybeSingle();
+
+  if (existing?.id) {
+    return existing.id;
+  }
+
+  const { data: created, error } = await supabase
+    .from('venues')
+    .insert({
+      owner_id: null,
+      name: 'Community / Open Court',
+      slug: SYSTEM_SLUG,
+      description: 'System fallback venue for custom community and open-court games',
+      address: 'Naga City, Camarines Sur',
+      city: 'Naga City',
+      province: 'Camarines Sur',
+      latitude: 13.6218,
+      longitude: 123.1948,
+      amenities: [],
+      photos: [],
+      operating_hours: {},
+      is_verified: false,
+      rating: 5.0,
+      total_reviews: 0,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[/api/games] Failed to create system community venue:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+    });
+    return null;
+  }
+
+  return created?.id || null;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const supabase = getSupabase();
-    const diskCache = loadCache();
-    const cachedGamesList = Object.values(diskCache).filter((g) => g && g.id && !isMockFixture(g) && !isGameExpired(g));
+    if (!supabase || !isSupabaseConfigured) {
+      return NextResponse.json(
+        { success: false, error: 'Supabase is not configured on the server.', games: [] },
+        { status: 500 }
+      );
+    }
+
+    // Touch request auth cookie for verification awareness
+    getAuthenticatedUserFromRequest(req);
+
+    const { data: sessions, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .in('status', ['active', 'upcoming'])
+      .order('start_time', { ascending: true });
+
+    if (error) {
+      console.error('[/api/games GET] Supabase query failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          games: [],
+        },
+        { status: 500 }
+      );
+    }
 
     const combinedMap = new Map<string, CommunityGame>();
 
-    // 1. Fetch sessions from Supabase if available
-    if (supabase && isSupabaseConfigured) {
-      try {
-        const { data: sessions, error } = await supabase
-          .from('sessions')
-          .select('*')
-          .in('status', ['active', 'upcoming'])
-          .order('start_time', { ascending: true });
+    if (Array.isArray(sessions)) {
+      const sessionIds = sessions.map((s) => s.id).filter(Boolean);
+      const venueIds = Array.from(new Set(sessions.map((s) => s.venue_id).filter(Boolean)));
+      const hostIds = Array.from(new Set(sessions.map((s) => s.host_id).filter(Boolean)));
 
-        if (!error && Array.isArray(sessions)) {
-          const sessionIds = sessions.map((s) => s.id).filter(Boolean);
-          const venueIds = Array.from(new Set(sessions.map((s) => s.venue_id).filter(Boolean)));
-          const hostIds = Array.from(new Set(sessions.map((s) => s.host_id).filter(Boolean)));
+      const venuesMap = new Map<string, any>();
+      const hostsMap = new Map<string, any>();
+      const rostersMap = new Map<string, { id?: string; name: string; avatar: any }[]>();
 
-          const venuesMap = new Map<string, any>();
-          const hostsMap = new Map<string, any>();
-          const rostersMap = new Map<string, { id?: string; name: string; avatar: any }[]>();
+      if (venueIds.length > 0) {
+        const { data: vList } = await supabase
+          .from('venues')
+          .select('id, name, city, address')
+          .in('id', venueIds);
+        if (Array.isArray(vList)) {
+          vList.forEach((v) => venuesMap.set(v.id, v));
+        }
+      }
 
-          if (venueIds.length > 0) {
-            try {
-              const { data: vList } = await supabase.from('venues').select('id, name, city, address').in('id', venueIds);
-              if (Array.isArray(vList)) vList.forEach((v) => venuesMap.set(v.id, v));
-            } catch {}
-          }
+      if (hostIds.length > 0) {
+        const { data: uList } = await supabase
+          .from('users')
+          .select('id, full_name, nickname, avatar_url')
+          .in('id', hostIds);
+        if (Array.isArray(uList)) {
+          uList.forEach((u) => hostsMap.set(u.id, u));
+        }
+      }
 
-          if (hostIds.length > 0) {
-            try {
-              const { data: uList } = await supabase.from('users').select('id, full_name, nickname, avatar_url').in('id', hostIds);
-              if (Array.isArray(uList)) uList.forEach((u) => hostsMap.set(u.id, u));
-            } catch {}
-          }
+      if (sessionIds.length > 0) {
+        const { data: qList } = await supabase
+          .from('queues')
+          .select('session_id, user_id, partner_names, user:users(id, full_name, nickname, avatar_url)')
+          .in('session_id', sessionIds)
+          .neq('status', 'cancelled');
 
-          if (sessionIds.length > 0) {
-            try {
-              const { data: qList } = await supabase
-                .from('queues')
-                .select('session_id, user_id, partner_names, user:users(id, full_name, nickname, avatar_url)')
-                .in('session_id', sessionIds)
-                .neq('status', 'cancelled');
-              if (Array.isArray(qList)) {
-                qList.forEach((q: any) => {
-                  const list = rostersMap.get(q.session_id) || [];
-                  const uName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]) || 'Player';
-                  list.push({
-                    id: q.user_id || q.user?.id,
-                    name: uName,
-                    avatar: q.user?.avatar_url || 'alex',
-                  });
-                  rostersMap.set(q.session_id, list);
-                });
-              }
-            } catch {}
-
-            try {
-              const { data: pList } = await supabase
-                .from('session_participants')
-                .select('session_id, user_id, user_name, user_avatar')
-                .in('session_id', sessionIds)
-                .neq('status', 'cancelled');
-              if (Array.isArray(pList)) {
-                pList.forEach((p: any) => {
-                  const list = rostersMap.get(p.session_id) || [];
-                  const already = list.some((m) => (p.user_id && m.id === p.user_id) || m.name.toLowerCase() === (p.user_name || '').toLowerCase());
-                  if (!already) {
-                    list.push({
-                      id: p.user_id,
-                      name: p.user_name || 'Player',
-                      avatar: p.user_avatar || 'alex',
-                    });
-                    rostersMap.set(p.session_id, list);
-                  }
-                });
-              }
-            } catch {}
-          }
-
-          sessions.forEach((s) => {
-            if (isMockFixture(s)) return;
-            const venue = s.venue_id ? venuesMap.get(s.venue_id) : undefined;
-            const host = s.host_id ? hostsMap.get(s.host_id) : undefined;
-            const hostTagMatch = s.description?.match(/\[HOST:(.*?)\]/i);
-            const taggedHost = hostTagMatch ? hostTagMatch[1].trim() : '';
-
-            const { date: fDate, time: fTime } = formatSessionDateTime(s.start_time);
-            const members = rostersMap.get(s.id) || [];
-            const spotsJoined = Math.min(s.max_players || 12, Math.max(members.length, s.current_players_count || 0));
-
-            const resolvedLocation = s.location_details || venue?.name || 'Naga Sports Venue';
-            const resolvedHostName = host?.full_name || host?.nickname || taggedHost || 'Match Organizer';
-            const resolvedHostAvatar = host?.avatar_url || 'alex';
-
-            const gameObj: CommunityGame = {
-              id: s.id,
-              sessionId: s.id,
-              sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Basketball') as any,
-              title: s.title,
-              format: (s.rotation_format || '5v5') as any,
-              skillLevel: (s.skill_level === 'competitive' || s.skill_level === 'intermediate' ? 'Competitive' : 'Casual') as any,
-              date: fDate,
-              time: fTime,
-              locationName: resolvedLocation,
-              locationDetails: s.location_details,
-              distance: 'Naga City • 0.5 km away',
-              hostId: s.host_id,
-              hostName: resolvedHostName,
-              hostAvatar: resolvedHostAvatar,
-              spotsTotal: s.max_players || 12,
-              spotsJoined,
-              pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
-              notes: s.description || 'Verified SportSync match',
-              isPublic: s.visibility ? s.visibility !== 'Invite' : true,
-              visibility: (s.visibility as any) || 'Public',
-              inviteCode: s.invite_code,
-              members,
-            };
-
-            if (!isGameExpired(gameObj)) {
-              combinedMap.set(s.id, gameObj);
-              if (s.invite_code) combinedMap.set(s.invite_code.toUpperCase(), gameObj);
+        if (Array.isArray(qList)) {
+          qList.forEach((q: any) => {
+            const list = rostersMap.get(q.session_id) || [];
+            const uName = q.user?.full_name || q.user?.nickname || (q.partner_names && q.partner_names[0]) || 'Player';
+            const uId = q.user_id || q.user?.id;
+            const already = list.some(
+              (m) => (uId && m.id === uId) || m.name.toLowerCase() === uName.toLowerCase()
+            );
+            if (!already) {
+              list.push({
+                id: uId,
+                name: uName,
+                avatar: q.user?.avatar_url || 'alex',
+              });
+              rostersMap.set(q.session_id, list);
             }
           });
         }
-      } catch (dbErr) {
-        console.warn('[/api/games] Database query exception:', dbErr);
-      }
-    }
 
-    // 2. Merge with disk cache games
-    cachedGamesList.forEach((cg) => {
-      if (!cg || !cg.id || isMockFixture(cg) || isGameExpired(cg)) return;
-      const key = cg.sessionId || cg.id;
-      if (!combinedMap.has(key)) {
-        // Also check norm title
-        const normTitle = cg.title.trim().toLowerCase();
-        const existingWithTitle = Array.from(combinedMap.values()).find(
-          (existing) => existing.title.trim().toLowerCase() === normTitle
-        );
-        if (!existingWithTitle) {
-          combinedMap.set(key, cg);
+        const { data: pList } = await supabase
+          .from('session_participants')
+          .select('session_id, user_id, user_name, user_avatar')
+          .in('session_id', sessionIds)
+          .neq('status', 'cancelled');
+
+        if (Array.isArray(pList)) {
+          pList.forEach((p: any) => {
+            const list = rostersMap.get(p.session_id) || [];
+            const already = list.some(
+              (m) => (p.user_id && m.id === p.user_id) || m.name.toLowerCase() === (p.user_name || '').toLowerCase()
+            );
+            if (!already) {
+              list.push({
+                id: p.user_id,
+                name: p.user_name || 'Player',
+                avatar: p.user_avatar || 'alex',
+              });
+              rostersMap.set(p.session_id, list);
+            }
+          });
         }
       }
-    });
 
-    const uniqueGames: CommunityGame[] = [];
-    const seenFinalIds = new Set<string>();
+      sessions.forEach((s) => {
+        if (!s || !s.id || isMockFixture(s)) return;
 
-    combinedMap.forEach((g) => {
-      if (!seenFinalIds.has(g.id)) {
-        seenFinalIds.add(g.id);
-        uniqueGames.push(g);
-      }
-    });
+        const venue = s.venue_id ? venuesMap.get(s.venue_id) : undefined;
+        const host = s.host_id ? hostsMap.get(s.host_id) : undefined;
+        const hostTagMatch = s.description?.match(/\[HOST:(.*?)\]/i);
+        const taggedHost = hostTagMatch ? hostTagMatch[1].trim() : '';
+        const inviteTagMatch = s.description?.match(/\[INVITE:([A-Z0-9_-]+)\]/i);
+        const taggedInvite = inviteTagMatch ? inviteTagMatch[1].trim().toUpperCase() : undefined;
 
+        const { date: fDate, time: fTime } = formatSessionDateTime(s.start_time);
+        const members = [...(rostersMap.get(s.id) || [])];
+        const resolvedHostName = host?.full_name || host?.nickname || taggedHost || 'Match Organizer';
+        const resolvedHostAvatar = host?.avatar_url || 'alex';
+
+        // Ensure host is included in members roster if no members were found yet
+        if (members.length === 0 && resolvedHostName) {
+          members.push({
+            id: s.host_id || undefined,
+            name: resolvedHostName,
+            avatar: resolvedHostAvatar,
+          });
+        }
+
+        const spotsJoined = Math.min(
+          s.max_players || 12,
+          Math.max(members.length, s.current_players_count || 0)
+        );
+
+        const resolvedLocation =
+          s.location_details ||
+          (venue?.name && venue.name !== 'Community / Open Court' ? venue.name : '') ||
+          'Naga Sports Venue';
+
+        const cleanNotes = (s.description || '')
+          .replace(/\[INVITE:.*?\]/gi, '')
+          .replace(/\[HOST:.*?\]/gi, '')
+          .trim();
+
+        const gameObj: CommunityGame = {
+          id: s.id,
+          sessionId: s.id,
+          sport: (s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Basketball') as any,
+          title: s.title,
+          format: (s.rotation_format || '5v5') as any,
+          skillLevel: (s.skill_level === 'competitive' || s.skill_level === 'intermediate' ? 'Competitive' : 'Casual') as any,
+          date: fDate,
+          time: fTime,
+          locationName: resolvedLocation,
+          locationDetails: s.location_details || resolvedLocation,
+          distance: 'Naga City • 0.5 km away',
+          hostId: s.host_id,
+          hostName: resolvedHostName,
+          hostAvatar: resolvedHostAvatar,
+          spotsTotal: s.max_players || 12,
+          spotsJoined,
+          pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
+          notes: cleanNotes || 'Verified SportSync match',
+          isPublic: s.visibility ? s.visibility !== 'Invite' : true,
+          visibility: (s.visibility as any) || 'Public',
+          inviteCode: s.invite_code || taggedInvite,
+          members,
+        };
+
+        if (!isGameExpired(gameObj)) {
+          // Deduplicate strictly by canonical game ID
+          combinedMap.set(s.id, gameObj);
+        }
+      });
+    }
+
+    const uniqueGames = Array.from(combinedMap.values());
     return NextResponse.json({ success: true, games: uniqueGames });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Server error fetching games';
+    console.error('[/api/games GET] Unexpected error:', err);
     return NextResponse.json({ success: false, error: msg, games: [] }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const action = body.action || 'create_game';
     const game = body.game as CommunityGame;
 
-    if (!game) {
-      return NextResponse.json({ success: false, error: 'Game data is required' }, { status: 400 });
-    }
-
-    if (!game.id) {
-      game.id = 'cg_' + Math.random().toString(36).substring(2, 9);
-    }
-    if (!game.inviteCode) {
-      game.inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    if (!game || !game.title) {
+      return NextResponse.json(
+        { success: false, error: 'Game title and details are required.' },
+        { status: 400 }
+      );
     }
 
     const supabase = getSupabase();
-    const diskCache = loadCache();
+    if (!supabase || !isSupabaseConfigured) {
+      return NextResponse.json(
+        { success: false, error: 'Supabase is not configured on the server.' },
+        { status: 500 }
+      );
+    }
+
+    const authUser = getAuthenticatedUserFromRequest(req);
 
     if (action === 'create_game') {
-      let createdSession: any = null;
+      const inviteCode = (game.inviteCode || Math.random().toString(36).substring(2, 8))
+        .trim()
+        .toUpperCase();
 
-      if (supabase && isSupabaseConfigured) {
-        try {
-          // Resolve venue
-          let venueId: string | null = null;
-          const targetVenueId = (body.game as any)?.venueId || (game as any).venue_id;
-          if (targetVenueId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetVenueId)) {
-            venueId = targetVenueId;
-          }
-          if (!venueId && game.locationName) {
-            const firstWord = game.locationName.trim().split(' ')[0];
-            const { data: v } = await supabase.from('venues').select('id').ilike('name', `%${firstWord}%`).limit(1).maybeSingle();
-            if (v?.id) venueId = v.id;
-          }
-          if (!venueId) {
-            const { data: nagaV } = await supabase.from('venues').select('id').or('city.ilike.%naga%,name.ilike.%naga%').limit(1).maybeSingle();
-            if (nagaV?.id) venueId = nagaV.id;
-          }
-          if (!venueId) {
-            const { data: firstV } = await supabase.from('venues').select('id').limit(1).maybeSingle();
-            if (firstV?.id) venueId = firstV.id;
-          }
+      // 1. Resolve canonical host public.users.id so host_id FK never fails
+      const hostUserId = await resolveCanonicalHostUserId(
+        supabase,
+        authUser,
+        game.hostId,
+        game.hostName
+      );
 
-          // Resolve host
-          let hostUserId: string | null = null;
-          if (game.hostId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(game.hostId)) {
-            const { data: u } = await supabase.from('users').select('id').eq('id', game.hostId).maybeSingle();
-            if (u?.id) hostUserId = u.id;
-          }
-          if (!hostUserId && game.hostName) {
-            const { data: u } = await supabase.from('users').select('id').ilike('full_name', `%${game.hostName.trim()}%`).limit(1).maybeSingle();
-            if (u?.id) hostUserId = u.id;
-          }
+      // 2. Resolve venue_id ONLY if it genuinely matches a selected venue (never hijack a facility owner's venue)
+      let venueId: string | null = null;
+      const requestedVenueId = (body.game as any)?.venueId || (game as any).venue_id;
+      if (isValidUuid(requestedVenueId)) {
+        const { data: exactVenue } = await supabase
+          .from('venues')
+          .select('id')
+          .eq('id', requestedVenueId.trim())
+          .maybeSingle();
+        if (exactVenue?.id) {
+          venueId = exactVenue.id;
+        }
+      }
 
-          const sLower = (game.sport || '').toLowerCase();
-          const validSports = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'football', 'billiards', 'darts', 'table_tennis'];
-          const validSport = validSports.find((vs) => sLower.includes(vs)) || 'basketball';
+      if (!venueId && game.locationName && game.locationName.trim()) {
+        const locName = game.locationName.trim();
+        const { data: matchedVenue } = await supabase
+          .from('venues')
+          .select('id, name')
+          .ilike('name', locName)
+          .limit(1)
+          .maybeSingle();
+        if (matchedVenue?.id) {
+          venueId = matchedVenue.id;
+        }
+      }
 
-          const now = new Date();
-          let startYear = now.getFullYear();
-          let startMonth = now.getMonth();
-          let startDay = now.getDate();
-          const dNorm = (game.date || '').trim().toLowerCase();
-          if (dNorm === 'tomorrow') {
-            const tom = new Date(now);
-            tom.setDate(now.getDate() + 1);
-            startYear = tom.getFullYear();
-            startMonth = tom.getMonth();
-            startDay = tom.getDate();
-          } else if (dNorm && dNorm !== 'today') {
-            const parsed = new Date(game.date);
-            if (!isNaN(parsed.getTime())) {
-              startYear = parsed.getFullYear();
-              startMonth = parsed.getMonth();
-              startDay = parsed.getDate();
-            }
-          }
-          let startH = 18;
-          let startM = 0;
-          if (game.time) {
-            const parts = game.time.trim().split(':');
-            if (parts.length >= 2) {
-              const ph = parseInt(parts[0], 10);
-              const pm = parseInt(parts[1], 10);
-              if (!isNaN(ph)) startH = ph;
-              if (!isNaN(pm)) startM = pm;
-            }
-          }
-          const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
-          const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
+      // 3. Normalize sport & schedule timestamps
+      const sLower = (game.sport || '').toLowerCase();
+      const validSports = [
+        'badminton',
+        'pickleball',
+        'basketball',
+        'padel',
+        'tennis',
+        'volleyball',
+        'football',
+        'billiards',
+        'darts',
+        'table_tennis',
+      ];
+      const validSport = validSports.find((vs) => sLower.includes(vs)) || 'basketball';
 
-          if (venueId) {
-            const { data: inserted, error: insertErr } = await supabase
+      const now = new Date();
+      let startYear = now.getFullYear();
+      let startMonth = now.getMonth();
+      let startDay = now.getDate();
+      const dNorm = (game.date || '').trim().toLowerCase();
+      if (dNorm === 'tomorrow') {
+        const tom = new Date(now);
+        tom.setDate(now.getDate() + 1);
+        startYear = tom.getFullYear();
+        startMonth = tom.getMonth();
+        startDay = tom.getDate();
+      } else if (dNorm && dNorm !== 'today') {
+        const parsed = new Date(game.date);
+        if (!isNaN(parsed.getTime())) {
+          startYear = parsed.getFullYear();
+          startMonth = parsed.getMonth();
+          startDay = parsed.getDate();
+        }
+      }
+
+      let startH = 18;
+      let startM = 0;
+      if (game.time) {
+        const parts = game.time.trim().split(':');
+        if (parts.length >= 2) {
+          const ph = parseInt(parts[0], 10);
+          const pm = parseInt(parts[1], 10);
+          if (!isNaN(ph)) startH = ph;
+          if (!isNaN(pm)) startM = pm;
+        }
+      }
+
+      const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
+      const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
+
+      const locationLabel = (game.locationDetails || game.locationName || 'Naga Sports Venue').trim();
+      const initialMembers =
+        Array.isArray(game.members) && game.members.length > 0
+          ? game.members
+          : [
+              {
+                id: hostUserId || game.hostId,
+                name: game.hostName || 'Host',
+                avatar: game.hostAvatar || 'alex',
+              },
+            ];
+
+      const basePayload: Record<string, any> = {
+        venue_id: venueId,
+        host_id: hostUserId,
+        title: game.title.trim(),
+        description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || ''}]`,
+        sport: validSport,
+        session_type: 'open_play',
+        allowed_formats: ['doubles', 'singles'],
+        skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
+        court_ids: [],
+        start_time: startIso,
+        end_time: endIso,
+        fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
+        max_players: Math.max(2, Math.min(24, game.spotsTotal || 10)),
+        current_players_count: Math.max(1, initialMembers.length),
+        rotation_format: game.format || '5v5',
+        status: 'active',
+      };
+
+      const extendedPayload: Record<string, any> = {
+        ...basePayload,
+        visibility: game.visibility || 'Public',
+        invite_code: inviteCode,
+        location_details: locationLabel,
+      };
+
+      let { data: inserted, error: insertErr } = await supabase
+        .from('sessions')
+        .insert(extendedPayload)
+        .select('*')
+        .single();
+
+      // Handle case where extended columns (visibility/invite_code/location_details) aren't migrated yet
+      if (insertErr && insertErr.code === '42703') {
+        console.warn('[/api/games POST] Extended session columns missing (42703), retrying with core columns.');
+        const retryCore = await supabase
+          .from('sessions')
+          .insert(basePayload)
+          .select('*')
+          .single();
+        inserted = retryCore.data;
+        insertErr = retryCore.error;
+      }
+
+      // Handle case where venue_id NOT NULL constraint (23502) is still active in Postgres before SQL migration is executed
+      if (insertErr && insertErr.code === '23502' && !venueId) {
+        console.warn('[/api/games POST] sessions.venue_id is still NOT NULL in DB (23502); using dedicated system Community / Open Court venue.');
+        const systemVenueId = await getOrCreateSystemCommunityVenueId(supabase);
+        if (systemVenueId) {
+          extendedPayload.venue_id = systemVenueId;
+          basePayload.venue_id = systemVenueId;
+
+          const retryWithSystemVenue = await supabase
+            .from('sessions')
+            .insert(extendedPayload)
+            .select('*')
+            .single();
+
+          if (retryWithSystemVenue.error && retryWithSystemVenue.error.code === '42703') {
+            const retryCoreWithVenue = await supabase
               .from('sessions')
-              .insert({
-                venue_id: venueId,
-                host_id: hostUserId,
-                title: game.title,
-                description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${(game.inviteCode || '').toUpperCase()}] [HOST:${game.hostName || ''}]`,
-                sport: validSport,
-                session_type: 'open_play',
-                allowed_formats: ['doubles', 'singles'],
-                skill_level: game.skillLevel === 'Competitive' ? 'intermediate' : 'all_levels',
-                court_ids: [],
-                start_time: startIso,
-                end_time: endIso,
-                fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
-                max_players: Math.max(2, Math.min(24, game.spotsTotal || 10)),
-                current_players_count: (game.members || []).length,
-                rotation_format: game.format || '5v5',
-                status: 'active',
-                visibility: game.visibility || 'Public',
-                invite_code: game.inviteCode ? game.inviteCode.trim().toUpperCase() : null,
-                location_details: game.locationDetails || game.locationName || null,
-              })
+              .insert(basePayload)
               .select('*')
               .single();
-
-            if (inserted) {
-              createdSession = inserted;
-              game.id = inserted.id;
-              game.sessionId = inserted.id;
-            } else if (insertErr) {
-              console.warn('[/api/games] Session insert error:', insertErr.message);
-            }
+            inserted = retryCoreWithVenue.data;
+            insertErr = retryCoreWithVenue.error;
+          } else {
+            inserted = retryWithSystemVenue.data;
+            insertErr = retryWithSystemVenue.error;
           }
-        } catch (dbEx) {
-          console.warn('[/api/games] Exception during session creation:', dbEx);
+        }
+      }
+
+      if (insertErr || !inserted) {
+        console.error('[/api/games POST] Supabase session insert failed:', {
+          code: insertErr?.code,
+          message: insertErr?.message,
+          details: insertErr?.details,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            error: insertErr?.message || 'Failed to create game session in database.',
+            code: insertErr?.code,
+            details: insertErr?.details,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Also seed the host into queues or session_participants so rosters immediately reflect the host across all devices
+      if (hostUserId) {
+        try {
+          await supabase.from('queues').insert({
+            session_id: inserted.id,
+            user_id: hostUserId,
+            party_size: 1,
+            partner_names: [game.hostName || 'Host'],
+            queue_position: 1,
+            status: 'waiting',
+            games_played: 0,
+          });
+        } catch {
+          // Non-fatal if queue row already exists
         }
       }
 
       const finalGame: CommunityGame = {
         ...game,
-        id: createdSession?.id || game.id,
-        sessionId: createdSession?.id || game.sessionId || game.id,
+        id: inserted.id,
+        sessionId: inserted.id,
+        hostId: hostUserId || game.hostId,
+        locationName: locationLabel,
+        locationDetails: locationLabel,
+        inviteCode,
         isPublic: game.visibility ? game.visibility !== 'Invite' : true,
         visibility: game.visibility || 'Public',
+        spotsJoined: Math.max(1, initialMembers.length),
+        members: initialMembers,
       };
 
-      if (finalGame.inviteCode) {
-        diskCache[finalGame.inviteCode.trim().toUpperCase()] = finalGame;
-      }
-      if (finalGame.id) {
-        diskCache[finalGame.id.trim().toUpperCase()] = finalGame;
-      }
-      saveCache(diskCache);
-
-      return NextResponse.json({ success: true, game: finalGame, session: createdSession });
+      return NextResponse.json({
+        success: true,
+        game: finalGame,
+        session: inserted,
+      });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: false, error: `Unsupported action: ${action}` }, { status: 400 });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Server error in POST /api/games';
+    console.error('[/api/games POST] Unexpected error:', err);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

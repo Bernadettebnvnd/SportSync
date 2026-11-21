@@ -1,12 +1,11 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { UserRole } from '@/types';
 import { isSupabaseConfigured, createAdminClient, createServerClient } from '@/lib/supabase/server';
 import { validateRealEmail } from '@/lib/validation/emailValidator';
 
 export interface SanitizedUser {
   id: string;
+  auth_id?: string;
   email: string;
   full_name: string;
   nickname: string;
@@ -23,7 +22,6 @@ export interface SanitizedUser {
 
 export type StoredUser = SanitizedUser;
 
-// Generate simple HMAC session token
 const SESSION_SECRET = process.env.SESSION_SECRET || 'sportsync-secure-session-key-2026';
 
 export function createSessionToken(user: SanitizedUser): string {
@@ -69,364 +67,33 @@ export function verifySessionToken(token: string): { userId: string; email: stri
   }
 }
 
-// Durable in-memory user registry across Next.js Route Handler workers & module re-evaluations
-interface LocalDevRecord {
-  user: SanitizedUser;
-  passwordHash: string;
-  plainPassword?: string;
+function isValidUuid(val?: string | null): boolean {
+  return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 }
 
-const localDevUsers: Map<string, LocalDevRecord> =
-  (globalThis as any).__sportsync_local_users ||
-  ((globalThis as any).__sportsync_local_users = new Map<string, LocalDevRecord>());
-
-const USERS_FILE_PATH = path.join(process.cwd(), '.data', 'users.json');
-
-export function loadLocalUsersFromFile(): void {
-  try {
-    if (typeof fs !== 'undefined' && fs.existsSync && fs.existsSync(USERS_FILE_PATH)) {
-      const content = fs.readFileSync(USERS_FILE_PATH, 'utf-8');
-      if (content.trim()) {
-        const list = JSON.parse(content);
-        if (Array.isArray(list)) {
-          for (const item of list) {
-            if (item.email) {
-              const normEmail = item.email.trim().toLowerCase();
-              const existingRecord = localDevUsers.get(normEmail);
-              localDevUsers.set(normEmail, {
-                user: {
-                  id: item.id || existingRecord?.user.id || `usr_${Date.now()}`,
-                  email: normEmail,
-                  full_name: item.full_name || item.name || existingRecord?.user.full_name || normEmail.split('@')[0],
-                  nickname: item.nickname || existingRecord?.user.nickname || normEmail.split('@')[0],
-                  avatar_url: item.avatar_url || item.avatarUrl || existingRecord?.user.avatar_url,
-                  role: item.role || existingRecord?.user.role || 'player',
-                  primary_sport: item.primary_sport || item.primarySport || existingRecord?.user.primary_sport,
-                  preferred_sports: item.preferred_sports || item.preferredSports || existingRecord?.user.preferred_sports || [],
-                  preferred_format: item.preferred_format || item.preferredFormat || existingRecord?.user.preferred_format,
-                  skill_level: item.skill_level || item.skillLevel || existingRecord?.user.skill_level,
-                  city: item.city || existingRecord?.user.city,
-                  onboarding_completed: item.onboarding_completed !== undefined ? Boolean(item.onboarding_completed) : Boolean(existingRecord?.user.onboarding_completed),
-                  created_at: item.created_at || existingRecord?.user.created_at || new Date().toISOString(),
-                },
-                passwordHash: item.passwordHash || existingRecord?.passwordHash || (item.plainPassword ? crypto.createHash('sha256').update(item.plainPassword).digest('hex') : ''),
-                plainPassword: item.plainPassword || item.password || existingRecord?.plainPassword,
-              });
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[ServerAuth] Error loading users from disk:', err);
+function parsePreferredSports(rawSports: unknown): string[] {
+  if (Array.isArray(rawSports)) {
+    return rawSports.filter((s): s is string => typeof s === 'string' && Boolean(s.trim()));
   }
-}
-
-export function saveLocalUsersToFile(): void {
-  try {
-    if (typeof fs === 'undefined' || !fs.writeFileSync) return;
-    const dir = path.dirname(USERS_FILE_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const arr: any[] = [];
-    for (const record of localDevUsers.values()) {
-      arr.push({
-        id: record.user.id,
-        email: record.user.email,
-        passwordHash: record.passwordHash,
-        plainPassword: record.plainPassword,
-        full_name: record.user.full_name,
-        nickname: record.user.nickname,
-        avatar_url: record.user.avatar_url,
-        role: record.user.role,
-        primary_sport: record.user.primary_sport,
-        preferred_sports: record.user.preferred_sports,
-        preferred_format: record.user.preferred_format,
-        city: record.user.city,
-        skill_level: record.user.skill_level,
-        onboarding_completed: record.user.onboarding_completed,
-        created_at: record.user.created_at,
-        updated_at: new Date().toISOString(),
-      });
-    }
-    fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(arr, null, 2), 'utf-8');
-  } catch (err) {
-    console.warn('[ServerAuth] Error saving users to disk:', err);
-  }
-}
-
-// Pre-seed default test users for development testing if not yet initialized
-const initialPlayerUser: SanitizedUser = {
-  id: 'usr_test_player_01',
-  email: 'test.player@sportsync.ph',
-  full_name: 'Test Player',
-  nickname: 'Tester',
-  role: 'player',
-  primary_sport: 'pickleball',
-  preferred_sports: ['pickleball', 'badminton'],
-  preferred_format: 'doubles',
-  skill_level: 'intermediate',
-  city: 'Naga City',
-  onboarding_completed: true,
-  created_at: new Date().toISOString(),
-};
-
-if (!localDevUsers.has('test.player@sportsync.ph')) {
-  localDevUsers.set('test.player@sportsync.ph', {
-    user: initialPlayerUser,
-    passwordHash: crypto.createHash('sha256').update('password123').digest('hex'),
-    plainPassword: 'password123',
-  });
-}
-
-const initialOwnerUser: SanitizedUser = {
-  id: 'usr_test_owner_01',
-  email: 'owner@sportsync.ph',
-  full_name: 'Venue Partner',
-  nickname: 'Owner',
-  role: 'venue_owner',
-  primary_sport: 'badminton',
-  preferred_sports: ['badminton', 'pickleball'],
-  preferred_format: 'doubles',
-  skill_level: 'advanced',
-  city: 'Naga City',
-  onboarding_completed: true,
-  created_at: new Date().toISOString(),
-};
-
-if (!localDevUsers.has('owner@sportsync.ph')) {
-  localDevUsers.set('owner@sportsync.ph', {
-    user: initialOwnerUser,
-    passwordHash: crypto.createHash('sha256').update('password123').digest('hex'),
-    plainPassword: 'password123',
-  });
-}
-
-// Load any existing persistent users from disk
-loadLocalUsersFromFile();
-
-export async function serverRegister(data: {
-  email: string;
-  password: string;
-  fullName: string;
-  role?: string;
-  city?: string;
-}): Promise<{ user: SanitizedUser; token: string }> {
-  const emailValidation = validateRealEmail(data.email);
-  if (!emailValidation.isValid) {
-    throw new Error(emailValidation.error || 'Please provide a real, valid email address. Fake or disposable accounts are restricted.');
-  }
-  const normalizedEmail = emailValidation.normalizedEmail || data.email.trim().toLowerCase();
-  const isFacilityRole = data.role === 'facility_owner' || data.role === 'faculty' || data.role === 'facility' || data.role === 'faculty_owner' || data.role === 'venue_owner';
-  const assignedRole: UserRole = isFacilityRole ? 'venue_owner' : 'player';
-  const registrationCity = data.city ? data.city.trim() : 'Naga City';
-
-  // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
-  if (!isSupabaseConfigured) {
-    loadLocalUsersFromFile();
-    const existing = localDevUsers.get(normalizedEmail);
-    if (existing) {
-      throw new Error('An account with this email already exists. Please log in instead.');
-    }
-
-    const localId = `usr_local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const sanitized: SanitizedUser = {
-      id: localId,
-      email: normalizedEmail,
-      full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
-      nickname: normalizedEmail.split('@')[0],
-      role: assignedRole,
-      primary_sport: undefined,
-      preferred_sports: [],
-      preferred_format: undefined,
-      skill_level: undefined,
-      city: undefined,
-      onboarding_completed: false,
-      created_at: new Date().toISOString(),
-    };
-
-    localDevUsers.set(normalizedEmail, {
-      user: sanitized,
-      passwordHash: crypto.createHash('sha256').update(data.password.trim()).digest('hex'),
-      plainPassword: data.password.trim(),
-    });
-    saveLocalUsersToFile();
-
-    const token = createSessionToken(sanitized);
-    return { user: sanitized, token };
-  }
-
-  // 2. Production Supabase Registration
-  const admin = createAdminClient();
-  const serverClient = createServerClient();
-  const authClient = admin || serverClient;
-
-  if (!authClient) {
-    throw new Error('Supabase is configured, but failed to initialize an authentication client. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY.');
-  }
-
-  let supaUserId: string | null = null;
-  let supaCreatedAt: string = new Date().toISOString();
-
-  if (admin) {
-    const { data: supaUser, error } = await admin.auth.admin.createUser({
-      email: normalizedEmail,
-      password: data.password.trim(),
-      email_confirm: true,
-      user_metadata: {
-        full_name: data.fullName.trim(),
-        role: assignedRole,
-        city: registrationCity || undefined,
-        onboarding_completed: false,
-      },
-    });
-
-    if (error) {
-      if (error.message.toLowerCase().includes('already') || error.status === 422) {
-        throw new Error('An account with this email already exists. Please log in instead.');
-      }
-      throw new Error(error.message);
-    }
-
-    if (supaUser?.user) {
-      supaUserId = supaUser.user.id;
-      supaCreatedAt = supaUser.user.created_at;
-    }
-  } else if (serverClient) {
+  if (typeof rawSports === 'string' && rawSports.trim()) {
     try {
-      const { data: supaUser, error } = await serverClient.auth.signUp({
-        email: normalizedEmail,
-        password: data.password.trim(),
-        options: {
-          data: {
-            full_name: data.fullName.trim(),
-            role: assignedRole,
-            city: registrationCity || undefined,
-            onboarding_completed: false,
-          },
-        },
-      });
-
-      if (error) {
-        if (error.message.toLowerCase().includes('already') || error.status === 422) {
-          throw new Error('An account with this email already exists. Please log in instead.');
-        }
-
-        const isRateLimit =
-          error.message.toLowerCase().includes('rate limit') ||
-          error.message.toLowerCase().includes('rate_limit') ||
-          error.status === 429;
-
-        if (isRateLimit) {
-          console.warn('[ServerAuth] Supabase email rate limit encountered during signUp for', normalizedEmail, '— using resilient registration fallback.');
-          supaUserId = crypto.randomUUID();
-          supaCreatedAt = new Date().toISOString();
-        } else {
-          throw new Error(error.message);
-        }
-      } else if (supaUser?.user) {
-        supaUserId = supaUser.user.id;
-        supaCreatedAt = supaUser.user.created_at;
-      }
-    } catch (err: any) {
-      if (err.message && err.message.includes('already exists')) {
-        throw err;
-      }
-      const isRateLimit =
-        err.message?.toLowerCase().includes('rate limit') ||
-        err.message?.toLowerCase().includes('rate_limit') ||
-        err.status === 429;
-
-      if (isRateLimit) {
-        console.warn('[ServerAuth] Caught rate limit exception during signUp for', normalizedEmail, '— using resilient registration fallback.');
-        supaUserId = crypto.randomUUID();
-        supaCreatedAt = new Date().toISOString();
-      } else {
-        throw err;
-      }
+      const parsed = JSON.parse(rawSports);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch {
+      return rawSports
+        .replace(/[{}]/g, '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
   }
-
-  if (!supaUserId) {
-    supaUserId = crypto.randomUUID();
-    supaCreatedAt = new Date().toISOString();
-  }
-
-  const dbClient = admin || serverClient;
-  const passwordHash = crypto.createHash('sha256').update(data.password.trim()).digest('hex');
-
-  if (dbClient) {
-    try {
-      const { data: existingUser } = await dbClient
-        .from('users')
-        .select('id')
-        .eq('email', normalizedEmail)
-        .maybeSingle();
-
-      if (existingUser) {
-        await dbClient
-          .from('users')
-          .update({
-            auth_id: supaUserId,
-            full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
-            role: assignedRole,
-            onboarding_completed: false,
-            phone: `pwd_hash:${passwordHash}`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingUser.id);
-      } else {
-        await dbClient.from('users').insert({
-          id: supaUserId,
-          auth_id: supaUserId,
-          email: normalizedEmail,
-          full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
-          role: assignedRole,
-          onboarding_completed: false,
-          primary_sport: null,
-          preferred_sports: [],
-          preferred_format: null,
-          skill_level: null,
-          city: registrationCity || null,
-          phone: `pwd_hash:${passwordHash}`,
-        });
-      }
-    } catch (dbErr) {
-      console.warn('[ServerAuth] public.users upsert warning:', dbErr);
-    }
-  }
-
-  const sanitized: SanitizedUser = {
-    id: supaUserId,
-    email: normalizedEmail,
-    full_name: data.fullName.trim() || normalizedEmail.split('@')[0],
-    nickname: normalizedEmail.split('@')[0],
-    role: assignedRole,
-    primary_sport: undefined,
-    preferred_sports: [],
-    preferred_format: undefined,
-    skill_level: undefined,
-    city: registrationCity || undefined,
-    onboarding_completed: false,
-    created_at: supaCreatedAt,
-  };
-
-  localDevUsers.set(normalizedEmail, {
-    user: sanitized,
-    passwordHash,
-    plainPassword: data.password.trim(),
-  });
-  saveLocalUsersToFile();
-
-  const token = createSessionToken(sanitized);
-  return { user: sanitized, token };
+  return [];
 }
 
 /**
  * Evaluates whether a user profile already exists and has completed setup.
  * Existing users with complete required fields (or explicit completion flag)
- * must proceed directly to their dashboard and never be redirected to setup.
+ * proceed directly to their dashboard.
  */
 export async function isProfileCompleteInDb(
   dbClient: any,
@@ -434,7 +101,6 @@ export async function isProfileCompleteInDb(
   authMetadata: any,
   role?: string
 ): Promise<boolean> {
-  // 1. Explicit onboarding_completed flag on database profile or auth metadata
   if (
     profile?.onboarding_completed === true ||
     profile?.onboarding_completed === 'true' ||
@@ -457,8 +123,8 @@ export async function isProfileCompleteInDb(
   ) {
     if (dbClient) {
       try {
-        const candidateUuids = [profile?.auth_id, profile?.id, authMetadata?.sub, authMetadata?.id]
-          .filter((id): id is string => Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)));
+        const candidateUuids = [profile?.id, profile?.auth_id, authMetadata?.sub, authMetadata?.id]
+          .filter((id): id is string => isValidUuid(id));
 
         if (candidateUuids.length > 0) {
           const query = candidateUuids.map((id) => `owner_id.eq.${id}`).join(',');
@@ -516,11 +182,10 @@ export async function isProfileCompleteInDb(
       }
     }
 
-    // Facility owners without registered venues or explicit onboarding flag must complete setup
     return false;
   }
 
-  // 3. For players (and general profiles), check if required setup fields are complete
+  // 3. For players, check if required setup fields are complete
   const fullName = (profile?.full_name || authMetadata?.full_name || '').trim();
   const isGenericName =
     !fullName ||
@@ -530,26 +195,12 @@ export async function isProfileCompleteInDb(
     fullName.toLowerCase() === 'sportsync player' ||
     fullName.toLowerCase() === 'google player';
 
-  const rawSports = profile?.preferred_sports || authMetadata?.preferred_sports;
-  let parsedSports: string[] = [];
-  if (Array.isArray(rawSports)) {
-    parsedSports = rawSports;
-  } else if (typeof rawSports === 'string' && rawSports.trim()) {
-    try {
-      const parsed = JSON.parse(rawSports);
-      if (Array.isArray(parsed)) parsedSports = parsed;
-    } catch {
-      parsedSports = rawSports.replace(/[{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean);
-    }
-  }
-
+  const parsedSports = parsePreferredSports(profile?.preferred_sports || authMetadata?.preferred_sports);
   const hasSports = parsedSports.length > 0 || Boolean(profile?.primary_sport || authMetadata?.primary_sport);
   const hasCity = Boolean(profile?.city || authMetadata?.city);
   const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
 
-  // If the user has a real name and sports selected, and has city or skill, their profile is complete
   if (!isGenericName && hasSports && (hasCity || hasSkill)) {
-    // If the database row has onboarding_completed as false, automatically heal it to true in the background
     if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
       dbClient
         .from('users')
@@ -560,74 +211,286 @@ export async function isProfileCompleteInDb(
     return true;
   }
 
-  // If the profile is explicitly incomplete, require onboarding
-  if (profile?.onboarding_completed === false && authMetadata?.onboarding_completed === false) {
-    return false;
+  return false;
+}
+
+/**
+ * Ensures a canonical public.users row exists for the given Supabase Auth user,
+ * forcing id = authUserId and auth_id = authUserId for new rows, or linking auth_id
+ * to an existing row and returning its canonical public.users row.
+ */
+async function upsertCanonicalPublicUser(
+  dbClient: any,
+  params: {
+    authUserId: string;
+    email: string;
+    fullName: string;
+    role: UserRole;
+    city?: string | null;
+    avatarUrl?: string | null;
+    onboardingCompleted?: boolean;
+    overwriteOnboarding?: boolean;
+  }
+): Promise<any> {
+  const normalizedEmail = params.email.trim().toLowerCase();
+  const cleanName = params.fullName.trim() || normalizedEmail.split('@')[0];
+  const nickname = cleanName.split(' ')[0] || normalizedEmail.split('@')[0];
+
+  // 1. Look up existing public.users row by id, auth_id, or email
+  let existingRow: any = null;
+  const { data: byAuthOrId } = await dbClient
+    .from('users')
+    .select('*')
+    .or(`id.eq.${params.authUserId},auth_id.eq.${params.authUserId}`)
+    .order('onboarding_completed', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (byAuthOrId) {
+    existingRow = byAuthOrId;
+  } else {
+    const { data: byEmail } = await dbClient
+      .from('users')
+      .select('*')
+      .ilike('email', normalizedEmail)
+      .order('onboarding_completed', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byEmail) {
+      existingRow = byEmail;
+    }
   }
 
-  return false;
+  if (existingRow) {
+    const updateData: Record<string, any> = {
+      auth_id: params.authUserId,
+      updated_at: new Date().toISOString(),
+    };
+    if (cleanName && (!existingRow.full_name || existingRow.full_name === 'Player' || params.overwriteOnboarding)) {
+      updateData.full_name = cleanName;
+      updateData.nickname = existingRow.nickname || nickname;
+    }
+    if (params.avatarUrl && !existingRow.avatar_url) {
+      updateData.avatar_url = params.avatarUrl;
+    }
+    if (params.overwriteOnboarding) {
+      updateData.role = params.role;
+      updateData.onboarding_completed = Boolean(params.onboardingCompleted);
+    }
+    if (typeof existingRow.phone === 'string' && existingRow.phone.startsWith('pwd_hash:')) {
+      updateData.phone = null;
+    }
+
+    const { data: updated, error: updateErr } = await dbClient
+      .from('users')
+      .update(updateData)
+      .eq('id', existingRow.id)
+      .select('*')
+      .maybeSingle();
+
+    if (updateErr) {
+      console.error('[ServerAuth] Failed updating existing public.users row:', updateErr);
+    }
+    return updated || { ...existingRow, ...updateData };
+  }
+
+  // 2. Insert new public.users row with id === authUserId AND auth_id === authUserId
+  const newPayload = {
+    id: params.authUserId,
+    auth_id: params.authUserId,
+    email: normalizedEmail,
+    full_name: cleanName,
+    nickname,
+    avatar_url: params.avatarUrl || null,
+    role: params.role,
+    onboarding_completed: Boolean(params.onboardingCompleted),
+    primary_sport: null,
+    preferred_sports: [],
+    preferred_format: null,
+    skill_level: null,
+    city: params.city || null,
+  };
+
+  const { data: inserted, error: insertErr } = await dbClient
+    .from('users')
+    .upsert(newPayload, { onConflict: 'id' })
+    .select('*')
+    .maybeSingle();
+
+  if (insertErr) {
+    console.error('[ServerAuth] Error inserting canonical public.users row:', insertErr);
+    throw new Error(`Failed to persist user profile in database: ${insertErr.message}`);
+  }
+
+  return inserted || newPayload;
+}
+
+export async function serverRegister(data: {
+  email: string;
+  password: string;
+  fullName: string;
+  role?: string;
+  city?: string;
+}): Promise<{ user: SanitizedUser; token: string }> {
+  const emailValidation = validateRealEmail(data.email);
+  if (!emailValidation.isValid) {
+    throw new Error(emailValidation.error || 'Please provide a real, valid email address. Fake or disposable accounts are restricted.');
+  }
+
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  }
+
+  const normalizedEmail = emailValidation.normalizedEmail || data.email.trim().toLowerCase();
+  const cleanPassword = data.password.trim();
+  const cleanName = data.fullName.trim() || normalizedEmail.split('@')[0];
+  const isFacilityRole =
+    data.role === 'facility_owner' ||
+    data.role === 'faculty' ||
+    data.role === 'facility' ||
+    data.role === 'faculty_owner' ||
+    data.role === 'venue_owner';
+  const assignedRole: UserRole = isFacilityRole ? 'venue_owner' : 'player';
+  const registrationCity = data.city ? data.city.trim() : 'Naga City';
+
+  const admin = createAdminClient();
+  const serverClient = createServerClient();
+
+  if (!admin && !serverClient) {
+    throw new Error('Supabase authentication client could not be initialized. Please check your environment variables.');
+  }
+
+  let supaUserId: string | null = null;
+  let supaCreatedAt: string = new Date().toISOString();
+  let sessionAccessToken: string | undefined = undefined;
+
+  if (admin) {
+    // Primary Path: Use Admin API with SUPABASE_SERVICE_ROLE_KEY to immediately confirm email without SMTP rate limits
+    const { data: supaUser, error } = await admin.auth.admin.createUser({
+      email: normalizedEmail,
+      password: cleanPassword,
+      email_confirm: true,
+      user_metadata: {
+        full_name: cleanName,
+        role: assignedRole,
+        city: registrationCity || undefined,
+        onboarding_completed: false,
+      },
+    });
+
+    if (error) {
+      if (error.message.toLowerCase().includes('already') || error.status === 422) {
+        throw new Error('An account with this email already exists. Please log in instead.');
+      }
+      throw new Error(error.message);
+    }
+
+    if (!supaUser?.user?.id) {
+      throw new Error('Failed to create user in Supabase Auth.');
+    }
+
+    supaUserId = supaUser.user.id;
+    supaCreatedAt = supaUser.user.created_at;
+  } else if (serverClient) {
+    // Fallback Path when SUPABASE_SERVICE_ROLE_KEY is not set: use standard signUp
+    const { data: supaUser, error } = await serverClient.auth.signUp({
+      email: normalizedEmail,
+      password: cleanPassword,
+      options: {
+        data: {
+          full_name: cleanName,
+          role: assignedRole,
+          city: registrationCity || undefined,
+          onboarding_completed: false,
+        },
+      },
+    });
+
+    if (error) {
+      if (error.message.toLowerCase().includes('already') || error.status === 422) {
+        throw new Error('An account with this email already exists. Please log in instead.');
+      }
+      if (error.message.toLowerCase().includes('rate limit') || error.status === 429) {
+        throw new Error(
+          'Supabase email rate limit reached. Please configure SUPABASE_SERVICE_ROLE_KEY in your server environment variables to enable instant email confirmation, or try again later.'
+        );
+      }
+      throw new Error(error.message);
+    }
+
+    if (!supaUser?.user?.id) {
+      throw new Error('Registration failed: no user returned from Supabase.');
+    }
+
+    // In Supabase, if a user already exists and confirm email is enabled, identities array is empty
+    if (Array.isArray(supaUser.user.identities) && supaUser.user.identities.length === 0) {
+      throw new Error('An account with this email already exists. Please log in instead.');
+    }
+
+    if (!supaUser.session && !supaUser.user.email_confirmed_at) {
+      throw new Error(
+        'Account created! Please check your email inbox to confirm your address before logging in (or configure SUPABASE_SERVICE_ROLE_KEY on the server for instant confirmation).'
+      );
+    }
+
+    supaUserId = supaUser.user.id;
+    supaCreatedAt = supaUser.user.created_at;
+    sessionAccessToken = supaUser.session?.access_token;
+  }
+
+  if (!supaUserId) {
+    throw new Error('Registration failed: unable to obtain user ID.');
+  }
+
+  const dbClient = admin || createServerClient(sessionAccessToken) || serverClient;
+  if (!dbClient) {
+    throw new Error('Database client unavailable after registration.');
+  }
+
+  const dbProfile = await upsertCanonicalPublicUser(dbClient, {
+    authUserId: supaUserId,
+    email: normalizedEmail,
+    fullName: cleanName,
+    role: assignedRole,
+    city: registrationCity,
+    onboardingCompleted: false,
+    overwriteOnboarding: true,
+  });
+
+  const canonicalId = dbProfile?.id || supaUserId;
+
+  const sanitized: SanitizedUser = {
+    id: canonicalId,
+    auth_id: supaUserId,
+    email: normalizedEmail,
+    full_name: cleanName,
+    nickname: cleanName.split(' ')[0] || normalizedEmail.split('@')[0],
+    role: assignedRole,
+    primary_sport: undefined,
+    preferred_sports: [],
+    preferred_format: undefined,
+    skill_level: undefined,
+    city: registrationCity || undefined,
+    onboarding_completed: false,
+    created_at: supaCreatedAt,
+  };
+
+  const token = createSessionToken(sanitized);
+  return { user: sanitized, token };
 }
 
 export async function serverLogin(data: {
   email: string;
   password: string;
 }): Promise<{ user: SanitizedUser; token: string }> {
-  loadLocalUsersFromFile();
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  }
+
   const normalizedEmail = data.email.trim().toLowerCase();
   const cleanPassword = (data.password || '').trim();
 
-  // 1. Fallback for Local Development / Offline MVP when Supabase is not configured
-  if (!isSupabaseConfigured) {
-    const record = localDevUsers.get(normalizedEmail);
-    if (record) {
-      const incomingHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
-      const rawHash = crypto.createHash('sha256').update(data.password).digest('hex');
-
-      const isMatch =
-        record.passwordHash === incomingHash ||
-        record.passwordHash === rawHash ||
-        record.plainPassword === cleanPassword ||
-        record.plainPassword === data.password ||
-        (record.plainPassword && record.plainPassword.toLowerCase() === cleanPassword.toLowerCase()) ||
-        cleanPassword === 'password123';
-
-      if (!isMatch) {
-        throw new Error('Invalid email or password. Please verify your credentials (or use demo password "password123").');
-      }
-      const token = createSessionToken(record.user);
-      return { user: record.user, token };
-    }
-
-    // Auto-provision local developer account for testing if not yet explicitly registered
-    const localId = `usr_local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const isOwner = normalizedEmail.includes('owner') || normalizedEmail.includes('venue');
-    const autoUser: SanitizedUser = {
-      id: localId,
-      email: normalizedEmail,
-      full_name: normalizedEmail.split('@')[0],
-      nickname: normalizedEmail.split('@')[0],
-      role: isOwner ? 'venue_owner' : 'player',
-      primary_sport: undefined,
-      preferred_sports: [],
-      preferred_format: undefined,
-      skill_level: undefined,
-      city: undefined,
-      onboarding_completed: false,
-      created_at: new Date().toISOString(),
-    };
-
-    localDevUsers.set(normalizedEmail, {
-      user: autoUser,
-      passwordHash: crypto.createHash('sha256').update(cleanPassword).digest('hex'),
-      plainPassword: cleanPassword,
-    });
-    saveLocalUsersToFile();
-
-    const token = createSessionToken(autoUser);
-    return { user: autoUser, token };
-  }
-
-  // 2. Production Supabase Login
   const supabase = createServerClient();
   const admin = createAdminClient();
   const authClient = supabase || admin;
@@ -636,32 +499,13 @@ export async function serverLogin(data: {
     throw new Error('Supabase authentication client is not available.');
   }
 
-  // Resilient check: check local in-memory registry first (handles immediate post-signup logins)
-  const localRecord = localDevUsers.get(normalizedEmail);
-  if (localRecord) {
-    const incomingHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
-    const rawHash = crypto.createHash('sha256').update(data.password).digest('hex');
-    const isMatch =
-      localRecord.passwordHash === incomingHash ||
-      localRecord.passwordHash === rawHash ||
-      localRecord.plainPassword === cleanPassword ||
-      localRecord.plainPassword === data.password ||
-      (localRecord.plainPassword && localRecord.plainPassword.toLowerCase() === cleanPassword.toLowerCase()) ||
-      cleanPassword === 'password123';
-
-    if (isMatch) {
-      const token = createSessionToken(localRecord.user);
-      return { user: localRecord.user, token };
-    }
-  }
-
-  // Attempt login with trimmed password first
+  // 1. Authenticate against Supabase Auth (signInWithPassword)
   let { data: supaData, error } = await authClient.auth.signInWithPassword({
     email: normalizedEmail,
     password: cleanPassword,
   });
 
-  // If failed with trimmed password, attempt with raw password in case trailing space was intended
+  // Retry once with untrimmed password if trailing whitespace was intentional
   if (error && cleanPassword !== data.password) {
     const rawRetry = await authClient.auth.signInWithPassword({
       email: normalizedEmail,
@@ -673,48 +517,41 @@ export async function serverLogin(data: {
     }
   }
 
-  // Detect if error is due to unconfirmed email
+  // 2. If signInWithPassword failed due to "Email not confirmed", auto-confirm via Admin API and retry once
   const isUnconfirmedEmail = Boolean(
     error &&
-    (
-      error.message?.toLowerCase().includes('confirm') ||
-      error.message?.toLowerCase().includes('not confirmed') ||
-      (error as any).code === 'email_not_confirmed'
-    )
+      (error.message?.toLowerCase().includes('email not confirmed') ||
+        error.message?.toLowerCase().includes('not confirmed') ||
+        (error as any).code === 'email_not_confirmed')
   );
 
-  // Handle unconfirmed email automatically
-  // Note: Supabase GoTrue validates password BEFORE checking email confirmation.
-  // Therefore, receiving "Email not confirmed" proves that the password is valid and verified.
   if (isUnconfirmedEmail) {
     if (admin) {
       try {
-        let targetUserId: string | null = null;
+        let targetAuthUserId: string | null = null;
 
-        // Try getting user ID from public.users table
         const { data: dbUserRow } = await admin
           .from('users')
           .select('auth_id, id')
           .ilike('email', normalizedEmail)
           .maybeSingle();
 
-        if (dbUserRow?.auth_id) {
-          targetUserId = dbUserRow.auth_id;
-        } else if (dbUserRow?.id) {
-          targetUserId = dbUserRow.id;
+        if (dbUserRow && isValidUuid(dbUserRow.auth_id)) {
+          targetAuthUserId = dbUserRow.auth_id;
+        } else if (dbUserRow && isValidUuid(dbUserRow.id)) {
+          targetAuthUserId = dbUserRow.id;
         }
 
-        // If not found in public.users, list users from auth admin (with high perPage)
-        if (!targetUserId) {
+        if (!targetAuthUserId) {
           const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
           const found = userList?.users?.find((u) => u.email?.toLowerCase() === normalizedEmail);
-          if (found) {
-            targetUserId = found.id;
+          if (found?.id) {
+            targetAuthUserId = found.id;
           }
         }
 
-        if (targetUserId) {
-          await admin.auth.admin.updateUserById(targetUserId, { email_confirm: true });
+        if (targetAuthUserId) {
+          await admin.auth.admin.updateUserById(targetAuthUserId, { email_confirm: true });
           let retry = await authClient.auth.signInWithPassword({
             email: normalizedEmail,
             password: cleanPassword,
@@ -733,298 +570,37 @@ export async function serverLogin(data: {
       } catch (adminErr) {
         console.warn('[ServerAuth] Admin auto-confirm error:', adminErr);
       }
-    }
-
-    // Resilient Graceful Login:
-    // If admin is not configured or auto-confirm could not complete Supabase session,
-    // Supabase GoTrue has ALREADY verified the credentials are valid.
-    // Gracefully authenticate the user so they are never blocked by unconfirmed email.
-    if (error || !supaData?.user) {
-      console.info('[ServerAuth] Gracefully authenticating user with verified credentials (email unconfirmed):', normalizedEmail);
-
-      const dbClient = admin || supabase;
-      let dbUser: any = null;
-      if (dbClient) {
-        try {
-          const { data } = await dbClient
-            .from('users')
-            .select('*')
-            .ilike('email', normalizedEmail)
-            .order('onboarding_completed', { ascending: false })
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          dbUser = data;
-        } catch (dbErr) {
-          console.warn('[ServerAuth] Error querying database for unconfirmed email login:', dbErr);
-        }
-      }
-
-      const inputHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
-      const isOwner =
-        dbUser?.role === 'venue_owner' ||
-        dbUser?.role === 'organizer' ||
-        dbUser?.role === 'facility_owner' ||
-        normalizedEmail.includes('owner') ||
-        normalizedEmail.includes('facility') ||
-        normalizedEmail.includes('venue');
-
-      const resolvedRole: UserRole = isOwner
-        ? 'venue_owner'
-        : ((dbUser?.role as UserRole) || 'player');
-
-      const resolvedOnboarding = isOwner || Boolean(dbUser?.onboarding_completed);
-      const fallbackUserId = dbUser?.auth_id || dbUser?.id || crypto.randomUUID();
-
-      const userObj: SanitizedUser = {
-        id: fallbackUserId,
-        email: dbUser?.email || normalizedEmail,
-        full_name: dbUser?.full_name || normalizedEmail.split('@')[0],
-        nickname: dbUser?.nickname || dbUser?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
-        avatar_url: dbUser?.avatar_url,
-        role: resolvedRole,
-        primary_sport: dbUser?.primary_sport || (isOwner ? 'pickleball' : undefined),
-        preferred_sports: dbUser?.preferred_sports || (isOwner ? ['pickleball', 'badminton'] : []),
-        preferred_format: dbUser?.preferred_format || 'doubles',
-        skill_level: dbUser?.skill_level || 'intermediate',
-        city: dbUser?.city || 'Naga City',
-        onboarding_completed: resolvedOnboarding,
-        created_at: dbUser?.created_at || new Date().toISOString(),
-      };
-
-      if (dbClient && !dbUser) {
-        try {
-          await dbClient.from('users').insert({
-            id: fallbackUserId,
-            auth_id: fallbackUserId,
-            email: normalizedEmail,
-            full_name: userObj.full_name,
-            role: userObj.role,
-            onboarding_completed: userObj.onboarding_completed,
-            city: userObj.city,
-            created_at: userObj.created_at,
-          });
-        } catch (insertErr) {
-          console.warn('[ServerAuth] Error auto-creating public.users row for unconfirmed user:', insertErr);
-        }
-      }
-
-      localDevUsers.set(normalizedEmail, {
-        user: userObj,
-        passwordHash: inputHash,
-        plainPassword: cleanPassword,
-      });
-
-      const token = createSessionToken(userObj);
-      return { user: userObj, token };
-    }
-  }
-
-  if (error || !supaData?.user) {
-    // Database fallback lookup for users created during Supabase SMTP rate limits or without confirmation
-    const dbClient = admin || supabase;
-    if (dbClient) {
-      try {
-        const { data: dbUser } = await dbClient
-          .from('users')
-          .select('*')
-          .ilike('email', normalizedEmail)
-          .maybeSingle();
-
-        if (dbUser) {
-          const inputHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
-          let isHashMatch =
-            (dbUser.phone?.startsWith('pwd_hash:') && dbUser.phone === `pwd_hash:${inputHash}`) ||
-            cleanPassword === 'password123';
-
-          if (!isHashMatch && admin && (dbUser.auth_id || dbUser.id)) {
-            try {
-              const { data: adminUserData } = await admin.auth.admin.getUserById(dbUser.auth_id || dbUser.id);
-              if (adminUserData?.user?.user_metadata?.pwd_hash) {
-                isHashMatch = adminUserData.user.user_metadata.pwd_hash === inputHash;
-              }
-            } catch {}
-          }
-
-          // If phone was overwritten by contact phone or uninitialized, and password is valid (>= 6 chars), authenticate successfully
-          if (!isHashMatch && cleanPassword.length >= 6 && (!dbUser.phone || !dbUser.phone.startsWith('pwd_hash:'))) {
-            isHashMatch = true;
-          }
-
-          if (isHashMatch) {
-            const isOwner =
-              dbUser.role === 'venue_owner' ||
-              dbUser.role === 'organizer' ||
-              dbUser.role === 'facility_owner' ||
-              normalizedEmail.includes('owner') ||
-              normalizedEmail.includes('facility') ||
-              normalizedEmail.includes('venue');
-
-            const resolvedRole: UserRole = isOwner
-              ? 'venue_owner'
-              : ((dbUser.role as UserRole) || 'player');
-
-            // Existing facility owners logging in are always marked as onboarded to avoid setup loops
-            const resolvedOnboarding = isOwner || Boolean(dbUser.onboarding_completed);
-
-            const userObj: SanitizedUser = {
-              id: dbUser.auth_id || dbUser.id,
-              email: dbUser.email,
-              full_name: dbUser.full_name || normalizedEmail.split('@')[0],
-              nickname: dbUser.nickname || dbUser.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
-              avatar_url: dbUser.avatar_url,
-              role: resolvedRole,
-              primary_sport: dbUser.primary_sport || (isOwner ? 'pickleball' : undefined),
-              preferred_sports: dbUser.preferred_sports || (isOwner ? ['pickleball', 'badminton'] : []),
-              preferred_format: dbUser.preferred_format || 'doubles',
-              skill_level: dbUser.skill_level || 'intermediate',
-              city: dbUser.city || 'Naga City',
-              onboarding_completed: resolvedOnboarding,
-              created_at: dbUser.created_at || new Date().toISOString(),
-            };
-
-            localDevUsers.set(normalizedEmail, {
-              user: userObj,
-              passwordHash: inputHash,
-              plainPassword: cleanPassword,
-            });
-
-            const token = createSessionToken(userObj);
-            return { user: userObj, token };
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[ServerAuth] Fallback database login lookup warning:', dbErr);
-      }
-    }
-
-    const errMsg = error?.message || '';
-    if (errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('rate_limit')) {
+    } else {
       throw new Error(
-        'Supabase email service rate limit reached. Please use "Sign up with Google" or try logging in again in a few minutes.'
+        'Your email address has not been confirmed yet. Please check your inbox for the confirmation link (or set SUPABASE_SERVICE_ROLE_KEY in your server environment).'
       );
     }
-    if (errMsg.toLowerCase().includes('confirm') || errMsg.toLowerCase().includes('not confirmed')) {
-      // Gracefully authenticate unconfirmed emails rather than throwing a blocking error
-      const isOwner =
-        normalizedEmail.includes('owner') ||
-        normalizedEmail.includes('facility') ||
-        normalizedEmail.includes('venue');
-      const resolvedRole: UserRole = isOwner ? 'venue_owner' : 'player';
-      const fallbackUserId = crypto.randomUUID();
-
-      const userObj: SanitizedUser = {
-        id: fallbackUserId,
-        email: normalizedEmail,
-        full_name: normalizedEmail.split('@')[0],
-        nickname: normalizedEmail.split('@')[0],
-        role: resolvedRole,
-        primary_sport: isOwner ? 'pickleball' : undefined,
-        preferred_sports: isOwner ? ['pickleball'] : [],
-        preferred_format: 'doubles',
-        skill_level: 'intermediate',
-        city: 'Naga City',
-        onboarding_completed: isOwner,
-        created_at: new Date().toISOString(),
-      };
-
-      localDevUsers.set(normalizedEmail, {
-        user: userObj,
-        passwordHash: crypto.createHash('sha256').update(cleanPassword).digest('hex'),
-        plainPassword: cleanPassword,
-      });
-
-      const token = createSessionToken(userObj);
-      return { user: userObj, token };
-    }
-    if (
-      errMsg.toLowerCase().includes('invalid login credentials') ||
-      errMsg.toLowerCase().includes('invalid email or password')
-    ) {
-      throw new Error('Invalid email or password. Please verify your credentials.');
-    }
-    throw new Error(errMsg || 'Invalid email or password. Please verify your credentials.');
   }
 
-  const userMeta = supaData.user.user_metadata || {};
+  // 3. If credentials are wrong or authentication failed, return a clean 401 error
+  if (error || !supaData?.user) {
+    throw new Error('Invalid email or password. Please verify your credentials.');
+  }
 
-  // Retrieve database profile from public.users table using the authenticated user's actual Supabase user ID (auth_id)
+  const authUser = supaData.user;
+  const userMeta = authUser.user_metadata || {};
   const authenticatedServerClient = createServerClient(supaData.session?.access_token);
   const dbClient = admin || authenticatedServerClient || supabase;
+
   let dbProfile: any = null;
   if (dbClient) {
-    try {
-      // 1. Primary lookup: Authenticated user's actual Supabase user ID (auth_id)
-      let { data: profile } = await dbClient
-        .from('users')
-        .select('*')
-        .eq('auth_id', supaData.user.id)
-        .order('onboarding_completed', { ascending: false })
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // 2. Secondary lookup: public.users.id matching the auth user ID
-      if (!profile) {
-        const { data: profileById } = await dbClient
-          .from('users')
-          .select('*')
-          .eq('id', supaData.user.id)
-          .order('onboarding_completed', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        profile = profileById;
-      }
-
-      // 3. Fallback: match by email if auth_id was not yet linked
-      if (!profile && normalizedEmail) {
-        const { data: fallbackProfile } = await dbClient
-          .from('users')
-          .select('*')
-          .ilike('email', normalizedEmail)
-          .order('onboarding_completed', { ascending: false })
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        profile = fallbackProfile;
-      }
-      dbProfile = profile;
-
-      // If found by email/id but auth_id is not yet linked, link it now WITHOUT altering onboarding status
-      if (dbProfile && (!dbProfile.auth_id || dbProfile.auth_id !== supaData.user.id)) {
-        await dbClient
-          .from('users')
-          .update({
-            auth_id: supaData.user.id,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', dbProfile.id);
-        dbProfile.auth_id = supaData.user.id;
-      } else if (!dbProfile) {
-        // Auto-provision public.users row ONLY if no profile exists anywhere in the database
-        const initialOnboardingCompleted = Boolean(userMeta?.onboarding_completed === true);
-        const newProfile = {
-          auth_id: supaData.user.id,
-          email: normalizedEmail,
-          full_name: userMeta?.full_name || normalizedEmail.split('@')[0],
-          role: (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
-          primary_sport: null,
-          preferred_sports: [],
-          preferred_format: null,
-          skill_level: null,
-          city: null,
-          onboarding_completed: initialOnboardingCompleted,
-        };
-        await dbClient.from('users').insert(newProfile);
-        dbProfile = newProfile;
-      }
-    } catch (dbErr) {
-      console.warn('[ServerAuth] Error loading profile from Supabase:', dbErr);
-    }
+    dbProfile = await upsertCanonicalPublicUser(dbClient, {
+      authUserId: authUser.id,
+      email: authUser.email || normalizedEmail,
+      fullName: userMeta?.full_name || normalizedEmail.split('@')[0],
+      role: (userMeta?.role === 'venue_owner' || userMeta?.role === 'facility_owner' ? 'venue_owner' : 'player') as UserRole,
+      city: userMeta?.city || null,
+      avatarUrl: userMeta?.avatar_url || null,
+      onboardingCompleted: Boolean(userMeta?.onboarding_completed === true),
+      overwriteOnboarding: false,
+    });
   }
 
-  // Check whether the profile already exists and whether required setup fields are complete.
-  // Existing users with completed profiles proceed directly to their dashboard.
   const resolvedOnboardingCompleted = await isProfileCompleteInDb(
     dbClient,
     dbProfile,
@@ -1032,25 +608,16 @@ export async function serverLogin(data: {
     dbProfile?.role || userMeta?.role
   );
 
-  const rawDbSports = dbProfile?.preferred_sports || userMeta?.preferred_sports;
-  let parsedDbSports: string[] = [];
-  if (Array.isArray(rawDbSports)) {
-    parsedDbSports = rawDbSports;
-  } else if (typeof rawDbSports === 'string' && rawDbSports.trim()) {
-    try {
-      const p = JSON.parse(rawDbSports);
-      if (Array.isArray(p)) parsedDbSports = p;
-    } catch {
-      parsedDbSports = rawDbSports.replace(/[{}]/g, '').split(',').map((s: string) => s.trim()).filter(Boolean);
-    }
-  }
+  const parsedDbSports = parsePreferredSports(dbProfile?.preferred_sports || userMeta?.preferred_sports);
+  const canonicalUserId = dbProfile?.id || authUser.id;
 
   const sanitized: SanitizedUser = {
-    id: supaData.user.id,
-    email: supaData.user.email || normalizedEmail,
+    id: canonicalUserId,
+    auth_id: authUser.id,
+    email: authUser.email || normalizedEmail,
     full_name: dbProfile?.full_name || userMeta?.full_name || normalizedEmail.split('@')[0],
     nickname: dbProfile?.nickname || userMeta?.full_name?.split(' ')[0] || normalizedEmail.split('@')[0],
-    avatar_url: dbProfile?.avatar_url,
+    avatar_url: dbProfile?.avatar_url || userMeta?.avatar_url,
     role: (dbProfile?.role || (userMeta?.role === 'venue_owner' ? 'venue_owner' : 'player')) as UserRole,
     primary_sport: dbProfile?.primary_sport || userMeta?.primary_sport || undefined,
     preferred_sports: parsedDbSports.length > 0 ? parsedDbSports : (dbProfile?.primary_sport ? [dbProfile.primary_sport] : []),
@@ -1058,7 +625,7 @@ export async function serverLogin(data: {
     skill_level: dbProfile?.skill_level || userMeta?.skill_level || undefined,
     city: dbProfile?.city || userMeta?.city || undefined,
     onboarding_completed: resolvedOnboardingCompleted,
-    created_at: supaData.user.created_at,
+    created_at: dbProfile?.created_at || authUser.created_at,
   };
 
   const token = createSessionToken(sanitized);
@@ -1066,152 +633,98 @@ export async function serverLogin(data: {
 }
 
 export async function serverGetUser(userId: string): Promise<SanitizedUser | null> {
-  loadLocalUsersFromFile();
-  for (const record of localDevUsers.values()) {
-    if (
-      record.user.id === userId ||
-      record.user.email.toLowerCase() === userId.toLowerCase() ||
-      (record.user as any).auth_id === userId
-    ) {
-      return record.user;
-    }
-  }
-  if (userId === 'usr_test_player_01') {
-    return initialPlayerUser;
-  }
-  if (userId === 'usr_test_owner_01') {
-    return initialOwnerUser;
-  }
-
-  if (!isSupabaseConfigured) {
+  if (!isSupabaseConfigured || !userId) {
     return null;
   }
 
   try {
     const db = createAdminClient() || createServerClient();
-    if (db) {
-      // 1. Retrieve by actual Supabase user ID (auth_id)
-      let { data: supaUser } = await db
+    if (!db) return null;
+
+    let supaUser: any = null;
+
+    if (isValidUuid(userId)) {
+      // 1. Check by canonical public.users.id or auth_id
+      const { data } = await db
         .from('users')
         .select('*')
-        .eq('auth_id', userId)
+        .or(`id.eq.${userId},auth_id.eq.${userId}`)
         .order('onboarding_completed', { ascending: false })
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      supaUser = data;
+    } else if (userId.includes('@')) {
+      const { data: byEmail } = await db
+        .from('users')
+        .select('*')
+        .ilike('email', userId.trim().toLowerCase())
+        .order('onboarding_completed', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      supaUser = byEmail;
+    }
 
-      // 2. Fallback: check if public.users.id equals the userId
-      if (!supaUser) {
-        const { data: userById } = await db
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .order('onboarding_completed', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        supaUser = userById;
-      }
+    const admin = createAdminClient();
+    let authMetadata: any = null;
+    const targetAuthId = supaUser?.auth_id || (isValidUuid(userId) ? userId : null);
 
-      // 3. Fallback: check by email if passed or if available
-      if (!supaUser && userId.includes('@')) {
-        const { data: byEmail } = await db
-          .from('users')
-          .select('*')
-          .ilike('email', userId.trim().toLowerCase())
-          .order('onboarding_completed', { ascending: false })
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        supaUser = byEmail;
-      }
-
-      const admin = createAdminClient();
-      let authMetadata: any = null;
-      if (admin) {
-        try {
-          const { data: authData } = await admin.auth.admin.getUserById(userId);
-          authMetadata = authData?.user?.user_metadata || null;
-          if (!supaUser && authData?.user?.email) {
-            const { data: byAuthEmail } = await db
-              .from('users')
-              .select('*')
-              .ilike('email', authData.user.email.trim().toLowerCase())
-              .order('onboarding_completed', { ascending: false })
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            if (byAuthEmail) {
-              supaUser = byAuthEmail;
-              db.from('users').update({ auth_id: userId, updated_at: new Date().toISOString() }).eq('id', byAuthEmail.id).then(() => {}, () => {});
-            }
-          }
-        } catch {}
-      }
-
-      if (supaUser) {
-        const primarySport = authMetadata?.primary_sport || supaUser.primary_sport || undefined;
-        const preferredSports = (authMetadata?.preferred_sports && authMetadata.preferred_sports.length > 0)
-          ? authMetadata.preferred_sports
-          : (supaUser.preferred_sports || []);
-        const city = authMetadata?.city || supaUser.city || undefined;
-        const skillLevel = authMetadata?.skill_level || supaUser.skill_level || undefined;
-
-        const isCompleted = await isProfileCompleteInDb(
-          db,
-          supaUser,
-          authMetadata,
-          supaUser.role
-        );
-
-        return {
-          id: supaUser.auth_id || supaUser.id,
-          email: supaUser.email,
-          full_name: authMetadata?.full_name || supaUser.full_name || supaUser.email.split('@')[0],
-          nickname: authMetadata?.nickname || supaUser.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
-          avatar_url: authMetadata?.avatar_url || supaUser.avatar_url,
-          role: supaUser.role as UserRole,
-          primary_sport: primarySport,
-          preferred_sports: preferredSports,
-          preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || undefined,
-          skill_level: skillLevel,
-          city: city,
-          onboarding_completed: isCompleted,
-          created_at: supaUser.created_at,
-        };
-      }
-
-      if (authMetadata) {
-        return {
-          id: userId,
-          email: authMetadata.email || '',
-          full_name: authMetadata.full_name || 'Player',
-          nickname: authMetadata.nickname || authMetadata.full_name?.split(' ')[0] || 'Player',
-          avatar_url: authMetadata.avatar_url,
-          role: (authMetadata.role as UserRole) || 'player',
-          primary_sport: authMetadata.primary_sport || undefined,
-          preferred_sports: authMetadata.preferred_sports || [],
-          preferred_format: authMetadata.preferred_format || undefined,
-          skill_level: authMetadata.skill_level || undefined,
-          city: authMetadata.city || undefined,
-          onboarding_completed: Boolean(authMetadata.onboarding_completed === true),
-          created_at: new Date().toISOString(),
-        };
-      }
-
-      for (const record of localDevUsers.values()) {
-        if (record.user.id === userId || record.user.email === userId) {
-          return record.user;
+    if (admin && targetAuthId) {
+      try {
+        const { data: authData } = await admin.auth.admin.getUserById(targetAuthId);
+        authMetadata = authData?.user?.user_metadata || null;
+        if (!supaUser && authData?.user) {
+          supaUser = await upsertCanonicalPublicUser(db, {
+            authUserId: authData.user.id,
+            email: authData.user.email || '',
+            fullName: authMetadata?.full_name || authData.user.email?.split('@')[0] || 'Player',
+            role: (authMetadata?.role === 'venue_owner' ? 'venue_owner' : 'player') as UserRole,
+            city: authMetadata?.city || null,
+            avatarUrl: authMetadata?.avatar_url || null,
+            onboardingCompleted: Boolean(authMetadata?.onboarding_completed === true),
+            overwriteOnboarding: false,
+          });
         }
-      }
+      } catch {}
+    }
+
+    if (supaUser) {
+      const primarySport = supaUser.primary_sport || authMetadata?.primary_sport || undefined;
+      const parsedSports = parsePreferredSports(
+        supaUser.preferred_sports && supaUser.preferred_sports.length > 0
+          ? supaUser.preferred_sports
+          : authMetadata?.preferred_sports
+      );
+      const city = supaUser.city || authMetadata?.city || undefined;
+      const skillLevel = supaUser.skill_level || authMetadata?.skill_level || undefined;
+
+      const isCompleted = await isProfileCompleteInDb(
+        db,
+        supaUser,
+        authMetadata,
+        supaUser.role
+      );
+
+      return {
+        id: supaUser.id,
+        auth_id: supaUser.auth_id || supaUser.id,
+        email: supaUser.email,
+        full_name: supaUser.full_name || authMetadata?.full_name || supaUser.email.split('@')[0],
+        nickname: supaUser.nickname || authMetadata?.nickname || supaUser.full_name?.split(' ')[0] || supaUser.email.split('@')[0],
+        avatar_url: supaUser.avatar_url || authMetadata?.avatar_url,
+        role: supaUser.role as UserRole,
+        primary_sport: primarySport,
+        preferred_sports: parsedSports,
+        preferred_format: supaUser.preferred_format || authMetadata?.preferred_format || undefined,
+        skill_level: skillLevel,
+        city,
+        onboarding_completed: isCompleted,
+        created_at: supaUser.created_at,
+      };
     }
   } catch (err) {
     console.warn('[ServerAuth] Supabase lookup error in serverGetUser:', err);
-  }
-
-  for (const record of localDevUsers.values()) {
-    if (record.user.id === userId || record.user.email === userId) {
-      return record.user;
-    }
   }
 
   return null;
@@ -1240,6 +753,10 @@ export async function serverUpdateUserProfile(
     onboarding_completed?: boolean;
   }
 ): Promise<SanitizedUser | null> {
+  if (!isSupabaseConfigured || !userId) {
+    return null;
+  }
+
   const resolvedFullName = data.fullName || data.full_name;
   const resolvedNickname = data.nickname;
   const resolvedAvatarUrl = data.avatarUrl || data.avatar_url;
@@ -1250,205 +767,135 @@ export async function serverUpdateUserProfile(
   const resolvedSkillLevel = data.skillLevel || data.skill_level;
   const rawOnboardingCompleted = data.onboardingCompleted ?? data.onboarding_completed;
 
-  loadLocalUsersFromFile();
-  for (const [email, record] of localDevUsers.entries()) {
-    if (
-      record.user.id === userId ||
-      record.user.email.toLowerCase() === userId.toLowerCase() ||
-      (record.user as any).auth_id === userId
-    ) {
-      const updated: SanitizedUser = {
-        ...record.user,
-        full_name: resolvedFullName || record.user.full_name,
-        nickname: resolvedNickname || record.user.nickname,
-        avatar_url: resolvedAvatarUrl || record.user.avatar_url,
-        role: (data.role as UserRole) || record.user.role,
-        primary_sport: resolvedPrimarySport || record.user.primary_sport,
-        preferred_sports: resolvedPreferredSports || record.user.preferred_sports,
-        preferred_format: resolvedPreferredFormat || record.user.preferred_format,
-        city: resolvedCity || record.user.city,
-        skill_level: resolvedSkillLevel || record.user.skill_level,
-        onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : record.user.onboarding_completed,
-      };
-      localDevUsers.set(email, { ...record, user: updated });
-      saveLocalUsersToFile();
-      if (!isSupabaseConfigured) {
-        return updated;
-      }
-    }
-  }
-
-  if (!isSupabaseConfigured) {
-    const dummyUser: SanitizedUser = {
-      id: userId,
-      email: userId.includes('@') ? userId.toLowerCase() : `${userId}@sportsync.ph`,
-      full_name: resolvedFullName || 'Player',
-      nickname: resolvedNickname || 'Player',
-      avatar_url: resolvedAvatarUrl,
-      role: (data.role as UserRole) || 'player',
-      primary_sport: resolvedPrimarySport,
-      preferred_sports: resolvedPreferredSports || [],
-      preferred_format: resolvedPreferredFormat || 'doubles',
-      skill_level: resolvedSkillLevel,
-      city: resolvedCity,
-      onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : false,
-      created_at: new Date().toISOString(),
-    };
-    localDevUsers.set(dummyUser.email, {
-      user: dummyUser,
-      passwordHash: '',
-    });
-    saveLocalUsersToFile();
-    return dummyUser;
-  }
-
   try {
     const db = createAdminClient() || createServerClient();
-    if (db) {
-      const updatePayload: Record<string, any> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (rawOnboardingCompleted !== undefined) updatePayload.onboarding_completed = rawOnboardingCompleted;
-      if (data.role) updatePayload.role = data.role;
-      if (data.phone) updatePayload.phone = data.phone;
-      if (resolvedFullName) updatePayload.full_name = resolvedFullName;
-      if (resolvedNickname) updatePayload.nickname = resolvedNickname;
-      if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
-      if (resolvedPrimarySport) updatePayload.primary_sport = resolvedPrimarySport;
-      if (resolvedPreferredSports) updatePayload.preferred_sports = resolvedPreferredSports;
-      if (resolvedPreferredFormat) updatePayload.preferred_format = resolvedPreferredFormat;
-      if (resolvedCity !== undefined) updatePayload.city = resolvedCity;
-      if (resolvedSkillLevel) updatePayload.skill_level = resolvedSkillLevel;
+    if (!db) return null;
 
-      // 1. Update Supabase Auth user_metadata (JSONB, no enum restrictions)
-      const admin = createAdminClient();
-      if (admin) {
-        try {
-          const metaUpdate: Record<string, any> = {};
-          if (resolvedFullName !== undefined) metaUpdate.full_name = resolvedFullName;
-          if (resolvedNickname !== undefined) metaUpdate.nickname = resolvedNickname;
-          if (resolvedAvatarUrl !== undefined) metaUpdate.avatar_url = resolvedAvatarUrl;
-          if (data.role !== undefined) metaUpdate.role = data.role;
-          if (data.phone !== undefined) metaUpdate.phone = data.phone;
-          if (resolvedPrimarySport !== undefined) metaUpdate.primary_sport = resolvedPrimarySport;
-          if (resolvedPreferredSports !== undefined) metaUpdate.preferred_sports = resolvedPreferredSports;
-          if (resolvedPreferredFormat !== undefined) metaUpdate.preferred_format = resolvedPreferredFormat;
-          if (resolvedCity !== undefined) metaUpdate.city = resolvedCity;
-          if (resolvedSkillLevel !== undefined) metaUpdate.skill_level = resolvedSkillLevel;
-          if (rawOnboardingCompleted !== undefined) {
-            metaUpdate.onboarding_completed = rawOnboardingCompleted;
-            metaUpdate.has_completed_onboarding = rawOnboardingCompleted;
-          }
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (rawOnboardingCompleted !== undefined) updatePayload.onboarding_completed = rawOnboardingCompleted;
+    if (data.role) updatePayload.role = data.role;
+    if (data.phone) updatePayload.phone = data.phone;
+    if (resolvedFullName) updatePayload.full_name = resolvedFullName;
+    if (resolvedNickname) updatePayload.nickname = resolvedNickname;
+    if (resolvedAvatarUrl) updatePayload.avatar_url = resolvedAvatarUrl;
+    if (resolvedPrimarySport) updatePayload.primary_sport = resolvedPrimarySport;
+    if (resolvedPreferredSports) updatePayload.preferred_sports = resolvedPreferredSports;
+    if (resolvedPreferredFormat) updatePayload.preferred_format = resolvedPreferredFormat;
+    if (resolvedCity !== undefined) updatePayload.city = resolvedCity;
+    if (resolvedSkillLevel) updatePayload.skill_level = resolvedSkillLevel;
 
-          if (Object.keys(metaUpdate).length > 0) {
-            await admin.auth.admin.updateUserById(userId, {
-              user_metadata: metaUpdate,
-            });
-          }
-        } catch (metaErr) {
-          console.warn('[ServerAuth] user_metadata update notice:', metaErr);
+    // 1. Update Supabase Auth user_metadata if admin client is available
+    const admin = createAdminClient();
+    if (admin && isValidUuid(userId)) {
+      try {
+        const metaUpdate: Record<string, any> = {};
+        if (resolvedFullName !== undefined) metaUpdate.full_name = resolvedFullName;
+        if (resolvedNickname !== undefined) metaUpdate.nickname = resolvedNickname;
+        if (resolvedAvatarUrl !== undefined) metaUpdate.avatar_url = resolvedAvatarUrl;
+        if (data.role !== undefined) metaUpdate.role = data.role;
+        if (data.phone !== undefined) metaUpdate.phone = data.phone;
+        if (resolvedPrimarySport !== undefined) metaUpdate.primary_sport = resolvedPrimarySport;
+        if (resolvedPreferredSports !== undefined) metaUpdate.preferred_sports = resolvedPreferredSports;
+        if (resolvedPreferredFormat !== undefined) metaUpdate.preferred_format = resolvedPreferredFormat;
+        if (resolvedCity !== undefined) metaUpdate.city = resolvedCity;
+        if (resolvedSkillLevel !== undefined) metaUpdate.skill_level = resolvedSkillLevel;
+        if (rawOnboardingCompleted !== undefined) {
+          metaUpdate.onboarding_completed = rawOnboardingCompleted;
+          metaUpdate.has_completed_onboarding = rawOnboardingCompleted;
         }
-      }
 
-      // 2. Update public.users table (target auth_id first, then id)
-      let { data: updatedUser, error } = await db
+        if (Object.keys(metaUpdate).length > 0) {
+          await admin.auth.admin.updateUserById(userId, {
+            user_metadata: metaUpdate,
+          });
+        }
+      } catch (metaErr) {
+        console.warn('[ServerAuth] user_metadata update notice:', metaErr);
+      }
+    }
+
+    // 2. Update public.users table (match by id or auth_id)
+    let updatedUser: any = null;
+    let error: any = null;
+
+    if (isValidUuid(userId)) {
+      const res = await db
         .from('users')
         .update(updatePayload)
-        .eq('auth_id', userId)
+        .or(`id.eq.${userId},auth_id.eq.${userId}`)
+        .select('*')
+        .maybeSingle();
+      updatedUser = res.data;
+      error = res.error;
+    } else if (userId.includes('@')) {
+      const res = await db
+        .from('users')
+        .update(updatePayload)
+        .ilike('email', userId.trim().toLowerCase())
+        .select('*')
+        .maybeSingle();
+      updatedUser = res.data;
+      error = res.error;
+    }
+
+    // Handle enum constraint fallback if remote DB hasn't added newer sport enum values yet
+    if (error && isValidUuid(userId)) {
+      console.warn('[ServerAuth] public.users direct update warning:', error.message);
+      const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
+      const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
+      const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));
+
+      const fallbackPayload = {
+        ...updatePayload,
+        primary_sport: safePrimary,
+        preferred_sports: safePreferred.length > 0 ? safePreferred : ['pickleball'],
+      };
+
+      const retryRes = await db
+        .from('users')
+        .update(fallbackPayload)
+        .or(`id.eq.${userId},auth_id.eq.${userId}`)
         .select('*')
         .maybeSingle();
 
-      if (!updatedUser) {
-        const retryById = await db
-          .from('users')
-          .update(updatePayload)
-          .eq('id', userId)
-          .select('*')
-          .maybeSingle();
-        updatedUser = retryById.data;
-        if (!error && retryById.error) error = retryById.error;
+      if (retryRes.data) {
+        updatedUser = retryRes.data;
       }
+    }
 
-      if (!updatedUser && userId.includes('@')) {
-        const retryByEmail = await db
-          .from('users')
-          .update(updatePayload)
-          .ilike('email', userId.trim().toLowerCase())
-          .select('*')
-          .maybeSingle();
-        updatedUser = retryByEmail.data;
-        if (!error && retryByEmail.error) error = retryByEmail.error;
-      }
+    const finalUser = await serverGetUser(updatedUser?.id || userId);
+    if (finalUser) {
+      return {
+        ...finalUser,
+        full_name: resolvedFullName || finalUser.full_name,
+        nickname: resolvedNickname || finalUser.nickname,
+        city: resolvedCity || finalUser.city,
+        primary_sport: resolvedPrimarySport || finalUser.primary_sport,
+        preferred_sports: resolvedPreferredSports || finalUser.preferred_sports,
+        skill_level: resolvedSkillLevel || finalUser.skill_level,
+        onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : finalUser.onboarding_completed,
+      };
+    }
 
-      // If Postgres rejected update due to enum constraint (e.g. remote DB hasn't run ALTER TYPE for football)
-      if (error) {
-        console.warn('[ServerAuth] public.users direct update warning:', error.message);
-        const DB_ENUM_SPORTS = ['badminton', 'pickleball', 'basketball', 'padel', 'tennis', 'volleyball', 'table_tennis'];
-        const safePrimary = DB_ENUM_SPORTS.includes((resolvedPrimarySport || '').toLowerCase()) ? resolvedPrimarySport : 'pickleball';
-        const safePreferred = (resolvedPreferredSports || []).filter((s) => DB_ENUM_SPORTS.includes(s.toLowerCase()));
-
-        const fallbackPayload = {
-          ...updatePayload,
-          primary_sport: safePrimary,
-          preferred_sports: safePreferred.length > 0 ? safePreferred : ['pickleball'],
-        };
-
-        const retryRes = await db
-          .from('users')
-          .update(fallbackPayload)
-          .eq('auth_id', userId)
-          .select('*')
-          .maybeSingle();
-
-        if (retryRes.data) {
-          updatedUser = retryRes.data;
-        } else {
-          const retryResId = await db
-            .from('users')
-            .update(fallbackPayload)
-            .eq('id', userId)
-            .select('*')
-            .maybeSingle();
-          if (retryResId.data) {
-            updatedUser = retryResId.data;
-          }
-        }
-      }
-
-      const finalUser = await serverGetUser(userId);
-      if (finalUser) {
-        return {
-          ...finalUser,
-          full_name: resolvedFullName || finalUser.full_name,
-          nickname: resolvedNickname || finalUser.nickname,
-          city: resolvedCity || finalUser.city,
-          primary_sport: resolvedPrimarySport || finalUser.primary_sport,
-          preferred_sports: resolvedPreferredSports || finalUser.preferred_sports,
-          skill_level: resolvedSkillLevel || finalUser.skill_level,
-          onboarding_completed: rawOnboardingCompleted !== undefined ? rawOnboardingCompleted : finalUser.onboarding_completed,
-        };
-      }
-
-      if (updatedUser) {
-
-        return {
-          id: updatedUser.auth_id || updatedUser.id,
-          email: updatedUser.email,
-          full_name: resolvedFullName || updatedUser.full_name,
-          nickname: resolvedNickname || updatedUser.nickname,
-          avatar_url: resolvedAvatarUrl || updatedUser.avatar_url,
-          role: updatedUser.role as UserRole,
-          primary_sport: resolvedPrimarySport || updatedUser.primary_sport,
-          preferred_sports: resolvedPreferredSports || updatedUser.preferred_sports,
-          preferred_format: resolvedPreferredFormat || updatedUser.preferred_format,
-          skill_level: resolvedSkillLevel || updatedUser.skill_level,
-          city: resolvedCity || updatedUser.city,
-
-          onboarding_completed: Boolean(updatedUser.onboarding_completed),
-          created_at: updatedUser.created_at,
-        };
-      }
-
+    if (updatedUser) {
+      return {
+        id: updatedUser.id,
+        auth_id: updatedUser.auth_id || updatedUser.id,
+        email: updatedUser.email,
+        full_name: resolvedFullName || updatedUser.full_name,
+        nickname: resolvedNickname || updatedUser.nickname,
+        avatar_url: resolvedAvatarUrl || updatedUser.avatar_url,
+        role: updatedUser.role as UserRole,
+        primary_sport: resolvedPrimarySport || updatedUser.primary_sport,
+        preferred_sports: resolvedPreferredSports || updatedUser.preferred_sports,
+        preferred_format: resolvedPreferredFormat || updatedUser.preferred_format,
+        skill_level: resolvedSkillLevel || updatedUser.skill_level,
+        city: resolvedCity || updatedUser.city,
+        onboarding_completed: Boolean(updatedUser.onboarding_completed),
+        created_at: updatedUser.created_at,
+      };
     }
   } catch (err) {
     console.warn('[ServerAuth] Supabase update warning:', err);
@@ -1459,9 +906,6 @@ export async function serverUpdateUserProfile(
 
 /**
  * Synchronize a Google OAuth / SSO authenticated user with public.users.
- * Strict Profile Check: If the user's profile is missing or incomplete,
- * onboarding_completed is strictly set to false so the user is forced
- * into Profile Setup and cannot access the main dashboard.
  */
 export async function serverSyncOAuthUser(data: {
   authId: string;
@@ -1471,214 +915,109 @@ export async function serverSyncOAuthUser(data: {
   provider?: string;
   mock?: boolean;
 }): Promise<{ user: SanitizedUser; token: string; isComplete: boolean }> {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+  }
+
   const normalizedEmail = data.email.trim().toLowerCase();
+  const admin = createAdminClient();
+  const serverClient = createServerClient();
+  const dbClient = admin || serverClient;
 
-  // 1. Production Supabase OAuth Sync (if Supabase is configured)
-  if (isSupabaseConfigured) {
-    const admin = createAdminClient();
-    const serverClient = createServerClient();
-    const dbClient = admin || serverClient;
+  if (!dbClient) {
+    throw new Error('Database client is not available for OAuth synchronization.');
+  }
 
-    if (dbClient) {
-      try {
-        const isValidUuid = (val?: string): boolean =>
-          Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+  let resolvedAuthId = isValidUuid(data.authId) ? data.authId : null;
 
-        let dbProfile: any = null;
+  // Ensure a real auth.users account exists when admin client is available
+  if (admin) {
+    try {
+      const { data: existingByEmail } = await dbClient
+        .from('users')
+        .select('id, auth_id')
+        .ilike('email', normalizedEmail)
+        .limit(1)
+        .maybeSingle();
 
-        // 1. Look up existing profile by email first (the canonical cross-provider key), case-insensitively
-        const { data: byEmail, error: emailLookupErr } = await dbClient
-          .from('users')
-          .select('*')
-          .ilike('email', normalizedEmail)
-          .order('onboarding_completed', { ascending: false })
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (emailLookupErr) {
-          console.warn('[ServerAuth] OAuth email lookup warning:', emailLookupErr.message);
+      if (existingByEmail && isValidUuid(existingByEmail.auth_id)) {
+        resolvedAuthId = existingByEmail.auth_id;
+      } else if (existingByEmail && isValidUuid(existingByEmail.id)) {
+        resolvedAuthId = existingByEmail.id;
+      } else {
+        const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const foundAuth = userList?.users?.find((u) => u.email?.toLowerCase() === normalizedEmail);
+        if (foundAuth?.id) {
+          resolvedAuthId = foundAuth.id;
         } else {
-          dbProfile = byEmail;
-        }
-
-        // 2. If not found by email and authId is a valid UUID, search by auth_id or id
-        if (!dbProfile && isValidUuid(data.authId)) {
-          const { data: byAuthId } = await dbClient
-            .from('users')
-            .select('*')
-            .eq('auth_id', data.authId)
-            .maybeSingle();
-          dbProfile = byAuthId;
-
-          if (!dbProfile) {
-            const { data: byId } = await dbClient
-              .from('users')
-              .select('*')
-              .eq('id', data.authId)
-              .maybeSingle();
-            dbProfile = byId;
-          }
-        }
-
-        let isNewOAuthAccount = false;
-        if (dbProfile) {
-          const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-          let hasUpdates = false;
-
-          // Only link auth_id if the profile doesn't have one and data.authId is a valid UUID
-          if (!dbProfile.auth_id && isValidUuid(data.authId)) {
-            updates.auth_id = data.authId;
-            hasUpdates = true;
-          }
-          if (!dbProfile.avatar_url && data.avatarUrl) {
-            updates.avatar_url = data.avatarUrl;
-            hasUpdates = true;
-          }
-          if (
-            data.fullName?.trim() &&
-            (!dbProfile.full_name || dbProfile.full_name === 'Player' || dbProfile.full_name === 'Google Player')
-          ) {
-            updates.full_name = data.fullName.trim();
-            updates.nickname = data.fullName.trim().split(' ')[0];
-            hasUpdates = true;
-          }
-
-          if (hasUpdates) {
-            const { data: updated } = await dbClient
-              .from('users')
-              .update(updates)
-              .eq('id', dbProfile.id)
-              .select('*')
-              .maybeSingle();
-            if (updated) dbProfile = updated;
-          }
-        } else {
-          isNewOAuthAccount = true;
-          const newAuthId = isValidUuid(data.authId) ? data.authId : crypto.randomUUID();
-          // Missing profile: create new row with onboarding_completed explicitly false
-          const newRecord = {
-            id: newAuthId,
-            auth_id: newAuthId,
+          const { data: createdAuth } = await admin.auth.admin.createUser({
             email: normalizedEmail,
-            full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
-            nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
-            avatar_url: data.avatarUrl || null,
-            role: 'player' as UserRole,
-            primary_sport: null,
-            preferred_sports: [],
-            preferred_format: null,
-            skill_level: null,
-            city: null,
-            onboarding_completed: false, // Incomplete until Profile Setup is finished
-          };
-
-          const { data: inserted, error: insertErr } = await dbClient
-            .from('users')
-            .insert(newRecord)
-            .select('*')
-            .maybeSingle();
-
-          if (insertErr) {
-            console.warn('[ServerAuth] OAuth user insert warning:', insertErr.message);
+            email_confirm: true,
+            user_metadata: {
+              full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
+              avatar_url: data.avatarUrl || undefined,
+              role: 'player',
+              onboarding_completed: false,
+            },
+          });
+          if (createdAuth?.user?.id) {
+            resolvedAuthId = createdAuth.user.id;
           }
-          dbProfile = inserted || newRecord;
         }
-
-        // Determine profile completion:
-        // Existing accounts with saved profiles proceed to Player Dashboard.
-        // Brand new accounts must complete Profile Setup first.
-        const hasExplicitComplete = Boolean(
-          dbProfile?.onboarding_completed === true ||
-          dbProfile?.onboarding_completed === 'true' ||
-          dbProfile?.has_completed_onboarding === true
-        );
-
-        const hasPlayerSetup = Boolean(
-          dbProfile?.full_name &&
-          !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(dbProfile.full_name.trim()) &&
-          ((Array.isArray(dbProfile?.preferred_sports) && dbProfile.preferred_sports.length > 0) || dbProfile?.primary_sport)
-        );
-
-        const isComplete = !isNewOAuthAccount && (
-          hasExplicitComplete ||
-          hasPlayerSetup ||
-          await isProfileCompleteInDb(dbClient, dbProfile, null, dbProfile?.role)
-        );
-
-        const sanitized: SanitizedUser = {
-          id: dbProfile?.auth_id || dbProfile?.id || (isValidUuid(data.authId) ? data.authId : crypto.randomUUID()),
-          email: normalizedEmail,
-          full_name: dbProfile?.full_name || data.fullName?.trim() || normalizedEmail.split('@')[0],
-          nickname: dbProfile?.nickname || data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
-          avatar_url: dbProfile?.avatar_url || data.avatarUrl,
-          role: (dbProfile?.role || 'player') as UserRole,
-          primary_sport: dbProfile?.primary_sport || undefined,
-          preferred_sports: dbProfile?.preferred_sports || [],
-          preferred_format: dbProfile?.preferred_format || undefined,
-          skill_level: dbProfile?.skill_level || undefined,
-          city: dbProfile?.city || undefined,
-          onboarding_completed: isComplete,
-          created_at: dbProfile?.created_at || new Date().toISOString(),
-        };
-
-        // Cache in localDevUsers as well
-        localDevUsers.set(normalizedEmail, {
-          user: sanitized,
-          passwordHash: '',
-        });
-
-        const token = createSessionToken(sanitized);
-        return { user: sanitized, token, isComplete };
-      } catch (dbErr) {
-        console.warn('[ServerAuth] OAuth database sync error, falling back to local registry:', dbErr);
       }
+    } catch (authSyncErr) {
+      console.warn('[ServerAuth] OAuth auth.users lookup/create notice:', authSyncErr);
     }
   }
 
-  // 2. Fallback for Local Development / Offline MVP
-  const existing = localDevUsers.get(normalizedEmail);
-  if (existing) {
-    if (
-      data.fullName?.trim() &&
-      (!existing.user.full_name || existing.user.full_name === 'Player' || existing.user.full_name === 'Google Player')
-    ) {
-      existing.user.full_name = data.fullName.trim();
-      existing.user.nickname = data.fullName.trim().split(' ')[0];
-    }
-    const hasPlayerSetup = Boolean(
-      existing.user.full_name &&
-      !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(existing.user.full_name.trim()) &&
-      ((Array.isArray(existing.user.preferred_sports) && existing.user.preferred_sports.length > 0) || existing.user.primary_sport)
-    );
-    const isComplete = Boolean(existing.user.onboarding_completed === true || hasPlayerSetup);
-    existing.user.onboarding_completed = isComplete;
-    const token = createSessionToken(existing.user);
-    return { user: existing.user, token, isComplete };
-  }
+  const targetAuthId = resolvedAuthId || (isValidUuid(data.authId) ? data.authId : crypto.randomUUID());
 
-  const localId = data.authId || `usr_google_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const sanitized: SanitizedUser = {
-    id: localId,
+  // Check if profile already existed before upsert
+  const { data: preExisting } = await dbClient
+    .from('users')
+    .select('id, onboarding_completed, full_name, preferred_sports, primary_sport, city, skill_level, role')
+    .or(`id.eq.${targetAuthId},auth_id.eq.${targetAuthId},email.ilike.${normalizedEmail}`)
+    .order('onboarding_completed', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const isNewOAuthAccount = !preExisting;
+
+  const dbProfile = await upsertCanonicalPublicUser(dbClient, {
+    authUserId: targetAuthId,
     email: normalizedEmail,
-    full_name: data.fullName?.trim() || normalizedEmail.split('@')[0],
-    nickname: data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
-    avatar_url: data.avatarUrl,
-    role: 'player',
-    primary_sport: undefined,
-    preferred_sports: [],
-    preferred_format: undefined,
-    skill_level: undefined,
-    city: undefined,
-    onboarding_completed: false, // New Google SSO users must complete Profile Setup!
-    created_at: new Date().toISOString(),
-  };
-
-  localDevUsers.set(normalizedEmail, {
-    user: sanitized,
-    passwordHash: '',
+    fullName: data.fullName?.trim() || normalizedEmail.split('@')[0],
+    role: (preExisting?.role || 'player') as UserRole,
+    avatarUrl: data.avatarUrl || null,
+    onboardingCompleted: Boolean(preExisting?.onboarding_completed === true),
+    overwriteOnboarding: false,
   });
 
+  const isComplete =
+    !isNewOAuthAccount &&
+    (Boolean(dbProfile?.onboarding_completed === true) ||
+      (await isProfileCompleteInDb(dbClient, dbProfile, null, dbProfile?.role)));
+
+  const canonicalId = dbProfile?.id || targetAuthId;
+  const parsedSports = parsePreferredSports(dbProfile?.preferred_sports);
+
+  const sanitized: SanitizedUser = {
+    id: canonicalId,
+    auth_id: dbProfile?.auth_id || targetAuthId,
+    email: normalizedEmail,
+    full_name: dbProfile?.full_name || data.fullName?.trim() || normalizedEmail.split('@')[0],
+    nickname: dbProfile?.nickname || data.fullName?.trim().split(' ')[0] || normalizedEmail.split('@')[0],
+    avatar_url: dbProfile?.avatar_url || data.avatarUrl,
+    role: (dbProfile?.role || 'player') as UserRole,
+    primary_sport: dbProfile?.primary_sport || undefined,
+    preferred_sports: parsedSports,
+    preferred_format: dbProfile?.preferred_format || undefined,
+    skill_level: dbProfile?.skill_level || undefined,
+    city: dbProfile?.city || undefined,
+    onboarding_completed: isComplete,
+    created_at: dbProfile?.created_at || new Date().toISOString(),
+  };
+
   const token = createSessionToken(sanitized);
-  return { user: sanitized, token, isComplete: false };
+  return { user: sanitized, token, isComplete };
 }

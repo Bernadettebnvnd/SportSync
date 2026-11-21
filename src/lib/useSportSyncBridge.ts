@@ -30,11 +30,9 @@ export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<stri
         parsed.forEach((item: any) => {
           if (typeof item === 'string') {
             ids.add(item);
-            titles.add(item.trim().toLowerCase());
           } else if (item && typeof item === 'object') {
             if (item.id) ids.add(item.id);
             if (item.sessionId) ids.add(item.sessionId);
-            if (item.title) titles.add(item.title.trim().toLowerCase());
           }
         });
       }
@@ -43,14 +41,14 @@ export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<stri
   return { ids, titles };
 }
 
-export function markGameDeleted(gameId: string, gameTitle?: string, sessionId?: string) {
-  if (typeof window === 'undefined') return;
+export function markGameDeleted(gameId: string, _gameTitle?: string, sessionId?: string) {
+  if (typeof window === 'undefined' || !gameId) return;
   try {
     const existingRaw = localStorage.getItem('sportsync_deleted_game_ids');
-    const existing: Array<{ id: string; title?: string; sessionId?: string }> = existingRaw ? JSON.parse(existingRaw) : [];
+    const existing: Array<{ id: string; sessionId?: string } | string> = existingRaw ? JSON.parse(existingRaw) : [];
     const updated = [
       ...existing.filter((item) => (typeof item === 'string' ? item !== gameId : item.id !== gameId)),
-      { id: gameId, title: gameTitle?.trim().toLowerCase(), sessionId },
+      { id: gameId, sessionId },
     ];
     localStorage.setItem('sportsync_deleted_game_ids', JSON.stringify(updated));
   } catch (err) {
@@ -582,11 +580,9 @@ export function useSportSyncBridge() {
 
   // 2. Dynamic Community Pickup Games (real user-created & database sessions only)
   const [games, setGames] = useState<CommunityGame[]>(() => {
-    const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+    const { ids: deletedIds } = getDeletedGameTombstones();
     const isGameDeleted = (g: CommunityGame) =>
-      deletedIds.has(g.id) ||
-      (g.sessionId ? deletedIds.has(g.sessionId) : false) ||
-      deletedTitles.has(g.title.trim().toLowerCase());
+      deletedIds.has(g.id) || (g.sessionId ? deletedIds.has(g.sessionId) : false);
 
     if (typeof window !== 'undefined') {
       localStorage.removeItem('sideline_community_games');
@@ -596,14 +592,13 @@ export function useSportSyncBridge() {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const seenIds = new Set<string>();
-            const seenTitles = new Set<string>();
             const deduped: CommunityGame[] = [];
             parsed.forEach((g: any) => {
               if (!g || !g.id || isMockGame(g) || isGameExpired(g)) return;
-              const normTitle = g.title ? g.title.trim().toLowerCase() : '';
-              if (!isGameDeleted(g) && !seenIds.has(g.id) && (!normTitle || !seenTitles.has(normTitle))) {
+              // Drop legacy local-only cg_* games that were never persisted in Supabase
+              if (String(g.id).startsWith('cg_') && (!g.sessionId || String(g.sessionId).startsWith('cg_'))) return;
+              if (!isGameDeleted(g) && !seenIds.has(g.id)) {
                 seenIds.add(g.id);
-                if (normTitle) seenTitles.add(normTitle);
                 deduped.push(g);
               }
             });
@@ -636,24 +631,23 @@ export function useSportSyncBridge() {
   // Dynamic Matches initialized to empty array (no mock data fallback)
   const [matches, setMatches] = useState<Match[]>([]);
 
-  // Sync store open play sessions into games feed (omits deleted / cancelled sessions and strictly prevents duplicates)
+  // Sync store open play sessions into games feed (omits deleted / cancelled sessions and strictly deduplicates by ID)
   useEffect(() => {
     if (store.sessions.length > 0) {
-      const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+      const { ids: deletedIds } = getDeletedGameTombstones();
       setGames((prev) => {
         const cleanPrev = prev.filter((g) => {
           if (!g || !g.id || isMockGame(g)) return false;
-          if (deletedIds.has(g.id) || (g.sessionId && deletedIds.has(g.sessionId)) || deletedTitles.has(g.title.trim().toLowerCase())) return false;
+          if (deletedIds.has(g.id) || (g.sessionId && deletedIds.has(g.sessionId))) return false;
           if ((g as any).status === 'cancelled') return false;
           return true;
         });
         const seenIds = new Set(cleanPrev.map((g) => g.id));
         const seenSessionIds = new Set(cleanPrev.filter((g) => g.sessionId).map((g) => g.sessionId!));
-        const seenTitles = new Set(cleanPrev.map((g) => g.title.trim().toLowerCase()));
 
         const updatedExisting = cleanPrev.map((g) => {
           const matchSession = store.sessions.find(
-            (s) => s && (s.id === g.id || s.id === g.sessionId || (s.title && s.title.trim().toLowerCase() === g.title.trim().toLowerCase()))
+            (s) => s && (s.id === g.id || s.id === g.sessionId)
           );
           if (matchSession) {
             if (matchSession.status === 'cancelled') return null;
@@ -699,13 +693,10 @@ export function useSportSyncBridge() {
               });
             });
 
-            const mergedMembersMap = new Map<string, { id?: string; name: string; avatar: any }>();
-            (g.members || []).forEach((m) => mergedMembersMap.set(m.id || m.name, m));
-            queueMembers.forEach((m) => mergedMembersMap.set(m.id || m.name, m));
-            const updatedMembers = Array.from(mergedMembersMap.values());
+            const updatedMembers = queueMembers.length > 0 ? queueMembers : (g.members || []);
             const spotsJoined = Math.min(
               g.spotsTotal,
-              Math.max(updatedMembers.length, matchSession.current_players_count || 0, g.spotsJoined)
+              Math.max(updatedMembers.length, matchSession.current_players_count || 0)
             );
 
             return {
@@ -727,16 +718,14 @@ export function useSportSyncBridge() {
           if (isMockGame({ id: s.id, sessionId: s.id, title: s.title, locationName: venue?.name })) {
             return;
           }
-          if (deletedIds.has(s.id) || deletedTitles.has(s.title.trim().toLowerCase()) || s.status === 'cancelled' || isSessionExpired(s)) {
+          if (deletedIds.has(s.id) || s.status === 'cancelled' || isSessionExpired(s)) {
             return;
           }
-          const normTitle = s.title.trim().toLowerCase();
-          if (seenIds.has(s.id) || seenSessionIds.has(s.id) || seenTitles.has(normTitle)) {
+          if (seenIds.has(s.id) || seenSessionIds.has(s.id)) {
             return;
           }
           seenIds.add(s.id);
           seenSessionIds.add(s.id);
-          seenTitles.add(normTitle);
 
           const hostMatch = s.description?.match(/\[HOST:(.*?)\]/i);
           const taggedHostName = hostMatch ? hostMatch[1].trim() : "";
@@ -1198,12 +1187,8 @@ export function useSportSyncBridge() {
                         data.games.forEach((incoming: CommunityGame) => {
                           if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
                           if (!existingMap.has(incoming.id) && (!incoming.sessionId || !existingMap.has(incoming.sessionId))) {
-                            const normTitle = incoming.title.trim().toLowerCase();
-                            const titleExists = prev.some((p) => p.title.trim().toLowerCase() === normTitle);
-                            if (!titleExists) {
-                              existingMap.set(incoming.id, incoming);
-                              changed = true;
-                            }
+                            existingMap.set(incoming.id, incoming);
+                            changed = true;
                           }
                         });
                         return changed ? Array.from(existingMap.values()) : prev;
@@ -1235,8 +1220,7 @@ export function useSportSyncBridge() {
           const { type, game, gameId, sessionId } = event.data || {};
           if (type === 'GAME_CREATED' && game) {
             setGames((prev) => {
-              const normTitle = (game.title || '').trim().toLowerCase();
-              if (prev.some((g) => g.id === game.id || (game.sessionId && g.sessionId === game.sessionId) || g.title.trim().toLowerCase() === normTitle)) {
+              if (prev.some((g) => g.id === game.id || (game.sessionId && g.sessionId === game.sessionId))) {
                 return prev.map((g) => (g.id === game.id || (game.sessionId && g.sessionId === game.sessionId) ? { ...g, ...game } : g));
               }
               return [game, ...prev];
@@ -1257,44 +1241,73 @@ export function useSportSyncBridge() {
     }
 
     // Background auto-sync across different accounts and browsers (every 10s + on focus)
+    // Treats GET /api/games server data as the single source of truth.
     const syncAllActiveGames = async () => {
       try {
-        const res = await fetch('/api/games');
+        const res = await fetch('/api/games', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.games) && data.games.length > 0) {
-            const { ids: deletedIds, titles: deletedTitles } = getDeletedGameTombstones();
+          if (data?.success && Array.isArray(data.games)) {
+            const { ids: deletedIds } = getDeletedGameTombstones();
             setGames((prev) => {
-              const currentMap = new Map<string, CommunityGame>();
+              const prevMap = new Map<string, CommunityGame>();
               prev.forEach((g) => {
-                if (g && g.id) currentMap.set(g.id, g);
-              });
-              let hasNew = false;
-              data.games.forEach((incoming: CommunityGame) => {
-                if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
-                if (deletedIds.has(incoming.id) || (incoming.sessionId && deletedIds.has(incoming.sessionId)) || deletedTitles.has(incoming.title.trim().toLowerCase())) return;
-
-                const existing = currentMap.get(incoming.id) || (incoming.sessionId ? currentMap.get(incoming.sessionId) : null);
-                if (!existing) {
-                  const normTitle = incoming.title.trim().toLowerCase();
-                  const matchByTitle = prev.find((g) => g.title.trim().toLowerCase() === normTitle);
-                  if (!matchByTitle) {
-                    currentMap.set(incoming.id, incoming);
-                    hasNew = true;
-                  }
-                } else {
-                  if ((incoming.members?.length || 0) > (existing.members?.length || 0)) {
-                    currentMap.set(existing.id, {
-                      ...existing,
-                      ...incoming,
-                      spotsJoined: Math.max(existing.spotsJoined, incoming.spotsJoined),
-                      members: incoming.members,
-                    });
-                    hasNew = true;
-                  }
+                if (g && g.id) {
+                  prevMap.set(g.id, g);
+                  if (g.sessionId) prevMap.set(g.sessionId, g);
                 }
               });
-              return hasNew ? Array.from(currentMap.values()) : prev;
+
+              const nextList: CommunityGame[] = [];
+              const seenIds = new Set<string>();
+
+              data.games.forEach((incoming: CommunityGame) => {
+                if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
+                if (deletedIds.has(incoming.id) || (incoming.sessionId && deletedIds.has(incoming.sessionId))) return;
+                if (seenIds.has(incoming.id)) return;
+                seenIds.add(incoming.id);
+
+                const existing = prevMap.get(incoming.id) || (incoming.sessionId ? prevMap.get(incoming.sessionId) : undefined);
+                if (existing) {
+                  // Server data is authoritative for title, schedule, location, spotsJoined, members, and status
+                  nextList.push({
+                    ...existing,
+                    ...incoming,
+                    id: incoming.id,
+                    sessionId: incoming.sessionId || incoming.id,
+                    spotsJoined: incoming.spotsJoined,
+                    members: Array.isArray(incoming.members) ? incoming.members : existing.members,
+                    coordinates: incoming.coordinates || existing.coordinates,
+                    invitedPlayers: incoming.invitedPlayers || existing.invitedPlayers,
+                  });
+                } else {
+                  nextList.push(incoming);
+                }
+              });
+
+              // Structural equality check so we don't trigger unnecessary re-renders when nothing changed
+              if (nextList.length === prev.length) {
+                const isSame = nextList.every((nextG, idx) => {
+                  const prevG = prev[idx];
+                  if (!prevG || prevG.id !== nextG.id) return false;
+                  if (prevG.title !== nextG.title) return false;
+                  if (prevG.date !== nextG.date || prevG.time !== nextG.time) return false;
+                  if (prevG.locationName !== nextG.locationName) return false;
+                  if (prevG.spotsTotal !== nextG.spotsTotal || prevG.spotsJoined !== nextG.spotsJoined) return false;
+                  if (prevG.pricePerPlayer !== nextG.pricePerPlayer) return false;
+                  if (prevG.notes !== nextG.notes) return false;
+                  const pMem = prevG.members || [];
+                  const nMem = nextG.members || [];
+                  if (pMem.length !== nMem.length) return false;
+                  return pMem.every((pm, mIdx) => {
+                    const nm = nMem[mIdx];
+                    return nm && (pm.id || pm.name) === (nm.id || nm.name);
+                  });
+                });
+                if (isSame) return prev;
+              }
+
+              return nextList;
             });
           }
         }
@@ -1327,8 +1340,7 @@ export function useSportSyncBridge() {
       const detail = (e as CustomEvent)?.detail;
       if (detail?.game) {
         setGames((prev) => {
-          const normTitle = (detail.game.title || '').trim().toLowerCase();
-          if (prev.some((g) => g.id === detail.game.id || (detail.game.sessionId && g.sessionId === detail.game.sessionId) || g.title.trim().toLowerCase() === normTitle)) {
+          if (prev.some((g) => g.id === detail.game.id || (detail.game.sessionId && g.sessionId === detail.game.sessionId))) {
             return prev.map((g) => (g.id === detail.game.id ? { ...g, ...detail.game } : g));
           }
           return [detail.game, ...prev];
@@ -1357,14 +1369,9 @@ export function useSportSyncBridge() {
     const handleGameDeleted = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
       const dId = detail?.gameId || detail?.sessionId;
-      const dTitle = (detail?.title || '').trim().toLowerCase();
-      if (dId || dTitle) {
+      if (dId) {
         setGames((prev) =>
-          prev.filter(
-            (g) =>
-              (!dId || (g.id !== dId && g.sessionId !== dId)) &&
-              (!dTitle || g.title.trim().toLowerCase() !== dTitle)
-          )
+          prev.filter((g) => g.id !== dId && g.sessionId !== dId)
         );
       }
     };
@@ -2089,115 +2096,80 @@ export function useSportSyncBridge() {
         hostName: userName,
         hostAvatar: userAvatar,
         spotsTotal: gameData.playersCount,
-        spotsJoined: 0,
+        spotsJoined: 1,
         pricePerPlayer: gameData.pricePerPlayer,
         notes: gameData.notes || 'Organized via SportSync Matchmaking',
         isPublic: gameData.visibility ? gameData.visibility !== 'Invite' : true,
         visibility: gameData.visibility || 'Public',
         inviteCode: finalInviteCode,
         invitedPlayers: gameData.invitedPlayers || [],
-        members: [],
+        members: [
+          {
+            id: userProfile.id || undefined,
+            name: userName,
+            avatar: userAvatar,
+          },
+        ],
         coordinates: gameData.coordinates,
       };
 
-      try {
-        const sportNorm = gameData.sport.toLowerCase();
-        const matchingSport: DbSportType =
-          sportNorm.includes('basket')
-            ? 'basketball'
-            : sportNorm.includes('tennis')
-            ? 'tennis'
-            : sportNorm.includes('badminton')
-            ? 'badminton'
-            : sportNorm.includes('volley')
-            ? 'volleyball'
-            : 'pickleball';
-
-        const targetVenue =
-          store.venues.find((v) =>
-            v.name.toLowerCase().includes(gameData.locationName.toLowerCase())
-          ) ||
-          store.venues.find((v) =>
-            v.city?.toLowerCase().includes('naga') || v.name.toLowerCase().includes('naga')
-          ) ||
-          store.venues[0];
-
-        if (targetVenue) {
-          const createdSession = await store.createOpenPlaySession({
-            venueId: targetVenue.id,
-            title: gameData.title,
-            description: `${gameData.notes || 'SportSync community game'}${finalInviteCode ? ` [INVITE:${finalInviteCode.toUpperCase()}]` : ''} [HOST:${userName}]`,
-            sport: matchingSport,
-            courtIds: targetVenue.courts?.map((c) => c.id) || [],
-            startTime: startIso,
-            endTime: endIso,
-            feeCents: gameData.pricePerPlayer * 100,
-            maxPlayers: gameData.playersCount,
-            rotationFormat: formatStr,
-            skillLevel: (gameData.skillLevel?.toLowerCase() as SkillLevel) || 'all_levels',
-            hostId: userProfile.id,
-            visibility: gameData.visibility,
-            inviteCode: finalInviteCode,
-            locationDetails: gameData.locationDetails || gameData.locationName,
-          });
-          if (createdSession?.id) {
-            newGame.sessionId = createdSession.id;
-            newGame.id = createdSession.id;
-            createdSessionId = createdSession.id;
-            assignedId = createdSession.id;
-          }
-        }
-      } catch (sessErr) {
-        console.warn('Error creating open play session:', sessErr);
-      }
+      const matchedVenue = store.venues.find(
+        (v) =>
+          v.name &&
+          gameData.locationName &&
+          v.name.trim().toLowerCase() === gameData.locationName.trim().toLowerCase()
+      );
 
       if (typeof window !== 'undefined') {
-        try {
-          const res = await fetch('/api/games', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: newGame, action: 'create_game' }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.game) {
-              newGame = {
-                ...newGame,
-                ...data.game,
-                hostId: userProfile.id || data.game.hostId,
-                hostName: userName || data.game.hostName,
-                hostAvatar: userAvatar || data.game.hostAvatar,
-                inviteCode: finalInviteCode,
-                visibility: gameData.visibility || newGame.visibility || 'Public',
-                isPublic: (gameData.visibility || newGame.visibility) !== 'Invite',
-              };
-              if (!newGame.sessionId && data.session?.id) {
-                newGame.sessionId = data.session.id;
-                newGame.id = data.session.id;
-              }
-            }
-          }
-        } catch {}
+        const res = await fetch('/api/games', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_game',
+            game: {
+              ...newGame,
+              venueId: matchedVenue?.id || null,
+            },
+          }),
+        });
 
-        try {
-          await fetch('/api/invitations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: newGame, action: 'create_game' }),
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.success || !data?.game?.id) {
+          const errMsg = data?.error || 'Failed to create game on server.';
+          console.error('[SportSyncBridge] POST /api/games failed:', {
+            status: res.status,
+            error: data?.error,
+            code: data?.code,
+            details: data?.details,
           });
-        } catch {}
+          throw new Error(errMsg);
+        }
+
+        newGame = {
+          ...newGame,
+          ...data.game,
+          id: data.session?.id || data.game.id,
+          sessionId: data.session?.id || data.game.sessionId || data.game.id,
+          hostId: data.game.hostId || userProfile.id,
+          hostName: userName || data.game.hostName,
+          hostAvatar: userAvatar || data.game.hostAvatar,
+          inviteCode: data.game.inviteCode || finalInviteCode,
+          visibility: gameData.visibility || newGame.visibility || 'Public',
+          isPublic: (gameData.visibility || newGame.visibility) !== 'Invite',
+          coordinates: gameData.coordinates,
+          invitedPlayers: gameData.invitedPlayers || [],
+        };
       }
+
       try { store.refreshSessions?.(); } catch {}
 
       setGames((prev) => {
-        const normTitle = newGame.title.trim().toLowerCase();
         const filtered = prev
           .filter((g) => !isMockGame(g))
           .filter(
             (g) =>
               g.id !== newGame.id &&
-              (!newGame.sessionId || g.sessionId !== newGame.sessionId) &&
-              g.title.trim().toLowerCase() !== normTitle
+              (!newGame.sessionId || g.sessionId !== newGame.sessionId)
           );
         return [newGame, ...filtered];
       });
@@ -2589,25 +2561,24 @@ export function useSportSyncBridge() {
       // 4. Deliver notifications immediately to client notification system
       deletionNotifs.forEach((n) => addNotification(n));
 
-      // 5. Mark in permanent tombstone storage (both ID and title) to prevent reappearance
-      markGameDeleted(targetGame.id, titleToDelete, targetGame.sessionId);
+      // 5. Mark canonical game ID in permanent tombstone storage to prevent local reappearance
+      markGameDeleted(targetGame.id, undefined, targetGame.sessionId);
       if (sessionIdToDelete) {
-        markSessionDeleted(sessionIdToDelete, titleToDelete);
+        markSessionDeleted(sessionIdToDelete);
       } else {
-        markSessionDeleted(targetGame.id, titleToDelete);
+        markSessionDeleted(targetGame.id);
       }
 
-      // 6. Remove the deleted game from affected players' joined games and dashboards
+      // 6. Remove the deleted game strictly by ID from affected players' joined games and dashboards
       setGames((prev) =>
         prev.filter((g) => {
           if (g.id === targetGame.id) return false;
           if (targetGame.sessionId && (g.id === targetGame.sessionId || g.sessionId === targetGame.sessionId)) return false;
-          if (g.title.trim().toLowerCase() === normTitle) return false;
           return true;
         })
       );
 
-      // 7. Remove from localStorage sportsync_community_games and participation / bookings
+      // 7. Remove from localStorage sportsync_community_games and participation / bookings strictly by ID
       if (typeof window !== 'undefined') {
         const storedGames = localStorage.getItem('sportsync_community_games');
         if (storedGames) {
@@ -2617,7 +2588,6 @@ export function useSportSyncBridge() {
               const nextStored = parsed.filter((g: any) => {
                 if (g.id === targetGame.id) return false;
                 if (targetGame.sessionId && (g.id === targetGame.sessionId || g.sessionId === targetGame.sessionId)) return false;
-                if (g.title && g.title.trim().toLowerCase() === normTitle) return false;
                 return true;
               });
               localStorage.setItem('sportsync_community_games', JSON.stringify(nextStored));

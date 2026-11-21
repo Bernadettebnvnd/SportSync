@@ -14,10 +14,8 @@ export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<s
         parsed.forEach((item: any) => {
           if (typeof item === 'string') {
             ids.add(item);
-            titles.add(item.trim().toLowerCase());
           } else if (item && typeof item === 'object') {
             if (item.id) ids.add(item.id);
-            if (item.title) titles.add(item.title.trim().toLowerCase());
           }
         });
       }
@@ -26,14 +24,14 @@ export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<s
   return { ids, titles };
 }
 
-export function markSessionDeleted(sessionId: string, sessionTitle?: string) {
-  if (typeof window === 'undefined') return;
+export function markSessionDeleted(sessionId: string, _sessionTitle?: string) {
+  if (typeof window === 'undefined' || !sessionId) return;
   try {
     const existingRaw = localStorage.getItem('sportsync_deleted_session_ids');
-    const existing: Array<{ id: string; title?: string }> = existingRaw ? JSON.parse(existingRaw) : [];
+    const existing: Array<{ id: string } | string> = existingRaw ? JSON.parse(existingRaw) : [];
     const updated = [
       ...existing.filter((item) => (typeof item === 'string' ? item !== sessionId : item.id !== sessionId)),
-      { id: sessionId, title: sessionTitle?.trim().toLowerCase() },
+      { id: sessionId },
     ];
     localStorage.setItem('sportsync_deleted_session_ids', JSON.stringify(updated));
   } catch (err) {
@@ -60,7 +58,12 @@ export function generateUniqueSessionId(): string {
  */
 export function isMockSession(s: Partial<Session> | null | undefined): boolean {
   if (!s) return true;
-  if (s.id && (s.id.startsWith('sess_test_') || s.id.startsWith('session_test_') || ['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8'].includes(s.id))) {
+  if (
+    s.id &&
+    (s.id.startsWith('sess_test_') ||
+      s.id.startsWith('session_test_') ||
+      ['cg1', 'cg2', 'cg3', 'cg4', 'cg5', 'cg6', 'cg7', 'cg8'].includes(s.id))
+  ) {
     return true;
   }
   const title = (s.title || '').toLowerCase();
@@ -90,17 +93,14 @@ function getLocalStoredSessions(): Session[] {
     const raw = localStorage.getItem('sportsync_user_sessions');
     if (!raw) return [];
     const parsed: Session[] = JSON.parse(raw);
-    const { ids, titles } = getDeletedSessionTombstones();
+    const { ids } = getDeletedSessionTombstones();
     const seenIds = new Set<string>();
-    const seenTitles = new Set<string>();
     const deduped: Session[] = [];
 
     parsed.forEach((s) => {
       if (!s || !s.id || isMockSession(s)) return;
-      const normTitle = s.title ? s.title.trim().toLowerCase() : '';
-      if (!ids.has(s.id) && !titles.has(normTitle) && s.status !== 'cancelled' && !isSessionExpired(s) && !seenIds.has(s.id)) {
+      if (!ids.has(s.id) && s.status !== 'cancelled' && !isSessionExpired(s) && !seenIds.has(s.id)) {
         seenIds.add(s.id);
-        if (normTitle) seenTitles.add(normTitle);
         deduped.push(s);
       }
     });
@@ -112,17 +112,16 @@ function getLocalStoredSessions(): Session[] {
 }
 
 function saveLocalStoredSession(session: Session) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !session?.id) return;
   try {
-    const { ids, titles } = getDeletedSessionTombstones();
-    const normTitle = session.title ? session.title.trim().toLowerCase() : '';
-    if (ids.has(session.id) || (normTitle && titles.has(normTitle))) {
+    const { ids } = getDeletedSessionTombstones();
+    if (ids.has(session.id)) {
       return; // Do not save previously deleted session
     }
     const existing = getLocalStoredSessions();
     const updated = [
       session,
-      ...existing.filter((s) => s.id !== session.id && (normTitle ? s.title.trim().toLowerCase() !== normTitle : true)),
+      ...existing.filter((s) => s.id !== session.id),
     ];
     localStorage.setItem('sportsync_user_sessions', JSON.stringify(updated));
   } catch (err) {
@@ -138,10 +137,10 @@ function saveLocalStoredSession(session: Session) {
 export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> {
   const supabase = getSupabaseClient();
   const localSessions = getLocalStoredSessions();
-  const { ids: deletedIds, titles: deletedTitles } = getDeletedSessionTombstones();
+  const { ids: deletedIds } = getDeletedSessionTombstones();
 
   const isSessionNotDeleted = (s: Session) =>
-    !isMockSession(s) && !deletedIds.has(s.id) && !deletedTitles.has(s.title.trim().toLowerCase()) && s.status !== 'cancelled';
+    !isMockSession(s) && !deletedIds.has(s.id) && s.status !== 'cancelled';
 
   if (!supabase || !isSupabaseConfigured) {
     const filtered = localSessions.filter(isSessionNotDeleted);
@@ -270,28 +269,14 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
 
     const dbSessions = ((data as Session[]) || []).filter(isSessionNotDeleted);
     const seenIds = new Set<string>();
-    const seenTitles = new Set<string>();
     const combined: Session[] = [];
 
+    // Deduplicate strictly by canonical session ID
     dbSessions.forEach((s) => {
       if (!s || !s.id) return;
-      const normTitle = s.title ? s.title.trim().toLowerCase() : '';
       if (!seenIds.has(s.id)) {
         seenIds.add(s.id);
-        if (normTitle) seenTitles.add(normTitle);
         combined.push(s);
-      }
-    });
-
-    localSessions.forEach((ls) => {
-      if (!ls || !ls.id) return;
-      const normTitle = ls.title ? ls.title.trim().toLowerCase() : '';
-      if (isSessionNotDeleted(ls) && !seenIds.has(ls.id) && (!normTitle || !seenTitles.has(normTitle))) {
-        if (!venueId || ls.venue_id === venueId) {
-          seenIds.add(ls.id);
-          if (normTitle) seenTitles.add(normTitle);
-          combined.push(ls);
-        }
       }
     });
 
@@ -354,8 +339,9 @@ export async function joinSessionQueue(
   const { data: publicUser } = await supabase
     .from('users')
     .select('id')
-    .eq('auth_id', userData.user.id)
-    .single();
+    .or(`id.eq.${userData.user.id},auth_id.eq.${userData.user.id}`)
+    .limit(1)
+    .maybeSingle();
 
   if (!publicUser) {
     throw new Error('User profile not found.');
@@ -405,82 +391,13 @@ export async function joinSessionQueue(
 }
 
 /**
- * Facility Owner / Host: Create an Open Play session to monetize unused courts.
+ * Facility Owner / Host: Create an Open Play session via the server-backed /api/games endpoint
+ * or direct Supabase insert — never silently falling back to a fake localStorage-only game.
  */
 export async function createOpenPlaySession(
   sessionData: Omit<Session, 'id' | 'venue' | 'current_players_count'>
 ): Promise<Session | null> {
   const supabase = getSupabaseClient();
-
-  const localId = generateUniqueSessionId();
-  const localSession: Session = {
-    id: localId,
-    venue_id: sessionData.venue_id,
-    host_id: sessionData.host_id,
-    title: sessionData.title,
-    description: sessionData.description,
-    sport: sessionData.sport,
-    session_type: 'open_play',
-    allowed_formats: sessionData.allowed_formats,
-    skill_level: sessionData.skill_level,
-    court_ids: sessionData.court_ids,
-    start_time: sessionData.start_time,
-    end_time: sessionData.end_time,
-    fee_cents: sessionData.fee_cents,
-    max_players: sessionData.max_players,
-    current_players_count: 0,
-    rotation_format: sessionData.rotation_format,
-    status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-
-  saveLocalStoredSession(localSession);
-
-  if (!supabase || !isSupabaseConfigured) {
-    return localSession;
-  }
-
-  let resolvedHostId = sessionData.host_id;
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    if (userData?.user) {
-      const { data: publicUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', userData.user.id)
-        .maybeSingle();
-      if (publicUser?.id) {
-        resolvedHostId = publicUser.id;
-      }
-    }
-  } catch {}
-
-  let validHostUuid: string | null = null;
-  if (resolvedHostId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedHostId)) {
-    try {
-      const { data: userExists } = await supabase.from('users').select('id').eq('id', resolvedHostId).maybeSingle();
-      if (userExists?.id) validHostUuid = userExists.id;
-    } catch {}
-  }
-
-  let resolvedVenueId = sessionData.venue_id;
-  if (!resolvedVenueId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedVenueId)) {
-    try {
-      const { data: nagaVenue } = await supabase
-        .from('venues')
-        .select('id')
-        .or('city.ilike.%naga%,name.ilike.%naga%')
-        .limit(1)
-        .maybeSingle();
-      if (nagaVenue?.id) {
-        resolvedVenueId = nagaVenue.id;
-      } else {
-        const { data: firstVenue } = await supabase.from('venues').select('id').limit(1).maybeSingle();
-        if (firstVenue?.id) resolvedVenueId = firstVenue.id;
-      }
-    } catch {}
-  }
 
   const validCourtUuids = (sessionData.court_ids || []).filter(
     (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
@@ -500,11 +417,62 @@ export async function createOpenPlaySession(
     endTimeIso = new Date(parsedStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
   }
 
+  // In the browser, delegate to POST /api/games which uses createAdminClient() and handles host/venue resolution safely
+  if (typeof window !== 'undefined') {
+    const res = await fetch('/api/games', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_game',
+        game: {
+          venueId: sessionData.venue_id,
+          hostId: sessionData.host_id,
+          title: sessionData.title,
+          sport: validSport,
+          notes: sessionData.description,
+          date: startTimeIso,
+          time: startTimeIso,
+          spotsTotal: sessionData.max_players,
+          pricePerPlayer: Math.round((sessionData.fee_cents || 0) / 100),
+          format: sessionData.rotation_format || '5v5',
+          skillLevel: sessionData.skill_level === 'intermediate' || sessionData.skill_level === 'competitive' ? 'Competitive' : 'Casual',
+          visibility: sessionData.visibility || 'Public',
+          inviteCode: sessionData.invite_code,
+          locationDetails: sessionData.location_details,
+          locationName: sessionData.location_details,
+        },
+      }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.session?.id) {
+      throw new Error(json?.error || 'Failed to create session on server.');
+    }
+
+    const createdSession = json.session as Session;
+    saveLocalStoredSession(createdSession);
+    return createdSession;
+  }
+
+  if (!supabase || !isSupabaseConfigured) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const validVenueId =
+    sessionData.venue_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionData.venue_id)
+      ? sessionData.venue_id
+      : null;
+
+  const validHostId =
+    sessionData.host_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionData.host_id)
+      ? sessionData.host_id
+      : null;
+
   const { data: newSession, error } = await supabase
     .from('sessions')
     .insert({
-      venue_id: resolvedVenueId,
-      host_id: validHostUuid,
+      venue_id: validVenueId,
+      host_id: validHostId,
       title: sessionData.title,
       description: sessionData.description,
       sport: validSport,
@@ -526,77 +494,16 @@ export async function createOpenPlaySession(
     .select('*')
     .single();
 
-  if (error) {
-    if (typeof window !== 'undefined') {
-      try {
-        const res = await fetch('/api/invitations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'create_game',
-            game: {
-              id: localId,
-              venueId: resolvedVenueId,
-              hostId: sessionData.host_id,
-              title: sessionData.title,
-              sport: sessionData.sport,
-              notes: sessionData.description,
-              date: startTimeIso,
-              time: startTimeIso,
-              spotsTotal: sessionData.max_players,
-              pricePerPlayer: Math.round((sessionData.fee_cents || 0) / 100),
-              format: sessionData.rotation_format,
-              skillLevel: sessionData.skill_level === 'intermediate' ? 'Competitive' : 'Casual',
-              visibility: sessionData.visibility || 'Public',
-              inviteCode: sessionData.invite_code,
-              locationDetails: sessionData.location_details,
-            },
-          }),
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.session?.id) {
-            const serverSession: Session = {
-              ...localSession,
-              id: json.session.id,
-              venue_id: json.session.venue_id || localSession.venue_id,
-              host_id: json.session.host_id || localSession.host_id,
-              start_time: json.session.start_time || localSession.start_time,
-              end_time: json.session.end_time || localSession.end_time,
-            };
-            saveLocalStoredSession(serverSession);
-            return serverSession;
-          }
-        }
-      } catch {}
-    }
-    return localSession;
+  if (error || !newSession) {
+    console.error('[Sessions] Session insert failed:', {
+      code: error?.code,
+      message: error?.message,
+      details: error?.details,
+    });
+    throw new Error(error?.message || 'Failed to create Open Play session.');
   }
 
-  // Fetch venue and host cleanly without broken joins
-  let venueObj = localSession.venue;
-  let hostObj = localSession.host;
-
-  if (newSession.venue_id && !venueObj) {
-    try {
-      const { data: v } = await supabase.from('venues').select('*').eq('id', newSession.venue_id).maybeSingle();
-      if (v) venueObj = v;
-    } catch {}
-  }
-
-  if (newSession.host_id && !hostObj) {
-    try {
-      const { data: u } = await supabase.from('users').select('*').eq('id', newSession.host_id).maybeSingle();
-      if (u) hostObj = u;
-    } catch {}
-  }
-
-  const created = {
-    ...newSession,
-    venue: venueObj,
-    host: hostObj,
-  } as Session;
-
+  const created = newSession as Session;
   saveLocalStoredSession(created);
   return created;
 }
@@ -659,27 +566,22 @@ export async function updateOpenPlaySession(
 }
 
 /**
- * Permanently delete or cancel an Open Play session and clean up related participation records.
+ * Permanently delete or cancel an Open Play session by its canonical ID and clean up related participation records.
  */
 export async function deleteOpenPlaySession(
   sessionId: string,
-  sessionTitle?: string
+  _sessionTitle?: string
 ): Promise<boolean> {
   const supabase = getSupabaseClient();
 
-  // 1. Mark in permanent tombstone storage to prevent resurrection
-  markSessionDeleted(sessionId, sessionTitle);
+  // 1. Mark canonical session ID in tombstone storage to prevent local resurrection
+  markSessionDeleted(sessionId);
 
-  // 2. Remove from localStorage
+  // 2. Remove from localStorage strictly by ID
   if (typeof window !== 'undefined') {
     try {
       const existing = getLocalStoredSessions();
-      const normTitle = sessionTitle?.trim().toLowerCase();
-      const updated = existing.filter((s) => {
-        if (s.id === sessionId) return false;
-        if (normTitle && s.title.trim().toLowerCase() === normTitle) return false;
-        return true;
-      });
+      const updated = existing.filter((s) => s.id !== sessionId);
       localStorage.setItem('sportsync_user_sessions', JSON.stringify(updated));
     } catch (err) {
       console.warn('Failed to remove session from localStorage:', err);
@@ -712,17 +614,11 @@ export async function deleteOpenPlaySession(
       console.warn('[Sessions] Payments cleanup notice:', e);
     }
 
-    // 6. Delete session itself from database by id
+    // 6. Delete session itself from database strictly by id (never by title)
     const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
     if (error) {
-      console.warn('[Sessions] Supabase delete session error, trying fallback:', error.message);
-      if (sessionTitle) {
-        await supabase.from('sessions').delete().eq('title', sessionTitle);
-      }
+      console.warn('[Sessions] Supabase delete session error, marking cancelled:', error.message);
       await supabase.from('sessions').update({ status: 'cancelled' }).eq('id', sessionId);
-    } else if (sessionTitle) {
-      // Also ensure any matching session title is cleaned up
-      await supabase.from('sessions').delete().eq('title', sessionTitle);
     }
     return true;
   } catch (err) {
@@ -730,4 +626,3 @@ export async function deleteOpenPlaySession(
     return true;
   }
 }
-

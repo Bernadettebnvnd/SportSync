@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS public.court_availability (
 -- 10. Sessions Table (Open Play Rotations)
 CREATE TABLE IF NOT EXISTS public.sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    venue_id UUID NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
+    venue_id UUID REFERENCES public.venues(id) ON DELETE CASCADE,
     host_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
     description TEXT,

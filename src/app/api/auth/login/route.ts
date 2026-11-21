@@ -61,7 +61,11 @@ export async function POST(request: Request) {
     return response;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Authentication failed.';
-    const status = message.includes('Invalid email or password') ? 401 : 500;
+    const status =
+      message.includes('Invalid email or password') ||
+      message.toLowerCase().includes('not been confirmed')
+        ? 401
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
