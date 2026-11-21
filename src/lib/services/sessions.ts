@@ -279,15 +279,26 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
           };
         }
       }
-      const locTagMatch = s.description?.match(/\[LOC:(.*?)\]/i);
+      const locTagMatch = s.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
       const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
+      const isInvalidLoc = (val?: string | null) =>
+        !val ||
+        val.includes('Upper Deck') ||
+        val.includes('Pasig') ||
+        val.includes('Ortigas') ||
+        val === 'Community / Open Court' ||
+        val === 'Naga Sports Venue';
+
       const v = s.venue_id ? venuesMap.get(s.venue_id) : undefined;
-      const vName = v?.name && !v.name.includes('Upper Deck') ? v.name : '';
-      const resolvedLocation = s.location_details || taggedLoc || vName || 'Metro Naga Sports Complex';
+      const vName = !isInvalidLoc(v?.name) ? v!.name : '';
+      const cleanLocDetails = !isInvalidLoc(s.location_details) ? s.location_details : '';
+      const cleanTagged = !isInvalidLoc(taggedLoc) ? taggedLoc : '';
+
+      const resolvedLocation = cleanTagged || cleanLocDetails || vName || 'Metro Naga Sports Complex';
 
       return {
         ...s,
-        location_details: resolvedLocation,
+        location_details: cleanLocDetails || cleanTagged || resolvedLocation,
         venue: v,
         host: resolvedHost,
         queues: queuesMap.get(s.id) || [],

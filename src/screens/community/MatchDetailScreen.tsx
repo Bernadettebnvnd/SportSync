@@ -500,9 +500,16 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 Pitch Venue
               </span>
               <span className="font-semibold text-[#F4F7F0] block">
-                {game.locationName} {game.distance && `(${game.distance})`}
+                {(() => {
+                  const loc = (game.locationName || '').trim();
+                  const det = (game.locationDetails || '').trim();
+                  const isInv = (val: string) => !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas');
+                  const primary = !isInv(loc) ? loc : (!isInv(det) ? det : 'Metro Naga Sports Complex');
+                  return `${primary} ${game.distance ? `(${game.distance})` : ''}`;
+                })()}
               </span>
               {game.locationDetails &&
+                !game.locationDetails.includes('Upper Deck') &&
                 game.locationDetails.trim().toLowerCase() !== game.locationName.trim().toLowerCase() && (
                 <span className="text-[11px] text-[#A5B0A6] block mt-0.5">
                   {game.locationDetails}

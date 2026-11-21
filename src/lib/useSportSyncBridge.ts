@@ -607,17 +607,18 @@ export function useSportSyncBridge() {
               // Drop legacy local-only cg_* games that were never persisted in Supabase
               if (String(g.id).startsWith('cg_') && (!g.sessionId || String(g.sessionId).startsWith('cg_'))) return;
               if (!isGameDeleted(g) && !seenIds.has(g.id)) {
-                let cleanLoc = g.locationName;
-                if (cleanLoc && cleanLoc.includes('Upper Deck')) {
-                  cleanLoc = g.locationDetails && !g.locationDetails.includes('Upper Deck')
-                    ? g.locationDetails
-                    : 'Metro Naga Sports Complex';
+                const isInvalid = (val?: string | null) =>
+                  !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas') || val === 'Community / Open Court' || val === 'Naga Sports Venue';
+                let cleanLoc = !isInvalid(g.locationName) ? g.locationName : '';
+                if (!cleanLoc) {
+                  cleanLoc = !isInvalid(g.locationDetails) ? g.locationDetails : 'Metro Naga Sports Complex';
                 }
+                const cleanDetails = !isInvalid(g.locationDetails) ? g.locationDetails : cleanLoc;
                 seenIds.add(g.id);
                 deduped.push({
                   ...g,
                   locationName: cleanLoc,
-                  locationDetails: g.locationDetails && !g.locationDetails.includes('Upper Deck') ? g.locationDetails : cleanLoc,
+                  locationDetails: cleanDetails,
                 });
               }
             });
@@ -807,9 +808,18 @@ export function useSportSyncBridge() {
             } catch {}
           }
 
-          const isVenueUpperDeck = venue?.name && venue.name.includes('Upper Deck');
-          const resolvedVenueName = isVenueUpperDeck ? '' : venue?.name;
-          const resolvedLoc = taggedLoc || s.location_details || resolvedVenueName || 'Metro Naga Sports Complex';
+          const isInvalidLoc = (val?: string | null) =>
+            !val ||
+            val.includes('Upper Deck') ||
+            val.includes('Pasig') ||
+            val.includes('Ortigas') ||
+            val === 'Community / Open Court' ||
+            val === 'Naga Sports Venue';
+
+          const resolvedVenueName = !isInvalidLoc(venue?.name) ? venue!.name : '';
+          const cleanTagged = !isInvalidLoc(taggedLoc) ? taggedLoc : '';
+          const cleanDetails = !isInvalidLoc(s.location_details) ? s.location_details : '';
+          const resolvedLoc = cleanTagged || cleanDetails || resolvedVenueName || 'Metro Naga Sports Complex';
           const cleanSessionNotes = (s.description || '')
             .replace(/\[INVITE:.*?\]/gi, '')
             .replace(/\[HOST:.*?\]/gi, '')
@@ -828,7 +838,7 @@ export function useSportSyncBridge() {
             date: formattedDate || 'Today',
             time: formattedTime || s.start_time || '18:00',
             locationName: resolvedLoc,
-            locationDetails: s.location_details || taggedLoc || resolvedLoc,
+            locationDetails: cleanDetails || cleanTagged || resolvedLoc,
             coordinates: (s as any).coordinates || parsedCoords,
             distance: '0.9 km away',
             hostId: isUserHost ? userProfile.id : s.host_id,
@@ -851,7 +861,8 @@ export function useSportSyncBridge() {
             if (!nextGame || prevGame.id !== nextGame.id) return false;
             if (prevGame.spotsJoined !== nextGame.spotsJoined) return false;
             if (prevGame.hostName !== nextGame.hostName) return false;
-            if (prevGame.hostAvatar !== nextGame.hostAvatar) return false;
+            if (prevGame.locationName !== nextGame.locationName) return false;
+            if (prevGame.locationDetails !== nextGame.locationDetails) return false;
             const prevMembers = prevGame.members || [];
             const nextMembers = nextGame.members || [];
             if (prevMembers.length !== nextMembers.length) return false;
@@ -1141,18 +1152,20 @@ export function useSportSyncBridge() {
                 const allMembers = Array.from(membersMap.values());
                 const spotsJoined = allMembers.length;
 
-                const locTagMatch = dbSession.description?.match(/\[LOC:(.*?)\]/i);
+                const locTagMatch = dbSession.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
                 const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
-                const vName = venueData?.name && !venueData.name.includes('Upper Deck') ? venueData.name : '';
-                const hasCustomLoc = g.locationName && !g.locationName.includes('Upper Deck') && g.locationName !== 'Naga Sports Venue';
-                const resolvedLocation = hasCustomLoc
-                  ? g.locationName
-                  : (dbSession.location_details || taggedLoc || vName || g.locationName || 'Metro Naga Sports Complex');
+                const isInvalid = (val?: string | null) =>
+                  !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas') || val === 'Community / Open Court' || val === 'Naga Sports Venue';
+                const vName = !isInvalid(venueData?.name) ? venueData!.name : '';
+                const cleanDetails = !isInvalid(dbSession.location_details) ? dbSession.location_details : '';
+                const cleanTagged = !isInvalid(taggedLoc) ? taggedLoc : '';
+                const cleanExisting = !isInvalid(g.locationName) ? g.locationName : '';
+                const resolvedLocation = cleanExisting || cleanDetails || cleanTagged || vName || 'Metro Naga Sports Complex';
 
                 return {
                   ...g,
                   locationName: resolvedLocation,
-                  locationDetails: dbSession.location_details || taggedLoc || resolvedLocation,
+                  locationDetails: cleanDetails || cleanTagged || resolvedLocation,
                   hostName: resolvedHostName,
                   hostAvatar: resolvedHostAvatar,
                   hostId: dbSession.host_id || g.hostId,
@@ -1183,14 +1196,6 @@ export function useSportSyncBridge() {
               const sId = payload?.new?.session_id || payload?.old?.session_id;
               if (sId) {
                 syncSessionRoster(sId, true);
-              } else {
-                setGames((currentGames) => {
-                  currentGames.forEach((g) => {
-                    const id = g.sessionId || g.id;
-                    if (id) syncSessionRoster(id, true);
-                  });
-                  return currentGames;
-                });
               }
             }
           )
@@ -1300,59 +1305,98 @@ export function useSportSyncBridge() {
           if (data?.success && Array.isArray(data.games)) {
             const { ids: deletedIds } = getDeletedGameTombstones();
             setGames((prev) => {
-              const prevMap = new Map<string, CommunityGame>();
-              prev.forEach((g) => {
-                if (g && g.id) {
-                  prevMap.set(g.id, g);
-                  if (g.sessionId) prevMap.set(g.sessionId, g);
-                }
-              });
-
-              const nextList: CommunityGame[] = [];
-              const seenIds = new Set<string>();
+              const incomingMap = new Map<string, CommunityGame>();
+              const isInvalidLoc = (val?: string | null) =>
+                !val ||
+                val.includes('Upper Deck') ||
+                val.includes('Pasig') ||
+                val.includes('Ortigas') ||
+                val === 'Community / Open Court' ||
+                val === 'Naga Sports Venue';
 
               data.games.forEach((incoming: CommunityGame) => {
                 if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
                 if (deletedIds.has(incoming.id) || (incoming.sessionId && deletedIds.has(incoming.sessionId))) return;
-                if (seenIds.has(incoming.id)) return;
-                seenIds.add(incoming.id);
 
-                const existing = prevMap.get(incoming.id) || (incoming.sessionId ? prevMap.get(incoming.sessionId) : undefined);
-                if (existing) {
-                  // Prefer user's inputted location over any legacy Upper Deck reference
-                  const incomingLoc = incoming.locationName;
-                  const existingLoc = existing.locationName;
-                  const isIncomingUpperDeck = incomingLoc && incomingLoc.includes('Upper Deck');
-                  const finalLoc = isIncomingUpperDeck && existingLoc && !existingLoc.includes('Upper Deck')
-                    ? existingLoc
-                    : (incomingLoc && !incomingLoc.includes('Upper Deck') ? incomingLoc : (existingLoc || 'Metro Naga Sports Complex'));
+                const cleanIncomingLoc = !isInvalidLoc(incoming.locationName) ? incoming.locationName : '';
+                const cleanIncomingDetails = !isInvalidLoc(incoming.locationDetails) ? incoming.locationDetails : '';
+                const resolvedLoc = cleanIncomingLoc || cleanIncomingDetails || 'Metro Naga Sports Complex';
 
-                  // Server data is authoritative for title, schedule, location, spotsJoined, members, and status
-                  nextList.push({
+                const sanitized: CommunityGame = {
+                  ...incoming,
+                  locationName: resolvedLoc,
+                  locationDetails: cleanIncomingDetails || cleanIncomingLoc || resolvedLoc,
+                };
+
+                incomingMap.set(incoming.id, sanitized);
+                if (incoming.sessionId) incomingMap.set(incoming.sessionId, sanitized);
+              });
+
+              const seenIds = new Set<string>();
+              const updatedPrev: CommunityGame[] = [];
+
+              prev.forEach((existing) => {
+                if (!existing || !existing.id || isMockGame(existing) || isGameExpired(existing)) return;
+                if (deletedIds.has(existing.id) || (existing.sessionId && deletedIds.has(existing.sessionId))) return;
+                if (seenIds.has(existing.id)) return;
+                seenIds.add(existing.id);
+                if (existing.sessionId) seenIds.add(existing.sessionId);
+
+                const serverMatch = incomingMap.get(existing.id) || (existing.sessionId ? incomingMap.get(existing.sessionId) : undefined);
+                if (serverMatch) {
+                  const cleanExistingLoc = !isInvalidLoc(existing.locationName) ? existing.locationName : '';
+                  const cleanServerLoc = !isInvalidLoc(serverMatch.locationName) ? serverMatch.locationName : '';
+                  const cleanServerDetails = !isInvalidLoc(serverMatch.locationDetails) ? serverMatch.locationDetails : '';
+                  const finalLoc = cleanServerLoc || cleanExistingLoc || cleanServerDetails || 'Metro Naga Sports Complex';
+
+                  updatedPrev.push({
                     ...existing,
-                    ...incoming,
-                    id: incoming.id,
-                    sessionId: incoming.sessionId || incoming.id,
+                    ...serverMatch,
+                    id: existing.id,
+                    sessionId: existing.sessionId || serverMatch.sessionId || existing.id,
                     locationName: finalLoc,
-                    locationDetails: incoming.locationDetails || finalLoc,
-                    spotsJoined: incoming.spotsJoined,
-                    members: Array.isArray(incoming.members) ? incoming.members : existing.members,
-                    coordinates: incoming.coordinates || existing.coordinates,
-                    invitedPlayers: incoming.invitedPlayers || existing.invitedPlayers,
+                    locationDetails: cleanServerDetails || cleanExistingLoc || finalLoc,
+                    spotsJoined: serverMatch.spotsJoined,
+                    members: Array.isArray(serverMatch.members) ? serverMatch.members : existing.members,
+                    coordinates: serverMatch.coordinates || existing.coordinates,
+                    invitedPlayers: serverMatch.invitedPlayers || existing.invitedPlayers,
                   });
                 } else {
-                  const safeLoc = incoming.locationName && !incoming.locationName.includes('Upper Deck')
-                    ? incoming.locationName
-                    : 'Metro Naga Sports Complex';
-                  nextList.push({
-                    ...incoming,
-                    locationName: safeLoc,
-                    locationDetails: incoming.locationDetails || safeLoc,
+                  // Keep local existing game
+                  const cleanExistingLoc = !isInvalidLoc(existing.locationName) ? existing.locationName : '';
+                  const cleanExistingDetails = !isInvalidLoc(existing.locationDetails) ? existing.locationDetails : '';
+                  const finalLoc = cleanExistingLoc || cleanExistingDetails || 'Metro Naga Sports Complex';
+                  updatedPrev.push({
+                    ...existing,
+                    locationName: finalLoc,
+                    locationDetails: cleanExistingDetails || cleanExistingLoc || finalLoc,
                   });
                 }
               });
 
-              // Structural equality check so we don't trigger unnecessary re-renders when nothing changed
+              // Prepend any server games that were not yet in prev
+              const newIncoming: CommunityGame[] = [];
+              data.games.forEach((incoming: CommunityGame) => {
+                if (!incoming || !incoming.id || isMockGame(incoming) || isGameExpired(incoming)) return;
+                if (deletedIds.has(incoming.id) || (incoming.sessionId && deletedIds.has(incoming.sessionId))) return;
+                if (seenIds.has(incoming.id) || (incoming.sessionId && seenIds.has(incoming.sessionId))) return;
+                seenIds.add(incoming.id);
+                if (incoming.sessionId) seenIds.add(incoming.sessionId);
+
+                const cleanIncomingLoc = !isInvalidLoc(incoming.locationName) ? incoming.locationName : '';
+                const cleanIncomingDetails = !isInvalidLoc(incoming.locationDetails) ? incoming.locationDetails : '';
+                const resolvedLoc = cleanIncomingLoc || cleanIncomingDetails || 'Metro Naga Sports Complex';
+
+                newIncoming.push({
+                  ...incoming,
+                  locationName: resolvedLoc,
+                  locationDetails: cleanIncomingDetails || cleanIncomingLoc || resolvedLoc,
+                });
+              });
+
+              const nextList = newIncoming.length > 0 ? [...newIncoming, ...updatedPrev] : updatedPrev;
+
+              // Structural equality check: if nothing changed, bail out and return prev to halt render cascade
               if (nextList.length === prev.length) {
                 const isSame = nextList.every((nextG, idx) => {
                   const prevG = prev[idx];
@@ -1360,6 +1404,7 @@ export function useSportSyncBridge() {
                   if (prevG.title !== nextG.title) return false;
                   if (prevG.date !== nextG.date || prevG.time !== nextG.time) return false;
                   if (prevG.locationName !== nextG.locationName) return false;
+                  if (prevG.locationDetails !== nextG.locationDetails) return false;
                   if (prevG.spotsTotal !== nextG.spotsTotal || prevG.spotsJoined !== nextG.spotsJoined) return false;
                   if (prevG.pricePerPlayer !== nextG.pricePerPlayer) return false;
                   if (prevG.notes !== nextG.notes) return false;

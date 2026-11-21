@@ -438,14 +438,21 @@ export async function GET(req: NextRequest) {
             parsedCoords = JSON.parse(coordsTagMatch[1]);
           } catch {}
         }
-        const isUpperDeck = venue?.name && venue.name.includes('Upper Deck');
-        const validVenueName = venue?.name && venue.name !== 'Community / Open Court' && !isUpperDeck
-          ? venue.name
-          : '';
+        const isInvalidLoc = (val?: string | null) =>
+          !val ||
+          val.includes('Upper Deck') ||
+          val.includes('Pasig') ||
+          val.includes('Ortigas') ||
+          val === 'Community / Open Court' ||
+          val === 'Naga Sports Venue';
+
+        const validVenueName = !isInvalidLoc(venue?.name) ? venue!.name : '';
+        const cleanTaggedLoc = !isInvalidLoc(taggedLoc) ? taggedLoc : '';
+        const cleanLocationDetails = !isInvalidLoc(s.location_details) ? s.location_details : '';
 
         const resolvedLocation =
-          taggedLoc ||
-          s.location_details ||
+          cleanTaggedLoc ||
+          cleanLocationDetails ||
           validVenueName ||
           'Metro Naga Sports Complex';
 
@@ -467,7 +474,7 @@ export async function GET(req: NextRequest) {
           date: fDate,
           time: fTime,
           locationName: resolvedLocation,
-          locationDetails: s.location_details || taggedLoc || resolvedLocation,
+          locationDetails: cleanLocationDetails || cleanTaggedLoc || resolvedLocation,
           distance: 'Naga City • 0.5 km away',
           coordinates: s.coordinates || parsedCoords,
           hostId: s.host_id,
@@ -632,8 +639,23 @@ export async function POST(req: NextRequest) {
       const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
       const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
 
-      const venueLocationName = (game.locationName || game.locationDetails || 'Naga Sports Venue').trim();
-      const venueLocationDetails = (game.locationDetails || game.locationName || venueLocationName).trim();
+      const isInvalidLocInput = (val?: string | null) =>
+        !val ||
+        val.includes('Upper Deck') ||
+        val.includes('Pasig') ||
+        val.includes('Ortigas') ||
+        val === 'Community / Open Court' ||
+        val === 'Naga Sports Venue';
+
+      const venueLocationName = (
+        (!isInvalidLocInput(game.locationName) ? game.locationName : '') ||
+        (!isInvalidLocInput(game.locationDetails) ? game.locationDetails : '') ||
+        'Metro Naga Sports Complex'
+      ).trim();
+      const venueLocationDetails = (
+        (!isInvalidLocInput(game.locationDetails) ? game.locationDetails : '') ||
+        venueLocationName
+      ).trim();
       const coordinates = game.coordinates || [13.6218, 123.1948];
 
       const initialMembers =

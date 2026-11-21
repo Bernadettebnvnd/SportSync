@@ -94,9 +94,16 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
   };
 
   // Location states
-  const [locationName, setLocationName] = useState(game.locationName);
-  const [locationDetails, setLocationDetails] = useState(game.locationDetails || '');
-  const [locationSearchQuery, setLocationSearchQuery] = useState(game.locationName);
+  const isInvalidLoc = (val?: string | null) =>
+    !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas');
+  const initialSafeLoc = !isInvalidLoc(game.locationName)
+    ? game.locationName
+    : (!isInvalidLoc(game.locationDetails) ? game.locationDetails! : 'Metro Naga Sports Complex');
+  const initialSafeDetails = !isInvalidLoc(game.locationDetails) ? game.locationDetails! : '';
+
+  const [locationName, setLocationName] = useState(initialSafeLoc);
+  const [locationDetails, setLocationDetails] = useState(initialSafeDetails);
+  const [locationSearchQuery, setLocationSearchQuery] = useState(initialSafeLoc);
   const [coordinates, setCoordinates] = useState<[number, number]>(() => {
     if (game.coordinates && Array.isArray(game.coordinates) && game.coordinates.length === 2) {
       return game.coordinates;
@@ -143,9 +150,13 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
       if (/^\d{4}-\d{2}-\d{2}$/.test(game.date)) {
         setCustomDate(game.date);
       }
-      setLocationName(game.locationName);
-      setLocationDetails(game.locationDetails || '');
-      setLocationSearchQuery(game.locationName);
+      const safeLoc = !isInvalidLoc(game.locationName)
+        ? game.locationName
+        : (!isInvalidLoc(game.locationDetails) ? game.locationDetails! : 'Metro Naga Sports Complex');
+      const safeDet = !isInvalidLoc(game.locationDetails) ? game.locationDetails! : '';
+      setLocationName(safeLoc);
+      setLocationDetails(safeDet);
+      setLocationSearchQuery(safeLoc);
       setSkillLevel(game.skillLevel || 'Casual');
       setSpotsTotal(game.spotsTotal || 10);
       setPricePerPlayer(game.pricePerPlayer || 0);

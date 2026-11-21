@@ -29,6 +29,19 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
   };
   const currentSportStyle = sportTileStyles[game.sport] || 'bg-[#1C241E] text-[#C8FF2E]';
 
+  const displayLocation = (() => {
+    const loc = (game.locationName || '').trim();
+    const details = (game.locationDetails || '').trim();
+    const isInvalid = (val: string) =>
+      !val ||
+      val.includes('Upper Deck') ||
+      val.includes('Pasig') ||
+      val.includes('Ortigas');
+    if (!isInvalid(loc)) return loc;
+    if (!isInvalid(details)) return details;
+    return 'Metro Naga Sports Complex';
+  })();
+
   return (
     <div
       onClick={onClick}
@@ -57,7 +70,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
           </span>
           <span className="flex items-center gap-1 truncate">
             <MapPin className="w-3.5 h-3.5 text-[#6F7B71]" />
-            {game.locationName}
+            {displayLocation}
           </span>
         </div>
 

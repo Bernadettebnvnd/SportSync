@@ -136,7 +136,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
           {filteredGames.length > 0 ? (
             filteredGames.map((game) => (
               <MatchCard
-                key={game.id}
+                key={game.sessionId || game.id}
                 game={game}
                 onClick={() => onSelectGame(game)}
               />

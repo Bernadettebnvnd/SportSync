@@ -85,6 +85,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
     const seenIds = new Set<string>();
     return games.filter((game) => {
       if (!game || !game.id || seenIds.has(game.id)) return false;
+      if (game.sessionId && seenIds.has(game.sessionId)) return false;
       if (isGameExpired(game)) return false;
 
       // Tab filter
@@ -164,12 +165,15 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesTitle = game.title.toLowerCase().includes(q);
-        const matchesLoc = game.locationName.toLowerCase().includes(q);
+        const matchesLoc =
+          (game.locationName || '').toLowerCase().includes(q) ||
+          (game.locationDetails || '').toLowerCase().includes(q);
         const matchesSport = game.sport.toLowerCase().includes(q);
         if (!matchesTitle && !matchesLoc && !matchesSport) return false;
       }
 
       seenIds.add(game.id);
+      if (game.sessionId) seenIds.add(game.sessionId);
       return true;
     });
   }, [games, activeTab, selectedSport, searchQuery, userName, user?.id]);
@@ -384,7 +388,7 @@ export const SocialHomeScreen: React.FC<SocialHomeScreenProps> = ({
           {filteredGames.length > 0 ? (
             <div className="space-y-2.5">
               {filteredGames.map((game) => (
-                <div key={game.id} className="space-y-1">
+                <div key={game.sessionId || game.id} className="space-y-1">
                   <MatchCard
                     game={game}
                     onClick={() => onSelectGame(game)}
