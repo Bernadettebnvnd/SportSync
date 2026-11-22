@@ -143,7 +143,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   const userCity = localCity && localCity !== 'Current Location' ? localCity : 'Naga City';
   const userSports = localSports.length > 0 ? localSports : ['Football'];
-  const userSkill = formatSkillTier(localSkill || 'Beginner');
+  const userSkill = localSkill || 'Beginner';
 
   const AVAILABLE_SPORTS = [
     'Football',
