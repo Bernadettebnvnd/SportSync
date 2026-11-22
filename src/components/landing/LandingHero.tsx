@@ -156,7 +156,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                   <CalendarCheck className="w-4 h-4 text-[#FF8FC7]" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-[#F4F7F0]">Direct Booking &amp; Game Organizers</p>
+                  <p className="text-xs font-bold text-[#F4F7F0]">Direct Booking</p>
                   <p className="text-[11px] text-[#6F7B71]">Create, join &amp; confirm matches</p>
                 </div>
               </div>
