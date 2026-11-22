@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
@@ -97,42 +98,82 @@ async function authenticateRequest(
   return null;
 }
 
+function getManilaDateParts(date: Date = new Date()): { year: number; month: number; day: number; ymd: string } {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+  const [y, m, d] = ymd.split('-').map((n) => parseInt(n, 10));
+  return { year: y, month: m, day: d, ymd };
+}
+
 function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: string; endIso: string } {
-  const now = new Date();
-  let y = now.getFullYear();
-  let m = now.getMonth();
-  let d = now.getDate();
-  const dNorm = (dateStr || '').trim().toLowerCase();
+  const manilaNow = getManilaDateParts();
+  let y = manilaNow.year;
+  let m = manilaNow.month; // 1-indexed
+  let d = manilaNow.day;
+
+  const rawDate = (dateStr || '').trim();
+  const dNorm = rawDate.toLowerCase();
+
   if (dNorm === 'tomorrow') {
-    const tom = new Date(now);
-    tom.setDate(now.getDate() + 1);
-    y = tom.getFullYear();
-    m = tom.getMonth();
-    d = tom.getDate();
+    const tom = new Date(Date.UTC(y, m - 1, d + 1));
+    y = tom.getUTCFullYear();
+    m = tom.getUTCMonth() + 1;
+    d = tom.getUTCDate();
   } else if (dNorm && dNorm !== 'today') {
-    const parsed = new Date(dateStr!);
-    if (!isNaN(parsed.getTime())) {
-      y = parsed.getFullYear();
-      m = parsed.getMonth();
-      d = parsed.getDate();
+    const isoMatch = rawDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      y = parseInt(isoMatch[1], 10);
+      m = parseInt(isoMatch[2], 10);
+      d = parseInt(isoMatch[3], 10);
+    } else {
+      const hasYear = /\b\d{4}\b/.test(rawDate);
+      const parsed = new Date(hasYear ? rawDate : `${rawDate}, ${y}`);
+      if (!isNaN(parsed.getTime())) {
+        y = hasYear && parsed.getFullYear() >= 2020 ? parsed.getFullYear() : y;
+        m = parsed.getMonth() + 1;
+        d = parsed.getDate();
+      }
     }
   }
 
   let startH = 18;
   let startMin = 0;
   if (timeStr) {
-    const parts = timeStr.trim().split(':');
-    if (parts.length >= 2) {
-      const h = parseInt(parts[0], 10);
-      const min = parseInt(parts[1], 10);
-      if (!isNaN(h)) startH = h;
-      if (!isNaN(min)) startMin = min;
+    const cleanTime = timeStr.trim();
+    const twelveHr = cleanTime.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+    if (twelveHr) {
+      let ph = parseInt(twelveHr[1], 10);
+      const pm = twelveHr[2] ? parseInt(twelveHr[2], 10) : 0;
+      const mer = twelveHr[3].toUpperCase();
+      if (mer === 'PM' && ph < 12) ph += 12;
+      if (mer === 'AM' && ph === 12) ph = 0;
+      startH = ph;
+      startMin = pm;
+    } else {
+      const parts = cleanTime.split(':');
+      if (parts.length >= 2) {
+        const h = parseInt(parts[0], 10);
+        const min = parseInt(parts[1], 10);
+        if (!isNaN(h) && h >= 0 && h <= 23) startH = h;
+        if (!isNaN(min) && min >= 0 && min <= 59) startMin = min;
+      }
     }
   }
 
-  const start = new Date(y, m, d, startH, startMin, 0);
-  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-  return { startIso: start.toISOString(), endIso: end.toISOString() };
+  const yyyy = String(y).padStart(4, '0');
+  const mm = String(m).padStart(2, '0');
+  const dd = String(d).padStart(2, '0');
+  const hh = String(startH).padStart(2, '0');
+  const min = String(startMin).padStart(2, '0');
+
+  const start = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00+08:00`);
+  const validStart = isNaN(start.getTime()) ? new Date() : start;
+  const end = new Date(validStart.getTime() + 2 * 60 * 60 * 1000);
+  return { startIso: validStart.toISOString(), endIso: end.toISOString() };
 }
 
 function formatSessionDateTime(startTime?: string): { date: string; time: string } {
@@ -143,25 +184,34 @@ function formatSessionDateTime(startTime?: string): { date: string; time: string
   try {
     const d = new Date(startTime);
     if (isNaN(d.getTime())) return { date: 'Upcoming', time: startTime };
-    const now = new Date();
-    const isToday =
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate();
-    const tom = new Date(now);
-    tom.setDate(now.getDate() + 1);
-    const isTomorrow =
-      d.getFullYear() === tom.getFullYear() &&
-      d.getMonth() === tom.getMonth() &&
-      d.getDate() === tom.getDate();
+
+    const todayManila = getManilaDateParts();
+    const tomDate = new Date(Date.UTC(todayManila.year, todayManila.month - 1, todayManila.day + 1));
+    const tomorrowYmd = `${tomDate.getUTCFullYear()}-${String(tomDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tomDate.getUTCDate()).padStart(2, '0')}`;
+    const targetManila = getManilaDateParts(d);
+
+    const isToday = targetManila.ymd === todayManila.ymd;
+    const isTomorrow = targetManila.ymd === tomorrowYmd;
+
     const dateLabel = isToday
       ? 'Today'
       : isTomorrow
       ? 'Tomorrow'
-      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return { date: dateLabel, time: `${hours}:${minutes}` };
+      : d.toLocaleDateString('en-US', {
+          timeZone: 'Asia/Manila',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+
+    const timeLabel = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d);
+
+    return { date: dateLabel, time: timeLabel };
   } catch {
     return { date: 'Upcoming', time: startTime };
   }
@@ -278,6 +328,17 @@ export async function GET(req: NextRequest) {
       }
 
       const games: CommunityGame[] = (sessions || [])
+        .filter((s: DbSessionRow) => {
+          const { date, time } = formatSessionDateTime(s.start_time ?? undefined);
+          return !isGameExpired(
+            {
+              date,
+              time,
+              status: (s.status === 'active' ? 'upcoming' : s.status || 'upcoming') as CommunityGame['status'],
+            } as CommunityGame,
+            s.end_time ?? undefined
+          );
+        })
         .map((s: DbSessionRow) => {
           const { date, time } = formatSessionDateTime(s.start_time ?? undefined);
           return {
@@ -305,8 +366,7 @@ export async function GET(req: NextRequest) {
             inviteCode: s.invite_code || undefined,
             members: [],
           } as CommunityGame;
-        })
-        .filter((g) => !isGameExpired(g));
+        });
 
       return NextResponse.json({ success: true, games });
     }
@@ -604,7 +664,9 @@ export async function POST(req: NextRequest) {
     }
 
     const lookupKey = (game.sessionId || game.id || game.inviteCode || body.inviteCode || '').trim();
-    let { session: dbSession, error: lookupErr } = await resolveSessionByCodeOrId(supabase, lookupKey);
+    const resolvedSession = await resolveSessionByCodeOrId(supabase, lookupKey);
+    let dbSession = resolvedSession.session;
+    const lookupErr = resolvedSession.error;
 
     if (lookupErr) {
       return NextResponse.json({ success: false, error: lookupErr.message }, { status: 500 });
@@ -718,6 +780,17 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
 
     if (dbSession && (action === 'update_game' || (!action && game && body.action !== 'create_game'))) {
+      if (
+        dbSession.host_id &&
+        dbSession.host_id !== authUser.id &&
+        (!authUser.auth_id || dbSession.host_id !== authUser.auth_id)
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: Only the host can edit this game.' },
+          { status: 403 }
+        );
+      }
+
       const rawNotes = (game.notes !== undefined ? game.notes : '').replace(/\[(?:LOC|LOCATION|INVITE|HOST|COORDS):.*?\]/gi, '').trim();
       const inviteCode = dbSession.invite_code || game.inviteCode || lookupKey.toUpperCase();
       const hostName = game.hostName || authUser.full_name || 'Host';
@@ -725,7 +798,7 @@ export async function POST(req: NextRequest) {
       const coordinates = game.coordinates || [13.6218, 123.1948];
       const newDesc = `${rawNotes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${hostName}] [LOCATION:${venueLoc}] [COORDS:${JSON.stringify(coordinates)}]`;
 
-      const sessionUpdates: any = {
+      const sessionUpdates: Record<string, any> = {
         title: game.title || dbSession.title,
         description: newDesc,
         max_players: game.spotsTotal || dbSession.max_players,
@@ -733,8 +806,14 @@ export async function POST(req: NextRequest) {
         location_details: game.locationDetails || game.locationName || dbSession.location_details,
         updated_at: nowIso,
       };
-      if (game.time) {
-        sessionUpdates.start_time = game.time;
+      if (game.date || game.time) {
+        const existingSchedule = formatSessionDateTime(dbSession.start_time ?? undefined);
+        const { startIso, endIso } = parseIsoSchedule(
+          game.date || existingSchedule.date,
+          game.time || existingSchedule.time
+        );
+        sessionUpdates.start_time = startIso;
+        sessionUpdates.end_time = endIso;
       }
       if (game.visibility) {
         sessionUpdates.visibility = game.visibility;
@@ -747,18 +826,24 @@ export async function POST(req: NextRequest) {
         .select('*')
         .single();
 
-      if (updateDbErr) {
-        console.warn('[/api/invitations POST update_game] session update warning:', updateDbErr.message);
+      if (updateDbErr || !updatedDb) {
+        console.error('[/api/invitations POST update_game] session update failed:', updateDbErr);
+        return NextResponse.json(
+          { success: false, error: updateDbErr?.message || 'Failed to update game session.' },
+          { status: 500 }
+        );
       }
 
-      const finalDb = updatedDb || { ...dbSession, ...sessionUpdates };
+      const { date: updatedDate, time: updatedTime } = formatSessionDateTime(updatedDb.start_time ?? undefined);
       return NextResponse.json({
         success: true,
-        session: finalDb,
+        session: updatedDb,
         game: {
           ...game,
-          id: finalDb.id,
-          sessionId: finalDb.id,
+          id: updatedDb.id,
+          sessionId: updatedDb.id,
+          date: game.date || updatedDate,
+          time: game.time || updatedTime,
           notes: rawNotes,
         },
       });
@@ -767,7 +852,7 @@ export async function POST(req: NextRequest) {
     if (action === 'accept') {
       const isInviteOnly = dbSession.visibility === 'Invite' || game.visibility === 'Invite';
       if (isInviteOnly) {
-        const isHost = dbSession.host_id === authUser.id;
+        const isHost = dbSession.host_id === authUser.id || (Boolean(authUser.auth_id) && dbSession.host_id === authUser.auth_id);
         const pName = (authUser.full_name || '').trim().toLowerCase();
         const isDirectlyInvited = Boolean(
           game.invitedPlayers?.some(
@@ -791,6 +876,35 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Check existing DB queues for capacity and existing membership
+      const { data: currentQueues, error: preQueueErr } = await supabase
+        .from('queues')
+        .select('user_id, partner_names')
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
+
+      if (preQueueErr) {
+        console.error('[/api/invitations POST accept] pre-join queues check error:', preQueueErr);
+        return NextResponse.json({ success: false, error: preQueueErr.message }, { status: 500 });
+      }
+
+      const activeQueueRows = Array.isArray(currentQueues) ? currentQueues : [];
+      const alreadyInQueue = activeQueueRows.some(
+        (q: { user_id?: string | null }) =>
+          q.user_id === authUser.id || (Boolean(authUser.auth_id) && q.user_id === authUser.auth_id)
+      );
+      const maxPlayers = dbSession.max_players || 10;
+
+      if (!alreadyInQueue && activeQueueRows.length >= maxPlayers) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot join match: The roster is already full (${maxPlayers}/${maxPlayers} players).`,
+          },
+          { status: 409 }
+        );
+      }
+
       // Ensure authUser exists in public.users to satisfy foreign key constraint queues_user_id_fkey
       await supabase.from('users').upsert(
         {
@@ -804,18 +918,12 @@ export async function POST(req: NextRequest) {
         { onConflict: 'id' }
       );
 
-      const { count: activeQueueCount } = await supabase
-        .from('queues')
-        .select('*', { count: 'exact', head: true })
-        .eq('session_id', dbSession.id)
-        .neq('status', 'cancelled');
-
       // Upsert into queues table with valid schema (match_format column removed)
       const { error: queueErr } = await supabase.from('queues').upsert(
         {
           session_id: dbSession.id,
           user_id: authUser.id,
-          queue_number: (activeQueueCount || 0) + 1,
+          queue_number: activeQueueRows.length + 1,
           group_size: 1,
           status: 'waiting',
           partner_names: [authUser.full_name || 'Player'],
@@ -829,17 +937,35 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: queueErr.message }, { status: 500 });
       }
 
-      const updatedMembers = [
-        ...(game.members || []),
-        { id: authUser.id, name: authUser.full_name || 'Player', avatar: (authUser.avatar_url as CommunityGame['hostAvatar']) || 'alex' },
-      ];
-      const dedupedMap = new Map<string, CommunityGame['members'][number]>();
-      updatedMembers.forEach((m) => {
-        const key = m.id || m.name.toLowerCase();
-        if (!dedupedMap.has(key)) dedupedMap.set(key, m);
+      // Query authoritative DB queues count & roster members after join
+      const { data: postQueueRows, error: postQueueErr } = await supabase
+        .from('queues')
+        .select('user_id, partner_names, user:users(id, full_name, nickname, avatar_url)')
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
+
+      if (postQueueErr) {
+        console.error('[/api/invitations POST accept] post-join queues fetch error:', postQueueErr);
+        return NextResponse.json({ success: false, error: postQueueErr.message }, { status: 500 });
+      }
+
+      const dbMembersMap = new Map<string, CommunityGame['members'][number]>();
+      (postQueueRows || []).forEach((q: any) => {
+        const uObj = Array.isArray(q.user) ? q.user[0] : q.user;
+        const mName = uObj?.full_name || uObj?.nickname || (q.partner_names && q.partner_names[0]) || 'Player';
+        const mId = q.user_id || uObj?.id || undefined;
+        const key = mId || mName.toLowerCase();
+        if (!dbMembersMap.has(key)) {
+          dbMembersMap.set(key, {
+            id: mId,
+            name: mName,
+            avatar: (uObj?.avatar_url as CommunityGame['hostAvatar']) || 'alex',
+          });
+        }
       });
-      const finalMembers = Array.from(dedupedMap.values());
-      const finalSpotsJoined = Math.min(dbSession.max_players || 10, finalMembers.length);
+
+      const finalMembers = Array.from(dbMembersMap.values());
+      const finalSpotsJoined = Math.min(maxPlayers, finalMembers.length);
 
       const { error: updateErr } = await supabase
         .from('sessions')
@@ -851,7 +977,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Notify the Game Host immediately via Supabase notifications table & realtime broadcast
-      let hostUserId = dbSession.host_id || game.hostId || null;
+      const hostUserId = dbSession.host_id || game.hostId || null;
       let hostName = game.hostName || '';
 
       if (!hostName && dbSession.description) {
@@ -1049,13 +1175,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const { count: remainingAfterRemove } = await supabase
+        .from('queues')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
+
       const updatedMembers = (game.members || []).filter((m) => {
         if (participantId && m.id && m.id === participantId) return false;
+        if (participantUserId && m.id && m.id === participantUserId) return false;
         if (participantName && m.name && m.name.trim().toLowerCase() === participantName.toLowerCase()) return false;
         return true;
       });
 
-      const nextSpots = updatedMembers.length;
+      const nextSpots = typeof remainingAfterRemove === 'number' ? remainingAfterRemove : updatedMembers.length;
       const { error: updErr } = await supabase
         .from('sessions')
         .update({ current_players_count: nextSpots, updated_at: nowIso })
@@ -1085,8 +1218,14 @@ export async function POST(req: NextRequest) {
         .eq('session_id', dbSession.id)
         .eq('user_id', authUser.id);
 
+      const { count: remainingAfterLeave } = await supabase
+        .from('queues')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
+
       const updatedMembers = (game.members || []).filter((m) => m.id !== authUser.id);
-      const nextSpots = updatedMembers.length;
+      const nextSpots = typeof remainingAfterLeave === 'number' ? remainingAfterLeave : updatedMembers.length;
 
       const { error: updErr } = await supabase
         .from('sessions')
@@ -1106,7 +1245,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'toggle_host_participation') {
-      if (dbSession.host_id && dbSession.host_id !== authUser.id) {
+      if (
+        dbSession.host_id &&
+        dbSession.host_id !== authUser.id &&
+        (!authUser.auth_id || dbSession.host_id !== authUser.auth_id)
+      ) {
         return NextResponse.json(
           { success: false, error: 'Unauthorized: Only the host can toggle participation.' },
           { status: 403 }
@@ -1115,38 +1258,62 @@ export async function POST(req: NextRequest) {
 
       const participate = Boolean(body.participate);
       if (participate) {
-        const { count: currentActive } = await supabase
+        const { data: currentHostQueues, error: countErr } = await supabase
           .from('queues')
-          .select('*', { count: 'exact', head: true })
+          .select('user_id')
           .eq('session_id', dbSession.id)
           .neq('status', 'cancelled');
 
-        if ((currentActive || 0) >= (dbSession.max_players || 10)) {
+        if (countErr) {
+          console.error('[/api/invitations POST toggle_host_participation] queues count error:', countErr);
+          return NextResponse.json({ success: false, error: countErr.message }, { status: 500 });
+        }
+
+        const activeRows = Array.isArray(currentHostQueues) ? currentHostQueues : [];
+        const hostAlreadyJoined = activeRows.some((q) => q.user_id === authUser.id);
+
+        if (!hostAlreadyJoined && activeRows.length >= (dbSession.max_players || 10)) {
           return NextResponse.json(
             { success: false, error: 'Cannot join lineup: Match roster is already full.' },
-            { status: 400 }
+            { status: 409 }
           );
         }
 
-        await supabase.from('queues').upsert(
+        const { error: hostUpsertErr } = await supabase.from('queues').upsert(
           {
             session_id: dbSession.id,
             user_id: authUser.id,
-            queue_number: (currentActive || 0) + 1,
+            queue_number: activeRows.length + 1,
             group_size: 1,
-            match_format: 'doubles',
             status: 'waiting',
             partner_names: [authUser.full_name || 'Organizer'],
+            joined_at: nowIso,
           },
           { onConflict: 'session_id,user_id' }
         );
+
+        if (hostUpsertErr) {
+          console.error('[/api/invitations POST toggle_host_participation] queues upsert error:', hostUpsertErr);
+          return NextResponse.json({ success: false, error: hostUpsertErr.message }, { status: 500 });
+        }
       } else {
-        await supabase
+        const { error: hostDelErr } = await supabase
           .from('queues')
           .delete()
           .eq('session_id', dbSession.id)
           .eq('user_id', authUser.id);
+
+        if (hostDelErr) {
+          console.error('[/api/invitations POST toggle_host_participation] queues delete error:', hostDelErr);
+          return NextResponse.json({ success: false, error: hostDelErr.message }, { status: 500 });
+        }
       }
+
+      const { count: remainingHostToggle } = await supabase
+        .from('queues')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', dbSession.id)
+        .neq('status', 'cancelled');
 
       const updatedMembers = participate
         ? [
@@ -1155,9 +1322,11 @@ export async function POST(req: NextRequest) {
           ]
         : (game.members || []).filter((m) => m.id !== authUser.id);
 
+      const finalCount = typeof remainingHostToggle === 'number' ? remainingHostToggle : updatedMembers.length;
+
       const { error: updErr } = await supabase
         .from('sessions')
-        .update({ current_players_count: updatedMembers.length, updated_at: nowIso })
+        .update({ current_players_count: finalCount, updated_at: nowIso })
         .eq('id', dbSession.id);
 
       if (updErr) {
@@ -1167,8 +1336,8 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        game: { ...game, sessionId: dbSession.id, spotsJoined: updatedMembers.length, members: updatedMembers },
-        spotsJoined: updatedMembers.length,
+        game: { ...game, sessionId: dbSession.id, spotsJoined: finalCount, members: updatedMembers },
+        spotsJoined: finalCount,
         isParticipating: participate,
       });
     }

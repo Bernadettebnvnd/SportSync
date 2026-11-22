@@ -56,7 +56,7 @@ export function BookingModal({
   preselectedDate,
   preselectedTime,
 }: BookingModalProps) {
-  const { submitPayment, createBooking, joinQueue } = useMatchiStore();
+  const { currentUser, submitPayment, createBooking, joinQueue } = useMatchiStore();
 
   const [bookingDate, setBookingDate] = useState(() => preselectedDate || new Date().toISOString().split('T')[0]);
   const [bookingTime, setBookingTime] = useState(preselectedTime || '14:00');
@@ -102,10 +102,21 @@ export function BookingModal({
 
   const handleSimulateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const objectUrl = URL.createObjectURL(file);
-      setReceiptUrl(objectUrl);
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setErrorMsg('Receipt image must be smaller than 4 MB.');
+      return;
     }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setReceiptUrl(reader.result);
+      }
+    };
+    reader.onerror = () => {
+      setErrorMsg('Could not read the selected receipt image. Please try another file.');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,30 +187,45 @@ export function BookingModal({
         }
 
         const resData = await response.json();
-        const serverRef = resData.booking?.bookingReference || generatedVoucher;
+        const serverBooking = resData.booking || {};
+        const serverRef =
+          serverBooking.booking_reference ||
+          serverBooking.bookingReference ||
+          generatedVoucher;
+        const startHourNum = parseInt(bookingTime.split(':')[0], 10);
+        const computedEndHour = Number.isFinite(startHourNum) ? (startHourNum + 1) % 24 : 15;
+        const fallbackEndTime = `${String(computedEndHour).padStart(2, '0')}:${bookingTime.split(':')[1] || '00'}`;
+        const serverEndTime =
+          serverBooking.end_time ||
+          serverBooking.endTime ||
+          fallbackEndTime;
+        const serverStatus = serverBooking.status || 'pending';
+        const serverPaymentStatus =
+          serverBooking.payment_status ||
+          (isCash ? 'cash_at_venue' : 'pending');
 
         createBooking({
-          id: resData.booking?.id || generateBookingFallbackId(),
+          id: serverBooking.id || generateBookingFallbackId(),
           booking_reference: serverRef,
-          user_id: '',
+          user_id: serverBooking.user_id || currentUser?.id || '',
           venue_id: venue.id,
           venue,
           court_id: court.id,
           court,
           sport: court.sport,
           booking_date: bookingDate,
-          start_time: bookingTime,
-          end_time: resData.booking?.endTime || `${parseInt(bookingTime) + 1}:00`,
+          start_time: serverBooking.start_time || bookingTime,
+          end_time: serverEndTime,
           duration_minutes: durationMinutes,
           court_rate_cents: court.hourly_rate_cents,
           booking_amount_cents: feeCalculation.totalAmountCents,
           platform_fee_cents: feeCalculation.platformFeeCents,
           total_amount_cents: feeCalculation.totalAmountCents,
-          status: isCash ? 'confirmed' : 'pending',
-          payment_status: isCash ? 'cash_at_venue' : 'pending',
+          status: serverStatus,
+          payment_status: serverPaymentStatus,
           payment_method: selectedMethod,
           notes,
-          created_at: new Date().toISOString(),
+          created_at: serverBooking.created_at || new Date().toISOString(),
         });
         setConfirmedBookingRef(serverRef);
       } else {
@@ -285,7 +311,7 @@ export function BookingModal({
                 {paymentCategory === 'cash' ? 'Cash Voucher Issued' : 'Payment Submitted for Verification'}
               </span>
               <h3 className="text-xl sm:text-2xl font-bold text-[#1A241E] pt-1">
-                Reservation Confirmed
+                {session ? 'Session Entry Submitted' : 'Booking Request Submitted'}
               </h3>
               <p className="text-xs text-[#65756B]">
                 {court ? `${court.name} at ${venue.name}` : session?.title || venue.name}

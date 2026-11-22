@@ -88,27 +88,41 @@ export function getSemanticKey(n?: Partial<NotificationItem> | null): string {
     rawKey.startsWith('notif_chat_');
 
   if (isChatNotif) {
+    const rKey = (
+      n.recipientId ||
+      meta.recipientId ||
+      meta.recipient_id ||
+      n.recipientName ||
+      meta.recipientName ||
+      meta.recipient_name ||
+      ''
+    )
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+
     const directMsgId = meta.messageId || meta.message_id;
     if (directMsgId) {
-      return `chat_${directMsgId}`;
+      return rKey ? `chat_${directMsgId}_${rKey}` : `chat_${directMsgId}`;
     }
 
     // Try extracting UUID from rawKey / dedupeKey
     const uuidMatch = rawKey.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     if (uuidMatch) {
-      return `chat_${uuidMatch[0]}`;
+      return rKey ? `chat_${uuidMatch[0]}_${rKey}` : `chat_${uuidMatch[0]}`;
     }
 
     // Try extracting msgId from chat_<msgId>_<recipient> or notif_chat_<msgId>_<recipient>
     const chatPrefixMatch = rawKey.match(/(?:notif_)?chat_([a-zA-Z0-9-]+?)(?:_[a-zA-Z0-9-_]+)?$/);
     if (chatPrefixMatch && chatPrefixMatch[1] && chatPrefixMatch[1] !== 'notif') {
-      return `chat_${chatPrefixMatch[1]}`;
+      return rKey ? `chat_${chatPrefixMatch[1]}_${rKey}` : `chat_${chatPrefixMatch[1]}`;
     }
 
     // Fallback: match by game and content preview
     const gId = meta.gameId || meta.game_id || meta.sessionId || meta.session_id || meta.gameTitle || 'game';
     const content = (n.desc || meta.messageText || n.title || '').trim().toLowerCase().replace(/\s+/g, '_');
-    return `chat_${gId}_${content}`;
+    return rKey ? `chat_${gId}_${content}_${rKey}` : `chat_${gId}_${content}`;
   }
 
   if (

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect, react-hooks/refs */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { BottomNav, NavTabId } from './design-system/components/BottomNav';
 import { QuickActionSheet } from './design-system/components/QuickActionSheet';
@@ -47,6 +48,7 @@ import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
 import { useChatUnread, isUserAuthorizedForChat, markGameChatAsRead } from './lib/services/chat';
 import {
+  useNotifications,
   resetNotificationCache,
   isNotificationForUser,
   getUnreadChatNotificationsCount,
@@ -992,13 +994,29 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     activeChatGameTitle: isMatchChatActive ? (selectedGame?.title || null) : null,
   });
 
+  const profileEmail = (bridge.userProfile as { email?: string }).email;
   const userNotificationFilter = useMemo(
     () =>
       !bridge.userProfile.isGuest && bridge.userProfile.name !== 'Guest Player'
-        ? { id: bridge.userProfile.id, name: bridge.userProfile.name }
+        ? {
+            id: bridge.userProfile.id,
+            name: bridge.userProfile.name,
+            email: profileEmail || bridge.store.currentUser.email || undefined,
+            username: bridge.userProfile.username,
+          }
         : undefined,
-    [bridge.userProfile.id, bridge.userProfile.name, bridge.userProfile.isGuest]
+    [
+      bridge.userProfile.id,
+      bridge.userProfile.name,
+      bridge.userProfile.username,
+      profileEmail,
+      bridge.store.currentUser.email,
+      bridge.userProfile.isGuest,
+    ]
   );
+
+  // Mount persistent real-time notification listener at root so incoming alerts stay connected across all screens
+  useNotifications(userNotificationFilter);
 
   const [chatNotifsCount, setChatNotifsCount] = useState<number>(() =>
     getUnreadChatNotificationsCount(undefined, undefined, userNotificationFilter)

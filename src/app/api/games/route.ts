@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
@@ -47,6 +48,85 @@ function isMockFixture(g: { id?: string; sessionId?: string; title?: string }): 
   return MOCK_TITLES.some((mt) => t.includes(mt));
 }
 
+function getManilaDateParts(date: Date = new Date()): { year: number; month: number; day: number; ymd: string } {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+  const [y, m, d] = ymd.split('-').map((n) => parseInt(n, 10));
+  return { year: y, month: m, day: d, ymd };
+}
+
+function parseManilaSchedule(dateStr?: string, timeStr?: string): { startIso: string; endIso: string } {
+  const manilaNow = getManilaDateParts();
+  let y = manilaNow.year;
+  let m = manilaNow.month; // 1-indexed
+  let d = manilaNow.day;
+
+  const rawDate = (dateStr || '').trim();
+  const dNorm = rawDate.toLowerCase();
+
+  if (dNorm === 'tomorrow') {
+    const tom = new Date(Date.UTC(y, m - 1, d + 1));
+    y = tom.getUTCFullYear();
+    m = tom.getUTCMonth() + 1;
+    d = tom.getUTCDate();
+  } else if (dNorm && dNorm !== 'today') {
+    const isoMatch = rawDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      y = parseInt(isoMatch[1], 10);
+      m = parseInt(isoMatch[2], 10);
+      d = parseInt(isoMatch[3], 10);
+    } else {
+      const hasYear = /\b\d{4}\b/.test(rawDate);
+      const parsed = new Date(hasYear ? rawDate : `${rawDate}, ${y}`);
+      if (!isNaN(parsed.getTime())) {
+        y = hasYear && parsed.getFullYear() >= 2020 ? parsed.getFullYear() : y;
+        m = parsed.getMonth() + 1;
+        d = parsed.getDate();
+      }
+    }
+  }
+
+  let startH = 18;
+  let startM = 0;
+  if (timeStr) {
+    const cleanTime = timeStr.trim();
+    const twelveHr = cleanTime.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+    if (twelveHr) {
+      let ph = parseInt(twelveHr[1], 10);
+      const pm = twelveHr[2] ? parseInt(twelveHr[2], 10) : 0;
+      const mer = twelveHr[3].toUpperCase();
+      if (mer === 'PM' && ph < 12) ph += 12;
+      if (mer === 'AM' && ph === 12) ph = 0;
+      startH = ph;
+      startM = pm;
+    } else {
+      const parts = cleanTime.split(':');
+      if (parts.length >= 2) {
+        const ph = parseInt(parts[0], 10);
+        const pm = parseInt(parts[1], 10);
+        if (!isNaN(ph) && ph >= 0 && ph <= 23) startH = ph;
+        if (!isNaN(pm) && pm >= 0 && pm <= 59) startM = pm;
+      }
+    }
+  }
+
+  const yyyy = String(y).padStart(4, '0');
+  const mm = String(m).padStart(2, '0');
+  const dd = String(d).padStart(2, '0');
+  const hh = String(startH).padStart(2, '0');
+  const min = String(startM).padStart(2, '0');
+
+  const startDate = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00+08:00`);
+  const validStart = isNaN(startDate.getTime()) ? new Date() : startDate;
+  const startIso = validStart.toISOString();
+  const endIso = new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
+  return { startIso, endIso };
+}
+
 function formatSessionDateTime(startTime?: string): { date: string; time: string } {
   if (!startTime) return { date: 'Today', time: '18:00' };
   if (!startTime.includes('T') && !startTime.includes('-')) {
@@ -55,15 +135,34 @@ function formatSessionDateTime(startTime?: string): { date: string; time: string
   try {
     const d = new Date(startTime);
     if (isNaN(d.getTime())) return { date: 'Today', time: startTime };
-    const now = new Date();
-    const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-    const tom = new Date(now);
-    tom.setDate(now.getDate() + 1);
-    const isTomorrow = d.getFullYear() === tom.getFullYear() && d.getMonth() === tom.getMonth() && d.getDate() === tom.getDate();
-    const dateLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return { date: dateLabel, time: `${hours}:${minutes}` };
+
+    const todayManila = getManilaDateParts();
+    const tomDate = new Date(Date.UTC(todayManila.year, todayManila.month - 1, todayManila.day + 1));
+    const tomorrowYmd = `${tomDate.getUTCFullYear()}-${String(tomDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tomDate.getUTCDate()).padStart(2, '0')}`;
+    const targetManila = getManilaDateParts(d);
+
+    const isToday = targetManila.ymd === todayManila.ymd;
+    const isTomorrow = targetManila.ymd === tomorrowYmd;
+
+    const dateLabel = isToday
+      ? 'Today'
+      : isTomorrow
+      ? 'Tomorrow'
+      : d.toLocaleDateString('en-US', {
+          timeZone: 'Asia/Manila',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        });
+
+    const timeLabel = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d);
+
+    return { date: dateLabel, time: timeLabel };
   } catch {
     return { date: 'Today', time: startTime };
   }
@@ -164,11 +263,12 @@ async function resolveCanonicalHostUserId(
         city: 'Naga City',
       };
 
-      let { data: upserted, error: upsertErr } = await supabase
+      const { data: initialUpserted, error: upsertErr } = await supabase
         .from('users')
         .upsert(userPayload, { onConflict: 'id' })
         .select('id')
         .maybeSingle();
+      let upserted = initialUpserted;
 
       if (upsertErr && isMissingColumnError(upsertErr)) {
         const { data: minUpserted } = await supabase
@@ -212,7 +312,7 @@ async function getOrCreateSystemCommunityVenueId(
 ): Promise<string | null> {
   const SYSTEM_SLUG = 'community-open-court-naga';
 
-  // 1. Try finding existing system community venue by slug
+  // 1. Try finding existing system community venue by its dedicated slug
   try {
     const { data: existing } = await supabase
       .from('venues')
@@ -225,58 +325,12 @@ async function getOrCreateSystemCommunityVenueId(
     }
   } catch {}
 
-  // 2. Check for any venue in Naga City (by city or address)
+  // 2. Create the dedicated system fallback community venue (never hijack an owner's facility)
   try {
-    const { data: nagaVenue } = await supabase
-      .from('venues')
-      .select('id')
-      .ilike('city', '%Naga%')
-      .limit(1)
-      .maybeSingle();
-
-    if (nagaVenue?.id) {
-      return nagaVenue.id;
-    }
-  } catch {}
-
-  try {
-    const { data: nagaByAddr } = await supabase
-      .from('venues')
-      .select('id')
-      .ilike('address', '%Naga%')
-      .limit(1)
-      .maybeSingle();
-
-    if (nagaByAddr?.id) {
-      return nagaByAddr.id;
-    }
-  } catch {}
-
-  // 3. Fall back to ANY existing venue in the database to satisfy the NOT NULL FK constraint
-  try {
-    const { data: anyVenue } = await supabase
-      .from('venues')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-
-    if (anyVenue?.id) {
-      return anyVenue.id;
-    }
-  } catch {}
-
-  // 4. Try creating the fallback community venue
-  try {
-    const { data: anyUser } = await supabase
-      .from('users')
-      .select('id')
-      .limit(1)
-      .maybeSingle();
-
     const { data: created } = await supabase
       .from('venues')
       .insert({
-        owner_id: anyUser?.id || null,
+        owner_id: null,
         name: 'Community / Open Court',
         slug: SYSTEM_SLUG,
         description: 'System fallback venue for custom community and open-court games in Naga City',
@@ -512,7 +566,7 @@ export async function GET(req: NextRequest) {
           members,
         };
 
-        if (!isGameExpired(gameObj)) {
+        if (!isGameExpired(gameObj, s.end_time ?? undefined)) {
           // Deduplicate strictly by canonical game ID
           combinedMap.set(s.id, gameObj);
         }
@@ -632,40 +686,7 @@ export async function POST(req: NextRequest) {
       ];
       const validSport = validSports.find((vs) => sLower.includes(vs)) || 'basketball';
 
-      const now = new Date();
-      let startYear = now.getFullYear();
-      let startMonth = now.getMonth();
-      let startDay = now.getDate();
-      const dNorm = (game.date || '').trim().toLowerCase();
-      if (dNorm === 'tomorrow') {
-        const tom = new Date(now);
-        tom.setDate(now.getDate() + 1);
-        startYear = tom.getFullYear();
-        startMonth = tom.getMonth();
-        startDay = tom.getDate();
-      } else if (dNorm && dNorm !== 'today') {
-        const parsed = new Date(game.date);
-        if (!isNaN(parsed.getTime())) {
-          startYear = parsed.getFullYear();
-          startMonth = parsed.getMonth();
-          startDay = parsed.getDate();
-        }
-      }
-
-      let startH = 18;
-      let startM = 0;
-      if (game.time) {
-        const parts = game.time.trim().split(':');
-        if (parts.length >= 2) {
-          const ph = parseInt(parts[0], 10);
-          const pm = parseInt(parts[1], 10);
-          if (!isNaN(ph)) startH = ph;
-          if (!isNaN(pm)) startM = pm;
-        }
-      }
-
-      const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
-      const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
+      const { startIso, endIso } = parseManilaSchedule(game.date, game.time);
 
       const isInvalidLocInput = (val?: string | null) =>
         !val ||
@@ -719,7 +740,7 @@ export async function POST(req: NextRequest) {
         basePayload.allowed_formats = (game as any).allowed_formats;
       }
 
-      let activePayload: Record<string, any> = {
+      const activePayload: Record<string, any> = {
         ...basePayload,
         visibility: game.visibility || 'Public',
         invite_code: inviteCode,

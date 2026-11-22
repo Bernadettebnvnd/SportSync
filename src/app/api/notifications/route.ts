@@ -293,7 +293,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Database client not available.' }, { status: 500 });
     }
 
-    const dedupeKey = notif.meta?.dedupeKey || notif.id;
+    const recipientKey = (recipientId || recipientName || 'recipient')
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '_');
+    const rawDedupeKey = String(notif.meta?.dedupeKey || notif.id || '').trim();
+    const dedupeKey =
+      rawDedupeKey && rawDedupeKey.startsWith('chat_') && !rawDedupeKey.endsWith(`_${recipientKey}`)
+        ? `${rawDedupeKey}_${recipientKey}`
+        : rawDedupeKey;
     const nowIso = new Date().toISOString();
 
     // 1. Idempotency Check scoped to this user

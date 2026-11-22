@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Game and Session expiration utility for SportSync.
  * Reinforces strict expiration: once the scheduled game time has finished/expired,
@@ -67,10 +68,27 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
   const now = new Date();
   const currentTimestamp = now.getTime();
 
-  if (sessionEndTime && (sessionEndTime.includes('T') || sessionEndTime.includes('-'))) {
-    const sessionEnd = new Date(sessionEndTime);
+  const candidateEndIso =
+    sessionEndTime ||
+    (game as { end_time?: string; endTime?: string }).end_time ||
+    (game as { end_time?: string; endTime?: string }).endTime;
+
+  if (candidateEndIso && (candidateEndIso.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(candidateEndIso))) {
+    const sessionEnd = new Date(candidateEndIso);
     if (!isNaN(sessionEnd.getTime())) {
       return sessionEnd.getTime() <= currentTimestamp;
+    }
+  }
+
+  const candidateStartIso =
+    (game as { start_time?: string; startTime?: string }).start_time ||
+    (game as { start_time?: string; startTime?: string }).startTime;
+
+  if (candidateStartIso && (candidateStartIso.includes('T') || /^\d{4}-\d{2}-\d{2}T/.test(candidateStartIso))) {
+    const sessionStart = new Date(candidateStartIso);
+    if (!isNaN(sessionStart.getTime())) {
+      const defaultEndMs = sessionStart.getTime() + 2 * 60 * 60 * 1000;
+      return defaultEndMs <= currentTimestamp;
     }
   }
 
@@ -101,18 +119,26 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
     return true;
   }
 
-  let gameYear = now.getFullYear();
-  let gameMonth = now.getMonth(); // 0-indexed
-  let gameDay = now.getDate();
+  // Resolve current Manila calendar date parts (YYYY-MM-DD) so UTC servers and local clients agree
+  const manilaTodayStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  const [manilaYear, manilaMonth, manilaDay] = manilaTodayStr.split('-').map((n) => parseInt(n, 10));
+
+  let gameYear = manilaYear || now.getFullYear();
+  let gameMonth = (manilaMonth ? manilaMonth - 1 : now.getMonth()); // 0-indexed
+  let gameDay = manilaDay || now.getDate();
 
   if (lowerDate === 'today') {
-    // Uses current date
+    // Uses current Manila date
   } else if (lowerDate === 'tomorrow') {
-    const tom = new Date(now);
-    tom.setDate(now.getDate() + 1);
-    gameYear = tom.getFullYear();
-    gameMonth = tom.getMonth();
-    gameDay = tom.getDate();
+    const tom = new Date(Date.UTC(gameYear, gameMonth, gameDay + 1));
+    gameYear = tom.getUTCFullYear();
+    gameMonth = tom.getUTCMonth();
+    gameDay = tom.getUTCDate();
   } else {
     // Try YYYY-MM-DD
     const isoMatch = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
@@ -121,10 +147,13 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
       gameMonth = parseInt(isoMatch[2], 10) - 1;
       gameDay = parseInt(isoMatch[3], 10);
     } else {
-      // Try standard string parse e.g. "Nov 3, 2026" or "Nov 3"
-      const parsedDate = new Date(dateStr);
+      // If no 4-digit year is present (e.g. "Nov 25"), append current Manila year so V8 never defaults to 2001
+      const hasYear = /\b\d{4}\b/.test(dateStr);
+      const dateStrWithYear = hasYear ? dateStr : `${dateStr}, ${gameYear}`;
+      const parsedDate = new Date(dateStrWithYear);
       if (!isNaN(parsedDate.getTime())) {
-        gameYear = parsedDate.getFullYear();
+        const parsedYear = parsedDate.getFullYear();
+        gameYear = hasYear && parsedYear >= 2020 ? parsedYear : gameYear;
         gameMonth = parsedDate.getMonth();
         gameDay = parsedDate.getDate();
       }
@@ -134,6 +163,7 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
   // Determine end time of the match
   let endHour = 23;
   let endMinute = 59;
+  let dayOffset = 0;
 
   if (timeStr) {
     // If time is a range e.g. "18:00 - 20:00" or "6:00 PM - 8:00 PM"
@@ -157,14 +187,20 @@ export function isGameExpired(game: CommunityGame, sessionEndTime?: string): boo
         }
         if (endHour >= 24) {
           endHour -= 24;
-          gameDay += 1;
+          dayOffset += 1;
         }
       }
     }
   }
 
-  // Construct expiration moment
-  const expirationDate = new Date(gameYear, gameMonth, gameDay, endHour, endMinute, 0, 0);
+  // Construct expiration moment explicitly in Asia/Manila (+08:00)
+  const targetUtcDate = new Date(Date.UTC(gameYear, gameMonth, gameDay + dayOffset));
+  const yyyy = targetUtcDate.getUTCFullYear();
+  const mm = String(targetUtcDate.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(targetUtcDate.getUTCDate()).padStart(2, '0');
+  const hh = String(Math.min(23, Math.max(0, endHour))).padStart(2, '0');
+  const min = String(Math.min(59, Math.max(0, endMinute))).padStart(2, '0');
+  const expirationDate = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00+08:00`);
 
   return expirationDate.getTime() <= currentTimestamp;
 }

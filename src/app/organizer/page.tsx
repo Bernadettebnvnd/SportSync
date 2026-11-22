@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 
 import React, { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
@@ -714,11 +715,43 @@ function OrganizerDashboardContent() {
     setTimeout(() => setMonetizeSuccessMessage(null), 4000);
   };
 
-  const toggleCourtStatus = (courtId: string, currentActive: boolean) => {
+  const toggleCourtStatus = async (courtId: string, currentActive: boolean) => {
+    const currentlyEffective =
+      courtStatusMap[courtId] !== undefined ? courtStatusMap[courtId] : currentActive;
+    const nextActive = !currentlyEffective;
+
     setCourtStatusMap((prev) => ({
       ...prev,
-      [courtId]: prev[courtId] !== undefined ? !prev[courtId] : !currentActive,
+      [courtId]: nextActive,
     }));
+
+    try {
+      const res = await fetch('/api/courts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: courtId,
+          is_active: nextActive,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to update court availability status.');
+      }
+      setMonetizeSuccessMessage(
+        `Court status updated to "${nextActive ? 'Active & Available' : 'Temporarily Closed'}"!`
+      );
+      setTimeout(() => setMonetizeSuccessMessage(null), 4000);
+      await refreshVenues();
+    } catch (err: unknown) {
+      setCourtStatusMap((prev) => ({
+        ...prev,
+        [courtId]: currentlyEffective,
+      }));
+      const msg = err instanceof Error ? err.message : 'Failed to update court status.';
+      setEditCourtError(msg);
+    }
   };
 
   const handleAddWalkIn = (e: React.FormEvent) => {

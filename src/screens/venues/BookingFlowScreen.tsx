@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 import React, { useState, useMemo, useEffect } from 'react';
 import { ArrowLeft, Clock, Calendar, Check, Users, ArrowRight } from 'lucide-react';
 import { Venue, AvatarId } from '../../mock/types';
@@ -7,6 +8,7 @@ import { Button } from '../../design-system/components/Button';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { APP_CONFIG } from '../../config/appConfig';
 import { useMatchiStore } from '../../lib/store';
+import { extractSlotMinutes } from '../../lib/services/bookings';
 
 interface BookingFlowScreenProps {
   venue: Venue;
@@ -78,24 +80,118 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   const [selectedCourt, setSelectedCourt] = useState(courts[0] || 'Court 1 (Clay)');
 
   const selectedDateStr = selectedDateItem?.fullDate || selectedDateId;
+  const [durationHours, setDurationHours] = useState(1.5);
+  const [remoteAvailabilityBookings, setRemoteAvailabilityBookings] = useState<
+    Array<{
+      id?: string;
+      venue_id?: string;
+      court_id?: string;
+      booking_date?: string;
+      start_time?: string;
+      end_time?: string;
+      duration_minutes?: number;
+      status?: string;
+      court?: { id?: string; name?: string; is_active?: boolean };
+    }>
+  >([]);
+  const [remoteCourtBlocks, setRemoteCourtBlocks] = useState<
+    Array<{
+      court_id?: string;
+      start_time?: string;
+      end_time?: string;
+    }>
+  >([]);
 
-  // Real confirmed reservations (pending requests do NOT block slots)
-  const confirmedBookingSlots = useMemo(() => {
-    const bookedTimes = new Set<string>();
-    bookings.forEach((b) => {
-      const matchesVenue = b.venue_id === venue.id || b.venue_id === (venue as any).slug;
+  const selectedCourtObj = useMemo(() => {
+    return (venue.courts || []).find((c) => c.name === selectedCourt || c.id === selectedCourt);
+  }, [venue.courts, selectedCourt]);
+
+  useEffect(() => {
+    let active = true;
+    const courtIdParam = selectedCourtObj?.id ? `&courtId=${encodeURIComponent(selectedCourtObj.id)}` : '';
+    fetch(
+      `/api/bookings?availability=true&venueId=${encodeURIComponent(venue.id)}${courtIdParam}&date=${encodeURIComponent(selectedDateStr)}`,
+      { credentials: 'include', cache: 'no-store' }
+    )
+      .then((res) => (res.ok ? res.json() : { bookings: [], blocks: [] }))
+      .then((data) => {
+        if (!active) return;
+        setRemoteAvailabilityBookings(Array.isArray(data?.bookings) ? data.bookings : []);
+        setRemoteCourtBlocks(Array.isArray(data?.blocks) ? data.blocks : []);
+      })
+      .catch(() => {
+        if (active) {
+          setRemoteAvailabilityBookings([]);
+          setRemoteCourtBlocks([]);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [venue.id, selectedCourtObj?.id, selectedDateStr]);
+
+  // Real confirmed reservation intervals [startMins, endMins) (pending requests do NOT block slots)
+  const lockedIntervals = useMemo(() => {
+    const intervals: Array<{ startMins: number; endMins: number }> = [];
+    const combinedBookings = [...bookings, ...remoteAvailabilityBookings];
+    const seenIds = new Set<string>();
+
+    combinedBookings.forEach((b) => {
+      if (b.id && seenIds.has(b.id)) return;
+      if (b.id) seenIds.add(b.id);
+
+      const matchesVenue =
+        b.venue_id === venue.id ||
+        b.venue_id === (venue as { slug?: string }).slug ||
+        (selectedCourtObj?.id && b.court_id === selectedCourtObj.id);
       const matchesDate = b.booking_date === selectedDateStr || b.booking_date === selectedDateId;
-      const matchesCourt = !b.court?.name || b.court?.name === selectedCourt || (b as any).courtName === selectedCourt;
-      // Only confirmed reservations block slots! Pending bookings do NOT block slots.
+      const matchesCourt =
+        (selectedCourtObj?.id && b.court_id === selectedCourtObj.id) ||
+        !b.court?.name ||
+        b.court?.name === selectedCourt ||
+        (b as { courtName?: string }).courtName === selectedCourt;
       const isConfirmed = b.status === 'confirmed' || b.status === 'completed';
 
       if (matchesVenue && matchesDate && matchesCourt && isConfirmed) {
-        const timePrefix = (b.start_time || '').substring(0, 5);
-        if (timePrefix) bookedTimes.add(timePrefix);
+        const startMins = extractSlotMinutes(b.start_time, false);
+        if (startMins !== null) {
+          const endMins =
+            extractSlotMinutes(b.end_time, true, startMins, b.duration_minutes || 60) ??
+            startMins + (Number(b.duration_minutes) || 60);
+          intervals.push({
+            startMins,
+            endMins: endMins > startMins ? endMins : startMins + (Number(b.duration_minutes) || 60),
+          });
+        }
       }
     });
-    return bookedTimes;
-  }, [bookings, venue.id, selectedDateStr, selectedDateId, selectedCourt]);
+
+    remoteCourtBlocks.forEach((blk) => {
+      if (selectedCourtObj?.id && blk.court_id && blk.court_id !== selectedCourtObj.id) return;
+      if (blk.start_time && String(blk.start_time).includes('T') && !String(blk.start_time).startsWith(selectedDateStr)) {
+        return;
+      }
+      const startMins = extractSlotMinutes(blk.start_time, false);
+      if (startMins !== null) {
+        const endMins = extractSlotMinutes(blk.end_time, true, startMins, 60) ?? startMins + 60;
+        intervals.push({
+          startMins,
+          endMins: endMins > startMins ? endMins : startMins + 60,
+        });
+      }
+    });
+
+    return intervals;
+  }, [
+    bookings,
+    remoteAvailabilityBookings,
+    remoteCourtBlocks,
+    venue,
+    selectedDateStr,
+    selectedDateId,
+    selectedCourt,
+    selectedCourtObj,
+  ]);
 
   const rawTimeSlots = [
     { time: '08:30', price: venue.pricePerHour },
@@ -113,11 +209,17 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   const isSelectedDateToday = selectedDateItem?.isToday ?? false;
   const currentHour = now.getHours();
   const currentMin = now.getMinutes();
+  const isSelectedCourtClosed = (selectedCourtObj as { is_active?: boolean } | undefined)?.is_active === false;
+  const requestedDurationMins = Math.round((durationHours || 1) * 60);
 
   const timeSlots = rawTimeSlots.map((slot) => {
     const [h, m] = slot.time.split(':').map(Number);
+    const slotStartMins = h * 60 + m;
+    const slotEndMins = slotStartMins + requestedDurationMins;
     const isPastSlot = isSelectedDateToday && (h < currentHour || (h === currentHour && m <= currentMin));
-    const isBooked = confirmedBookingSlots.has(slot.time);
+    const isBooked =
+      isSelectedCourtClosed ||
+      lockedIntervals.some((iv) => slotStartMins < iv.endMins && slotEndMins > iv.startMins);
     return {
       ...slot,
       isPast: isPastSlot,
@@ -129,16 +231,15 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
   const defaultSlot = timeSlots.find((s) => s.status === 'available')?.time || '18:30';
   const [selectedSlot, setSelectedSlot] = useState(defaultSlot);
 
-  // If date changes, ensure slot isn't a past slot
+  // If date or court changes, ensure slot isn't a past or booked slot
   React.useEffect(() => {
     const isCurrentSlotInvalid = timeSlots.some((s) => s.time === selectedSlot && (s.status === 'past' || s.status === 'booked'));
     if (isCurrentSlotInvalid) {
       const nextAvailable = timeSlots.find((s) => s.status === 'available');
       if (nextAvailable) setSelectedSlot(nextAvailable.time);
     }
-  }, [selectedDateId, isSelectedDateToday]);
+  }, [selectedDateId, isSelectedDateToday, selectedCourt, lockedIntervals.length, durationHours]);
 
-  const [durationHours, setDurationHours] = useState(1.5);
   const [invitedFriends, setInvitedFriends] = useState<string[]>(['f1', 'f3']);
 
   const toggleFriend = (id: string) => {

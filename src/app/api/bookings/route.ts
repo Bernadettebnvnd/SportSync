@@ -223,6 +223,43 @@ export async function GET(request: Request) {
     const bookingDate = url.searchParams.get('date');
     const requestedUserId = url.searchParams.get('userId');
     const mine = url.searchParams.get('mine') === 'true';
+    const availabilityOnly = url.searchParams.get('availability') === 'true';
+
+    // Public/Player slot availability lookup: returns only non-PII slot intervals & court_availability blocks
+    if (availabilityOnly && (venueId || courtId)) {
+      let availQuery = dbClient
+        .from('bookings')
+        .select('id, venue_id, court_id, booking_date, start_time, end_time, duration_minutes, status, court:courts(id, name, is_active)')
+        .in('status', ['confirmed', 'completed']);
+
+      if (venueId && isValidUuid(venueId)) {
+        availQuery = availQuery.eq('venue_id', venueId);
+      }
+      if (courtId && isValidUuid(courtId)) {
+        availQuery = availQuery.eq('court_id', courtId);
+      }
+      if (bookingDate) {
+        availQuery = availQuery.eq('booking_date', bookingDate);
+      }
+
+      const { data: slotBookings } = await availQuery;
+      let blocks: any[] = [];
+      if (courtId && isValidUuid(courtId)) {
+        const { data: courtBlocks } = await dbClient
+          .from('court_availability')
+          .select('id, court_id, start_time, end_time, block_type, booking_id')
+          .eq('court_id', courtId);
+        if (Array.isArray(courtBlocks)) {
+          blocks = courtBlocks;
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        bookings: Array.isArray(slotBookings) ? slotBookings : [],
+        blocks,
+      });
+    }
 
     const isAdmin = String((authUser as any).role || '') === 'admin';
     const selfIds = new Set(
@@ -447,6 +484,28 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // 3b. Enforce valid booking status transitions
+    const currentStatus = String(currentBooking.status || 'pending').toLowerCase();
+    if (currentStatus !== status) {
+      const allowedTransitions: Record<string, Set<string>> = {
+        pending: new Set(['confirmed', 'rejected', 'cancelled']),
+        confirmed: new Set(['completed', 'cancelled', 'no_show', 'rejected']),
+        completed: new Set([]),
+        rejected: new Set([]),
+        cancelled: new Set([]),
+        no_show: new Set([]),
+      };
+      const allowedNext = allowedTransitions[currentStatus];
+      if (!allowedNext || !allowedNext.has(status)) {
+        return NextResponse.json(
+          {
+            error: `Invalid booking status transition: cannot change a "${currentStatus}" booking to "${status}".`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // 4. Handle court_availability locking / unlocking
     if (status === 'confirmed') {
       const { data: conflicts, error: conflictErr } = await dbClient
@@ -456,9 +515,8 @@ export async function PATCH(request: Request) {
         .eq('booking_date', currentBooking.booking_date)
         .eq('status', 'confirmed')
         .neq('id', currentBooking.id)
-        .or(
-          `and(start_time.lte.${currentBooking.start_time},end_time.gt.${currentBooking.start_time}),and(start_time.lt.${currentBooking.end_time},end_time.gte.${currentBooking.end_time})`
-        );
+        .lt('start_time', currentBooking.end_time)
+        .gt('end_time', currentBooking.start_time);
 
       if (conflictErr && !isMissingTableError(conflictErr)) {
         console.error('[BookingsAPI PATCH] Conflict check failed:', conflictErr);
@@ -821,6 +879,41 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // Reject past dates or past time slots in Asia/Manila (pilot timezone)
+    const now = new Date();
+    const manilaToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+    const manilaTimeStr = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(now);
+    const [manilaH, manilaM] = manilaTimeStr.split(':').map((n) => parseInt(n, 10));
+
+    if (String(bookingDate).trim() < manilaToday) {
+      return NextResponse.json(
+        { error: 'Cannot book a court for a past date.' },
+        { status: 400 }
+      );
+    }
+    if (
+      String(bookingDate).trim() === manilaToday &&
+      !isNaN(manilaH) &&
+      !isNaN(manilaM) &&
+      startH * 60 + startM < manilaH * 60 + manilaM
+    ) {
+      return NextResponse.json(
+        { error: 'Cannot book a court for a time slot that has already passed today.' },
+        { status: 400 }
+      );
+    }
+
     const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
     const startIso = startDateTime.toISOString();
     const endIso = endDateTime.toISOString();
@@ -919,6 +1012,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (court.is_active === false) {
+      return NextResponse.json(
+        { error: 'This court is currently closed or under maintenance and cannot be reserved.' },
+        { status: 400 }
+      );
+    }
+
     const actualRate = court?.hourly_rate_cents || hourlyRate;
     const actualFees = calculateBookingFees(actualRate, duration);
 
@@ -929,9 +1029,8 @@ export async function POST(request: Request) {
       .eq('court_id', resolvedCourtId)
       .eq('booking_date', bookingDate)
       .eq('status', 'confirmed')
-      .or(
-        `and(start_time.lte.${startIso},end_time.gt.${startIso}),and(start_time.lt.${endIso},end_time.gte.${endIso})`
-      );
+      .lt('start_time', endIso)
+      .gt('end_time', startIso);
 
     if (conflictErr) {
       if (isMissingTableError(conflictErr)) {
@@ -945,13 +1044,27 @@ export async function POST(request: Request) {
     }
 
     if (!hasConflict) {
+      try {
+        const { data: blockConflicts } = await dbClient
+          .from('court_availability')
+          .select('id')
+          .eq('court_id', resolvedCourtId)
+          .lt('start_time', endIso)
+          .gt('end_time', startIso);
+        if (Array.isArray(blockConflicts) && blockConflicts.length > 0) {
+          hasConflict = true;
+        }
+      } catch {}
+    }
+
+    if (!hasConflict) {
       const inMemConflict = Array.from(fallbackBookingsStore.values()).some(
         (b) =>
           b.court_id === resolvedCourtId &&
           b.booking_date === bookingDate &&
           b.status === 'confirmed' &&
-          ((b.start_time <= startIso && b.end_time > startIso) ||
-           (b.start_time < endIso && b.end_time >= endIso))
+          b.start_time < endIso &&
+          b.end_time > startIso
       );
       if (inMemConflict) {
         hasConflict = true;

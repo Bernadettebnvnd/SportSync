@@ -645,9 +645,14 @@ export async function POST(
       const nowIso = new Date().toISOString();
 
       for (const recipient of recipientMap.values()) {
-        const notifId = `notif_chat_${insertedRow.id}_${(recipient.id || recipient.name).replace(/\s+/g, '_')}`;
         const recipientId = recipient.id && isUuid(recipient.id) ? recipient.id : null;
         const recipientName = recipient.name;
+        const recipientKey = (recipientId || recipientName || 'recipient')
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, '_');
+        const dedupeKey = `chat_${insertedRow.id}_${recipientKey}`;
+        const notifId = `notif_chat_${insertedRow.id}_${recipientKey}`;
 
         const notifItem = {
           id: notifId,
@@ -676,7 +681,7 @@ export async function POST(
             senderAvatar: resolvedAvatar,
             recipientId,
             recipientName,
-            dedupeKey: `chat_${insertedRow.id}`,
+            dedupeKey,
           },
         };
 
@@ -687,7 +692,7 @@ export async function POST(
           let dupQuery = supabase
             .from('notifications')
             .select('id')
-            .filter('metadata->>messageId', 'eq', insertedRow.id);
+            .filter('metadata->>dedupeKey', 'eq', dedupeKey);
           if (recipientId) {
             dupQuery = dupQuery.eq('user_id', recipientId);
           } else if (recipientName) {
