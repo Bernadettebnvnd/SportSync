@@ -8,6 +8,7 @@ import {
   Users,
   MapPin,
   Calendar,
+  CalendarCheck,
   Clock,
   CheckCircle2,
   MessageSquare,
@@ -152,11 +153,11 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
 
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[#FF8FC7]/10 border border-[#FF8FC7]/25 flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-4 h-4 text-[#FF8FC7]" />
+                  <CalendarCheck className="w-4 h-4 text-[#FF8FC7]" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-[#F4F7F0]">Live Match Chat</p>
-                  <p className="text-[11px] text-[#6F7B71]">Coordinate with your squad</p>
+                  <p className="text-xs font-bold text-[#F4F7F0]">Direct Booking &amp; Game Organizers</p>
+                  <p className="text-[11px] text-[#6F7B71]">Create, join &amp; confirm matches</p>
                 </div>
               </div>
 
