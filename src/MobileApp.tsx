@@ -24,6 +24,7 @@ import { CreateMatchWizardScreen } from './screens/community/CreateMatchWizardSc
 import { FindGamesScreen } from './screens/community/FindGamesScreen';
 import { MatchDetailScreen } from './screens/community/MatchDetailScreen';
 import { MatchGroupChatScreen } from './screens/community/MatchGroupChatScreen';
+import { ConversationsListScreen } from './screens/community/ConversationsListScreen';
 import { PostMatchScreen } from './screens/community/PostMatchScreen';
 import { InvitationLandingScreen } from './screens/community/InvitationLandingScreen';
 import { VenuesListScreen } from './screens/venues/VenuesListScreen';
@@ -77,6 +78,7 @@ export type ScreenId =
   | 'find-games'
   | 'match-detail'
   | 'match-chat'
+  | 'conversations'
   | 'post-match'
   | 'invitation-landing'
   | 'venues-list'
@@ -1092,39 +1094,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   const handleOpenChatFromHeader = useCallback(() => {
     if (!requireAuth('Match Chat', 'Sign in to access your match chats.')) return;
-
-    const authorizedGames = bridge.games.filter((g) =>
-      isUserAuthorizedForChat(g, bridge.userProfile.id, bridge.userProfile.name)
-    );
-
-    if (authorizedGames.length === 0) {
-      setToastMessage('No active match chats. Join or create a match to start chatting with your squad!');
-      return;
-    }
-
-    const gameWithUnread = authorizedGames.find((g) => {
-      const fromMap =
-        (chatUnread.unreadByGame[g.id] || 0) ||
-        (g.sessionId ? chatUnread.unreadByGame[g.sessionId] || 0 : 0);
-      const fromNotif = getUnreadChatNotificationsCount(
-        [g.id, g.sessionId].filter(Boolean) as string[],
-        g.title,
-        userNotificationFilter
-      );
-      return fromMap > 0 || fromNotif > 0;
-    });
-    const targetGame = gameWithUnread || selectedGame || authorizedGames[0];
-
-    setSelectedGame(targetGame);
-    markGameChatAsRead(
-      targetGame.id,
-      targetGame.sessionId,
-      targetGame.title,
-      userNotificationFilter,
-      true
-    );
-    navigateTo('match-chat');
-  }, [bridge.games, bridge.userProfile.id, bridge.userProfile.name, chatUnread.unreadByGame, selectedGame, userNotificationFilter]);
+    navigateTo('conversations');
+  }, [requireAuth, navigateTo]);
 
   const handleTabChange = (tab: NavTabId) => {
     setActiveTab(tab);
@@ -1704,15 +1675,47 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 (selectedGame.inviteCode && g.inviteCode && g.inviteCode.toUpperCase() === selectedGame.inviteCode.toUpperCase())
             ) || selectedGame
           : null;
+
+        const isAuthorized = isUserAuthorizedForChat(
+          activeChatGame,
+          bridge.userProfile.id,
+          bridge.userProfile.name
+        );
+
         return (
           <MatchGroupChatScreen
-            game={activeChatGame}
+            game={isAuthorized ? activeChatGame : null}
             currentUserName={bridge.userProfile.name}
             currentUserId={bridge.userProfile.id}
             currentUserAvatar={bridge.userProfile.avatarId}
             onBack={goBack}
             onOpenMatchDetail={() => navigateTo('match-detail')}
             onToast={(msg) => setToastMessage(msg)}
+          />
+        );
+      }
+      case 'conversations': {
+        return (
+          <ConversationsListScreen
+            games={bridge.games}
+            currentUserId={bridge.userProfile.id}
+            currentUserName={bridge.userProfile.name}
+            currentUserAvatar={bridge.userProfile.avatarId}
+            unreadByGame={chatUnread.unreadByGame}
+            onBack={goBack}
+            onSelectGame={(game) => {
+              setSelectedGame(game);
+              markGameChatAsRead(
+                game.id,
+                game.sessionId,
+                game.title,
+                userNotificationFilter,
+                true
+              );
+              navigateTo('match-chat');
+            }}
+            onExploreMatches={() => navigateTo('find-games')}
+            onCreateMatch={() => navigateTo('create-match')}
           />
         );
       }

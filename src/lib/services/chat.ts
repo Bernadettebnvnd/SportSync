@@ -261,7 +261,8 @@ export function subscribeToGameChat(
     return () => {};
   }
 
-  const channelName = `game-chat-${canonicalId}`;
+  const subId = Math.random().toString(36).substring(2, 8);
+  const channelName = `game-chat-${canonicalId}-${subId}`;
   const channel = supabase.channel(channelName);
 
   const processIncomingRow = (row: any) => {
@@ -587,15 +588,64 @@ export function isUserAuthorizedForChat(game: any, userId?: string, userName?: s
   );
 
   const isJoined = Boolean(
-    game.members &&
+    (game.members &&
       game.members.some(
         (m: any) =>
           (m.id && userId && m.id === userId) ||
           (m.name && normName && m.name.trim().toLowerCase() === normName)
-      )
+      )) ||
+    (typeof window !== 'undefined' && (() => {
+      try {
+        const raw = localStorage.getItem('sportsync_joined_games');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            return list.includes(game.id) || (game.sessionId && list.includes(game.sessionId));
+          }
+        }
+      } catch {}
+      return false;
+    })())
   );
 
   return isHost || isJoined;
+}
+
+/**
+ * Determine a user's role in a game ('host' | 'joined' | null).
+ */
+export function getUserGameRole(game: any, userId?: string, userName?: string): 'host' | 'joined' | null {
+  if (!game) return null;
+  const normName = userName?.trim().toLowerCase();
+
+  const isHost = Boolean(
+    (game.hostId && userId && game.hostId === userId) ||
+    (game.hostName && normName && game.hostName.trim().toLowerCase() === normName)
+  );
+  if (isHost) return 'host';
+
+  const isJoined = Boolean(
+    (game.members &&
+      game.members.some(
+        (m: any) =>
+          (m.id && userId && m.id === userId) ||
+          (m.name && normName && m.name.trim().toLowerCase() === normName)
+      )) ||
+    (typeof window !== 'undefined' && (() => {
+      try {
+        const raw = localStorage.getItem('sportsync_joined_games');
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            return list.includes(game.id) || (game.sessionId && list.includes(game.sessionId));
+          }
+        }
+      } catch {}
+      return false;
+    })())
+  );
+
+  return isJoined ? 'joined' : null;
 }
 
 /**
@@ -895,7 +945,8 @@ export function useChatUnread(params: {
     const supabase = getSupabaseClient();
     if (!supabase || !isSupabaseConfigured) return;
 
-    const channelName = `chat-global-unread-${currentUserId || 'anon'}`;
+    const subId = Math.random().toString(36).substring(2, 9);
+    const channelName = `chat-global-unread-${currentUserId || 'anon'}-${subId}`;
     const channel = supabase
       .channel(channelName)
       .on(
