@@ -2398,14 +2398,52 @@ export function useSportSyncBridge() {
       };
 
       const requestedVenueId = (gameData as any).venueId;
-      const matchedVenue = store.venues.find(
-        (v) =>
-          (requestedVenueId && (v.id === requestedVenueId || (v as any).slug === requestedVenueId)) ||
-          (v.name &&
-            gameData.locationName &&
-            (v.name.trim().toLowerCase() === gameData.locationName.trim().toLowerCase() ||
-              gameData.locationName.trim().toLowerCase().includes(v.name.trim().toLowerCase())))
-      );
+      const reqLower = typeof requestedVenueId === 'string' ? requestedVenueId.toLowerCase().replace(/_/g, '-') : '';
+      const locLower = (gameData.locationName || '').trim().toLowerCase();
+
+      const isUuid = (val?: string | null) =>
+        Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()));
+
+      let matchedVenue = store.venues.find((v) => {
+        if (!v) return false;
+        const vSlug = ((v as any).slug || '').toLowerCase();
+        const vName = (v.name || '').toLowerCase();
+        const vId = (v.id || '').toLowerCase();
+
+        if (requestedVenueId && (vId === requestedVenueId.toLowerCase() || vSlug === reqLower)) {
+          return true;
+        }
+
+        if (reqLower && (vSlug.includes(reqLower) || reqLower.includes(vSlug))) {
+          return true;
+        }
+
+        if (locLower && vName && (locLower.includes(vName) || vName.includes(locLower))) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (!matchedVenue && (locLower || reqLower)) {
+        matchedVenue = store.venues.find((v) => {
+          const vName = (v.name || '').toLowerCase();
+          const vSlug = ((v as any).slug || '').toLowerCase();
+          const target = `${locLower} ${reqLower}`;
+
+          if (target.includes('robredo') && (vName.includes('robredo') || vSlug.includes('robredo'))) return true;
+          if ((target.includes('metro naga') || target.includes('pacol')) && (vName.includes('metro naga') || vSlug.includes('metro-naga'))) return true;
+          if (target.includes('coliseum') && (vName.includes('coliseum') || vSlug.includes('coliseum'))) return true;
+          return false;
+        });
+      }
+
+      const guaranteedVenueId =
+        (matchedVenue && isUuid(matchedVenue.id) ? matchedVenue.id : null) ||
+        (isUuid(requestedVenueId) ? requestedVenueId : null) ||
+        store.venues.find((v) => (v.city || '').toLowerCase().includes('naga'))?.id ||
+        store.venues[0]?.id ||
+        null;
 
       if (typeof window !== 'undefined') {
         const res = await fetch('/api/games', {
@@ -2415,7 +2453,7 @@ export function useSportSyncBridge() {
             action: 'create_game',
             game: {
               ...newGame,
-              venueId: matchedVenue?.id || requestedVenueId || null,
+              venueId: guaranteedVenueId,
             },
           }),
         });
