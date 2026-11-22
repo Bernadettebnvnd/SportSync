@@ -1,51 +1,75 @@
 import { NextResponse } from 'next/server';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { serverSyncOAuthUser } from '@/lib/auth/serverAuth';
+import { validateRealEmailWithMx } from '@/lib/validation/emailValidator';
 
 export async function POST(request: Request) {
   try {
+    if (!isSupabaseConfigured) {
+      return NextResponse.json(
+        { error: 'Supabase is not configured on the server.' },
+        { status: 500 }
+      );
+    }
+
     const authHeader = request.headers.get('authorization') || '';
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    const accessToken = match?.[1]?.trim();
+    let accessToken = match?.[1]?.trim();
 
-    const body = await request.json().catch(() => ({}));
-    const { authId, email, fullName, avatarUrl, provider } = body;
-
-    let targetAuthId = authId;
-    let targetEmail = email;
-    let targetFullName = fullName;
-    let targetAvatarUrl = avatarUrl;
-    let targetProvider = provider || 'google';
-    let targetMeta: Record<string, unknown> | null = null;
-
-    if (accessToken && isSupabaseConfigured) {
-      const supabase = createServerClient(accessToken) || createAdminClient();
-      if (supabase) {
-        const { data: authData } = await supabase.auth.getUser(accessToken);
-        if (authData?.user) {
-          const verifiedUser = authData.user;
-          targetAuthId = verifiedUser.id;
-          targetEmail = verifiedUser.email || targetEmail;
-          targetMeta = (verifiedUser.user_metadata || {}) as Record<string, unknown>;
-          targetFullName = (targetMeta.full_name || targetMeta.name || targetFullName || '').toString().trim() || undefined;
-          targetAvatarUrl = (targetMeta.avatar_url || targetMeta.picture || targetAvatarUrl || '').toString().trim() || undefined;
-          targetProvider = verifiedUser.app_metadata?.provider || targetProvider;
-        }
+    if (!accessToken) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const cookieMatch = cookieHeader.match(/sb-access-token=([^;]+)/);
+      if (cookieMatch?.[1]) {
+        accessToken = decodeURIComponent(cookieMatch[1]).trim();
       }
     }
 
-    if (!targetEmail || typeof targetEmail !== 'string' || !targetEmail.trim()) {
+    if (!accessToken) {
       return NextResponse.json(
-        { error: 'Email address is required for Google OAuth synchronization.' },
+        { error: 'Authentication required: Missing Bearer access token.' },
+        { status: 401 }
+      );
+    }
+
+    const supabase = createServerClient(accessToken) || createAdminClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Authentication service is unavailable.' },
+        { status: 500 }
+      );
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser(accessToken);
+    if (authErr || !authData?.user || !authData.user.id || !authData.user.email) {
+      return NextResponse.json(
+        { error: 'Invalid or expired OAuth access token.' },
+        { status: 401 }
+      );
+    }
+
+    const verifiedUser = authData.user;
+    const verifiedEmail = (verifiedUser.email || '').trim().toLowerCase();
+
+    const emailValidation = await validateRealEmailWithMx(verifiedEmail);
+    if (!emailValidation.isValid) {
+      return NextResponse.json(
+        { error: emailValidation.error || 'OAuth account email address is invalid or restricted.' },
         { status: 400 }
       );
     }
 
+    const targetMeta = (verifiedUser.user_metadata || {}) as Record<string, unknown>;
+    const targetFullName =
+      (targetMeta.full_name || targetMeta.name || '').toString().trim() || undefined;
+    const targetAvatarUrl =
+      (targetMeta.avatar_url || targetMeta.picture || '').toString().trim() || undefined;
+    const targetProvider = verifiedUser.app_metadata?.provider || 'google';
+
     const syncResult = await serverSyncOAuthUser({
-      authId: targetAuthId || `usr_${Date.now()}`,
-      email: targetEmail.trim(),
-      fullName: targetFullName?.trim() || undefined,
-      avatarUrl: targetAvatarUrl?.trim() || undefined,
+      authId: verifiedUser.id,
+      email: verifiedEmail,
+      fullName: targetFullName,
+      avatarUrl: targetAvatarUrl,
       provider: targetProvider,
       accessToken,
       authMetadata: targetMeta,
@@ -81,7 +105,7 @@ export async function POST(request: Request) {
     return response;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to synchronize OAuth session.';
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('invalid or expired') ? 401 : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }
-

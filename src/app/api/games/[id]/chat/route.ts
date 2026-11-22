@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
@@ -42,8 +43,7 @@ function isTableMissingError(err?: { code?: string; message?: string } | null): 
 }
 
 async function authenticateRequest(
-  request: NextRequest,
-  fallbackUserId?: string | null
+  request: NextRequest
 ): Promise<SanitizedUser | null> {
   const tokenCookie =
     request.cookies.get('sportsync-auth-token')?.value ||
@@ -76,67 +76,37 @@ async function authenticateRequest(
     }
   }
 
-  if (token) {
-    const verified = verifySessionToken(token);
-    if (verified) {
-      const user = await serverGetUser(verified.userId);
-      if (user) return user;
-    }
-
-    if (isSupabaseConfigured) {
-      const sb = createServerClient(token);
-      if (sb) {
-        const { data } = await sb.auth.getUser();
-        if (data?.user?.id) {
-          const user = await serverGetUser(data.user.id);
-          if (user) return user;
-
-          const meta = data.user.user_metadata || {};
-          const fullName = meta.full_name || meta.name || data.user.email?.split('@')[0] || 'Player';
-          return {
-            id: data.user.id,
-            auth_id: data.user.id,
-            email: data.user.email || '',
-            full_name: fullName,
-            nickname: meta.nickname || fullName.split(' ')[0] || 'Player',
-            avatar_url: meta.avatar_url || 'alex',
-            role: 'player',
-            onboarding_completed: true,
-            created_at: data.user.created_at || new Date().toISOString(),
-          };
-        }
-      }
-    }
+  if (!token) {
+    return null;
   }
 
-  if (fallbackUserId) {
-    const cleanFallback = fallbackUserId.trim();
-    if (isUuid(cleanFallback) || cleanFallback.includes('@')) {
-      const user = await serverGetUser(cleanFallback);
-      if (user) return user;
+  const verified = verifySessionToken(token);
+  if (verified) {
+    const user = await serverGetUser(verified.userId);
+    if (user) return user;
+  }
 
-      // Query public.users directly if serverGetUser returned null
-      const adminSb = createAdminClient() || createServerClient();
-      if (adminSb) {
-        const { data: pubUser } = await adminSb
-          .from('users')
-          .select('*')
-          .or(`id.eq.${cleanFallback},auth_id.eq.${cleanFallback},email.ilike.${cleanFallback}`)
-          .maybeSingle();
+  if (isSupabaseConfigured) {
+    const sb = createServerClient(token);
+    if (sb) {
+      const { data, error } = await sb.auth.getUser(token);
+      if (!error && data?.user?.id) {
+        const user = await serverGetUser(data.user.id);
+        if (user) return user;
 
-        if (pubUser) {
-          return {
-            id: pubUser.id,
-            auth_id: pubUser.auth_id || pubUser.id,
-            email: pubUser.email || '',
-            full_name: pubUser.full_name || pubUser.nickname || 'Player',
-            nickname: pubUser.nickname || pubUser.full_name || 'Player',
-            avatar_url: pubUser.avatar_url || 'alex',
-            role: pubUser.role || 'player',
-            onboarding_completed: Boolean(pubUser.onboarding_completed),
-            created_at: pubUser.created_at || new Date().toISOString(),
-          };
-        }
+        const meta = data.user.user_metadata || {};
+        const fullName = meta.full_name || meta.name || data.user.email?.split('@')[0] || 'Player';
+        return {
+          id: data.user.id,
+          auth_id: data.user.id,
+          email: data.user.email || '',
+          full_name: fullName,
+          nickname: meta.nickname || fullName.split(' ')[0] || 'Player',
+          avatar_url: meta.avatar_url || 'alex',
+          role: 'player',
+          onboarding_completed: true,
+          created_at: data.user.created_at || new Date().toISOString(),
+        };
       }
     }
   }
@@ -150,13 +120,12 @@ interface ResolvedSession {
   description?: string;
   title?: string;
   visibility?: string;
-  isAdHoc?: boolean;
 }
 
 async function resolveSession(
   supabase: NonNullable<ReturnType<typeof createServerClient>>,
   gameId: string
-): Promise<ResolvedSession> {
+): Promise<ResolvedSession | null> {
   const cleanId = gameId.trim();
 
   // A. Search by UUID
@@ -188,22 +157,14 @@ async function resolveSession(
     .maybeSingle();
   if (byTitle) return byTitle;
 
-  // D. Fallback ad-hoc session so chat works seamlessly on custom / client games
-  return {
-    id: cleanId,
-    host_id: null,
-    isAdHoc: true,
-  };
+  return null;
 }
 
 async function isUserHostOrParticipant(
   supabase: NonNullable<ReturnType<typeof createServerClient>>,
   session: ResolvedSession,
-  user: SanitizedUser,
-  clientIsHost?: boolean
+  user: SanitizedUser
 ): Promise<boolean> {
-  if (session.isAdHoc) return true;
-
   const userId = user.id;
   const userAuthId = user.auth_id;
   const userName = (user.full_name || user.nickname || '').trim().toLowerCase();
@@ -212,7 +173,7 @@ async function isUserHostOrParticipant(
   if (session.host_id && (session.host_id === userId || (userAuthId && session.host_id === userAuthId))) {
     return true;
   }
-  if (session.description) {
+  if (session.description && userName) {
     const hostMatch = session.description.match(/\[HOST:(.*?)\]/i);
     if (hostMatch && hostMatch[1].trim().toLowerCase() === userName) {
       return true;
@@ -277,11 +238,6 @@ async function isUserHostOrParticipant(
     if (partNameRow?.id) return true;
   }
 
-  // 4. Open / Public game check or client host assertion
-  if (clientIsHost || session.visibility !== 'Invite') {
-    return true;
-  }
-
   return false;
 }
 
@@ -295,8 +251,13 @@ export async function GET(
       return NextResponse.json({ error: 'Game ID is required.' }, { status: 400 });
     }
 
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+
     if (!isSupabaseConfigured) {
-      return NextResponse.json({ success: true, messages: [] });
+      return NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 });
     }
 
     const supabase = createAdminClient() || createServerClient();
@@ -308,6 +269,18 @@ export async function GET(
     }
 
     const session = await resolveSession(supabase, gameId);
+    if (!session) {
+      return NextResponse.json({ error: 'Match session not found.' }, { status: 404 });
+    }
+
+    const authorized = await isUserHostOrParticipant(supabase, session, authUser);
+    if (!authorized) {
+      return NextResponse.json(
+        { error: 'Forbidden: Only the host and joined players can view messages in this match chat.' },
+        { status: 403 }
+      );
+    }
+
     const canonicalGameId = session.id;
     const targetIds = Array.from(new Set([canonicalGameId, gameId].filter(Boolean)));
 
@@ -396,37 +369,19 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { id, text, senderId, senderName, senderAvatar, isHost } = body as {
+    const { id, text } = body as {
       id?: string;
       text?: string;
-      senderId?: string;
-      senderName?: string;
-      senderAvatar?: string;
-      isHost?: boolean;
     };
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return NextResponse.json({ error: 'Message text is required.' }, { status: 400 });
     }
 
-    // 1. Authenticate via token cookies, headers, or body senderId
-    let authUser = await authenticateRequest(request, senderId);
+    // 1. Authenticate strictly via verified session cookie or Bearer token
+    const authUser = await authenticateRequest(request);
     if (!authUser) {
-      if (senderName && senderName.trim()) {
-        authUser = {
-          id: senderId && isUuid(senderId) ? senderId : crypto.randomUUID(),
-          auth_id: senderId,
-          email: `${senderName.trim().replace(/\s+/g, '_').toLowerCase()}@sportsync.internal`,
-          full_name: senderName.trim(),
-          nickname: senderName.trim(),
-          avatar_url: senderAvatar || 'alex',
-          role: 'player',
-          onboarding_completed: true,
-          created_at: new Date().toISOString(),
-        };
-      } else {
-        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-      }
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
 
     if (!isSupabaseConfigured) {
@@ -441,9 +396,13 @@ export async function POST(
       );
     }
 
-    // 2. Resolve session and verify authorization
+    // 2. Resolve session and verify authorization in Supabase
     const session = await resolveSession(supabase, gameId);
-    const authorized = await isUserHostOrParticipant(supabase, session, authUser, isHost);
+    if (!session) {
+      return NextResponse.json({ error: 'Match session not found.' }, { status: 404 });
+    }
+
+    const authorized = await isUserHostOrParticipant(supabase, session, authUser);
     if (!authorized) {
       return NextResponse.json(
         { error: 'Forbidden: Only the host and joined players can send messages in this match chat.' },
@@ -451,8 +410,8 @@ export async function POST(
       );
     }
 
-    const resolvedName = authUser.full_name || authUser.nickname || senderName || 'Player';
-    const resolvedAvatar = authUser.avatar_url || senderAvatar || 'alex';
+    const resolvedName = authUser.full_name || authUser.nickname || 'Player';
+    const resolvedAvatar = authUser.avatar_url || 'alex';
     const resolvedTime = new Date().toISOString();
     const messageId = id && isUuid(id) ? id : crypto.randomUUID();
     const canonicalGameId = session.id;
@@ -553,7 +512,7 @@ export async function POST(
       text: insertedRow.message_text,
       createdAt: insertedRow.created_at,
       time: formattedTime,
-      isHost: session.host_id === authUser.id || Boolean(isHost),
+      isHost: Boolean(session.host_id && (session.host_id === authUser.id || session.host_id === authUser.auth_id)),
     };
 
     // 5. Broadcast message over Supabase Realtime channel for instantaneous peer delivery
@@ -589,7 +548,7 @@ export async function POST(
         if (id && senderUserId && id.toLowerCase() === senderUserId.toLowerCase()) return;
 
         // Check if already in recipientMap by ID or Name
-        for (const [key, existing] of recipientMap.entries()) {
+        for (const existing of recipientMap.values()) {
           const matchId = Boolean(id && existing.id && existing.id.toLowerCase() === id.toLowerCase());
           const matchName = Boolean(normName && existing.name && existing.name.trim().toLowerCase() === normName);
           if (matchId || matchName) {
@@ -724,13 +683,17 @@ export async function POST(
         // Dual persistence: public.notifications or fallback to public.users
         let tableSaved = false;
         try {
-          // Idempotency: Check if a notification for this chat message already exists for this recipient
-          const { data: existingChatNotif } = await supabase
+          // Idempotency: Check if a notification for this chat message already exists for THIS recipient
+          let dupQuery = supabase
             .from('notifications')
             .select('id')
-            .filter('metadata->>messageId', 'eq', insertedRow.id)
-            .limit(1)
-            .maybeSingle();
+            .filter('metadata->>messageId', 'eq', insertedRow.id);
+          if (recipientId) {
+            dupQuery = dupQuery.eq('user_id', recipientId);
+          } else if (recipientName) {
+            dupQuery = dupQuery.ilike('user_identifier', recipientName);
+          }
+          const { data: existingChatNotif } = await dupQuery.limit(1).maybeSingle();
 
           if (!existingChatNotif) {
             const { error: insertErr } = await supabase.from('notifications').insert({

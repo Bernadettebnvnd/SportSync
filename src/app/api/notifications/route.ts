@@ -1,26 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
-import { verifySessionToken, serverGetUser } from '@/lib/auth/serverAuth';
+import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NOTIFICATIONS = 50;
 
 function isUuid(val?: unknown): boolean {
   return typeof val === 'string' && UUID_REGEX.test(val.trim());
-}
-
-function isTableMissingError(err?: { code?: string; message?: string } | null): boolean {
-  if (!err) return false;
-  const msg = (err.message || '').toLowerCase();
-  const code = err.code || '';
-  return (
-    code === 'PGRST205' ||
-    code === '42P01' ||
-    msg.includes('schema cache') ||
-    msg.includes('relation "public.notifications" does not exist') ||
-    msg.includes('could not find the table') ||
-    msg.includes('notifications')
-  );
 }
 
 // In-memory server-side fallback store by user ID / user name
@@ -33,23 +20,144 @@ if (!globalForNotifications.sportsyncNotificationStore) {
   globalForNotifications.sportsyncNotificationStore = notifStore;
 }
 
+async function authenticateRequest(request: NextRequest): Promise<SanitizedUser | null> {
+  const tokenCookie =
+    request.cookies.get('sportsync-auth-token')?.value ||
+    request.cookies.get('sb-access-token')?.value;
+  const authHeader = request.headers.get('authorization');
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  let token = bearerToken || tokenCookie || null;
+
+  if (!token) {
+    for (const cookie of request.cookies.getAll()) {
+      if (cookie.name.includes('-auth-token')) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(cookie.value));
+          if (Array.isArray(parsed) && parsed[0]) {
+            token = parsed[0];
+            break;
+          } else if (parsed?.access_token) {
+            token = parsed.access_token;
+            break;
+          }
+        } catch {
+          if (cookie.value && cookie.value.length > 20) {
+            token = cookie.value;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (!token) return null;
+
+  const verified = verifySessionToken(token);
+  if (verified) {
+    const user = await serverGetUser(verified.userId);
+    if (user) return user;
+  }
+
+  if (isSupabaseConfigured) {
+    const sb = createServerClient(token);
+    if (sb) {
+      const { data, error } = await sb.auth.getUser(token);
+      if (!error && data?.user?.id) {
+        const user = await serverGetUser(data.user.id);
+        if (user) return user;
+
+        const meta = data.user.user_metadata || {};
+        const fullName = meta.full_name || meta.name || data.user.email?.split('@')[0] || 'Player';
+        return {
+          id: data.user.id,
+          auth_id: data.user.id,
+          email: data.user.email || '',
+          full_name: fullName,
+          nickname: meta.nickname || fullName.split(' ')[0] || 'Player',
+          avatar_url: meta.avatar_url || 'alex',
+          role: 'player',
+          onboarding_completed: true,
+          created_at: data.user.created_at || new Date().toISOString(),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function isTargetingAuthenticatedUser(
+  authUser: SanitizedUser,
+  params: { userId?: string | null; userName?: string | null; userEmail?: string | null }
+): boolean {
+  const { userId, userName, userEmail } = params;
+  const authIds = [authUser.id, authUser.auth_id]
+    .filter((v): v is string => Boolean(v))
+    .map((v) => v.trim().toLowerCase());
+  const authNames = [authUser.full_name, authUser.nickname]
+    .filter((v): v is string => Boolean(v))
+    .map((v) => v.trim().toLowerCase());
+  const authEmail = (authUser.email || '').trim().toLowerCase();
+
+  if (userId && userId.trim()) {
+    const reqId = userId.trim().toLowerCase();
+    if (!authIds.includes(reqId) && reqId !== authEmail && !authNames.includes(reqId)) {
+      return false;
+    }
+  }
+
+  if (userName && userName.trim()) {
+    const reqName = userName.trim().toLowerCase();
+    if (!authNames.includes(reqName) && !authIds.includes(reqName) && reqName !== authEmail) {
+      return false;
+    }
+  }
+
+  if (userEmail && userEmail.trim()) {
+    const reqEmail = userEmail.trim().toLowerCase();
+    if (authEmail && reqEmail !== authEmail) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * GET /api/notifications?userId=...&userName=...&email=...
- * Retrieves notifications for the user from Supabase public.notifications or fallback user storage.
+ * Retrieves notifications strictly for the authenticated user.
  */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId')?.trim();
-    const userName = searchParams.get('userName')?.trim();
-    const userEmail = searchParams.get('email')?.trim();
-
-    if (!userId && !userName && !userEmail) {
-      return NextResponse.json({ success: true, notifications: [] });
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: 'Authentication required.' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const reqUserId = searchParams.get('userId')?.trim();
+    const reqUserName = searchParams.get('userName')?.trim();
+    const reqUserEmail = searchParams.get('email')?.trim();
+
+    if (
+      !isTargetingAuthenticatedUser(authUser, {
+        userId: reqUserId,
+        userName: reqUserName,
+        userEmail: reqUserEmail,
+      })
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Cannot read notifications for another user.' },
+        { status: 403 }
+      );
+    }
+
+    const userId = authUser.id;
+    const userName = authUser.full_name?.trim();
+    const userEmail = authUser.email?.trim();
+
     if (!isSupabaseConfigured) {
-      const memList = notifStore.get(userId || userName || '') || [];
+      const memList = notifStore.get((userId || userName || '').toLowerCase()) || [];
       return NextResponse.json({ success: true, notifications: memList });
     }
 
@@ -58,12 +166,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, notifications: [] });
     }
 
-    // 1. Try public.notifications table
+    // 1. Try public.notifications table scoped to authenticated user
     try {
       const conditions: string[] = ['type.eq.system'];
       if (userId && isUuid(userId)) conditions.push(`user_id.eq.${userId}`);
-      if (userName) conditions.push(`user_identifier.ilike.*${userName}*`);
-      if (userEmail) conditions.push(`user_identifier.ilike.*${userEmail}*`);
+      if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
+        conditions.push(`user_id.eq.${authUser.auth_id}`);
+      }
+      if (userName) conditions.push(`user_identifier.ilike.${userName}`);
+      if (userEmail) conditions.push(`user_identifier.ilike.${userEmail}`);
 
       const { data, error } = await supabase
         .from('notifications')
@@ -106,10 +217,10 @@ export async function GET(request: NextRequest) {
       let query = supabase.from('users').select('id, full_name, equipped_gear');
       if (userId && isUuid(userId)) {
         query = query.or(`id.eq.${userId},auth_id.eq.${userId}`);
-      } else if (userName) {
-        query = query.ilike('full_name', userName);
       } else if (userEmail) {
         query = query.eq('email', userEmail);
+      } else if (userName) {
+        query = query.ilike('full_name', userName);
       }
 
       const { data: userRow } = await query.limit(1).maybeSingle();
@@ -136,18 +247,42 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/notifications
  * Body: { notification: NotificationItem }
- * Saves notification to Supabase public.notifications or fallback user storage, and broadcasts.
+ * Requires authentication and scopes mutations strictly to the authenticated user.
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: 'Authentication required.' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
     const notif = body.notification;
     if (!notif || !notif.title) {
       return NextResponse.json({ success: false, error: 'Valid notification is required.' }, { status: 400 });
     }
 
+    const requestedRecipientId = notif.recipientId || notif.meta?.recipientId || notif.meta?.hostId || null;
+    const requestedRecipientName = notif.recipientName || notif.meta?.recipientName || notif.meta?.hostName || null;
+
+    if (
+      (requestedRecipientId || requestedRecipientName) &&
+      !isTargetingAuthenticatedUser(authUser, {
+        userId: requestedRecipientId,
+        userName: requestedRecipientName,
+      })
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Cannot write notifications for another user.' },
+        { status: 403 }
+      );
+    }
+
+    const recipientId = isUuid(authUser.id) ? authUser.id : null;
+    const recipientName = authUser.full_name || authUser.nickname || '';
+
     if (!isSupabaseConfigured) {
-      const recipient = (notif.recipientId || notif.recipientName || 'global').toLowerCase();
+      const recipient = (recipientId || recipientName || 'global').toLowerCase();
       const current = notifStore.get(recipient) || [];
       notifStore.set(recipient, [notif, ...current].slice(0, MAX_NOTIFICATIONS));
       return NextResponse.json({ success: true });
@@ -158,20 +293,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Database client not available.' }, { status: 500 });
     }
 
-    const recipientId = notif.recipientId && isUuid(notif.recipientId) ? notif.recipientId : null;
-    const recipientName = notif.recipientName || notif.meta?.recipientName || notif.meta?.hostName || '';
     const dedupeKey = notif.meta?.dedupeKey || notif.id;
     const nowIso = new Date().toISOString();
 
-    // 1. Idempotency Check: Don't insert if dedupeKey already exists in public.notifications
+    // 1. Idempotency Check scoped to this user
     if (dedupeKey) {
       try {
-        const { data: existing } = await supabase
+        let dupQuery = supabase
           .from('notifications')
           .select('id, read, created_at')
-          .filter('metadata->>dedupeKey', 'eq', dedupeKey)
-          .limit(1)
-          .maybeSingle();
+          .filter('metadata->>dedupeKey', 'eq', dedupeKey);
+        if (recipientId) {
+          dupQuery = dupQuery.eq('user_id', recipientId);
+        } else if (recipientName) {
+          dupQuery = dupQuery.ilike('user_identifier', recipientName);
+        }
+        const { data: existing } = await dupQuery.limit(1).maybeSingle();
 
         if (existing) {
           return NextResponse.json({
@@ -183,16 +320,20 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
-    // 1b. Chat Message ID Deduplication
+    // 1b. Chat Message ID Deduplication scoped to this user
     const msgId = notif.meta?.messageId || notif.meta?.message_id;
     if (msgId) {
       try {
-        const { data: existingMsg } = await supabase
+        let msgQuery = supabase
           .from('notifications')
           .select('id')
-          .filter('metadata->>messageId', 'eq', msgId)
-          .limit(1)
-          .maybeSingle();
+          .filter('metadata->>messageId', 'eq', msgId);
+        if (recipientId) {
+          msgQuery = msgQuery.eq('user_id', recipientId);
+        } else if (recipientName) {
+          msgQuery = msgQuery.ilike('user_identifier', recipientName);
+        }
+        const { data: existingMsg } = await msgQuery.limit(1).maybeSingle();
 
         if (existingMsg) {
           return NextResponse.json({
@@ -243,8 +384,8 @@ export async function POST(request: NextRequest) {
         dedupeKey,
         host_name: notif.meta?.hostName || notif.meta?.host_name || recipientName,
         host_id: notif.meta?.hostId || notif.meta?.host_id || recipientId,
-        recipient_name: recipientName || notif.meta?.recipientName,
-        recipient_id: notif.recipientId || notif.meta?.recipientId,
+        recipient_name: recipientName,
+        recipient_id: recipientId,
         sender_name: notif.senderName || notif.meta?.senderName || notif.meta?.joiningPlayerName,
         sender_avatar: notif.senderAvatar || notif.meta?.senderAvatar || notif.meta?.joiningPlayerAvatar,
       },
@@ -280,7 +421,7 @@ export async function POST(request: NextRequest) {
             : [];
 
           if (!existingNotifs.some((n: any) => n.id === notif.id || (n.meta?.dedupeKey && n.meta.dedupeKey === dedupeKey))) {
-            const updated = [{ ...notif, meta: { ...(notif.meta || {}), dedupeKey } }, ...existingNotifs].slice(0, MAX_NOTIFICATIONS);
+            const updated = [{ ...notif, recipientId, recipientName, meta: { ...(notif.meta || {}), dedupeKey } }, ...existingNotifs].slice(0, MAX_NOTIFICATIONS);
             await supabase
               .from('users')
               .update({
@@ -299,34 +440,7 @@ export async function POST(request: NextRequest) {
     const memKey = (recipientId || recipientName || 'global').toLowerCase();
     const currentMem = notifStore.get(memKey) || [];
     if (!currentMem.some((n: any) => n.id === notif.id || (n.meta?.dedupeKey && n.meta.dedupeKey === dedupeKey))) {
-      notifStore.set(memKey, [{ ...notif, meta: { ...(notif.meta || {}), dedupeKey } }, ...currentMem].slice(0, MAX_NOTIFICATIONS));
-    }
-
-    // 5. Broadcast to recipient's primary channel
-    const isChat = notif.type === 'chat';
-    const targetChannel = recipientId
-      ? `sportsync-notifs-${recipientId}`
-      : recipientName
-        ? `sportsync-notifs-${recipientName.toLowerCase().replace(/\s+/g, '_')}`
-        : (!isChat ? 'sportsync-notifs-all' : null);
-
-    if (targetChannel) {
-      try {
-        const ch = supabase.channel(targetChannel);
-        ch.subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            ch.send({
-              type: 'broadcast',
-              event: 'new_notification',
-              payload: notifRow,
-            }).catch(() => {}).finally(() => {
-              setTimeout(() => {
-                try { supabase.removeChannel(ch); } catch {}
-              }, 1500);
-            });
-          }
-        });
-      } catch {}
+      notifStore.set(memKey, [{ ...notif, recipientId, recipientName, meta: { ...(notif.meta || {}), dedupeKey } }, ...currentMem].slice(0, MAX_NOTIFICATIONS));
     }
 
     return NextResponse.json({ success: true, saved: true });
@@ -342,8 +456,20 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { id, all, action, gameIds, gameTitle, userId, userName } = body;
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: 'Authentication required.' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const { id, all, action, gameIds, gameTitle, userId: reqUserId, userName: reqUserName } = body;
+
+    if (!isTargetingAuthenticatedUser(authUser, { userId: reqUserId, userName: reqUserName })) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Cannot modify notifications for another user.' },
+        { status: 403 }
+      );
+    }
 
     if (!isSupabaseConfigured) {
       return NextResponse.json({ success: true });
@@ -354,21 +480,29 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    const userId = authUser.id;
+    const userName = authUser.full_name?.trim();
     const isChatRead = action === 'mark_chat_read';
     const targetGameIds: string[] = Array.isArray(gameIds) ? gameIds.map((g: any) => String(g).toLowerCase().trim()) : [];
     const cleanGameTitle = typeof gameTitle === 'string' ? gameTitle.toLowerCase().trim() : '';
 
-    // 1. Try public.notifications table
+    // 1. Try public.notifications table scoped strictly to authenticated user
     try {
-      if (isChatRead && (targetGameIds.length > 0 || cleanGameTitle)) {
-        // Query unread chat notifications for this user
-        let q = supabase.from('notifications').select('id, metadata').eq('type', 'chat').eq('read', false);
-        if (userId && isUuid(userId)) {
-          q = q.eq('user_id', userId);
-        } else if (userName) {
-          q = q.ilike('user_identifier', userName.trim());
-        }
-        const { data: chatRows } = await q;
+      const userConditions: string[] = [];
+      if (userId && isUuid(userId)) userConditions.push(`user_id.eq.${userId}`);
+      if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
+        userConditions.push(`user_id.eq.${authUser.auth_id}`);
+      }
+      if (userName) userConditions.push(`user_identifier.ilike.${userName}`);
+
+      if (isChatRead && (targetGameIds.length > 0 || cleanGameTitle) && userConditions.length > 0) {
+        const { data: chatRows } = await supabase
+          .from('notifications')
+          .select('id, metadata')
+          .eq('type', 'chat')
+          .eq('read', false)
+          .or(userConditions.join(','));
+
         if (Array.isArray(chatRows) && chatRows.length > 0) {
           const matchIds = chatRows.filter((r) => {
             const meta = r.metadata || {};
@@ -386,28 +520,31 @@ export async function PATCH(request: NextRequest) {
           }).map((r) => r.id);
 
           if (matchIds.length > 0) {
-            await supabase.from('notifications').update({ read: true }).in('id', matchIds);
+            await supabase
+              .from('notifications')
+              .update({ read: true })
+              .in('id', matchIds)
+              .or(userConditions.join(','));
           }
         }
-      } else if (all) {
-        const conditions: string[] = [];
-        if (userId && isUuid(userId)) conditions.push(`user_id.eq.${userId}`);
-        if (userName) conditions.push(`user_identifier.ilike.*${userName}*`);
-        if (conditions.length > 0) {
-          await supabase.from('notifications').update({ read: true }).or(conditions.join(','));
-        }
-      } else if (id) {
-        await supabase.from('notifications').update({ read: true }).eq('id', id);
+      } else if (all && userConditions.length > 0) {
+        await supabase.from('notifications').update({ read: true }).or(userConditions.join(','));
+      } else if (id && userConditions.length > 0) {
+        await supabase
+          .from('notifications')
+          .update({ read: true })
+          .eq('id', id)
+          .or(userConditions.join(','));
       }
     } catch {}
 
-    // 2. Also update fallback storage in public.users table
+    // 2. Also update fallback storage in public.users table for authenticated user
     try {
       let userQuery = supabase.from('users').select('id, equipped_gear');
       if (userId && isUuid(userId)) {
         userQuery = userQuery.or(`id.eq.${userId},auth_id.eq.${userId}`);
       } else if (userName) {
-        userQuery = userQuery.ilike('full_name', userName.trim());
+        userQuery = userQuery.ilike('full_name', userName);
       }
 
       const { data: userRow } = await userQuery.limit(1).maybeSingle();
@@ -459,8 +596,20 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { id, all, userId, userName } = body;
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ success: false, error: 'Authentication required.' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const { id, all, userId: reqUserId, userName: reqUserName } = body;
+
+    if (!isTargetingAuthenticatedUser(authUser, { userId: reqUserId, userName: reqUserName })) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Cannot delete notifications for another user.' },
+        { status: 403 }
+      );
+    }
 
     if (!isSupabaseConfigured) {
       return NextResponse.json({ success: true });
@@ -471,27 +620,35 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // 1. Try public.notifications table
+    const userId = authUser.id;
+    const userName = authUser.full_name?.trim();
+    const userConditions: string[] = [];
+    if (userId && isUuid(userId)) userConditions.push(`user_id.eq.${userId}`);
+    if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
+      userConditions.push(`user_id.eq.${authUser.auth_id}`);
+    }
+    if (userName) userConditions.push(`user_identifier.ilike.${userName}`);
+
+    // 1. Try public.notifications table scoped strictly to authenticated user
     try {
-      if (all) {
-        const conditions: string[] = [];
-        if (userId && isUuid(userId)) conditions.push(`user_id.eq.${userId}`);
-        if (userName) conditions.push(`user_identifier.ilike.*${userName}*`);
-        if (conditions.length > 0) {
-          await supabase.from('notifications').delete().or(conditions.join(','));
-        }
-      } else if (id) {
-        await supabase.from('notifications').delete().eq('id', id);
+      if (all && userConditions.length > 0) {
+        await supabase.from('notifications').delete().or(userConditions.join(','));
+      } else if (id && userConditions.length > 0) {
+        await supabase
+          .from('notifications')
+          .delete()
+          .eq('id', id)
+          .or(userConditions.join(','));
       }
     } catch {}
 
-    // 2. Also update fallback storage in public.users table
+    // 2. Also update fallback storage in public.users table for authenticated user
     try {
       let userQuery = supabase.from('users').select('id, equipped_gear');
       if (userId && isUuid(userId)) {
         userQuery = userQuery.or(`id.eq.${userId},auth_id.eq.${userId}`);
       } else if (userName) {
-        userQuery = userQuery.ilike('full_name', userName.trim());
+        userQuery = userQuery.ilike('full_name', userName);
       }
 
       const { data: userRow } = await userQuery.limit(1).maybeSingle();

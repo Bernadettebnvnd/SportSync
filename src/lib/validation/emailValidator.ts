@@ -139,6 +139,33 @@ const FORBIDDEN_TLDS = new Set<string>([
   'dummy',
 ]);
 
+// Common typo domains mapped to their intended real provider
+const COMMON_DOMAIN_TYPOS: Record<string, string> = {
+  'gmial.com': 'gmail.com',
+  'gamil.com': 'gmail.com',
+  'gmal.com': 'gmail.com',
+  'gmail.co': 'gmail.com',
+  'gmail.con': 'gmail.com',
+  'gmai.com': 'gmail.com',
+  'gmailcom': 'gmail.com',
+  'yaho.com': 'yahoo.com',
+  'yahooo.com': 'yahoo.com',
+  'yahoo.co': 'yahoo.com',
+  'yahoo.con': 'yahoo.com',
+  'yhoo.com': 'yahoo.com',
+  'hotmial.com': 'hotmail.com',
+  'hotmal.com': 'hotmail.com',
+  'hotmail.co': 'hotmail.com',
+  'hotmail.con': 'hotmail.com',
+  'outlok.com': 'outlook.com',
+  'outllok.com': 'outlook.com',
+  'outlook.co': 'outlook.com',
+  'outlook.con': 'outlook.com',
+  'iclod.com': 'icloud.com',
+  'icoud.com': 'icloud.com',
+  'icloud.co': 'icloud.com',
+};
+
 export interface EmailValidationResult {
   isValid: boolean;
   error?: string;
@@ -225,6 +252,14 @@ export function validateRealEmail(email: unknown): EmailValidationResult {
     };
   }
 
+  // Check for common domain typos (e.g. gmial.com, yaho.com)
+  if (COMMON_DOMAIN_TYPOS[domainPart]) {
+    return {
+      isValid: false,
+      error: `Did you mean @${COMMON_DOMAIN_TYPOS[domainPart]}? Please check your email domain spelling.`,
+    };
+  }
+
   // Check for forbidden dummy/test domains
   if (FAKE_TEST_DOMAINS.has(domainPart)) {
     return {
@@ -294,4 +329,50 @@ export function validateRealEmail(email: unknown): EmailValidationResult {
     normalizedEmail: trimmed,
   };
 }
+
+/**
+ * Server-side email validation with DNS MX record lookup to verify the domain can receive mail.
+ */
+export async function validateRealEmailWithMx(email: unknown): Promise<EmailValidationResult> {
+  const baseResult = validateRealEmail(email);
+  if (!baseResult.isValid || !baseResult.normalizedEmail) {
+    return baseResult;
+  }
+
+  const domainPart = baseResult.normalizedEmail.split('@')[1];
+  if (!domainPart) {
+    return {
+      isValid: false,
+      error: 'Email domain is invalid.',
+    };
+  }
+
+  if (typeof window === 'undefined') {
+    try {
+      const dns = await import(/* webpackIgnore: true */ 'node:dns');
+      const mxRecords = await dns.promises.resolveMx(domainPart);
+      if (!Array.isArray(mxRecords) || mxRecords.length === 0 || !mxRecords.some((r) => r && r.exchange)) {
+        return {
+          isValid: false,
+          error: `Email domain "${domainPart}" does not have valid mail servers (MX records). Please use a real, active email address.`,
+        };
+      }
+    } catch (err: unknown) {
+      const code = String((err as { code?: string })?.code || '');
+      if (code === 'ENOTFOUND' || code === 'ENODATA' || code === 'ESERVFAIL' || code === 'EREFUSED') {
+        return {
+          isValid: false,
+          error: `Email domain "${domainPart}" cannot receive emails. Please check the domain spelling and use a valid email address.`,
+        };
+      }
+      return {
+        isValid: false,
+        error: `Unable to verify email domain "${domainPart}". Please enter a valid, active email address.`,
+      };
+    }
+  }
+
+  return baseResult;
+}
+
 

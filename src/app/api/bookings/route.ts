@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { calculateBookingFees, generateBookingReference } from '@/lib/utils';
 import { createServerClient, createAdminClient, isSupabaseConfigured } from '@/lib/supabase/server';
@@ -5,6 +6,7 @@ import {
   verifySessionToken,
   serverGetUser,
   SanitizedUser,
+  sanitizePhoneValue,
   isMissingColumnError,
   extractMissingColumn,
   isMissingTableError,
@@ -107,7 +109,7 @@ async function enrichBookingsWithUsers(bookingsList: any[], dbClient: any): Prom
   return bookingsList.map((b: any) => {
     let customerName = b.user?.full_name || '';
     let customerEmail = b.user?.email || '';
-    let customerPhone = b.user?.phone || '';
+    let customerPhone = sanitizePhoneValue(b.user?.phone) || '';
 
     // Check DB user match
     if (b.user_id && userMap.has(b.user_id)) {
@@ -116,7 +118,7 @@ async function enrichBookingsWithUsers(bookingsList: any[], dbClient: any): Prom
         customerName = u.full_name || u.nickname || (u.email ? u.email.split('@')[0] : '');
       }
       if (!customerEmail) customerEmail = u.email || '';
-      if (!customerPhone) customerPhone = u.phone || '';
+      if (!customerPhone) customerPhone = sanitizePhoneValue(u.phone) || '';
     }
 
     // Parse [CUSTOMER:Name|Email|Phone] from notes
@@ -125,7 +127,7 @@ async function enrichBookingsWithUsers(bookingsList: any[], dbClient: any): Prom
       if (match) {
         if (!customerName || customerName === 'Customer') customerName = match[1];
         if (!customerEmail) customerEmail = match[2];
-        if (!customerPhone) customerPhone = match[3];
+        if (!customerPhone) customerPhone = sanitizePhoneValue(match[3]) || '';
       }
     }
 
@@ -136,7 +138,11 @@ async function enrichBookingsWithUsers(bookingsList: any[], dbClient: any): Prom
       b.customerName ||
       (b.user_id ? `Player (${b.user_id.slice(0, 8)})` : 'Customer');
     customerEmail = customerEmail || b.customer_email || b.customerEmail || '';
-    customerPhone = customerPhone || b.customer_phone || b.customerPhone || '';
+    customerPhone =
+      sanitizePhoneValue(customerPhone) ||
+      sanitizePhoneValue(b.customer_phone) ||
+      sanitizePhoneValue(b.customerPhone) ||
+      '';
 
     b.user = {
       id: b.user_id || b.user?.id,
@@ -153,8 +159,55 @@ async function enrichBookingsWithUsers(bookingsList: any[], dbClient: any): Prom
   });
 }
 
+async function getAuthorizedVenueIdsForUser(
+  dbClient: any,
+  authUser: SanitizedUser
+): Promise<Set<string>> {
+  const venueIds = new Set<string>();
+  const candidateUserIds = [authUser.id, authUser.auth_id].filter((id): id is string =>
+    isValidUuid(id)
+  );
+
+  if (!dbClient || candidateUserIds.length === 0) {
+    return venueIds;
+  }
+
+  try {
+    const ownerOr = candidateUserIds.map((id) => `owner_id.eq.${id}`).join(',');
+    const { data: ownedVenues } = await dbClient
+      .from('venues')
+      .select('id')
+      .or(ownerOr);
+    if (Array.isArray(ownedVenues)) {
+      ownedVenues.forEach((v: any) => {
+        if (v?.id) venueIds.add(v.id);
+      });
+    }
+  } catch {}
+
+  try {
+    const staffOr = candidateUserIds.map((id) => `user_id.eq.${id}`).join(',');
+    const { data: staffRows } = await dbClient
+      .from('facility_staff')
+      .select('facility_id')
+      .or(staffOr);
+    if (Array.isArray(staffRows)) {
+      staffRows.forEach((s: any) => {
+        if (s?.facility_id) venueIds.add(s.facility_id);
+      });
+    }
+  } catch {}
+
+  return venueIds;
+}
+
 export async function GET(request: Request) {
   try {
+    const authUser = await authenticateRequest(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+
     if (!isSupabaseConfigured) {
       return NextResponse.json({ error: 'Supabase is not configured on the server.' }, { status: 500 });
     }
@@ -168,21 +221,39 @@ export async function GET(request: Request) {
     const venueId = url.searchParams.get('venueId');
     const courtId = url.searchParams.get('courtId');
     const bookingDate = url.searchParams.get('date');
-    const userId = url.searchParams.get('userId');
+    const requestedUserId = url.searchParams.get('userId');
     const mine = url.searchParams.get('mine') === 'true';
 
-    let targetUserId = userId;
-    if (mine) {
-      const user = await authenticateRequest(request);
-      if (!user) {
-        return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-      }
-      targetUserId = user.id;
+    const isAdmin = String((authUser as any).role || '') === 'admin';
+    const selfIds = new Set(
+      [authUser.id, authUser.auth_id].filter((id): id is string => Boolean(id))
+    );
+
+    if (requestedUserId && !isAdmin && !selfIds.has(requestedUserId)) {
+      return NextResponse.json(
+        { error: 'Forbidden: Cannot view bookings belonging to another user.' },
+        { status: 403 }
+      );
     }
+
+    const authorizedVenueIds = isAdmin
+      ? new Set<string>()
+      : await getAuthorizedVenueIdsForUser(dbClient, authUser);
+
+    if (venueId && isValidUuid(venueId) && !isAdmin && !mine && !authorizedVenueIds.has(venueId)) {
+      return NextResponse.json(
+        { error: 'Forbidden: You are not authorized to view bookings for this venue.' },
+        { status: 403 }
+      );
+    }
+
+    const targetUserId = mine ? authUser.id : requestedUserId;
 
     let query = dbClient
       .from('bookings')
-      .select('*, user:users(*), court:courts(*), venue:venues(*)')
+      .select(
+        '*, user:users(id, auth_id, full_name, nickname, email, phone, avatar_url), court:courts(*), venue:venues(*)'
+      )
       .order('booking_date', { ascending: false })
       .order('start_time', { ascending: false });
 
@@ -199,6 +270,16 @@ export async function GET(request: Request) {
       query = query.eq('user_id', targetUserId);
     }
 
+    const filterAuthorizedBookings = (list: any[]) => {
+      if (isAdmin) return list;
+      return list.filter((b: any) => {
+        if (b?.user_id && selfIds.has(b.user_id)) return true;
+        if (!mine && b?.venue_id && authorizedVenueIds.has(b.venue_id)) return true;
+        if (!mine && b?.venue?.owner_id && selfIds.has(b.venue.owner_id)) return true;
+        return false;
+      });
+    };
+
     const { data, error } = await query;
     if (error) {
       if (isMissingTableError(error)) {
@@ -210,7 +291,8 @@ export async function GET(request: Request) {
           if (targetUserId && b.user_id !== targetUserId) return false;
           return true;
         });
-        const enrichedFallback = await enrichBookingsWithUsers(rawFallback, dbClient);
+        const scopedFallback = filterAuthorizedBookings(rawFallback);
+        const enrichedFallback = await enrichBookingsWithUsers(scopedFallback, dbClient);
         return NextResponse.json({ success: true, bookings: enrichedFallback });
       }
       console.error('[BookingsAPI GET] Supabase query failed:', {
@@ -221,7 +303,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const enriched = await enrichBookingsWithUsers(data || [], dbClient);
+    const scopedData = filterAuthorizedBookings(data || []);
+    const enriched = await enrichBookingsWithUsers(scopedData, dbClient);
     return NextResponse.json({ success: true, bookings: enriched });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to retrieve bookings.';
@@ -295,17 +378,15 @@ export async function PATCH(request: Request) {
 
     // 3. Verify authorization: owner or facility_staff of the booking's venue (or player cancelling their own booking)
     const isPlayerSelfCancel =
-      status === 'cancelled' && currentBooking.user_id === authUser.id;
+      status === 'cancelled' &&
+      (currentBooking.user_id === authUser.id ||
+        (authUser.auth_id && currentBooking.user_id === authUser.auth_id));
 
     const roleStr = String((authUser as any).role || '');
-    const isManagerRole =
-      roleStr === 'venue_owner' ||
-      roleStr === 'organizer' ||
-      roleStr === 'admin' ||
-      roleStr === 'facility_owner' ||
-      roleStr === 'faculty';
+    const isAdmin = roleStr === 'admin';
 
     let isAuthorizedFacilityManager = Boolean(
+      isAdmin ||
       (currentBooking.venue?.owner_id && currentBooking.venue.owner_id === authUser.id) ||
       (authUser.auth_id && currentBooking.venue?.owner_id === authUser.auth_id)
     );
@@ -332,30 +413,31 @@ export async function PATCH(request: Request) {
 
     if (!isAuthorizedFacilityManager && currentBooking.venue_id) {
       try {
-        const { data: staffRow, error: staffErr } = await dbClient
-          .from('facility_staff')
-          .select('id, role')
-          .eq('facility_id', currentBooking.venue_id)
-          .eq('user_id', authUser.id)
-          .limit(1)
-          .maybeSingle();
+        const candidateStaffIds = [authUser.id, authUser.auth_id].filter((id): id is string =>
+          isValidUuid(id)
+        );
+        if (candidateStaffIds.length > 0) {
+          const { data: staffRow, error: staffErr } = await dbClient
+            .from('facility_staff')
+            .select('id, role')
+            .eq('facility_id', currentBooking.venue_id)
+            .in('user_id', candidateStaffIds)
+            .limit(1)
+            .maybeSingle();
 
-        if (staffErr) {
-          if (isMissingTableError(staffErr)) {
-            console.warn('[BookingsAPI PATCH] facility_staff table not in schema cache; skipping staff lookup');
-          } else {
-            console.warn('[BookingsAPI PATCH] facility_staff lookup notice:', staffErr.message);
+          if (staffErr) {
+            if (isMissingTableError(staffErr)) {
+              console.warn('[BookingsAPI PATCH] facility_staff table not in schema cache; skipping staff lookup');
+            } else {
+              console.warn('[BookingsAPI PATCH] facility_staff lookup notice:', staffErr.message);
+            }
+          } else if (staffRow?.id) {
+            isAuthorizedFacilityManager = true;
           }
-        } else if (staffRow?.id) {
-          isAuthorizedFacilityManager = true;
         }
       } catch (staffCatchErr) {
         console.warn('[BookingsAPI PATCH] facility_staff query exception:', staffCatchErr);
       }
-    }
-
-    if (!isAuthorizedFacilityManager && isManagerRole) {
-      isAuthorizedFacilityManager = true;
     }
 
     if (!isAuthorizedFacilityManager && !isPlayerSelfCancel) {
@@ -454,7 +536,9 @@ export async function PATCH(request: Request) {
       .from('bookings')
       .update(updatePayload)
       .eq('id', bookingId)
-      .select('*, user:users(*), court:courts(*), venue:venues(*)')
+      .select(
+        '*, user:users(id, auth_id, full_name, nickname, email, phone, avatar_url), court:courts(*), venue:venues(*)'
+      )
       .maybeSingle();
 
     if (dbUpdated) {
@@ -473,6 +557,13 @@ export async function PATCH(request: Request) {
       );
     } else {
       updatedBooking = { ...currentBooking, ...updatePayload };
+    }
+
+    if (updatedBooking?.user?.phone) {
+      updatedBooking.user.phone = sanitizePhoneValue(updatedBooking.user.phone) || '';
+    }
+    if (updatedBooking?.customer_phone) {
+      updatedBooking.customer_phone = sanitizePhoneValue(updatedBooking.customer_phone) || '';
     }
 
     fallbackBookingsStore.set(bookingId, updatedBooking);
@@ -900,8 +991,9 @@ export async function POST(request: Request) {
       (authUser.email || '').trim();
 
     const resolvedCustomerPhone =
-      (customerPhone || '').trim() ||
-      (authUser.phone || '').trim();
+      sanitizePhoneValue(customerPhone) ||
+      sanitizePhoneValue(authUser.phone) ||
+      '';
 
     const customerTag = `[CUSTOMER:${resolvedCustomerName}|${resolvedCustomerEmail}|${resolvedCustomerPhone}]`;
     const finalNotes = notes && notes.trim() ? `${notes.trim()} ${customerTag}` : customerTag;
@@ -941,7 +1033,7 @@ export async function POST(request: Request) {
     insertErr = insertResult.error;
 
     // If missing column error, strip missing columns in a loop and retry
-    let retryBookingRecord = { ...bookingRecord };
+    const retryBookingRecord = { ...bookingRecord };
     while (insertErr && isMissingColumnError(insertErr)) {
       const missingCol = extractMissingColumn(insertErr);
       if (missingCol && missingCol in retryBookingRecord) {

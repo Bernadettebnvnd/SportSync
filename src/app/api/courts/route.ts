@@ -124,26 +124,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Target venue not found.' }, { status: 404 });
     }
 
+    const candidateStaffIds = [canonicalUserId, user.auth_id].filter((id): id is string =>
+      isValidUuid(id)
+    );
+
     let staffRow = null;
     try {
-      const { data: sData } = await admin
-        .from('facility_staff')
-        .select('id')
-        .eq('facility_id', venue_id)
-        .eq('user_id', canonicalUserId)
-        .maybeSingle();
-      staffRow = sData;
+      if (candidateStaffIds.length > 0) {
+        const { data: sData } = await admin
+          .from('facility_staff')
+          .select('id')
+          .eq('facility_id', venue_id)
+          .in('user_id', candidateStaffIds)
+          .limit(1)
+          .maybeSingle();
+        staffRow = sData;
+      }
     } catch {}
 
-    const roleStr = String((user as any).role || '');
-    const isManagerRole =
-      roleStr === 'venue_owner' ||
-      roleStr === 'organizer' ||
-      roleStr === 'admin' ||
-      roleStr === 'facility_owner' ||
-      roleStr === 'faculty';
+    const roleStr = String(user.role || '');
+    const isAdmin = roleStr === 'admin';
+    const isVenueOwner =
+      targetVenue.owner_id === canonicalUserId ||
+      (Boolean(user.auth_id) && targetVenue.owner_id === user.auth_id);
 
-    if (targetVenue.owner_id !== canonicalUserId && !staffRow && !isManagerRole) {
+    if (!isVenueOwner && !staffRow && !isAdmin) {
       return NextResponse.json(
         { error: 'You are not authorized to add courts to this facility.' },
         { status: 403 }
@@ -152,7 +157,7 @@ export async function POST(request: Request) {
 
     const normalizedSport = String(sport || 'pickleball');
 
-    const courtPayload: Record<string, any> = {
+    const courtPayload: Record<string, unknown> = {
       venue_id,
       name: name.trim(),
       sport: normalizedSport,
@@ -320,31 +325,36 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Associated venue not found.' }, { status: 404 });
     }
 
+    const candidateStaffIds = [canonicalUserId, user.auth_id].filter((id): id is string =>
+      isValidUuid(id)
+    );
+
     let staffRow = null;
     try {
-      const { data: sRow, error: staffLookupErr } = await admin
-        .from('facility_staff')
-        .select('id')
-        .eq('facility_id', targetVenue.id)
-        .eq('user_id', canonicalUserId)
-        .maybeSingle();
+      if (candidateStaffIds.length > 0) {
+        const { data: sRow, error: staffLookupErr } = await admin
+          .from('facility_staff')
+          .select('id')
+          .eq('facility_id', targetVenue.id)
+          .in('user_id', candidateStaffIds)
+          .limit(1)
+          .maybeSingle();
 
-      if (staffLookupErr && !isMissingTableError(staffLookupErr)) {
-        console.warn('[PATCH /api/courts] facility_staff lookup notice:', staffLookupErr.message);
-      } else if (sRow) {
-        staffRow = sRow;
+        if (staffLookupErr && !isMissingTableError(staffLookupErr)) {
+          console.warn('[PATCH /api/courts] facility_staff lookup notice:', staffLookupErr.message);
+        } else if (sRow) {
+          staffRow = sRow;
+        }
       }
     } catch {}
 
-    const roleStr = String((user as any).role || '');
-    const isManagerRole =
-      roleStr === 'venue_owner' ||
-      roleStr === 'organizer' ||
-      roleStr === 'admin' ||
-      roleStr === 'facility_owner' ||
-      roleStr === 'faculty';
+    const roleStr = String(user.role || '');
+    const isAdmin = roleStr === 'admin';
+    const isVenueOwner =
+      targetVenue.owner_id === canonicalUserId ||
+      (Boolean(user.auth_id) && targetVenue.owner_id === user.auth_id);
 
-    if (targetVenue.owner_id !== canonicalUserId && !staffRow && !isManagerRole) {
+    if (!isVenueOwner && !staffRow && !isAdmin) {
       return NextResponse.json(
         { error: 'You are not authorized to edit courts for this facility.' },
         { status: 403 }

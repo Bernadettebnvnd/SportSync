@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { serverRegister } from '@/lib/auth/serverAuth';
-import { validateRealEmail } from '@/lib/validation/emailValidator';
+import { validateRealEmailWithMx } from '@/lib/validation/emailValidator';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const { email, password, fullName, role, city } = body;
 
-    // 1. Validation - Strictly restrict/forbid fake, disposable, or dummy accounts
-    const emailValidation = validateRealEmail(email);
+    // 1. Validation - Strictly restrict/forbid fake, disposable, typo, or non-MX domains
+    const emailValidation = await validateRealEmailWithMx(email);
     if (!emailValidation.isValid) {
       return NextResponse.json(
         { error: emailValidation.error || 'Please enter a valid, permanent email address (e.g. player@gmail.com).' },
@@ -73,7 +73,14 @@ export async function POST(request: Request) {
     return response;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Registration failed.';
-    const status = message.includes('already exists') ? 409 : 500;
+    const lower = message.toLowerCase();
+    const status = lower.includes('already exists')
+      ? 409
+      : lower.includes('rate limit') || lower.includes('too many')
+      ? 429
+      : lower.includes('invalid') || lower.includes('domain') || lower.includes('forbidden')
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

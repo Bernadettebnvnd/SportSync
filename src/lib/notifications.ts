@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from './supabase';
@@ -603,7 +604,9 @@ export async function fetchUserNotificationsFromSupabase(
       if (uName) params.set('userName', uName);
       if (uEmail) params.set('email', uEmail);
 
-      const res = await fetch(`/api/notifications?${params.toString()}`);
+      const res = await fetch(`/api/notifications?${params.toString()}`, {
+        credentials: 'include',
+      });
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.notifications)) {
@@ -692,6 +695,7 @@ export async function persistNotificationToSupabase(item: NotificationItem): Pro
     try {
       const res = await fetch('/api/notifications', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notification: itemWithDedupe }),
       });
@@ -750,7 +754,7 @@ export async function persistNotificationToSupabase(item: NotificationItem): Pro
       return true;
     }
     return !insertErr;
-  } catch (err) {
+  } catch {
     return false;
   }
 }
@@ -890,6 +894,7 @@ export function markAsRead(id: string, userFilter?: UserNotificationFilter): voi
   if (typeof window !== 'undefined') {
     fetch('/api/notifications', {
       method: 'PATCH',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
     }).catch(() => {});
@@ -915,6 +920,7 @@ export function markAllAsRead(userFilter?: UserNotificationFilter): void {
   if (typeof window !== 'undefined') {
     fetch('/api/notifications', {
       method: 'PATCH',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ all: true, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
     }).catch(() => {});
@@ -950,6 +956,7 @@ export function dismissNotification(id: string): void {
   if (typeof window !== 'undefined') {
     fetch('/api/notifications', {
       method: 'DELETE',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     }).catch(() => {});
@@ -973,6 +980,7 @@ export function clearAllNotifications(userFilter?: UserNotificationFilter): void
   if (typeof window !== 'undefined') {
     fetch('/api/notifications', {
       method: 'DELETE',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ all: true, userId: userFilter?.id, userName: userFilter?.name }),
     }).catch(() => {});
@@ -1090,6 +1098,7 @@ export function markGameChatNotificationsAsRead(
       readIds.forEach((id) => {
         fetch('/api/notifications', {
           method: 'PATCH',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
         }).catch(() => {});
@@ -1098,6 +1107,7 @@ export function markGameChatNotificationsAsRead(
       // Also tell the server to mark all matching chat notifications as read for this game
       fetch('/api/notifications', {
         method: 'PATCH',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'mark_chat_read',
@@ -1141,7 +1151,6 @@ export function useNotifications(userFilter?: UserNotificationFilter) {
   // 1. Initial listener and relative time ticker
   useEffect(() => {
     listeners.add(refresh);
-    refresh();
 
     // Re-check relative times every 45 seconds so timestamps stay up to date
     const interval = setInterval(() => {
