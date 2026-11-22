@@ -695,7 +695,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
         {/* 5. "Bring Your Boots" Notes */}
         <div className="p-4 rounded-2xl bg-[#1C241E] border border-white/10 space-y-1">
           <span className="text-[11px] font-bold text-[#C8FF2E] uppercase tracking-wider block">
-            Host Notes • Bring Your Boots
+            Host Notes • Bring Your Gears
           </span>
           <p className="text-xs text-[#A5B0A6] leading-relaxed">
             {game.notes || 'Organized via SportSync Matchmaking. Wear appropriate sports attire.'}
