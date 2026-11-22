@@ -21,6 +21,7 @@ import {
   Loader2,
   Copy,
   Lock,
+  Globe,
   Link as LinkIcon,
 } from 'lucide-react';
 import { UserAvatar } from '../../illustrations/Avatars';
@@ -222,7 +223,7 @@ interface CreateMatchWizardScreenProps {
     pricePerPlayer: number;
     notes?: string;
     coordinates?: [number, number];
-    visibility?: 'Public' | 'Friends' | 'Invite';
+    visibility?: 'Public' | 'Invite';
     inviteCode?: string;
     venueId?: string;
     invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
@@ -360,7 +361,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   const [splitCost, setSplitCost] = useState(true);
   const [pricePerPlayer, setPricePerPlayer] = useState(150);
   const [bringBootsNote, setBringBootsNote] = useState(true);
-  const [visibility, setVisibility] = useState<'Public' | 'Friends' | 'Invite'>('Public');
+  const [visibility, setVisibility] = useState<'Public' | 'Invite'>('Public');
   const [inviteCode] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
   const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([]);
   const [copiedInvite, setCopiedInvite] = useState(false);
@@ -1669,12 +1670,14 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   </span>
                 </p>
                 <p className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
+                  {visibility === 'Invite' ? (
+                    <Lock className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
+                  ) : (
+                    <Globe className="w-3.5 h-3.5 text-[#C8FF2E] shrink-0" />
+                  )}
                   <span className="text-xs text-[#F4F7F0] font-medium">
                     {visibility === 'Invite'
                       ? 'Invite Only (Hidden from public feed)'
-                      : visibility === 'Friends'
-                      ? 'Friends Only'
                       : 'Public Feed'}
                   </span>
                 </p>
@@ -1686,9 +1689,9 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-2">
                 Visibility
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['Public', 'Friends', 'Invite'] as const).map((v) => {
-                  const label = v === 'Friends' ? 'Friends Only' : v === 'Invite' ? 'Invite Only' : 'Public Feed';
+              <div className="grid grid-cols-2 gap-2">
+                {(['Public', 'Invite'] as const).map((v) => {
+                  const label = v === 'Invite' ? 'Invite Only' : 'Public Feed';
                   const isSelected = visibility === v;
                   return (
                     <button
