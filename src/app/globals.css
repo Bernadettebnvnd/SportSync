@@ -204,6 +204,49 @@ body.light .bg-\[\#0B0F0C\] {
   color: #0F1612 !important;
 }
 
+/* Prevent text-white from vanishing on light-converted surfaces (#141A15 -> #FFF, #1C241E -> #E8ECE5, #0B0F0C -> #F4F6F2, #0F2A22 -> #E5EFE9, bg-white/10 -> rgba(0,0,0,0.06)) */
+.light .bg-\[\#141A15\].text-white,
+.light .bg-\[\#1C241E\].text-white,
+.light .bg-\[\#0B0F0C\].text-white,
+.light .bg-\[\#0F2A22\].text-white,
+.light .bg-white\/5.text-white,
+.light .bg-white\/10.text-white,
+.light .bg-\[\#141A15\] > .text-white,
+.light .bg-\[\#1C241E\] > .text-white,
+.light .bg-\[\#0B0F0C\] > .text-white,
+.light .bg-\[\#0F2A22\] > .text-white {
+  color: #0F1612 !important;
+}
+
+/* Dark Mode Alignment for Light-Native Organizer & Modal Surfaces (#FFFFFF / #FAF8F5 / #E8E5DF) */
+html:not(.light) .organizer-surface .bg-white,
+html:not(.light) .organizer-surface.bg-white {
+  background-color: #141A15 !important;
+  color: #F4F7F0 !important;
+}
+
+html:not(.light) .organizer-surface .bg-\[\#FAF8F5\],
+html:not(.light) .organizer-surface .bg-\[\#F4F9F5\] {
+  background-color: #1C241E !important;
+}
+
+html:not(.light) .organizer-surface .border-\[\#E8E5DF\] {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html:not(.light) .organizer-surface .divide-\[\#E8E5DF\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html:not(.light) .organizer-surface .text-\[\#1A241E\],
+html:not(.light) .organizer-surface .text-black {
+  color: #F4F7F0 !important;
+}
+
+html:not(.light) .organizer-surface .text-\[\#65756B\] {
+  color: #A5B0A6 !important;
+}
+
 .light .text-\[\#A5B0A6\],
 .light.text-\[\#A5B0A6\] {
   color: #4C5A50 !important;

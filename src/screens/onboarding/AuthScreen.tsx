@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, ArrowLeft, ArrowRight, User, Building2, AlertCircle, CheckCircle2, Eye, EyeOff, RotateCw } from 'lucide-react';
 import { Button } from '../../design-system/components/Button';
@@ -413,9 +414,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <div className="mb-5 space-y-3">
             <GoogleSignInButton
               label={isSignUp ? 'Sign up with Google' : 'Continue with Google'}
+              intendedRole={isSignUp ? selectedRole : undefined}
               onError={(err) => setErrorMessage(err)}
               onSuccess={(isNewUser, user) => {
-                const isOwner = user?.role === 'venue_owner' || user?.role === 'organizer' || selectedRole === 'facility_owner';
+                const isDbOwner =
+                  user?.role === 'venue_owner' ||
+                  user?.role === 'organizer' ||
+                  user?.role === 'facility_owner';
+                const isOwner = isNewUser ? (isDbOwner || selectedRole === 'facility_owner') : isDbOwner;
                 onSuccess(isOwner ? 'facility_owner' : 'player', Boolean(isNewUser), user);
               }}
             />
@@ -698,7 +704,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 ) : (
                   <div className="space-y-2">
                     <p className="text-xs text-[#A5B0A6]">
-                      Don't have an account?{' '}
+                      Don&apos;t have an account?{' '}
                       <button
                         type="button"
                         onClick={() => {

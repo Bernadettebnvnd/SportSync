@@ -1091,19 +1091,32 @@ export async function POST(req: NextRequest) {
 
           try {
             const hostChannel = supabase.channel(primaryChannel);
-            hostChannel.subscribe((status: string) => {
-              if (status === 'SUBSCRIBED') {
-                hostChannel.send({
-                  type: 'broadcast',
-                  event: 'new_notification',
-                  payload: notifPayload,
-                }).catch(() => {}).finally(() => {
-                  setTimeout(() => {
-                    try { supabase.removeChannel(hostChannel); } catch {}
-                  }, 1500);
+            if (typeof (hostChannel as any).httpSend === 'function') {
+              await (hostChannel as any).httpSend('new_notification', notifPayload).catch(() => {});
+            } else {
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(() => {
+                  try { supabase.removeChannel(hostChannel); } catch {}
+                  resolve();
+                }, 1500);
+                hostChannel.subscribe((status: string) => {
+                  if (status === 'SUBSCRIBED') {
+                    hostChannel
+                      .send({
+                        type: 'broadcast',
+                        event: 'new_notification',
+                        payload: notifPayload,
+                      })
+                      .catch(() => {})
+                      .finally(() => {
+                        clearTimeout(timer);
+                        try { supabase.removeChannel(hostChannel); } catch {}
+                        resolve();
+                      });
+                  }
                 });
-              }
-            });
+              });
+            }
           } catch {}
         } catch (notifEx) {
           console.warn('[/api/invitations POST accept] Host notification delivery exception:', notifEx);

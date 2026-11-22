@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import {
   ArrowLeft,
@@ -66,7 +67,11 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
 
   const hasSlots = venue.availableSlots && venue.availableSlots.length > 0;
   const opHours = venue.operatingHours || '06:00 AM – 11:00 PM Daily';
-  const phoneContact = venue.phone || '0917-888-SYNC';
+  const phoneContact =
+    venue.phone ||
+    ((venue as any).payment_info?.gcash_number) ||
+    ((venue as any).paymentInfo?.gcash_number) ||
+    '';
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-32 select-none min-h-screen relative">
@@ -142,10 +147,10 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
               <SportIcon sport={venue.sport} size={11} color="#0B0F0C" />
               {venue.sport}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#1C241E] text-white text-[10px] font-semibold border border-white/10">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#1C241E] text-[#F4F7F0] text-[10px] font-semibold border border-white/10">
               {venue.surface}
             </span>
-            <span className="px-2 py-0.5 rounded-full bg-[#1C241E] text-white text-[10px] font-semibold border border-white/10">
+            <span className="px-2 py-0.5 rounded-full bg-[#1C241E] text-[#F4F7F0] text-[10px] font-semibold border border-white/10">
               {venue.isIndoor ? 'Indoor Facility' : 'Outdoor Grounds'}
             </span>
             <span className="flex items-center gap-1 text-xs text-[#C8FF2E] font-bold ml-auto">
@@ -280,12 +285,16 @@ export const VenueDetailScreen: React.FC<VenueDetailScreenProps> = ({
               <Phone className="w-4 h-4 text-[#C8FF2E]" />
               <span>Direct Desk Line:</span>
             </div>
-            <a
-              href={`tel:${phoneContact}`}
-              className="font-bold text-[#C8FF2E] hover:underline"
-            >
-              {phoneContact}
-            </a>
+            {phoneContact ? (
+              <a
+                href={`tel:${phoneContact}`}
+                className="font-bold text-[#C8FF2E] hover:underline"
+              >
+                {phoneContact}
+              </a>
+            ) : (
+              <span className="text-[#A5B0A6] italic">Not provided</span>
+            )}
           </div>
 
           <div>

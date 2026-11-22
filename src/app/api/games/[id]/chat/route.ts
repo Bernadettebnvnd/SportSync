@@ -757,11 +757,31 @@ export async function POST(
         if (targetChannel) {
           try {
             const ch = supabase.channel(targetChannel);
-            await ch.send({
-              type: 'broadcast',
-              event: 'new_notification',
-              payload: notifItem,
-            });
+            if (typeof (ch as any).httpSend === 'function') {
+              await (ch as any).httpSend('new_notification', notifItem).catch(() => {});
+            } else {
+              await new Promise<void>((resolve) => {
+                const timer = setTimeout(() => {
+                  try { supabase.removeChannel(ch); } catch {}
+                  resolve();
+                }, 1500);
+                ch.subscribe((status: string) => {
+                  if (status === 'SUBSCRIBED') {
+                    ch.send({
+                      type: 'broadcast',
+                      event: 'new_notification',
+                      payload: notifItem,
+                    })
+                      .catch(() => {})
+                      .finally(() => {
+                        clearTimeout(timer);
+                        try { supabase.removeChannel(ch); } catch {}
+                        resolve();
+                      });
+                  }
+                });
+              });
+            }
           } catch {}
         }
       }

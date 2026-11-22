@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
@@ -184,6 +185,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       try {
         const persisted = await fetchGameMessages(chatRoomId, game?.id, hostInfo);
         if (!isMounted) return;
+        let hasNewMessages = false;
         setMessages((prev) => {
           const byId = new Map(prev.map((m) => [m.id, m]));
           let changed = false;
@@ -193,6 +195,9 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
               changed = true;
             }
           }
+          if (changed) {
+            hasNewMessages = true;
+          }
           const nextList = changed ? Array.from(byId.values()) : prev;
           if (changed && typeof window !== 'undefined') {
             try {
@@ -201,8 +206,12 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
           }
           return nextList;
         });
-        if (isInitial) setLoadingMessages(false);
-        markCurrentChatRead();
+        if (isInitial) {
+          setLoadingMessages(false);
+          markCurrentChatRead();
+        } else if (hasNewMessages) {
+          markCurrentChatRead();
+        }
       } catch (err) {
         console.warn('[MatchChat] Error loading messages:', err);
         if (isMounted && isInitial) setLoadingMessages(false);
@@ -210,7 +219,6 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     };
 
     loadMessages(true);
-    markCurrentChatRead();
 
     // Subscribe to real-time message changes
     const unsubscribe = subscribeToGameChat(game?.id || chatRoomId, chatRoomId, hostInfo, (incoming) => {

@@ -22,6 +22,61 @@ function extractDeclineReason(notes?: string | null): string | null {
   return match ? match[1].trim() : null;
 }
 
+function formatBookingDateLabel(rawDate?: string | null): string {
+  if (!rawDate) return 'Scheduled';
+  const trimmed = rawDate.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = new Date(`${trimmed}T00:00:00+08:00`);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', {
+        timeZone: 'Asia/Manila',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+  }
+  if (trimmed.includes('T')) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', {
+        timeZone: 'Asia/Manila',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+  }
+  return trimmed;
+}
+
+function formatBookingTimeLabel(rawTime?: string | null): string {
+  if (!rawTime) return '';
+  const trimmed = rawTime.trim();
+  if (trimmed.includes('T')) {
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Manila',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+    }
+  }
+  const hmMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (hmMatch) {
+    const h = parseInt(hmMatch[1], 10);
+    const m = hmMatch[2];
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${String(h12).padStart(2, '0')}:${m} ${period}`;
+  }
+  return trimmed;
+}
+
 export default function BookingsPage() {
   const { currentUser, bookings, refreshBookings } = useMatchiStore();
 
@@ -145,11 +200,14 @@ export default function BookingsPage() {
                     <div className="flex items-center gap-3 text-xs text-[#F4F7F0] font-medium pt-1 flex-wrap">
                       <span className="inline-flex items-center gap-1 text-[#A5B0A6]">
                         <Calendar className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                        <strong className="text-[#F4F7F0]">{booking.booking_date}</strong>
+                        <strong className="text-[#F4F7F0]">{formatBookingDateLabel(booking.booking_date || booking.start_time)}</strong>
                       </span>
                       <span className="inline-flex items-center gap-1 text-[#A5B0A6]">
                         <Clock className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                        <strong className="text-[#F4F7F0]">{booking.start_time} - {booking.end_time}</strong>
+                        <strong className="text-[#F4F7F0]">
+                          {formatBookingTimeLabel(booking.start_time)}
+                          {booking.end_time ? ` – ${formatBookingTimeLabel(booking.end_time)}` : ''}
+                        </strong>
                       </span>
                       <span className="text-[#A5B0A6]">({booking.duration_minutes} mins)</span>
                     </div>

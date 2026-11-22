@@ -68,8 +68,22 @@ export function BookingModal({
   const [needsPartner, setNeedsPartner] = useState(false);
 
   // Payment Category: ewallet, bank_transfer, cash
-  const [paymentCategory, setPaymentCategory] = useState<PaymentCategory>('ewallet');
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('gcash');
+  const [paymentCategory, setPaymentCategory] = useState<PaymentCategory>(() => {
+    const pInfo = venue.payment_info || { accepts_cash: true };
+    if (pInfo.gcash_number || pInfo.maya_number || pInfo.grabpay_number) return 'ewallet';
+    if (pInfo.bdo_account_number || pInfo.bpi_account_number || pInfo.unionbank_account_number) return 'bank_transfer';
+    return 'cash';
+  });
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(() => {
+    const pInfo = venue.payment_info || { accepts_cash: true };
+    if (pInfo.gcash_number) return 'gcash';
+    if (pInfo.maya_number) return 'maya';
+    if (pInfo.grabpay_number) return 'grabpay';
+    if (pInfo.bdo_account_number) return 'bdo';
+    if (pInfo.bpi_account_number) return 'bpi';
+    if (pInfo.unionbank_account_number) return 'unionbank';
+    return 'cash';
+  });
 
   // Input states
   const [referenceCode, setReferenceCode] = useState('');
@@ -121,6 +135,11 @@ export function BookingModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (paymentCategory !== 'cash' && !isSelectedDigitalConfigured) {
+      setErrorMsg('This facility has not configured account details for the selected payment channel. Please choose Pay Cash or another configured channel.');
+      return;
+    }
 
     if (paymentCategory !== 'cash' && !referenceCode.trim()) {
       setErrorMsg('Please enter your transaction reference number or confirmation ID');
@@ -265,7 +284,41 @@ export function BookingModal({
     }
   };
 
-  const paymentInfo = venue.payment_info;
+  const paymentInfo = venue.payment_info || { accepts_cash: true };
+  const activeEwalletNumber =
+    selectedMethod === 'gcash'
+      ? (paymentInfo.gcash_number || '').trim()
+      : selectedMethod === 'maya'
+      ? (paymentInfo.maya_number || paymentInfo.gcash_number || '').trim()
+      : selectedMethod === 'grabpay'
+      ? (paymentInfo.grabpay_number || paymentInfo.gcash_number || '').trim()
+      : '';
+  const activeEwalletName =
+    selectedMethod === 'gcash'
+      ? (paymentInfo.gcash_name || venue.name)
+      : selectedMethod === 'maya'
+      ? (paymentInfo.maya_name || paymentInfo.gcash_name || venue.name)
+      : (paymentInfo.gcash_name || venue.name);
+  const activeBankNumber =
+    selectedMethod === 'bdo'
+      ? (paymentInfo.bdo_account_number || '').trim()
+      : selectedMethod === 'bpi'
+      ? (paymentInfo.bpi_account_number || '').trim()
+      : selectedMethod === 'unionbank'
+      ? (paymentInfo.unionbank_account_number || '').trim()
+      : '';
+  const activeBankName =
+    selectedMethod === 'bdo'
+      ? (paymentInfo.bdo_account_name || venue.name)
+      : selectedMethod === 'bpi'
+      ? (paymentInfo.bpi_account_name || venue.name)
+      : (paymentInfo.unionbank_account_name || venue.name);
+  const isSelectedDigitalConfigured =
+    paymentCategory === 'cash'
+      ? true
+      : paymentCategory === 'ewallet'
+      ? Boolean(activeEwalletNumber)
+      : Boolean(activeBankNumber);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 overflow-y-auto">
@@ -602,38 +655,42 @@ export function BookingModal({
                   ))}
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5">
-                  <div>
-                    <span className="text-[10px] text-[#65756B] block">
-                      {selectedMethod.toUpperCase()} Account ({paymentInfo.gcash_name || venue.name})
-                    </span>
-                    <span className="font-mono text-xs sm:text-sm font-bold text-[#1A241E]">
-                      {paymentInfo.gcash_number || '0917-888-8773'}
-                    </span>
+                {activeEwalletNumber ? (
+                  <div className="flex items-center justify-between rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5">
+                    <div>
+                      <span className="text-[10px] text-[#65756B] block">
+                        {selectedMethod.toUpperCase()} Account ({activeEwalletName})
+                      </span>
+                      <span className="font-mono text-xs sm:text-sm font-bold text-[#1A241E]">
+                        {activeEwalletNumber}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(activeEwalletNumber, selectedMethod)}
+                      className="flex items-center gap-1 text-xs font-semibold text-[#2D724E] min-h-[36px] px-2"
+                    >
+                      {copiedText === selectedMethod ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
                   </div>
+                ) : (
+                  <div className="rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5 text-xs text-[#65756B]">
+                    {selectedMethod.toUpperCase()} payment details are not set for this facility. Please select <strong>Pay Cash</strong> or another configured channel.
+                  </div>
+                )}
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCopy(paymentInfo.gcash_number || '09178888773', selectedMethod)
-                    }
-                    className="flex items-center gap-1 text-xs font-semibold text-[#2D724E] min-h-[36px] px-2"
-                  >
-                    {copiedText === selectedMethod ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {paymentInfo.gcash_qr_url && (
+                {paymentInfo.gcash_qr_url && activeEwalletNumber && (
                   <div className="flex items-center gap-3 pt-1">
                     <img
                       src={paymentInfo.gcash_qr_url}
@@ -669,47 +726,46 @@ export function BookingModal({
                   ))}
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5">
-                  <div>
-                    <span className="text-[10px] text-[#65756B] block">
-                      {selectedMethod.toUpperCase()} Account ({venue.name.toUpperCase()})
-                    </span>
-                    <span className="font-mono text-xs sm:text-sm font-bold text-[#1A241E]">
-                      {selectedMethod === 'bdo'
-                        ? '0012-3456-7890'
-                        : selectedMethod === 'bpi'
-                        ? '0987-6543-21'
-                        : '1092-8827-3819'}
-                    </span>
+                {activeBankNumber ? (
+                  <>
+                    <div className="flex items-center justify-between rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5">
+                      <div>
+                        <span className="text-[10px] text-[#65756B] block">
+                          {selectedMethod.toUpperCase()} Account ({activeBankName.toUpperCase()})
+                        </span>
+                        <span className="font-mono text-xs sm:text-sm font-bold text-[#1A241E]">
+                          {activeBankNumber}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(activeBankNumber, selectedMethod)}
+                        className="flex items-center gap-1 text-xs font-semibold text-[#C87D43] min-h-[36px] px-2"
+                      >
+                        {copiedText === selectedMethod ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-[#65756B]">
+                      Send via InstaPay or PESONet. Enter transaction reference number below.
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl bg-white border border-[#E8E5DF] px-3 py-2.5 text-xs text-[#65756B]">
+                    {selectedMethod.toUpperCase()} bank transfer details are not set for this facility. Please select <strong>Pay Cash</strong> or another configured channel.
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCopy(
-                        selectedMethod === 'bdo' ? '001234567890' : '0987654321',
-                        selectedMethod
-                      )
-                    }
-                    className="flex items-center gap-1 text-xs font-semibold text-[#C87D43] min-h-[36px] px-2"
-                  >
-                    {copiedText === selectedMethod ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="text-[11px] text-[#65756B]">
-                  Send via InstaPay or PESONet. Enter transaction reference number below.
-                </div>
+                )}
               </div>
             )}
 
@@ -721,13 +777,13 @@ export function BookingModal({
                   <span>Pay Cash at Venue Reception Counter</span>
                 </div>
                 <p className="text-[11px] text-[#65756B] leading-relaxed">
-                  Reserve your slot immediately without online payment. Present your generated cash voucher code to the receptionist or court master upon arrival.
+                  Submit your booking request for venue approval. Present your generated cash voucher code to the receptionist or court master upon arrival.
                 </p>
               </div>
             )}
 
             {/* Reference Input for Digital Payments */}
-            {paymentCategory !== 'cash' && (
+            {paymentCategory !== 'cash' && isSelectedDigitalConfigured && (
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-[#1A241E]">
@@ -792,13 +848,13 @@ export function BookingModal({
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || (paymentCategory !== 'cash' && !isSelectedDigitalConfigured)}
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#2D724E] hover:bg-[#1E4A32] text-white text-xs sm:text-sm font-bold shadow-sm transition-all active:scale-[0.99] disabled:opacity-50 min-h-[46px]"
               >
                 {isSubmitting ? (
-                  <span>Confirming...</span>
+                  <span>Submitting...</span>
                 ) : paymentCategory === 'cash' ? (
-                  <span>Confirm Cash Reservation</span>
+                  <span>Submit Cash Booking Request</span>
                 ) : (
                   <span>Submit Payment ({formatCurrency(totalCents)})</span>
                 )}

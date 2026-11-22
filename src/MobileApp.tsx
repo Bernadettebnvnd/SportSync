@@ -303,7 +303,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         if (isAuthRecovery) {
           return 'reset-password';
         }
-        if (searchParams.get('invite') || searchParams.get('match')) {
+        if (searchParams.get('invite') || searchParams.get('code') || searchParams.get('match')) {
           return 'invitation-landing';
         }
       } catch {}
@@ -435,7 +435,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     let cleanCode = '';
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const inviteParam = searchParams.get('invite') || searchParams.get('match');
+      const inviteParam = searchParams.get('invite') || searchParams.get('code') || searchParams.get('match');
       if (inviteParam) {
         const trimmed = inviteParam.trim();
         const isUuidParam = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
@@ -943,17 +943,27 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         'sportsync_facility_venue_id',
         'sportsync_user_venues',
         'sportsync_user_sessions',
+        'sportsync_notifications',
+        'sportsync_sent_notifications',
+        'sportsync-auth-token',
+        'sb-access-token',
       ];
       keysToRemove.forEach((k) => localStorage.removeItem(k));
       try {
-        const venueKeys: string[] = [];
+        const dynamicKeys: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && key.startsWith('sportsync_venue_id_')) {
-            venueKeys.push(key);
+          if (
+            key &&
+            (key.startsWith('sportsync_venue_id_') ||
+              key.startsWith('sportsync_chat_') ||
+              key.startsWith('sb-') ||
+              key.startsWith('supabase.'))
+          ) {
+            dynamicKeys.push(key);
           }
         }
-        venueKeys.forEach((k) => localStorage.removeItem(k));
+        dynamicKeys.forEach((k) => localStorage.removeItem(k));
       } catch {}
     }
     setAuthInitialMode('login');
@@ -1980,7 +1990,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           />
         );
       case 'search':
-        return <SearchScreen onBack={goBack} />;
+        return (
+          <SearchScreen
+            onBack={goBack}
+            venues={bridge.venues}
+            games={bridge.games}
+            onSelectVenue={(v) => {
+              setSelectedVenue(v);
+              navigateTo('venue-detail');
+            }}
+            onSelectGame={(g) => {
+              setSelectedGame(g);
+              navigateTo('match-detail');
+            }}
+          />
+        );
       case 'settings':
         return (
           <SettingsScreen
@@ -2055,7 +2079,13 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           activeTab={activeTab}
           onTabChange={handleTabChange}
           onOpenQuickAction={() => setIsQuickActionOpen(true)}
-          playBadge={chatUnread.totalUnread > 0 ? chatUnread.formattedTotal : null}
+          playBadge={
+            effectiveGlobalChatUnread > 0
+              ? effectiveGlobalChatUnread > 99
+                ? '99+'
+                : effectiveGlobalChatUnread.toString()
+              : null
+          }
         />
       )}
 
@@ -2074,11 +2104,17 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         }}
         onInviteFriends={async () => {
           setIsQuickActionOpen(false);
-          const inviteUrl = typeof window !== 'undefined'
-            ? `${window.location.origin}/?invite=SPORTSYNC`
-            : 'https://sportsync.ph';
+          const activeGameToShare = selectedGame || bridge.games[0];
+          const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sportsync.ph';
+          const inviteUrl = activeGameToShare
+            ? `${origin}/?invite=${encodeURIComponent(activeGameToShare.inviteCode || activeGameToShare.sessionId || activeGameToShare.id)}`
+            : origin;
           await copyToClipboard(inviteUrl);
-          setToastMessage('SportSync match link copied to clipboard!');
+          setToastMessage(
+            activeGameToShare
+              ? `Invite link for "${activeGameToShare.title}" copied to clipboard!`
+              : 'SportSync link copied to clipboard!'
+          );
           setTimeout(() => setToastMessage(null), 3000);
         }}
         onViewMyGames={() => {

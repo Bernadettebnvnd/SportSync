@@ -1,26 +1,122 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Search, TrendingUp, History, X } from 'lucide-react';
-import { TEAMS, PLAYERS, VENUES, MATCHES } from '../../mock/mockData';
-import { TeamCrest } from '../../illustrations/TeamCrests';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ArrowLeft, Search, TrendingUp, History, X, MapPin, Calendar } from 'lucide-react';
+import { Venue, CommunityGame, AvatarId } from '../../mock/types';
 import { UserAvatar } from '../../illustrations/Avatars';
+import { useMatchiStore } from '../../lib/store';
 
 interface SearchScreenProps {
   onBack: () => void;
+  venues?: Venue[];
+  games?: CommunityGame[];
+  onSelectVenue?: (venue: Venue) => void;
+  onSelectGame?: (game: CommunityGame) => void;
   onSelectItem?: (type: string, id: string) => void;
 }
 
-export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem }) => {
+export const SearchScreen: React.FC<SearchScreenProps> = ({
+  onBack,
+  venues: propVenues,
+  games: propGames,
+  onSelectVenue,
+  onSelectGame,
+  onSelectItem,
+}) => {
+  const { venues: storeVenues, sessions: storeSessions } = useMatchiStore();
   const [query, setQuery] = useState('');
-  const [recentSearches, setRecentSearches] = useState(['Northgate FC', 'Clay courts', 'Sunset 5v5']);
+  const [recentSearches, setRecentSearches] = useState<string[]>(['Badminton', 'Pickleball', 'Basketball']);
+  const [players, setPlayers] = useState<Array<{ id: string; name: string; avatarId: AvatarId; city?: string; sport?: string }>>([]);
 
-  const matchingTeams = Object.values(TEAMS).filter((t) =>
-    t.name.toLowerCase().includes(query.toLowerCase())
+  useEffect(() => {
+    let active = true;
+    fetch('/api/players', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : { players: [] }))
+      .then((data) => {
+        if (!active) return;
+        const list = Array.isArray(data?.players) ? data.players : [];
+        setPlayers(
+          list.map((p: { id: string; name: string; avatarId?: string; city?: string; primarySport?: string }) => ({
+            id: p.id,
+            name: p.name,
+            avatarId: (p.avatarId || 'alex') as AvatarId,
+            city: p.city || 'Naga City',
+            sport: p.primarySport || 'Player',
+          }))
+        );
+      })
+      .catch(() => {
+        if (active) setPlayers([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const liveVenues = useMemo<Venue[]>(() => {
+    if (propVenues && propVenues.length > 0) return propVenues;
+    return (storeVenues || []).map((v) => ({
+      id: v.id,
+      name: v.name,
+      sport: ((v.featured_sports?.[0]
+        ? v.featured_sports[0].charAt(0).toUpperCase() + v.featured_sports[0].slice(1)
+        : 'Pickleball') as Venue['sport']),
+      city: v.city || 'Naga City',
+      address: v.address || 'Naga City',
+      surface: v.courts?.[0]?.floor_type || 'Standard Surface',
+      isIndoor: v.courts?.[0]?.is_indoor ?? true,
+      pricePerHour: v.courts?.[0]?.hourly_rate_cents ? Math.round(v.courts[0].hourly_rate_cents / 100) : 350,
+      rating: v.rating || 4.8,
+      reviewCount: v.review_count || 0,
+      image: v.images?.[0] || '',
+      distanceMiles: 1.0,
+      amenities: v.amenities || [],
+      courtsCount: v.courts?.length || 1,
+      availableSlots: ['08:00', '10:00', '14:00', '16:00', '18:00'],
+      courts: v.courts || [],
+    }));
+  }, [propVenues, storeVenues]);
+
+  const liveGames = useMemo<CommunityGame[]>(() => {
+    if (propGames && propGames.length > 0) return propGames;
+    return (storeSessions || []).map((s) => ({
+      id: s.id,
+      sessionId: s.id,
+      sport: ((s.sport ? s.sport.charAt(0).toUpperCase() + s.sport.slice(1) : 'Pickleball') as CommunityGame['sport']),
+      title: s.title,
+      format: (s.rotation_format || '5v5') as CommunityGame['format'],
+      skillLevel: 'Intermediate',
+      date: s.start_time ? s.start_time.split('T')[0] : 'Today',
+      time: s.start_time && s.start_time.includes('T') ? s.start_time.split('T')[1].slice(0, 5) : (s.start_time || '18:00'),
+      locationName: s.location_details || 'Naga City',
+      distance: '1.0 km',
+      hostName: s.host?.full_name || 'Organizer',
+      hostAvatar: 'alex',
+      spotsTotal: s.max_players || 10,
+      spotsJoined: s.current_players_count || 1,
+      pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
+      notes: s.description || '',
+      isPublic: true,
+      members: [],
+    }));
+  }, [propGames, storeSessions]);
+
+  const qLower = query.trim().toLowerCase();
+  const matchingGames = liveGames.filter(
+    (g) =>
+      g.title.toLowerCase().includes(qLower) ||
+      g.sport.toLowerCase().includes(qLower) ||
+      g.locationName.toLowerCase().includes(qLower)
   );
-  const matchingPlayers = PLAYERS.filter((p) =>
-    p.name.toLowerCase().includes(query.toLowerCase())
+  const matchingPlayers = players.filter(
+    (p) =>
+      p.name.toLowerCase().includes(qLower) ||
+      (p.sport && p.sport.toLowerCase().includes(qLower))
   );
-  const matchingVenues = VENUES.filter((v) =>
-    v.name.toLowerCase().includes(query.toLowerCase())
+  const matchingVenues = liveVenues.filter(
+    (v) =>
+      v.name.toLowerCase().includes(qLower) ||
+      v.sport.toLowerCase().includes(qLower) ||
+      v.city.toLowerCase().includes(qLower) ||
+      v.address.toLowerCase().includes(qLower)
   );
 
   return (
@@ -40,7 +136,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search teams, players, courts..."
+            placeholder="Search Naga City games, players, courts..."
             autoFocus
             className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none"
           />
@@ -56,79 +152,129 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
       </div>
 
       {!query ? (
-        /* Empty State: Recent & Trending Searches */
+        /* Empty State: Recent & Active Naga City Suggestions */
         <div className="space-y-6">
-          {/* Recent */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5" />
-                Recent Searches
-              </span>
-              <button
-                onClick={() => setRecentSearches([])}
-                className="text-[10px] text-[#6F7B71] hover:text-white"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {recentSearches.map((item) => (
+          {recentSearches.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5" />
+                  Quick Sport Filters
+                </span>
                 <button
-                  key={item}
-                  onClick={() => setQuery(item)}
-                  className="px-3 py-1.5 rounded-full bg-[#1C241E] border border-white/5 text-xs text-[#F4F7F0] hover:border-[#C8FF2E]"
+                  onClick={() => setRecentSearches([])}
+                  className="text-[10px] text-[#6F7B71] hover:text-white"
                 >
-                  {item}
+                  Clear
                 </button>
-              ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {recentSearches.map((item) => (
+                  <button
+                    key={item}
+                    onClick={() => setQuery(item)}
+                    className="px-3 py-1.5 rounded-full bg-[#1C241E] border border-white/5 text-xs text-[#F4F7F0] hover:border-[#C8FF2E]"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Trending */}
+          {/* Active in Naga City */}
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] flex items-center gap-1.5 mb-2.5">
               <TrendingUp className="w-3.5 h-3.5 text-[#C8FF2E]" />
-              Trending in Metro London
+              Active in Naga City
             </span>
-            <div className="space-y-2">
-              {[
-                { label: 'Premier Cup Derby: Northgate vs Riverside', hits: '14.2K searches' },
-                { label: 'Clay Court Kensington booking slots', hits: '8.4K searches' },
-                { label: 'Sunset 5v5 Friday game rosters', hits: '5.1K searches' },
-              ].map((t, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setQuery(t.label.split(':')[0])}
-                  className="w-full p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between text-left press-scale"
-                >
-                  <span className="text-xs font-semibold text-[#F4F7F0]">{t.label}</span>
-                  <span className="text-[10px] text-[#A5B0A6]">{t.hits}</span>
-                </button>
-              ))}
-            </div>
+            {liveVenues.length === 0 && liveGames.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-[#141A15] border border-white/5 text-center text-xs text-[#A5B0A6]">
+                No venues or open games published in Naga City yet. Search by sport or player name above.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {liveVenues.slice(0, 3).map((v) => (
+                  <button
+                    key={v.id}
+                    onClick={() => {
+                      if (onSelectVenue) onSelectVenue(v);
+                      else if (onSelectItem) onSelectItem('venue', v.id);
+                      else setQuery(v.name);
+                    }}
+                    className="w-full p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between text-left press-scale"
+                  >
+                    <div>
+                      <span className="text-xs font-semibold text-[#F4F7F0] block">{v.name}</span>
+                      <span className="text-[10px] text-[#A5B0A6] flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 text-[#C8FF2E]" />
+                        {v.address || v.city}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold text-[#C8FF2E]">₱{v.pricePerHour}/hr</span>
+                  </button>
+                ))}
+                {liveGames.slice(0, 3).map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => {
+                      if (onSelectGame) onSelectGame(g);
+                      else if (onSelectItem) onSelectItem('game', g.id);
+                      else setQuery(g.title);
+                    }}
+                    className="w-full p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between text-left press-scale"
+                  >
+                    <div>
+                      <span className="text-xs font-semibold text-[#F4F7F0] block">{g.title}</span>
+                      <span className="text-[10px] text-[#A5B0A6] flex items-center gap-1 mt-0.5">
+                        <Calendar className="w-3 h-3 text-[#C8FF2E]" />
+                        {g.sport} • {g.date} • {g.time}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#A5B0A6]">
+                      {g.spotsJoined}/{g.spotsTotal} joined
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ) : (
         /* Categorized Results */
         <div className="space-y-5">
-          {/* 1. Teams */}
-          {matchingTeams.length > 0 && (
+          {matchingGames.length === 0 && matchingPlayers.length === 0 && matchingVenues.length === 0 && (
+            <div className="p-8 rounded-2xl bg-[#141A15] border border-white/5 text-center space-y-1">
+              <p className="text-xs font-bold text-[#F4F7F0]">No matches found for &ldquo;{query}&rdquo;</p>
+              <p className="text-[11px] text-[#A5B0A6]">Try searching for another Naga City court, game title, or player.</p>
+            </div>
+          )}
+
+          {/* 1. Community Games */}
+          {matchingGames.length > 0 && (
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] block mb-2">
-                Clubs & Teams
+                Pickup Games &amp; Sessions
               </span>
               <div className="space-y-2">
-                {matchingTeams.map((team) => (
+                {matchingGames.map((game) => (
                   <div
-                    key={team.id}
-                    className="p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center gap-3 cursor-pointer hover:border-white/20"
+                    key={game.id}
+                    onClick={() => {
+                      if (onSelectGame) onSelectGame(game);
+                      else onSelectItem?.('game', game.id);
+                    }}
+                    className="p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between cursor-pointer hover:border-white/20"
                   >
-                    <TeamCrest id={team.crestId} size={28} />
                     <div>
-                      <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{team.name}</h4>
-                      <span className="text-[10px] text-[#A5B0A6]">{team.league}</span>
+                      <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{game.title}</h4>
+                      <span className="text-[10px] text-[#A5B0A6]">
+                        {game.sport} • {game.locationName} • {game.date} {game.time}
+                      </span>
                     </div>
+                    <span className="text-xs font-bold text-[#C8FF2E]">
+                      {game.spotsJoined}/{game.spotsTotal}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -145,16 +291,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
                 {matchingPlayers.map((player) => (
                   <div
                     key={player.id}
+                    onClick={() => onSelectItem?.('player', player.id)}
                     className="p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between cursor-pointer hover:border-white/20"
                   >
                     <div className="flex items-center gap-2.5">
                       <UserAvatar id={player.avatarId} name={player.name} size={28} />
                       <div>
                         <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{player.name}</h4>
-                        <span className="text-[10px] text-[#A5B0A6]">{player.position}</span>
+                        <span className="text-[10px] text-[#A5B0A6] capitalize">{player.sport || 'Player'} • {player.city || 'Naga City'}</span>
                       </div>
                     </div>
-                    <span className="text-xs font-bold text-[#C8FF2E]">{player.rating} OVR</span>
                   </div>
                 ))}
               </div>
@@ -165,12 +311,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({ onBack, onSelectItem
           {matchingVenues.length > 0 && (
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#A5B0A6] block mb-2">
-                Courts & Venues
+                Courts &amp; Venues
               </span>
               <div className="space-y-2">
                 {matchingVenues.map((venue) => (
                   <div
                     key={venue.id}
+                    onClick={() => {
+                      if (onSelectVenue) onSelectVenue(venue);
+                      else onSelectItem?.('venue', venue.id);
+                    }}
                     className="p-3 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-between cursor-pointer hover:border-white/20"
                   >
                     <div>

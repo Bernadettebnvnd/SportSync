@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
@@ -80,7 +81,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
         if (!prev) return propGame;
         return {
           ...propGame,
-          notes: prev.id === propGame.id && prev.notes ? prev.notes : propGame.notes,
+          notes: propGame.notes !== undefined ? propGame.notes : prev.notes,
         };
       });
     }
@@ -753,7 +754,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           className={`w-14 h-14 rounded-full border flex items-center justify-center transition-all press-scale shrink-0 ${
             isLiked
               ? 'bg-[#FF8FC7] text-[#0B0F0C] border-[#FF8FC7]'
-              : 'bg-[#1C241E] text-white border-white/10 hover:border-white/20'
+              : 'bg-[#1C241E] text-[#F4F7F0] border-white/10 hover:border-white/20'
           }`}
           aria-label="Favorite game"
         >

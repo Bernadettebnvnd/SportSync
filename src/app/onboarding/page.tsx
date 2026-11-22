@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -449,7 +450,7 @@ function OnboardingContent() {
         'Facility Partner';
 
       const typeLabels: Record<string, string> = {
-        university: 'University & Faculty Sports Complex',
+        university: 'University & Collegiate Sports Complex',
         club: 'Private Sports Club & Academy',
         public: 'Municipal & Community Sports Arena',
         commercial: 'Commercial Sports & Leisure Hub',
@@ -468,7 +469,7 @@ function OnboardingContent() {
         ownerName: resolvedOwnerName,
         ownerEmail: resolvedOwnerEmail,
         ownerPhone: ownerPhone.trim(),
-        facilityName: facilityName.trim() || 'Ateneo Sports Complex',
+        facilityName: facilityName.trim(),
         description: `${typeLabels[facilityType] || 'Sports Facility'} in Naga City featuring ${facilitySports.join(', ')} with tournament-grade courts.`,
         address: fullAddress,
         city: 'Naga City',
@@ -520,7 +521,7 @@ function OnboardingContent() {
       <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <p className="text-xs font-semibold text-[#A5B0A6]">Redirecting to Faculty Portal...</p>
+          <p className="text-xs font-semibold text-[#A5B0A6]">Redirecting to Facility Portal...</p>
         </div>
       </div>
     );
@@ -676,7 +677,7 @@ function OnboardingContent() {
   // 2. FACULTY & FACILITY PROFILE SETUP: 5-STEP MULTI-SCREEN EXPERIENCE
   // ===========================================================================
   const facilityTypeOptions: { id: 'university' | 'club' | 'public' | 'commercial'; label: string; badge: string; desc: string }[] = [
-    { id: 'university', label: 'University / Faculty', badge: 'Academic', desc: 'Campus gymnasiums, collegiate courts & faculty recreation centers' },
+    { id: 'university', label: 'University / Campus', badge: 'Academic', desc: 'Campus gymnasiums, collegiate courts & recreation centers' },
     { id: 'club', label: 'Private Sports Club', badge: 'Club', desc: 'Member clubs, private training academies & competitive venues' },
     { id: 'public', label: 'Public / Municipal Arena', badge: 'Civic', desc: 'City barangay gyms, municipal coliseums & community courts' },
     { id: 'commercial', label: 'Commercial Sports Hub', badge: 'Commercial', desc: 'Dedicated pay-per-play sports complexes & indoor centers' },
@@ -864,7 +865,7 @@ function OnboardingContent() {
               </button>
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#C8FF2E] block">
-                  Faculty Setup • Step {ownerStep} of {totalOwnerSteps}
+                  Facility Setup • Step {ownerStep} of {totalOwnerSteps}
                 </span>
                 <h1 className="font-display font-black text-lg sm:text-xl text-[#F4F7F0]">
                   {ownerStep === 1 && 'Facility & Management Identity'}
@@ -950,7 +951,7 @@ function OnboardingContent() {
                       setFacilityName(e.target.value);
                       if (ownerValidationError) setOwnerValidationError(null);
                     }}
-                    placeholder="e.g. Ateneo Sports Complex, Naga Active Arena"
+                    placeholder="e.g. Naga City Sports Arena"
                     autoComplete="off"
                     autoFocus
                     className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
@@ -1505,7 +1506,7 @@ function OnboardingContent() {
                     </div>
                     <div>
                       <h3 className="font-display font-black text-base sm:text-lg text-[#F4F7F0]">
-                        {facilityName || 'Ateneo Sports Complex'}
+                        {facilityName || 'Sports Facility'}
                       </h3>
                       <span className="text-xs text-[#A5B0A6] capitalize">
                         {facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'}
@@ -1525,7 +1526,7 @@ function OnboardingContent() {
                     <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                       Location
                     </span>
-                    <p className="text-white font-medium truncate">{facilityAddress || 'Ateneo Ave'}</p>
+                    <p className="text-[#F4F7F0] font-medium truncate">{facilityAddress || 'Naga City'}</p>
                     <p className="text-[11px] text-[#C8FF2E]">{facilityDistrict}, Naga City</p>
                   </div>
 
@@ -1533,7 +1534,7 @@ function OnboardingContent() {
                     <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                       Desk Contact
                     </span>
-                    <p className="text-white font-medium truncate">{fullName || currentUser.full_name || 'Facility Admin'}</p>
+                    <p className="text-[#F4F7F0] font-medium truncate">{fullName || currentUser.full_name || 'Facility Admin'}</p>
                     <p className="text-[11px] text-[#A5B0A6] truncate">{ownerPhone.trim() ? `${ownerPhone.trim()} • ` : ''}{ownerEmail || currentUser.email}</p>
                   </div>
 
@@ -1541,7 +1542,7 @@ function OnboardingContent() {
                     <span className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                       Court Setup
                     </span>
-                    <p className="text-white font-medium">{courtCount} Courts ({isIndoor ? 'Indoor' : 'Outdoor'})</p>
+                    <p className="text-[#F4F7F0] font-medium">{courtCount} Courts ({isIndoor ? 'Indoor' : 'Outdoor'})</p>
                     <p className="text-[11px] text-[#A5B0A6] truncate">{courtSurface}</p>
                   </div>
 
@@ -1625,7 +1626,7 @@ function OnboardingContent() {
               ) : ownerStep === 5 ? (
                 <>
                   <Building2 className="w-4 h-4 text-[#0B0F0C]" />
-                  <span>Complete Setup &bull; Launch Faculty Portal</span>
+                  <span>Complete Setup &bull; Launch Facility Portal</span>
                 </>
               ) : (
                 <>

@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
@@ -116,7 +117,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       }
 
       if (data.user) {
-        const isFacility = role === 'facility_owner' || data.user.role === 'venue_owner' || data.user.role === 'organizer';
+        const isDbOwner = Boolean(
+          data.user.role === 'venue_owner' ||
+          data.user.role === 'organizer' ||
+          data.user.role === 'facility_owner' ||
+          data.user.role === 'faculty'
+        );
+        const isFacility = mode === 'signup' ? (role === 'facility_owner' || isDbOwner) : isDbOwner;
         const assignedRole = (isFacility ? 'venue_owner' : (data.user.role || 'player')) as any;
 
         if (mode === 'signup') {
@@ -290,7 +297,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback` : undefined,
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
         },
       });
 
@@ -310,7 +317,49 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
   const handleSignOut = async () => {
     setIsLoading(true);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sportsync_logged_out', 'true');
+        const authKeys = [
+          'sportsync_user_id',
+          'matchi_user_id',
+          'sportsync_user_email',
+          'sportsync_user_role',
+          'matchi_user_role',
+          'sportsync_user_name',
+          'matchi_user_name',
+          'sportsync_user_nickname',
+          'matchi_user_nickname',
+          'sportsync_user_profile',
+          'sideline_user_profile',
+          'sportsync_auth_user',
+          'sportsync_pending_onboarding',
+          'sportsync_onboarding_completed',
+          'matchi_onboarding_completed',
+          'sportsync_facility_venue_id',
+          'sportsync_notifications',
+          'sportsync_sent_notifications',
+          'sportsync-auth-token',
+          'sb-access-token',
+        ];
+        authKeys.forEach((k) => localStorage.removeItem(k));
+        const dynamicKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (
+            key &&
+            (key.startsWith('sportsync_venue_id_') ||
+              key.startsWith('sportsync_chat_') ||
+              key.startsWith('sb-') ||
+              key.startsWith('supabase.'))
+          ) {
+            dynamicKeys.push(key);
+          }
+        }
+        dynamicKeys.forEach((k) => localStorage.removeItem(k));
+        sessionStorage.clear();
+      }
       await logoutUser();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
       setSuccessMsg('Signed out successfully.');
       setTimeout(onClose, 800);
     } catch (err: unknown) {
@@ -447,9 +496,23 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
               <div className="mb-3 space-y-2.5">
                 <GoogleSignInButton
                   label={mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'}
+                  intendedRole={mode === 'signup' ? role : undefined}
                   onError={(err) => setErrorMsg(err)}
                   onSuccess={(isNewUser, user) => {
                     onClose();
+                    const isDbOwner =
+                      user?.role === 'venue_owner' ||
+                      user?.role === 'organizer' ||
+                      user?.role === 'facility_owner';
+                    const isOwner = isNewUser ? (isDbOwner || role === 'facility_owner') : isDbOwner;
+                    const isComplete = Boolean(user?.onboarding_completed === true || user?.has_completed_onboarding === true);
+                    if (typeof window !== 'undefined') {
+                      if (!isComplete || isNewUser) {
+                        window.location.href = isOwner ? '/onboarding?role=owner' : '/onboarding';
+                      } else {
+                        window.location.href = isOwner ? '/organizer' : '/';
+                      }
+                    }
                   }}
                 />
                 <div className="relative flex items-center justify-center my-2">

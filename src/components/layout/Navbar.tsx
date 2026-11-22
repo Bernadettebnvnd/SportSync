@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -57,14 +58,26 @@ export function Navbar() {
         'sportsync_onboarding_completed',
         'matchi_onboarding_completed',
         'sportsync_facility_venue_id',
+        'sportsync_notifications',
+        'sportsync_sent_notifications',
+        'sportsync-auth-token',
+        'sb-access-token',
       ];
       authKeys.forEach((k) => localStorage.removeItem(k));
+      const dynamicKeys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
-          localStorage.removeItem(key);
+        if (
+          key &&
+          (key.startsWith('sportsync_venue_id_') ||
+            key.startsWith('sportsync_chat_') ||
+            key.startsWith('sb-') ||
+            key.startsWith('supabase.'))
+        ) {
+          dynamicKeys.push(key);
         }
       }
+      dynamicKeys.forEach((k) => localStorage.removeItem(k));
       sessionStorage.clear();
     }
     await logoutUser();
@@ -268,19 +281,19 @@ export function Navbar() {
                   <span className="hidden sm:inline">Log Out</span>
                 </button>
 
-                {/* Faculty Profile Dropdown */}
+                {/* Facility Profile Dropdown */}
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
                     className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-xl bg-[#141A15] border border-white/10 hover:border-[#C8FF2E]/40 transition-all cursor-pointer shadow-sm"
-                    title="Faculty Account & Menu"
+                    title="Facility Account & Menu"
                   >
                     <div className="w-6 h-6 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-black text-[10px]">
                       {currentUser.nickname?.[0] || currentUser.full_name?.[0] || 'F'}
                     </div>
                     <span className="hidden sm:inline text-xs font-bold text-[#F4F7F0] max-w-[120px] truncate">
-                      {currentUser.nickname || currentUser.full_name || 'Faculty Partner'}
+                      {currentUser.nickname || currentUser.full_name || 'Facility Partner'}
                     </span>
                     <ChevronDown className="w-3.5 h-3.5 text-[#A5B0A6]" />
                   </button>
@@ -289,14 +302,14 @@ export function Navbar() {
                     <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141A15] border border-white/10 shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2">
                       <div className="px-4 py-3 border-b border-white/5 space-y-1">
                         <div className="text-xs font-bold text-[#F4F7F0] truncate">
-                          {currentUser.full_name || 'Faculty Partner'}
+                          {currentUser.full_name || 'Facility Partner'}
                         </div>
                         <div className="text-[11px] text-[#A5B0A6] truncate">
-                          {currentUser.email || 'faculty@sportsync.ph'}
+                          {currentUser.email || 'facility@sportsync.ph'}
                         </div>
                         <div className="pt-1">
                           <span className="text-[9px] font-black uppercase tracking-wider text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 px-2 py-0.5 rounded-md inline-block">
-                            Verified Faculty
+                            Verified Facility
                           </span>
                         </div>
                       </div>
@@ -308,7 +321,7 @@ export function Navbar() {
                           className="flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors"
                         >
                           <UserIcon className="w-4 h-4 text-[#C8FF2E]" />
-                          <span>Faculty Profile &amp; Account</span>
+                          <span>Facility Profile &amp; Account</span>
                         </Link>
                         <button
                           type="button"

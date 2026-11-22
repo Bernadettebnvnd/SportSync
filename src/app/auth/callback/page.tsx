@@ -37,12 +37,27 @@ export default function AuthCallbackPage() {
         throw new Error('Verified Google authentication session is missing.');
       }
 
+      let intendedRole: string | undefined;
+      if (typeof window !== 'undefined') {
+        const searchParams = new URLSearchParams(window.location.search);
+        intendedRole =
+          searchParams.get('intended_role') ||
+          searchParams.get('role') ||
+          sessionStorage.getItem('sportsync_intended_role') ||
+          localStorage.getItem('sportsync_intended_role') ||
+          undefined;
+        sessionStorage.removeItem('sportsync_intended_role');
+        localStorage.removeItem('sportsync_intended_role');
+      }
+
       const res = await fetch('/api/auth/oauth-sync', {
         method: 'POST',
         credentials: 'include',
         headers: {
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
+        body: JSON.stringify({ intendedRole }),
       });
 
       const syncResult = await res.json().catch(() => ({}));
@@ -276,7 +291,7 @@ export default function AuthCallbackPage() {
             <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4">
               <AlertCircle className="w-6 h-6" />
             </div>
-            <h3 className="font-display font-bold text-lg text-white mb-2">
+            <h3 className="font-display font-bold text-lg text-[#F4F7F0] mb-2">
               Authentication Issue
             </h3>
             <p className="text-xs text-[#A5B0A6] mb-6 leading-relaxed">
@@ -295,7 +310,7 @@ export default function AuthCallbackPage() {
             <div className="w-12 h-12 rounded-2xl bg-[#C8FF2E]/10 border border-[#C8FF2E]/20 text-[#C8FF2E] flex items-center justify-center mb-4">
               <Loader2 className="w-6 h-6 animate-spin" />
             </div>
-            <h3 className="font-display font-bold text-base text-white mb-1.5">
+            <h3 className="font-display font-bold text-base text-[#F4F7F0] mb-1.5">
               Connecting with Google
             </h3>
             <p className="text-xs text-[#A5B0A6] leading-relaxed">

@@ -1,6 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Venue, Court, SportType, VenuePaymentInfo } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
-import { INITIAL_VENUES } from '@/lib/mockData';
 
 export interface VenueFilterOptions {
   sport?: SportType | 'all';
@@ -111,13 +111,7 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
   const localVenues = getLocalStoredVenues();
 
   if (!supabase || !isSupabaseConfigured) {
-    const combined = [...localVenues];
-    INITIAL_VENUES.filter(isNagaVenue).forEach((iv) => {
-      if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
-        combined.push(iv);
-      }
-    });
-    return filterVenuesList(combined, options);
+    return filterVenuesList(localVenues, options);
   }
 
   try {
@@ -154,13 +148,6 @@ export async function getVenues(options: VenueFilterOptions = {}): Promise<Venue
         combined.push(lv);
       }
     });
-    if (combined.length === 0) {
-      INITIAL_VENUES.filter(isNagaVenue).forEach((iv) => {
-        if (!combined.some((v) => v.id === iv.id || v.name.toLowerCase() === iv.name.toLowerCase())) {
-          combined.push(iv);
-        }
-      });
-    }
 
     return filterVenuesList(combined, options);
   } catch (err) {
@@ -176,7 +163,6 @@ export async function getVenueById(idOrSlug: string): Promise<Venue | null> {
   const supabase = getSupabaseClient();
   const localVenue =
     getLocalStoredVenues().find((v) => isNagaVenue(v) && (v.id === idOrSlug || v.slug === idOrSlug)) ||
-    INITIAL_VENUES.filter(isNagaVenue).find((v) => v.id === idOrSlug || v.slug === idOrSlug) ||
     null;
 
   if (!supabase || !isSupabaseConfigured) {

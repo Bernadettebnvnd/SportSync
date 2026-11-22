@@ -979,6 +979,7 @@ export async function serverSyncOAuthUser(data: {
   provider?: string;
   accessToken?: string;
   authMetadata?: Record<string, unknown> | null;
+  intendedRole?: string;
 }): Promise<{ user: SanitizedUser; token: string; isComplete: boolean }> {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase is not configured. Please verify NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.');
@@ -1051,11 +1052,31 @@ export async function serverSyncOAuthUser(data: {
     }
   }
 
+  const isIntendedOwner =
+    data.intendedRole === 'facility_owner' ||
+    data.intendedRole === 'venue_owner' ||
+    data.intendedRole === 'organizer' ||
+    data.intendedRole === 'owner' ||
+    data.intendedRole === 'facility';
+  const defaultNewUserRole: UserRole = isIntendedOwner ? 'venue_owner' : 'player';
+  const resolvedUserRole: UserRole = (preExisting?.role || defaultNewUserRole) as UserRole;
+
+  if (!preExisting && isIntendedOwner && admin) {
+    try {
+      await admin.auth.admin.updateUserById(targetAuthId, {
+        user_metadata: {
+          ...verifiedMeta,
+          role: 'venue_owner',
+        },
+      });
+    } catch {}
+  }
+
   const dbProfile = await upsertCanonicalPublicUser(dbClient, {
     authUserId: targetAuthId,
     email: normalizedEmail,
     fullName: verifiedFullName,
-    role: (preExisting?.role || 'player') as UserRole,
+    role: resolvedUserRole,
     avatarUrl: verifiedAvatarUrl || null,
     onboardingCompleted: Boolean(preExisting?.onboarding_completed === true),
     overwriteOnboarding: false,

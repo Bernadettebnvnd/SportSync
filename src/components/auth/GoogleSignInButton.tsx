@@ -8,6 +8,7 @@ interface GoogleSignInButtonProps {
   label?: string;
   className?: string;
   disabled?: boolean;
+  intendedRole?: 'player' | 'facility_owner';
   onError?: (errorMsg: string) => void;
   onSuccess?: (isNewUser?: boolean, user?: { role?: string; [key: string]: unknown }) => void;
 }
@@ -16,6 +17,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   label = 'Continue with Google',
   className = '',
   disabled = false,
+  intendedRole,
   onError,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -30,13 +32,21 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
 
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_logged_out');
+        if (intendedRole) {
+          sessionStorage.setItem('sportsync_intended_role', intendedRole);
+          localStorage.setItem('sportsync_intended_role', intendedRole);
+        } else {
+          sessionStorage.removeItem('sportsync_intended_role');
+          localStorage.removeItem('sportsync_intended_role');
+        }
       }
 
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const roleQuery = intendedRole ? `?intended_role=${encodeURIComponent(intendedRole)}` : '';
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${origin}/auth/callback`,
+          redirectTo: `${origin}/auth/callback${roleQuery}`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -52,7 +62,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
       const msg = err instanceof Error ? err.message : 'Failed to initiate Google Sign-In.';
       onError?.(msg);
     }
-  }, [onError]);
+  }, [onError, intendedRole]);
 
   return (
     <button

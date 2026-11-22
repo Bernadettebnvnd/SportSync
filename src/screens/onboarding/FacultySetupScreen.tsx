@@ -117,7 +117,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const facilityTypeOptions: { id: 'university' | 'club' | 'public' | 'commercial'; label: string; badge: string }[] = [
-    { id: 'university', label: 'University / Faculty', badge: 'Collegiate' },
+    { id: 'university', label: 'University / Campus', badge: 'Collegiate' },
     { id: 'club', label: 'Private Sports Club', badge: 'Club' },
     { id: 'public', label: 'Public / Municipal Arena', badge: 'Community' },
     { id: 'commercial', label: 'Commercial Sports Hub', badge: 'Commercial' },
@@ -312,7 +312,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
             </button>
             <div>
               <span className="text-[10px] font-bold text-[#C8FF2E] uppercase tracking-widest block">
-                Faculty Setup • Step {step} of {totalSteps}
+                Facility Setup • Step {step} of {totalSteps}
               </span>
               <h2 className="font-display font-black text-xl sm:text-2xl text-[#F4F7F0]">
                 {step === 1 && 'Facility & Contact Identity'}
@@ -370,7 +370,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
                     setFacilityName(e.target.value);
                     if (validationError) setValidationError(null);
                   }}
-                  placeholder="e.g. Ateneo Sports Complex"
+                  placeholder="e.g. Naga City Sports Arena"
                   autoComplete="off"
                   className="w-full h-11 pl-9 pr-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:outline-none focus:border-[#C8FF2E]"
                 />
@@ -801,7 +801,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
                     {getPlayerInitials(facilityName || 'Sports Facility')}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-[#F4F7F0]">{facilityName || 'Ateneo Sports Complex'}</h4>
+                    <h4 className="font-bold text-sm text-[#F4F7F0]">{facilityName || 'Sports Facility'}</h4>
                     <span className="text-[10px] text-[#A5B0A6]">
                       {facilityTypeOptions.find((t) => t.id === facilityType)?.label || 'Sports Facility'}
                     </span>
@@ -816,19 +816,19 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Location</span>
-                  <p className="text-white font-medium truncate">{address || 'Ateneo Ave'}</p>
+                  <p className="text-[#F4F7F0] font-medium truncate">{address || 'Naga City'}</p>
                   <p className="text-[10px] text-[#C8FF2E]">{district ? `${district}, ` : ''}{city}</p>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Admin Desk</span>
-                  <p className="text-white font-medium truncate">{adminName}</p>
+                  <p className="text-[#F4F7F0] font-medium truncate">{adminName}</p>
                   <p className="text-[10px] text-[#A5B0A6] truncate">{phone.trim() || 'No phone entered'}</p>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-[#1C241E] border border-white/5">
                   <span className="text-[9px] font-bold text-[#A5B0A6] uppercase tracking-wider block">Courts</span>
-                  <p className="text-white font-medium">{courtCount} Courts ({isIndoor ? 'Indoor' : 'Outdoor'})</p>
+                  <p className="text-[#F4F7F0] font-medium">{courtCount} Courts ({isIndoor ? 'Indoor' : 'Outdoor'})</p>
                   <p className="text-[10px] text-[#A5B0A6] truncate">{surface}</p>
                 </div>
 

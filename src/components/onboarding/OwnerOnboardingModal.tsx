@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 
 import React, { useState, useEffect } from 'react';
 import { useMatchiStore } from '@/lib/store';
@@ -274,7 +275,7 @@ export function OwnerOnboardingModal({ isOpen, onClose, onLogout }: OwnerOnboard
             <div className="flex items-center gap-2">
               <Building2 className="w-4 h-4 text-[#C8FF2E]" />
               <span className="text-[10px] font-black uppercase tracking-wider text-[#C8FF2E]">
-                Faculty &amp; Facility Setup
+                Facility &amp; Courts Setup
               </span>
             </div>
             <h3 className="font-display text-base sm:text-lg font-black text-[#F4F7F0] mt-0.5">

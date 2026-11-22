@@ -307,10 +307,9 @@ export function isNotificationForUser(
   if (n.type === 'chat') {
     const sName = (n.senderName || n.meta?.senderName || n.meta?.sender_name)?.toString().trim().toLowerCase();
     const sId = (n.meta?.senderId || n.meta?.sender_id)?.toString().trim().toLowerCase();
-    if (uId && sId && (uId === sId || uId.includes(sId) || sId.includes(uId))) return false;
-    if (uName && sName && (uName === sName || uName.toLowerCase() === sName.toLowerCase())) return false;
+    if (uId && sId && uId === sId) return false;
+    if (uName && sName && uName === sName) return false;
     if (uUsername && sName && uUsername === sName) return false;
-    if (uFirst && sName && uFirst === sName.split(' ')[0] && uFirst.length >= 2) return false;
   }
 
   const isChat = n.type === 'chat';
@@ -328,28 +327,30 @@ export function isNotificationForUser(
     (!isChat ? (n.meta?.hostName || n.meta?.host_name) : undefined)
   )?.toString().trim().toLowerCase();
 
-  const rFirst = rName ? rName.split(' ')[0] : undefined;
   const targetId = (n.meta?.targetUserId || n.meta?.target_user_id)?.toString().trim().toLowerCase();
 
-  // 1. Direct ID match
-  if (uId) {
-    if (rId && (rId === uId || rId.includes(uId) || uId.includes(rId))) return true;
-    if (targetId && (targetId === uId || targetId.includes(uId) || uId.includes(targetId))) return true;
+  // 1. Canonical ID match: if both the notification and current user have canonical IDs, match strictly by ID
+  if (uId && (rId || targetId)) {
+    if (rId && rId === uId) return true;
+    if (targetId && targetId === uId) return true;
+    // If notification carries a specific UUID recipient that differs from this user's UUID, it belongs to someone else
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(uId) && ((rId && uuidPattern.test(rId)) || (targetId && uuidPattern.test(targetId)))) {
+      return false;
+    }
   }
 
-  // 2. Direct Name match
-  if (uName && rName) {
-    if (rName === uName) return true;
-    if (rName.includes(uName) || uName.includes(rName)) return true;
-    if (uFirst && rFirst && uFirst === rFirst && uFirst.length >= 2) return true;
+  // 2. Exact full name match (fallback only when canonical ID was not present on notification)
+  if (uName && rName && rName === uName) {
+    return true;
   }
 
-  // 3. Username match
-  if (uUsername && rName) {
-    if (rName === uUsername || rName.replace(/^@/, '') === uUsername) return true;
+  // 3. Exact username match
+  if (uUsername && rName && (rName === uUsername || rName.replace(/^@/, '') === uUsername)) {
+    return true;
   }
 
-  // 4. Email match
+  // 4. Exact email match
   if (uEmail) {
     if (rId && rId === uEmail) return true;
     if (rName && rName === uEmail) return true;
@@ -646,9 +647,13 @@ export async function fetchUserNotificationsFromSupabase(
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const conditions: string[] = ['type.eq.system'];
-    if (uId && isUuid(uId)) conditions.push(`user_id.eq.${uId}`);
-    if (uName) conditions.push(`user_identifier.ilike.*${uName}*`);
-    if (uEmail) conditions.push(`user_identifier.ilike.*${uEmail}*`);
+    if (uId && isUuid(uId)) {
+      conditions.push(`user_id.eq.${uId}`);
+      conditions.push(`user_identifier.eq.${uId}`);
+    } else {
+      if (uName) conditions.push(`user_identifier.eq.${uName}`);
+      if (uEmail) conditions.push(`user_identifier.eq.${uEmail}`);
+    }
 
     const { data, error } = await sb
       .from('notifications')
@@ -946,8 +951,11 @@ export function markAllAsRead(userFilter?: UserNotificationFilter): void {
       typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     const conditions: string[] = [];
-    if (userFilter.id && isUuid(userFilter.id)) conditions.push(`user_id.eq.${userFilter.id}`);
-    if (userFilter.name) conditions.push(`user_identifier.ilike.*${userFilter.name}*`);
+    if (userFilter.id && isUuid(userFilter.id)) {
+      conditions.push(`user_id.eq.${userFilter.id}`);
+    } else if (userFilter.name) {
+      conditions.push(`user_identifier.eq.${userFilter.name}`);
+    }
 
     if (conditions.length > 0) {
       sb.from('notifications').update({ read: true }).or(conditions.join(',')).then();
@@ -1107,24 +1115,15 @@ export function markGameChatNotificationsAsRead(
   if (readIds.length > 0) {
     persistNotifications(updated);
 
-    // Sync to Supabase in background
+    // Sync to Supabase in background with a single batched PATCH call
     if (typeof window !== 'undefined') {
-      readIds.forEach((id) => {
-        fetch('/api/notifications', {
-          method: 'PATCH',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, action: 'mark_read', userId: userFilter?.id, userName: userFilter?.name }),
-        }).catch(() => {});
-      });
-
-      // Also tell the server to mark all matching chat notifications as read for this game
       fetch('/api/notifications', {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'mark_chat_read',
+          ids: readIds,
           gameIds: cleanIds,
           gameTitle: cleanTitle,
           userId: userFilter?.id,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import { ArrowLeft, Calendar, MapPin, Clock, MoreVertical, X } from 'lucide-react';
 import { BottomSheet } from '../../design-system/components/BottomSheet';
@@ -37,8 +38,19 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  const upcomingList = (bookings || []).filter((b) => b.status !== 'cancelled');
-  const pastList: any[] = [];
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  const isPastBooking = (b: { date?: string; status?: string }) => {
+    if (b.status === 'completed' || b.status === 'cancelled' || b.status === 'no_show') {
+      return true;
+    }
+    if (b.date && /^\d{4}-\d{2}-\d{2}$/.test(b.date.trim())) {
+      return b.date.trim() < todayIso;
+    }
+    return false;
+  };
+
+  const upcomingList = (bookings || []).filter((b) => !isPastBooking(b) && b.status !== 'cancelled');
+  const pastList = (bookings || []).filter((b) => isPastBooking(b));
   const list = activeTab === 'upcoming' ? upcomingList : pastList;
 
   return (
@@ -161,13 +173,19 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
               </div>
 
               <div className="pt-1 flex items-center justify-between">
-                <button
-                  onClick={() => onViewPass(item.id)}
-                  className="text-xs font-bold text-[#C8FF2E] underline underline-offset-2"
-                >
-                  View Entry QR Pass →
-                </button>
-                {activeTab === 'upcoming' && item.status !== 'rejected' && (
+                {item.status !== 'rejected' && item.status !== 'cancelled' ? (
+                  <button
+                    onClick={() => onViewPass(item.id)}
+                    className="text-xs font-bold text-[#C8FF2E] underline underline-offset-2"
+                  >
+                    View Entry QR Pass →
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-[#6F7B71] font-medium">
+                    Entry pass unavailable ({item.status === 'rejected' ? 'Declined' : 'Cancelled'})
+                  </span>
+                )}
+                {activeTab === 'upcoming' && item.status !== 'rejected' && item.status !== 'cancelled' && (
                   <button
                     onClick={() => setSheetBooking({ id: item.id, venueName: item.venue?.name || 'Venue' })}
                     className="text-xs text-[#A5B0A6] hover:text-white"
@@ -204,7 +222,7 @@ export const MyBookingsScreen: React.FC<MyBookingsScreenProps> = ({
       >
         <div className="space-y-4">
           <p className="text-xs text-[#A5B0A6]">
-            Court: <span className="text-white font-semibold">{sheetBooking?.venueName}</span>
+            Court: <span className="text-[#F4F7F0] font-semibold">{sheetBooking?.venueName}</span>
           </p>
 
           <Button

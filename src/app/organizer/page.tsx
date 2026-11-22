@@ -148,14 +148,26 @@ function OrganizerDashboardContent() {
           'sportsync_user_skill',
           'sportsync_user_availability',
           'sportsync_facility_venue_id',
+          'sportsync_notifications',
+          'sportsync_sent_notifications',
+          'sportsync-auth-token',
+          'sb-access-token',
         ];
         authKeys.forEach((k) => localStorage.removeItem(k));
+        const dynamicKeys: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith('sportsync_venue_id_') || key.startsWith('sb-') || key.startsWith('supabase.'))) {
-            localStorage.removeItem(key);
+          if (
+            key &&
+            (key.startsWith('sportsync_venue_id_') ||
+              key.startsWith('sportsync_chat_') ||
+              key.startsWith('sb-') ||
+              key.startsWith('supabase.'))
+          ) {
+            dynamicKeys.push(key);
           }
         }
+        dynamicKeys.forEach((k) => localStorage.removeItem(k));
         sessionStorage.clear();
       }
       await logoutUser();
@@ -194,20 +206,6 @@ function OrganizerDashboardContent() {
     if (typeof window !== 'undefined') {
       const url = tab === 'overview' ? '/organizer' : `/organizer?tab=${tab}`;
       window.history.pushState(null, '', url);
-    }
-  };
-
-  const handleFacultyLogout = async () => {
-    try {
-      await logoutUser();
-    } catch (err) {
-      console.warn('Logout error:', err);
-    } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('sportsync_user_role');
-        localStorage.removeItem('sportsync_facility_venue_id');
-        window.location.href = '/?auth=signin';
-      }
     }
   };
 
@@ -864,7 +862,7 @@ function OrganizerDashboardContent() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12" suppressHydrationWarning>
+    <div className="organizer-surface mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 pb-24 md:pb-12" suppressHydrationWarning>
       {/* Executive Operations Header */}
       <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-5 ${isLightMode ? 'border-black/10' : 'border-white/10'}`}>
         <div>
@@ -992,19 +990,19 @@ function OrganizerDashboardContent() {
             </button>
           </div>
 
-          {/* Faculty Profile & Logout Menu */}
+          {/* Facility Profile & Logout Menu */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsAccountDropdownOpen(!isAccountDropdownOpen)}
               className="px-3 py-2 rounded-xl text-xs font-bold text-[#F4F7F0] bg-[#141A15] hover:bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E]/40 flex items-center gap-2 transition-all shadow-sm"
-              title="Faculty Account Menu & Logout"
+              title="Facility Account Menu & Logout"
             >
               <div className="w-5 h-5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-black text-[10px]">
                 {currentUser.full_name?.[0] || currentUser.email?.[0]?.toUpperCase() || 'F'}
               </div>
               <span className="hidden sm:inline max-w-[100px] truncate">
-                {currentUser.full_name || 'Faculty'}
+                {currentUser.full_name || 'Facility'}
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-[#A5B0A6]" />
             </button>
@@ -1013,14 +1011,14 @@ function OrganizerDashboardContent() {
               <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#141A15] border border-white/10 shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2 text-[#F4F7F0]">
                 <div className="px-4 py-3 border-b border-white/5 space-y-1">
                   <div className="text-xs font-bold truncate">
-                    {currentUser.full_name || 'Faculty Partner'}
+                    {currentUser.full_name || 'Facility Partner'}
                   </div>
                   <div className="text-[11px] text-[#A5B0A6] truncate">
-                    {currentUser.email || 'faculty@sportsync.ph'}
+                    {currentUser.email || 'facility@sportsync.ph'}
                   </div>
                   <div className="pt-1 flex items-center gap-1.5">
                     <span className="text-[9px] font-black uppercase tracking-wider text-[#C8FF2E] bg-[#C8FF2E]/10 border border-[#C8FF2E]/30 px-2 py-0.5 rounded-md">
-                      Verified Faculty
+                      Verified Facility
                     </span>
                   </div>
                 </div>
@@ -1035,7 +1033,7 @@ function OrganizerDashboardContent() {
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-[#A5B0A6] hover:text-[#F4F7F0] hover:bg-white/5 transition-colors text-left"
                   >
                     <User className="w-4 h-4 text-[#C8FF2E]" />
-                    <span>Faculty Profile &amp; Account</span>
+                    <span>Facility Profile &amp; Account</span>
                   </button>
                   <button
                     type="button"
@@ -1055,7 +1053,7 @@ function OrganizerDashboardContent() {
                     type="button"
                     onClick={() => {
                       setIsAccountDropdownOpen(false);
-                      handleFacultyLogout();
+                      handleLogout();
                     }}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left"
                   >
@@ -2598,7 +2596,7 @@ function OrganizerDashboardContent() {
       {/* TAB: FACILITY & OPERATOR PROFILE */}
       {activeTab === 'profile' && (
         <div className="space-y-6">
-          {/* Card 1: Faculty Account & Profile Information */}
+          {/* Card 1: Facility Account & Profile Information */}
           <div className="rounded-3xl border border-[#E8E5DF] bg-white p-5 sm:p-6 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8E5DF] pb-5">
               <div className="flex items-center gap-3.5">
@@ -2608,25 +2606,25 @@ function OrganizerDashboardContent() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-black text-[#1A241E]">
-                      {currentUser.full_name || 'Faculty Partner'}
+                      {currentUser.full_name || 'Facility Partner'}
                     </h2>
                     <span className="rounded-full bg-[#EBF4EE] text-[#1E4A32] border border-[#2D724E]/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                      Verified Faculty
+                      Verified Facility
                     </span>
                   </div>
-                  <p className="text-xs text-[#65756B] mt-0.5">{currentUser.email || 'faculty@sportsync.ph'}</p>
+                  <p className="text-xs text-[#65756B] mt-0.5">{currentUser.email || 'facility@sportsync.ph'}</p>
                 </div>
               </div>
 
               {/* Log Out CTA */}
               <button
                 type="button"
-                onClick={handleFacultyLogout}
+                onClick={handleLogout}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-black shadow-xs transition-all active:scale-95 cursor-pointer"
-                title="Log Out of Faculty Portal"
+                title="Log Out of Facility Portal"
               >
                 <LogOut className="w-4 h-4 text-rose-600" />
-                <span>Log Out of Faculty Portal</span>
+                <span>Log Out of Facility Portal</span>
               </button>
             </div>
 
@@ -2640,7 +2638,7 @@ function OrganizerDashboardContent() {
               <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#65756B] block">Contact Phone</span>
                 <span className="text-xs font-bold text-[#1A241E] block font-mono">
-                  {currentUser.phone || (primaryVenue.payment_info as any)?.gcash_number || '0917-888-0000'}
+                  {currentUser.phone || (primaryVenue.payment_info as any)?.gcash_number || 'Not configured'}
                 </span>
                 <span className="text-[11px] text-[#65756B]">Primary SMS / Verification</span>
               </div>
@@ -2744,7 +2742,7 @@ function OrganizerDashboardContent() {
                   Cash &amp; Digital Payments Desk
                 </span>
                 <p className="text-[#1A241E] font-medium">
-                  GCash: {(primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || '0917-888-0000'}
+                  GCash: {(primaryVenue.payment_info as any)?.gcash_number || currentUser.phone || 'Not configured'}
                 </p>
                 <p className="text-[#65756B]">Cash accepted at venue counter &bull; Automated voucher verification.</p>
               </div>
@@ -2857,7 +2855,7 @@ function OrganizerDashboardContent() {
                       type="text"
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
-                      placeholder="e.g. 0917-888-0000"
+                      placeholder="Enter facility GCash / SMS mobile number"
                       className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#E8E5DF] bg-white text-xs font-semibold text-black placeholder:text-gray-400 focus:border-[#2D724E] focus:ring-1 focus:ring-[#2D724E] focus:outline-none transition-all"
                     />
                   </div>
@@ -3295,7 +3293,7 @@ export default function OrganizerDashboard() {
         <div className="min-h-screen bg-[#0B0F0C] flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#C8FF2E]" />
-            <span className="text-xs text-[#8A9E91] font-medium tracking-wide">Loading Faculty Portal...</span>
+            <span className="text-xs text-[#8A9E91] font-medium tracking-wide">Loading Facility Portal...</span>
           </div>
         </div>
       }

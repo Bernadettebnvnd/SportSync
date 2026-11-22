@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, CheckCircle2, Home, Clock } from 'lucide-react';
+import { CheckCircle2, Home, Clock } from 'lucide-react';
 import { BookingPass } from '../../design-system/components/BookingPass';
-import { VENUES } from '../../mock/mockData';
 import { Venue } from '../../mock/types';
 import { Button } from '../../design-system/components/Button';
 import { copyToClipboard } from '../../lib/shareUtils';
@@ -22,8 +21,26 @@ interface BookingConfirmationScreenProps {
   onToast?: (message: string) => void;
 }
 
+const FALLBACK_VENUE: Venue = {
+  id: 'venue_naga',
+  name: 'Naga City Sports Facility',
+  sport: 'Pickleball',
+  city: 'Naga City',
+  address: 'Naga City, Camarines Sur',
+  surface: 'Standard Surface',
+  isIndoor: true,
+  pricePerHour: 350,
+  rating: 4.8,
+  reviewCount: 0,
+  image: '',
+  distanceMiles: 1,
+  amenities: [],
+  courtsCount: 1,
+  availableSlots: [],
+};
+
 export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps> = ({
-  venue = VENUES[0],
+  venue = FALLBACK_VENUE,
   booking,
   onGoHome,
   onViewMyBookings,
@@ -88,7 +105,7 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
         <p className="text-xs text-[#A5B0A6] mt-0.5 max-w-xs mx-auto">
           {isConfirmed
             ? 'Digital entry pass confirmed and stored in your wallet.'
-            : 'Your booking request has been sent to the faculty. You will be notified as soon as it is confirmed.'}
+            : 'Your booking request has been sent to the facility. You will be notified as soon as it is confirmed.'}
         </p>
       </div>
 
@@ -97,10 +114,10 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
         <BookingPass
           bookingId={booking?.bookingId}
           venue={venue}
-          courtName={booking?.courtName || 'Court 2 (Clay)'}
-          dateStr={booking?.dateStr || 'Saturday, 17 Oct'}
-          timeSlot={booking?.timeSlot || '10:00 – 11:30 AM'}
-          totalPaid={booking?.totalPaid || 54}
+          courtName={booking?.courtName || 'Court 1'}
+          dateStr={booking?.dateStr || 'Today'}
+          timeSlot={booking?.timeSlot || '10:00'}
+          totalPaid={booking?.totalPaid || 350}
           status={booking?.status || 'pending'}
           onAddToCalendar={() => showFeedback('Court slot added to calendar!')}
           onShare={async () => {

@@ -22,11 +22,11 @@ interface BookingPassProps {
 export const BookingPass: React.FC<BookingPassProps> = ({
   bookingId = 'BK-89421',
   venue,
-  courtName = 'Court 2 (Clay)',
-  dateStr = 'Saturday, 17 Oct',
-  timeSlot = '10:00 - 11:30 AM',
-  durationHours = 1.5,
-  totalPaid = 54,
+  courtName = 'Court 1',
+  dateStr = 'Today',
+  timeSlot = '10:00 - 11:00',
+  durationHours = 1,
+  totalPaid = 350,
   status = 'pending',
   onAddToCalendar,
   onShare,
@@ -104,43 +104,44 @@ export const BookingPass: React.FC<BookingPassProps> = ({
 
         {/* QR Code & Barcode Section */}
         <div className="p-5 flex flex-col items-center text-center bg-[#0D120E]">
-          {/* Simulated High-Res SVG QR Code */}
-          <div className="p-3 rounded-2xl bg-white shadow-md mb-2">
-            <svg viewBox="0 0 100 100" className="w-32 h-32" fill="#0B0F0C">
-              {/* Corner markers */}
-              <rect x="10" y="10" width="24" height="24" rx="4" fill="#0B0F0C" />
-              <rect x="14" y="14" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="18" y="18" width="8" height="8" rx="1" fill="#0B0F0C" />
+          {!isRejected && (
+            <div className="p-3 rounded-2xl bg-white shadow-md mb-2">
+              <svg viewBox="0 0 100 100" className="w-32 h-32" fill="#0B0F0C">
+                {/* Corner markers */}
+                <rect x="10" y="10" width="24" height="24" rx="4" fill="#0B0F0C" />
+                <rect x="14" y="14" width="16" height="16" rx="2" fill="#FFFFFF" />
+                <rect x="18" y="18" width="8" height="8" rx="1" fill="#0B0F0C" />
 
-              <rect x="66" y="10" width="24" height="24" rx="4" fill="#0B0F0C" />
-              <rect x="70" y="14" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="74" y="18" width="8" height="8" rx="1" fill="#0B0F0C" />
+                <rect x="66" y="10" width="24" height="24" rx="4" fill="#0B0F0C" />
+                <rect x="70" y="14" width="16" height="16" rx="2" fill="#FFFFFF" />
+                <rect x="74" y="18" width="8" height="8" rx="1" fill="#0B0F0C" />
 
-              <rect x="10" y="66" width="24" height="24" rx="4" fill="#0B0F0C" />
-              <rect x="14" y="70" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="18" y="74" width="8" height="8" rx="1" fill="#0B0F0C" />
+                <rect x="10" y="66" width="24" height="24" rx="4" fill="#0B0F0C" />
+                <rect x="14" y="70" width="16" height="16" rx="2" fill="#FFFFFF" />
+                <rect x="18" y="74" width="8" height="8" rx="1" fill="#0B0F0C" />
 
-              {/* Data blocks */}
-              <rect x="42" y="14" width="6" height="6" />
-              <rect x="52" y="14" width="6" height="6" />
-              <rect x="42" y="26" width="6" height="6" />
-              <rect x="42" y="38" width="16" height="6" />
-              <rect x="14" y="44" width="16" height="6" />
-              <rect x="66" y="44" width="20" height="6" />
-              <rect x="36" y="52" width="8" height="16" />
-              <rect x="52" y="52" width="14" height="8" />
-              <rect x="48" y="68" width="18" height="6" />
-              <rect x="72" y="66" width="6" height="18" />
-              <rect x="84" y="76" width="6" height="8" />
-            </svg>
-          </div>
+                {/* Data blocks */}
+                <rect x="42" y="14" width="6" height="6" />
+                <rect x="52" y="14" width="6" height="6" />
+                <rect x="42" y="26" width="6" height="6" />
+                <rect x="42" y="38" width="16" height="6" />
+                <rect x="14" y="44" width="16" height="6" />
+                <rect x="66" y="44" width="20" height="6" />
+                <rect x="36" y="52" width="8" height="16" />
+                <rect x="52" y="52" width="14" height="8" />
+                <rect x="48" y="68" width="18" height="6" />
+                <rect x="72" y="66" width="6" height="18" />
+                <rect x="84" y="76" width="6" height="8" />
+              </svg>
+            </div>
+          )}
 
           <span className="text-[11px] text-[#A5B0A6] uppercase tracking-wider font-semibold">
             {isConfirmed
               ? 'Scan at entry terminal or gate'
               : isRejected
               ? 'Booking request was declined by venue'
-              : 'Pass active upon faculty confirmation'}
+              : 'Pass active upon facility confirmation'}
           </span>
           <span className="text-xs font-bold text-[#C8FF2E] mt-1">
             {isConfirmed ? 'Total Paid' : 'Amount'}: {APP_CONFIG.currency}{totalPaid}

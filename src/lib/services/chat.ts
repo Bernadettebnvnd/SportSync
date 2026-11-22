@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/refs, react-hooks/set-state-in-effect */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { AvatarId } from '../../illustrations/Avatars';
@@ -100,7 +101,7 @@ export async function fetchGameMessages(
   alternateId?: string,
   hostInfo?: { hostId?: string; hostName?: string }
 ): Promise<ChatMessage[]> {
-  const canonicalId = alternateId || gameId;
+  const canonicalId = gameId || alternateId;
   if (!canonicalId) return [];
 
   const supabase = getSupabaseClient();
@@ -744,6 +745,7 @@ export function useChatUnread(params: {
     total: 0,
     byGame: {},
   });
+  const countedMessageIdsRef = useRef<Set<string>>(new Set());
 
   // Stable key of authorized game IDs so we don't query DB when games array changes reference without new game IDs
   const authorizedGameIdsKey = useMemo(() => {
@@ -858,6 +860,12 @@ export function useChatUnread(params: {
         return;
       }
 
+      const msgId = String(notif.meta?.messageId || notif.meta?.message_id || notif.id || '').trim();
+      if (msgId) {
+        if (countedMessageIdsRef.current.has(msgId)) return;
+        countedMessageIdsRef.current.add(msgId);
+      }
+
       setUnreadState((prev) => {
         const currentForGame = prev.byGame[targetGame.id] || 0;
         const nextCount = currentForGame + 1;
@@ -926,6 +934,12 @@ export function useChatUnread(params: {
           if (isOpen) {
             markGameChatAsRead(targetGame.id, targetGame.sessionId, targetGame.title, { id: uId, name: uName });
             return;
+          }
+
+          const msgId = String(row.id || '').trim();
+          if (msgId) {
+            if (countedMessageIdsRef.current.has(msgId)) return;
+            countedMessageIdsRef.current.add(msgId);
           }
 
           // Otherwise increment unread count in real-time

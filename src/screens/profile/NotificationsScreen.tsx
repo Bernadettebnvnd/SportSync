@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useMemo } from 'react';
 import {
@@ -41,7 +42,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     markAllAsRead,
     dismissNotification,
     clearAllNotifications,
-    addNotification,
   } = useNotifications(
     currentUserName || currentUserId || currentUserEmail
       ? { id: currentUserId, name: currentUserName, email: currentUserEmail }
@@ -99,64 +99,6 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     if (item.linkScreen && onNavigate) {
       onNavigate(item.linkScreen, item);
     }
-  };
-
-  const handleSimulateNotification = () => {
-    const samples: Array<{
-      type: NotificationType;
-      title: string;
-      desc: string;
-      linkScreen?: string;
-      recipientName?: string;
-      recipientId?: string;
-      senderName?: string;
-    }> = [
-        {
-          type: 'match',
-          title: 'Player Joined Your Game',
-          desc: 'Alex Johnson joined your game, Sunday Pickup Match.',
-          linkScreen: 'social-home',
-          recipientName: currentUserName,
-          recipientId: currentUserId,
-          senderName: 'Alex Johnson',
-        },
-        {
-          type: 'match',
-          title: 'Game Details Updated',
-          desc: 'The host updated details for Friday Evening Basketball.',
-          linkScreen: 'match-detail',
-          recipientName: currentUserName,
-          recipientId: currentUserId,
-          senderName: 'Coach Ryan',
-        },
-        {
-          type: 'booking',
-          title: 'Court Booking Confirmed',
-          desc: 'Metro Naga Sports Complex: Badminton Court 1 reserved for Saturday 09:00 AM.',
-          linkScreen: 'my-bookings',
-          recipientName: currentUserName,
-          recipientId: currentUserId,
-        },
-        {
-          type: 'achievement',
-          title: 'Playmaker Streak Multiplier Active!',
-          desc: '3-week playing streak maintained! Enjoy 1.5x XP bonus on your next game.',
-          linkScreen: 'leaderboard',
-          recipientName: currentUserName,
-          recipientId: currentUserId,
-        },
-      ];
-
-    const pick = samples[Math.floor(Math.random() * samples.length)];
-    addNotification({
-      type: pick.type,
-      title: pick.title,
-      desc: pick.desc,
-      linkScreen: pick.linkScreen,
-      recipientName: pick.recipientName,
-      recipientId: pick.recipientId,
-      senderName: pick.senderName,
-    });
   };
 
   return (
@@ -328,7 +270,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   : item.type === 'chat' || item.meta?.event === 'new_chat_message'
                                   ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
                                   : item.type === 'booking' || item.meta?.event?.startsWith('booking_')
-                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Faculty'}`
+                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Facility'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
@@ -447,7 +389,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
                                   : item.type === 'chat' || item.meta?.event === 'new_chat_message'
                                   ? `From: ${item.senderName || item.meta?.senderName || 'Player'}`
                                   : item.type === 'booking' || item.meta?.event?.startsWith('booking_')
-                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Faculty'}`
+                                  ? `Facility: ${item.meta?.venueName || item.senderName || 'Facility'}`
                                   : (item.meta?.joiningPlayerName ? `Player: ${item.meta.joiningPlayerName}` : `From: ${item.senderName || item.meta?.hostName}`)}
                               </span>
                             </span>
@@ -502,16 +444,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
               : 'Your court bookings, pickup match rosters, live score updates, and level progression will appear here.'}
           </p>
 
-          <div className="mt-6 flex flex-col items-center gap-2.5">
-            <button
-              type="button"
-              onClick={handleSimulateNotification}
-              className="h-9 px-4 rounded-full bg-[#1C241E] hover:bg-[#263028] border border-[#C8FF2E]/40 text-xs font-bold text-[#C8FF2E] flex items-center gap-1.5 transition-all press-scale shadow-sm"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Simulate Live Alert</span>
-            </button>
-
+          <div className="mt-5 flex flex-col items-center gap-2">
             <span className="text-[10px] text-[#6F7B71] flex items-center gap-1.5 pt-1">
               <span className="w-1.5 h-1.5 rounded-full bg-[#3DDC84]" />
               Real-time event listener connected

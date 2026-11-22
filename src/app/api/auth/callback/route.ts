@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next');
   const type = searchParams.get('type');
+  const intendedRole = searchParams.get('intended_role') || searchParams.get('role') || undefined;
 
   // Handle password recovery without triggering user sync or onboarding checks
   if (type === 'recovery' || next === '/reset-password') {
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
           provider: authUser.app_metadata?.provider || 'google',
           accessToken: data.session?.access_token,
           authMetadata: meta,
+          intendedRole,
         });
 
         // Strict Routing & Guard: If user's profile is missing or incomplete,

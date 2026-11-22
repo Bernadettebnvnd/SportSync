@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState } from 'react';
 import {
   ArrowLeft,
@@ -41,25 +42,57 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
   onBack,
   onPaymentSuccess,
 }) => {
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodOption>('gcash');
+  const paymentInfo = bookingDetails?.venue?.payment_info || bookingDetails?.venue?.paymentInfo || {};
+  const gcashNumber = (paymentInfo.gcash_number || '').trim();
+  const gcashName = (paymentInfo.gcash_name || bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Facility').trim();
+  const mayaNumber = (paymentInfo.maya_number || '').trim();
+  const mayaName = (paymentInfo.maya_name || bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Facility').trim();
+  const bdoNumber = (paymentInfo.bdo_account_number || '').trim();
+  const bdoName = (paymentInfo.bdo_account_name || bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Facility').trim();
+  const bpiNumber = (paymentInfo.bpi_account_number || '').trim();
+  const bpiName = (paymentInfo.bpi_account_name || bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Facility').trim();
+  const unionbankNumber = (paymentInfo.unionbank_account_number || '').trim();
+  const unionbankName = (paymentInfo.unionbank_account_name || bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Facility').trim();
+
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodOption>(() => {
+    if (gcashNumber) return 'gcash';
+    if (mayaNumber) return 'maya';
+    if (bdoNumber) return 'bdo';
+    if (bpiNumber) return 'bpi';
+    if (unionbankNumber) return 'unionbank';
+    return 'cash';
+  });
   const [referenceNumber, setReferenceNumber] = useState('');
-  const [promoCode, setPromoCode] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedAccount, setCopiedAccount] = useState<string | null>(null);
 
-  const discountAmount = promoApplied ? 50 : 0;
-  const finalTotal = Math.max(0, totalAmount - discountAmount);
+  const finalTotal = Math.max(0, totalAmount);
 
-  const handleApplyPromo = () => {
-    if (promoCode.trim().toUpperCase() === 'PLAY50' || promoCode.trim().length >= 4) {
-      setPromoApplied(true);
-      setErrorMessage(null);
-    } else {
-      setErrorMessage('Invalid promo code. Try "PLAY50" for ₱50 off.');
-    }
-  };
+  const activeBankNumber =
+    selectedMethod === 'bdo'
+      ? bdoNumber
+      : selectedMethod === 'bpi'
+      ? bpiNumber
+      : selectedMethod === 'unionbank'
+      ? unionbankNumber
+      : '';
+  const activeBankName =
+    selectedMethod === 'bdo'
+      ? bdoName
+      : selectedMethod === 'bpi'
+      ? bpiName
+      : selectedMethod === 'unionbank'
+      ? unionbankName
+      : '';
+  const isSelectedDigitalConfigured =
+    selectedMethod === 'cash'
+      ? true
+      : selectedMethod === 'gcash'
+      ? Boolean(gcashNumber)
+      : selectedMethod === 'maya'
+      ? Boolean(mayaNumber)
+      : Boolean(activeBankNumber);
 
   const copyToClipboard = (text: string, label: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -73,6 +106,11 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
 
   const handlePay = async () => {
     setErrorMessage(null);
+
+    if (!isCash && !isSelectedDigitalConfigured) {
+      setErrorMessage('This facility has not configured account details for the selected payment method. Please select Cash at Venue or another configured method.');
+      return;
+    }
 
     // Validation: Require reference number for digital payment methods
     if (!isCash) {
@@ -166,7 +204,6 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
           customerName,
           customerEmail,
           customerPhone,
-          notes: promoApplied ? 'Promo code PLAY50 applied (₱50 discount)' : undefined,
         }),
       });
 
@@ -237,11 +274,6 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
               <span className="font-display font-black text-2xl text-[#C8FF2E] tabular-nums">
                 {APP_CONFIG.currency}{finalTotal}
               </span>
-              {promoApplied && (
-                <span className="text-xs text-[#A5B0A6] line-through tabular-nums">
-                  {APP_CONFIG.currency}{totalAmount}
-                </span>
-              )}
             </div>
             <span className="text-[11px] text-[#A5B0A6]">
               {bookingDetails?.venueName || bookingDetails?.venue?.name || 'Verified Sports Court'}
@@ -365,32 +397,42 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
                 <Smartphone className="w-4 h-4 text-[#007DFE]" />
                 GCash Account Details
               </span>
-              <span className="text-[10px] text-[#3DDC84] font-semibold">Verified Merchant</span>
+              <span className="text-[10px] text-[#3DDC84] font-semibold">
+                {gcashNumber ? 'Facility Account' : 'Not Configured'}
+              </span>
             </div>
 
-            <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
-                  GCash Mobile Number
-                </span>
-                <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
-                  0917-839-2819
-                </span>
-                <span className="text-[10px] text-[#A5B0A6] block">SportSync Philippines</span>
+            {gcashNumber ? (
+              <>
+                <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
+                      GCash Mobile Number
+                    </span>
+                    <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
+                      {gcashNumber}
+                    </span>
+                    <span className="text-[10px] text-[#A5B0A6] block">{gcashName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(gcashNumber.replace(/[-\s]/g, ''), 'GCash')}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedAccount === 'GCash' ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-[#A5B0A6]">
+                  Send <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via GCash &quot;Send Money&quot; or QR, then paste the 10–13 digit Reference Number below.
+                </p>
+              </>
+            ) : (
+              <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6]">
+                GCash payment details have not been configured by this facility yet. Please choose <strong className="text-[#F4F7F0]">Cash at Venue</strong> or contact the facility desk.
               </div>
-              <button
-                type="button"
-                onClick={() => copyToClipboard('09178392819', 'GCash')}
-                className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
-              >
-                <Copy className="w-3 h-3" />
-                <span>{copiedAccount === 'GCash' ? 'Copied!' : 'Copy'}</span>
-              </button>
-            </div>
-
-            <p className="text-[11px] text-[#A5B0A6]">
-              Send <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via GCash &quot;Send Money&quot; or QR, then paste the 10–13 digit Reference Number below.
-            </p>
+            )}
           </div>
         )}
 
@@ -401,32 +443,42 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
                 <Zap className="w-4 h-4 text-[#00E575]" />
                 Maya Account Details
               </span>
-              <span className="text-[10px] text-[#3DDC84] font-semibold">Verified Merchant</span>
+              <span className="text-[10px] text-[#3DDC84] font-semibold">
+                {mayaNumber ? 'Facility Account' : 'Not Configured'}
+              </span>
             </div>
 
-            <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
-                  Maya Account Number
-                </span>
-                <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
-                  0918-294-8172
-                </span>
-                <span className="text-[10px] text-[#A5B0A6] block">SportSync PH Official</span>
+            {mayaNumber ? (
+              <>
+                <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
+                      Maya Account Number
+                    </span>
+                    <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
+                      {mayaNumber}
+                    </span>
+                    <span className="text-[10px] text-[#A5B0A6] block">{mayaName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(mayaNumber.replace(/[-\s]/g, ''), 'Maya')}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedAccount === 'Maya' ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-[#A5B0A6]">
+                  Send <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via Maya, then enter your Reference Number below.
+                </p>
+              </>
+            ) : (
+              <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6]">
+                Maya payment details have not been configured by this facility yet. Please choose <strong className="text-[#F4F7F0]">Cash at Venue</strong> or another configured channel.
               </div>
-              <button
-                type="button"
-                onClick={() => copyToClipboard('09182948172', 'Maya')}
-                className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
-              >
-                <Copy className="w-3 h-3" />
-                <span>{copiedAccount === 'Maya' ? 'Copied!' : 'Copy'}</span>
-              </button>
-            </div>
-
-            <p className="text-[11px] text-[#A5B0A6]">
-              Send <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via Maya, then enter your Reference Number below.
-            </p>
+            )}
           </div>
         )}
 
@@ -452,38 +504,37 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
-                  {selectedMethod.toUpperCase()} Account No.
-                </span>
-                <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
-                  {selectedMethod === 'bdo'
-                    ? '0021-9876-5432'
-                    : selectedMethod === 'bpi'
-                    ? '3210-9876-54'
-                    : '1098-7654-3210'}
-                </span>
-                <span className="text-[10px] text-[#A5B0A6] block">Account Name: SportSync Sports PH Inc.</span>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  copyToClipboard(
-                    selectedMethod === 'bdo' ? '002198765432' : selectedMethod === 'bpi' ? '3210987654' : '109876543210',
-                    'Bank'
-                  )
-                }
-                className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
-              >
-                <Copy className="w-3 h-3" />
-                <span>{copiedAccount === 'Bank' ? 'Copied!' : 'Copy'}</span>
-              </button>
-            </div>
+            {activeBankNumber ? (
+              <>
+                <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-[#A5B0A6] uppercase tracking-wider block">
+                      {selectedMethod.toUpperCase()} Account No.
+                    </span>
+                    <span className="font-mono font-bold text-sm text-[#F4F7F0] tracking-wide">
+                      {activeBankNumber}
+                    </span>
+                    <span className="text-[10px] text-[#A5B0A6] block">Account Name: {activeBankName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(activeBankNumber.replace(/[-\s]/g, ''), 'Bank')}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#141A15] hover:bg-white/10 border border-white/10 text-xs font-semibold text-[#C8FF2E] flex items-center gap-1 transition-colors"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedAccount === 'Bank' ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
 
-            <p className="text-[11px] text-[#A5B0A6]">
-              Transfer <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via Instapay/PESONet, then enter your Bank Reference / Transaction Code below.
-            </p>
+                <p className="text-[11px] text-[#A5B0A6]">
+                  Transfer <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> via Instapay/PESONet, then enter your Bank Reference / Transaction Code below.
+                </p>
+              </>
+            ) : (
+              <div className="p-3 rounded-xl bg-[#1C241E] border border-white/10 text-xs text-[#A5B0A6]">
+                {selectedMethod.toUpperCase()} transfer details have not been configured by this facility yet. Please choose <strong className="text-[#F4F7F0]">Cash at Venue</strong> or another configured channel.
+              </div>
+            )}
           </div>
         )}
 
@@ -494,13 +545,13 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
               <span>Cash at Venue Desk</span>
             </div>
             <p className="text-xs text-[#A5B0A6] leading-relaxed">
-              Your court is reserved instantly! Please arrive at the facility counter 15 minutes before kickoff to pay <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> in cash and receive your court pass.
+              Submit your booking request for venue approval. Once confirmed by the facility, arrive at the counter 15 minutes before your slot to pay <strong className="text-[#F4F7F0]">{APP_CONFIG.currency}{finalTotal}</strong> in cash.
             </p>
           </div>
         )}
 
-        {/* 4. Reference Number Input (For digital payments) */}
-        {!isCash && (
+        {/* 4. Reference Number Input (For configured digital payments) */}
+        {!isCash && isSelectedDigitalConfigured && (
           <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
@@ -524,36 +575,7 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
           </div>
         )}
 
-        {/* 5. Promo Code Field */}
-        <div className="p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-2">
-          <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-            Promo / Discount Voucher
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-              placeholder="e.g. PLAY50"
-              className="flex-1 h-10 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs font-mono text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none uppercase placeholder:text-[#6F7B71]"
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleApplyPromo}
-              className="text-xs"
-            >
-              Apply
-            </Button>
-          </div>
-          {promoApplied && (
-            <span className="text-[11px] text-[#3DDC84] font-medium block">
-              ✓ Promo code applied! ₱50 discount deducted.
-            </span>
-          )}
-        </div>
-
-        {/* 6. Security & Policy Badge */}
+        {/* 5. Security & Policy Badge */}
         <div className="text-center py-1 space-y-1">
           <span className="inline-flex items-center gap-1.5 text-xs text-[#6F7B71]">
             <Lock className="w-3.5 h-3.5 text-[#3DDC84]" />
@@ -561,12 +583,13 @@ export const PaymentScreen: React.FC<PaymentScreenProps> = ({
           </span>
         </div>
 
-        {/* 7. Pay & Confirm Button */}
+        {/* 6. Pay & Confirm Button */}
         <div>
           <Button
             variant="primary"
             size="lg"
             isLoading={isProcessing}
+            disabled={isProcessing || (!isCash && !isSelectedDigitalConfigured)}
             onClick={handlePay}
             className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)] text-base press-scale"
           >

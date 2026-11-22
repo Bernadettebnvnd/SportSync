@@ -58,6 +58,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const body = await request.json().catch(() => ({}));
+    const rawIntendedRole = typeof body?.intendedRole === 'string' ? body.intendedRole.trim() : undefined;
+
     const targetMeta = (verifiedUser.user_metadata || {}) as Record<string, unknown>;
     const targetFullName =
       (targetMeta.full_name || targetMeta.name || '').toString().trim() || undefined;
@@ -73,6 +76,7 @@ export async function POST(request: Request) {
       provider: targetProvider,
       accessToken,
       authMetadata: targetMeta,
+      intendedRole: rawIntendedRole,
     });
 
     const response = NextResponse.json(

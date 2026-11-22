@@ -76,8 +76,8 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
 
   const courts = venue.courts && venue.courts.length > 0
     ? venue.courts.map((c) => c.name)
-    : ['Court 1 (Clay)', 'Court 2 (Clay)', 'Court 3 (Clay Lighted)', 'Court 4 (Hardcourt)'];
-  const [selectedCourt, setSelectedCourt] = useState(courts[0] || 'Court 1 (Clay)');
+    : ['Court 1'];
+  const [selectedCourt, setSelectedCourt] = useState(courts[0] || 'Court 1');
 
   const selectedDateStr = selectedDateItem?.fullDate || selectedDateId;
   const [durationHours, setDurationHours] = useState(1.5);
@@ -240,7 +240,7 @@ export const BookingFlowScreen: React.FC<BookingFlowScreenProps> = ({
     }
   }, [selectedDateId, isSelectedDateToday, selectedCourt, lockedIntervals.length, durationHours]);
 
-  const [invitedFriends, setInvitedFriends] = useState<string[]>(['f1', 'f3']);
+  const [invitedFriends, setInvitedFriends] = useState<string[]>([]);
 
   const toggleFriend = (id: string) => {
     if (invitedFriends.includes(id)) {

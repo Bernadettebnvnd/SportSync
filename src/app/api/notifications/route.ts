@@ -169,12 +169,15 @@ export async function GET(request: NextRequest) {
     // 1. Try public.notifications table scoped to authenticated user
     try {
       const conditions: string[] = ['type.eq.system'];
-      if (userId && isUuid(userId)) conditions.push(`user_id.eq.${userId}`);
+      if (userId && isUuid(userId)) {
+        conditions.push(`user_id.eq.${userId}`);
+        conditions.push(`user_identifier.eq.${userId}`);
+      }
       if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
         conditions.push(`user_id.eq.${authUser.auth_id}`);
       }
-      if (userName) conditions.push(`user_identifier.ilike.${userName}`);
-      if (userEmail) conditions.push(`user_identifier.ilike.${userEmail}`);
+      if (userEmail) conditions.push(`user_identifier.eq.${userEmail}`);
+      if (!userId && userName) conditions.push(`user_identifier.eq.${userName}`);
 
       const { data, error } = await supabase
         .from('notifications')
@@ -470,7 +473,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { id, all, action, gameIds, gameTitle, userId: reqUserId, userName: reqUserName } = body;
+    const { id, ids, all, action, gameIds, gameTitle, userId: reqUserId, userName: reqUserName } = body;
 
     if (!isTargetingAuthenticatedUser(authUser, { userId: reqUserId, userName: reqUserName })) {
       return NextResponse.json(
@@ -501,7 +504,16 @@ export async function PATCH(request: NextRequest) {
       if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
         userConditions.push(`user_id.eq.${authUser.auth_id}`);
       }
-      if (userName) userConditions.push(`user_identifier.ilike.${userName}`);
+      if (!userId && userName) userConditions.push(`user_identifier.eq.${userName}`);
+
+      const explicitIds: string[] = Array.isArray(ids) ? ids.filter((v: any) => typeof v === 'string' && v.trim()) : [];
+      if (explicitIds.length > 0 && userConditions.length > 0) {
+        await supabase
+          .from('notifications')
+          .update({ read: true })
+          .in('id', explicitIds)
+          .or(userConditions.join(','));
+      }
 
       if (isChatRead && (targetGameIds.length > 0 || cleanGameTitle) && userConditions.length > 0) {
         const { data: chatRows } = await supabase
@@ -635,7 +647,7 @@ export async function DELETE(request: NextRequest) {
     if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
       userConditions.push(`user_id.eq.${authUser.auth_id}`);
     }
-    if (userName) userConditions.push(`user_identifier.ilike.${userName}`);
+    if (!userId && userName) userConditions.push(`user_identifier.eq.${userName}`);
 
     // 1. Try public.notifications table scoped strictly to authenticated user
     try {
