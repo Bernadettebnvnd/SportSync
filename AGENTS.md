@@ -10,5 +10,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Project Instructions & Workflow
 
-- **Git Commit Confirmation**: Whenever any changes or edits are made to the codebase at the user's request, always proactively ask the user if they would like to commit (and push) those changes, and suggest an appropriate commit message.
+- **Git Commit Confirmation**: Whenever any changes or edits are made to the codebase at the user's request, always proactively ask the user if they would like to commit (and push) those changes, and suggest an appropriate commit message — **unless** the user explicitly instructs an immediate commit (e.g., `"commit immediately"`, `"commit to main immediately"`, `"commit once done"`), in which case commit and push right after verification passes.
+- **Pre-Flight Check Before Coding**: Before editing code for a bug fix or feature update, pull latest `main` (`git pull`) and inspect recent commits (`git log -n 15 --oneline`) plus the target files to verify whether the fix is already implemented or partially done. Skip already-resolved parts to prevent overlapping edits.
+- **Strict Scope & Dependencies**: Keep edits strictly scoped to the requested files and screens. Do not modify unrelated flows or add new npm dependencies unless explicitly requested.
+- **Verification Before Committing**: Run `npx tsc --noEmit`, `npx eslint` on all touched files, and `npm run build` and confirm 0 errors before committing. If `tsc` reports duplicate type errors (`TS6200` / `TS2300`) from macOS duplicate files inside `.next/types/` (e.g., `* 2.ts`), run `rm -rf .next` and re-run the build and typecheck.
+- **SportSync Domain Guardrails**:
+  - Pilot market scope is strictly **Naga City** across onboarding and discovery.
+  - Never introduce hardcoded mock payment numbers, fake promo codes, simulated auth popups, or unauthenticated `body.userId` / `hostId` auth bypasses.
 
