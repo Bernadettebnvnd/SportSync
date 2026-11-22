@@ -41,7 +41,7 @@ import { LevelUpCelebrationModal } from './design-system/components/LevelUpCeleb
 import { BadgeClaimModal } from './design-system/components/BadgeClaimModal';
 import { WagerWinCelebrationModal } from './design-system/components/WagerWinCelebrationModal';
 import { GuestPromptModal } from './components/auth/GuestPromptModal';
-import { useSportSyncBridge } from './lib/useSportSyncBridge';
+import { useSportSyncBridge, formatSkillTier } from './lib/useSportSyncBridge';
 import { useTheme } from './lib/theme';
 import { copyToClipboard } from './lib/shareUtils';
 import { getSupabaseClient, isSupabaseConfigured } from './lib/supabase';
@@ -1360,6 +1360,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 });
                 setPersonalizationDraft(null);
                 setToastMessage(wasEditing ? 'Profile updated successfully!' : 'Preferences saved! Welcome to SportSync.');
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('sportsync:profile-updated', { detail: { skillLevel: prefs.skillLevel } }));
+                }
               }
               setIsEditingFromProfile(false);
               if (guestPrompt.pendingAction) {
@@ -1876,7 +1879,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'profile':
         return (
           <ProfileScreen
-            user={bridge.userProfile}
+            user={{
+              ...bridge.userProfile,
+              skillLevel: (typeof window !== 'undefined' && localStorage.getItem('sportsync_user_skill'))
+                ? formatSkillTier(localStorage.getItem('sportsync_user_skill')!)
+                : bridge.userProfile.skillLevel,
+            }}
             hostedGames={bridge.games.filter((g) => bridge.isGameHost(g))}
             isLightMode={isLightMode}
             onToggleTheme={toggleTheme}

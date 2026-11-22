@@ -101,13 +101,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   );
 
   // Local state for instant optimistic updates
+  const getStoredSkill = React.useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('sportsync_user_skill');
+      if (stored) return formatSkillTier(stored);
+      const rawProf = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
+      if (rawProf) {
+        try {
+          const p = JSON.parse(rawProf);
+          if (p.skillLevel) return formatSkillTier(p.skillLevel);
+        } catch {}
+      }
+    }
+    return user?.skillLevel ? formatSkillTier(user.skillLevel) : 'Beginner';
+  }, [user?.skillLevel]);
+
   const initialCity = user?.city && user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';
   const initialAvailability = user?.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends');
   const [localCity, setLocalCity] = React.useState(initialCity);
   const [localSports, setLocalSports] = React.useState<string[]>(
     user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
   );
-  const [localSkill, setLocalSkill] = React.useState(user?.skillLevel ? formatSkillTier(user.skillLevel) : 'Beginner');
+  const [localSkill, setLocalSkill] = React.useState<string>(getStoredSkill);
   const [localAvailability, setLocalAvailability] = React.useState(initialAvailability);
   const [isEditModalOpen, setIsEditModalOpen] = React.useState(false);
   const [isSavingPrefs, setIsSavingPrefs] = React.useState(false);
@@ -117,8 +132,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [draftSports, setDraftSports] = React.useState<string[]>(
     user?.preferredSports && user.preferredSports.length > 0 ? user.preferredSports : ['Football']
   );
-  const [draftSkill, setDraftSkill] = React.useState(user?.skillLevel ? formatSkillTier(user.skillLevel) : 'Beginner');
+  const [draftSkill, setDraftSkill] = React.useState<string>(getStoredSkill);
   const [draftAvailability, setDraftAvailability] = React.useState(initialAvailability);
+
+  // Listen to profile updates across storage and custom events
+  React.useEffect(() => {
+    const handleProfileUpdate = (e?: any) => {
+      const newSkill = e?.detail?.skillLevel || getStoredSkill();
+      if (newSkill) {
+        const formatted = formatSkillTier(newSkill);
+        setLocalSkill(formatted);
+        setDraftSkill(formatted);
+      }
+    };
+
+    window.addEventListener('sportsync:profile-updated', handleProfileUpdate);
+    window.addEventListener('storage', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('sportsync:profile-updated', handleProfileUpdate);
+      window.removeEventListener('storage', handleProfileUpdate);
+    };
+  }, [getStoredSkill]);
 
   React.useEffect(() => {
     if (user?.city) {
@@ -130,8 +164,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setLocalSports(user.preferredSports);
       setDraftSports(user.preferredSports);
     }
-    if (user?.skillLevel) {
-      const formatted = formatSkillTier(user.skillLevel);
+    const effectiveSkill = user?.skillLevel || getStoredSkill();
+    if (effectiveSkill) {
+      const formatted = formatSkillTier(effectiveSkill);
       setLocalSkill(formatted);
       setDraftSkill(formatted);
     }
@@ -139,7 +174,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       setLocalAvailability(user.availability);
       setDraftAvailability(user.availability);
     }
-  }, [user?.city, user?.preferredSports, user?.skillLevel, user?.availability]);
+  }, [user?.city, user?.preferredSports, user?.skillLevel, user?.availability, getStoredSkill]);
 
   const userCity = localCity && localCity !== 'Current Location' ? localCity : 'Naga City';
   const userSports = localSports.length > 0 ? localSports : ['Football'];
@@ -213,6 +248,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       };
       localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
       localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
+      window.dispatchEvent(new CustomEvent('sportsync:profile-updated', { detail: { skillLevel: cleanSkill } }));
     }
 
     if (onUpdatePreferences) {

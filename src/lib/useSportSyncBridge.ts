@@ -18,6 +18,8 @@ import { markSessionDeleted } from './services/sessions';
 import { addNotification, resetNotificationCache, broadcastNotification } from './notifications';
 import { isGameExpired, isSessionExpired, filterActiveGames } from './utils/gameExpiration';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function getDeletedGameTombstones(): { ids: Set<string>; titles: Set<string> } {
   const ids = new Set<string>();
   const titles = new Set<string>();
@@ -558,9 +560,14 @@ export function useSportSyncBridge() {
         preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
           ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
           : (isCompleted ? prev.preferredSports : []),
-        skillLevel: (store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels')
-          ? formatSkillTier(store.currentUser.skill_level)
-          : (prev.skillLevel && prev.skillLevel !== 'All_levels' ? prev.skillLevel : formatSkillTier(typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') || 'Beginner' : 'Beginner')),
+        skillLevel: (() => {
+          const stored = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
+          if (stored) return formatSkillTier(stored);
+          if (store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels') {
+            return formatSkillTier(store.currentUser.skill_level);
+          }
+          return (prev.skillLevel && prev.skillLevel !== 'All_levels') ? prev.skillLevel : 'Beginner';
+        })(),
         availability: store.currentUser.availability || prev.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends'),
         onboardingCompleted: Boolean(isCompleted),
         matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
@@ -719,8 +726,17 @@ export function useSportSyncBridge() {
               Math.max(updatedMembers.length, matchSession.current_players_count || 0)
             );
 
+            const cleanSessionNotes = (matchSession.description || '')
+              .replace(/\[INVITE:.*?\]/gi, '')
+              .replace(/\[HOST:.*?\]/gi, '')
+              .replace(/\[LOCATION:.*?\]/gi, '')
+              .replace(/\[LOC:.*?\]/gi, '')
+              .replace(/\[COORDS:.*?\]/gi, '')
+              .trim();
+
             return {
               ...g,
+              notes: g.notes || cleanSessionNotes,
               hostName: resolvedHostName,
               hostAvatar: resolvedHostAvatar,
               hostId: matchSession.host_id || g.hostId,
@@ -964,6 +980,8 @@ export function useSportSyncBridge() {
 
                 const updated = {
                   ...g,
+                  notes: remoteGame.notes !== undefined ? remoteGame.notes : g.notes,
+                  title: remoteGame.title || g.title,
                   hostName: remoteGame.hostName || g.hostName,
                   hostAvatar: remoteGame.hostAvatar || g.hostAvatar,
                   hostId: remoteGame.hostId || g.hostId,
@@ -1162,8 +1180,17 @@ export function useSportSyncBridge() {
                 const cleanExisting = !isInvalid(g.locationName) ? g.locationName : '';
                 const resolvedLocation = cleanExisting || cleanDetails || cleanTagged || vName || 'Metro Naga Sports Complex';
 
+                const cleanSessionNotes = (dbSession.description || '')
+                  .replace(/\[INVITE:.*?\]/gi, '')
+                  .replace(/\[HOST:.*?\]/gi, '')
+                  .replace(/\[LOCATION:.*?\]/gi, '')
+                  .replace(/\[LOC:.*?\]/gi, '')
+                  .replace(/\[COORDS:.*?\]/gi, '')
+                  .trim();
+
                 return {
                   ...g,
+                  notes: cleanSessionNotes || g.notes,
                   locationName: resolvedLocation,
                   locationDetails: cleanDetails || cleanTagged || resolvedLocation,
                   hostName: resolvedHostName,
@@ -2566,29 +2593,54 @@ export function useSportSyncBridge() {
       }
 
       // Sync to database / sessions
+      const cleanNotes = (updatedGame.notes || '').replace(/\[(?:LOC|LOCATION|INVITE|HOST|COORDS):.*?\]/gi, '').trim();
       try {
-        const idForDb = targetGame.sessionId || gameId;
-        const cleanNotes = (updatedGame.notes || '').replace(/\[LOC:.*?\]/gi, '').trim();
-        await store.updateOpenPlaySession(idForDb, {
-          title: updatedGame.title,
-          description: `${cleanNotes} [LOC:${updatedGame.locationName}]`,
-          max_players: updatedGame.spotsTotal,
-          fee_cents: updatedGame.pricePerPlayer * 100,
-          start_time: updatedGame.time,
-          location_details: updatedGame.locationDetails || updatedGame.locationName,
-        });
+        const idForDb = targetGame.sessionId || (UUID_REGEX.test(gameId) ? gameId : undefined);
+        if (idForDb) {
+          await store.updateOpenPlaySession(idForDb, {
+            title: updatedGame.title,
+            description: `${cleanNotes} [LOCATION:${updatedGame.locationName}]`,
+            max_players: updatedGame.spotsTotal,
+            fee_cents: updatedGame.pricePerPlayer * 100,
+            start_time: updatedGame.time,
+            location_details: updatedGame.locationDetails || updatedGame.locationName,
+          });
+        }
       } catch (err) {
         console.warn('[SportSyncBridge] Session update fallback handled:', err);
       }
 
-      if (typeof window !== 'undefined' && updatedGame.inviteCode) {
+      if (typeof window !== 'undefined') {
         try {
           await fetch('/api/invitations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: updatedGame }),
+            body: JSON.stringify({ action: 'update_game', game: updatedGame }),
           });
         } catch {}
+
+        const supabase = getSupabaseClient();
+        if (supabase && isSupabaseConfigured) {
+          try {
+            const desc = `${cleanNotes || 'Organized via SportSync Matchmaking'} [INVITE:${updatedGame.inviteCode || ''}] [HOST:${updatedGame.hostName || ''}] [LOCATION:${updatedGame.locationName}] [COORDS:${JSON.stringify(updatedGame.coordinates || [13.6218, 123.1948])}]`;
+            const dbUpdates = {
+              title: updatedGame.title,
+              description: desc,
+              max_players: updatedGame.spotsTotal,
+              fee_cents: updatedGame.pricePerPlayer * 100,
+              location_details: updatedGame.locationDetails || updatedGame.locationName,
+              updated_at: new Date().toISOString(),
+            };
+            if (updatedGame.sessionId && UUID_REGEX.test(updatedGame.sessionId)) {
+              await supabase.from('sessions').update(dbUpdates).eq('id', updatedGame.sessionId);
+            } else if (updatedGame.inviteCode) {
+              await supabase.from('sessions').update(dbUpdates).eq('invite_code', updatedGame.inviteCode);
+            }
+          } catch {}
+        }
+
+        window.dispatchEvent(new CustomEvent('sportsync:roster-updated', { detail: { game: updatedGame } }));
+        window.dispatchEvent(new CustomEvent('sportsync:game-updated', { detail: { game: updatedGame } }));
       }
 
       // Notify joined players that the host updated the game
@@ -4033,6 +4085,24 @@ export function useSportSyncBridge() {
         localStorage.setItem('sportsync_user_availability', cleanAvailability);
         localStorage.setItem('sportsync_onboarding_completed', 'true');
         localStorage.setItem('matchi_onboarding_completed', 'true');
+
+        const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
+        let parsed: any = {};
+        if (saved) {
+          try { parsed = JSON.parse(saved); } catch {}
+        }
+        const updatedProfile = {
+          ...parsed,
+          city: cleanCity,
+          preferredSports: formattedSports,
+          primarySport: (prefs.preferredSports[0] || 'football').toLowerCase(),
+          skillLevel: cleanSkill,
+          availability: cleanAvailability,
+          onboardingCompleted: true,
+        };
+        localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
+        localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
+        window.dispatchEvent(new CustomEvent('sportsync:profile-updated', { detail: { skillLevel: cleanSkill } }));
       }
 
       try {

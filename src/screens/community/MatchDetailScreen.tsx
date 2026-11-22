@@ -57,7 +57,7 @@ interface MatchDetailScreenProps {
 }
 
 export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
-  game,
+  game: propGame,
   onBack,
   onJoin,
   onOpenChat,
@@ -71,6 +71,41 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   unreadCount = 0,
   onSyncRoster,
 }) => {
+  const [localGame, setLocalGame] = useState<CommunityGame | null>(propGame);
+  const game = localGame || propGame;
+
+  useEffect(() => {
+    if (propGame) {
+      setLocalGame((prev) => {
+        if (!prev) return propGame;
+        return {
+          ...propGame,
+          notes: prev.id === propGame.id && prev.notes ? prev.notes : propGame.notes,
+        };
+      });
+    }
+  }, [propGame]);
+
+  useEffect(() => {
+    const handleGameUpdate = (e: any) => {
+      const updated = e?.detail?.game;
+      if (
+        updated &&
+        (updated.id === game?.id ||
+          (updated.sessionId && game?.sessionId && updated.sessionId === game.sessionId) ||
+          (updated.inviteCode && game?.inviteCode && updated.inviteCode === game.inviteCode))
+      ) {
+        setLocalGame((prev) => (prev ? { ...prev, ...updated } : updated));
+      }
+    };
+    window.addEventListener('sportsync:roster-updated', handleGameUpdate);
+    window.addEventListener('sportsync:game-updated', handleGameUpdate);
+    return () => {
+      window.removeEventListener('sportsync:roster-updated', handleGameUpdate);
+      window.removeEventListener('sportsync:game-updated', handleGameUpdate);
+    };
+  }, [game?.id, game?.sessionId, game?.inviteCode]);
+
   const [isJoined, setIsJoined] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -226,6 +261,13 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const handleSaveEdits = async (updatedData: any) => {
     if (!onEditGame) return;
     try {
+      if (game) {
+        setLocalGame((prev) => ({
+          ...(prev || game),
+          ...updatedData,
+          notes: updatedData.notes !== undefined ? updatedData.notes : (prev || game).notes,
+        }));
+      }
       await onEditGame(updatedData);
       setFeedbackMessage({ type: 'success', text: 'Game details updated successfully!' });
       setTimeout(() => setFeedbackMessage(null), 4000);

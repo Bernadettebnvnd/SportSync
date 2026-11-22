@@ -426,6 +426,7 @@ export async function GET(req: NextRequest) {
       .replace(/\[INVITE:.*?\]/gi, '')
       .replace(/\[HOST:.*?\]/gi, '')
       .replace(/\[LOCATION:.*?\]/gi, '')
+      .replace(/\[LOC:.*?\]/gi, '')
       .replace(/\[COORDS:.*?\]/gi, '')
       .trim();
 
@@ -715,6 +716,53 @@ export async function POST(req: NextRequest) {
     }
 
     const nowIso = new Date().toISOString();
+
+    if (dbSession && (action === 'update_game' || (!action && game && body.action !== 'create_game'))) {
+      const rawNotes = (game.notes !== undefined ? game.notes : '').replace(/\[(?:LOC|LOCATION|INVITE|HOST|COORDS):.*?\]/gi, '').trim();
+      const inviteCode = dbSession.invite_code || game.inviteCode || lookupKey.toUpperCase();
+      const hostName = game.hostName || authUser.full_name || 'Host';
+      const venueLoc = game.locationName || dbSession.location_details || 'Metro Naga Sports Complex';
+      const coordinates = game.coordinates || [13.6218, 123.1948];
+      const newDesc = `${rawNotes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${hostName}] [LOCATION:${venueLoc}] [COORDS:${JSON.stringify(coordinates)}]`;
+
+      const sessionUpdates: any = {
+        title: game.title || dbSession.title,
+        description: newDesc,
+        max_players: game.spotsTotal || dbSession.max_players,
+        fee_cents: game.pricePerPlayer !== undefined ? Math.round(game.pricePerPlayer * 100) : dbSession.fee_cents,
+        location_details: game.locationDetails || game.locationName || dbSession.location_details,
+        updated_at: nowIso,
+      };
+      if (game.time) {
+        sessionUpdates.start_time = game.time;
+      }
+      if (game.visibility) {
+        sessionUpdates.visibility = game.visibility;
+      }
+
+      const { data: updatedDb, error: updateDbErr } = await supabase
+        .from('sessions')
+        .update(sessionUpdates)
+        .eq('id', dbSession.id)
+        .select('*')
+        .single();
+
+      if (updateDbErr) {
+        console.warn('[/api/invitations POST update_game] session update warning:', updateDbErr.message);
+      }
+
+      const finalDb = updatedDb || { ...dbSession, ...sessionUpdates };
+      return NextResponse.json({
+        success: true,
+        session: finalDb,
+        game: {
+          ...game,
+          id: finalDb.id,
+          sessionId: finalDb.id,
+          notes: rawNotes,
+        },
+      });
+    }
 
     if (action === 'accept') {
       const isInviteOnly = dbSession.visibility === 'Invite' || game.visibility === 'Invite';
