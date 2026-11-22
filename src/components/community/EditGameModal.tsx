@@ -140,9 +140,20 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
   const mapInstanceRef = useRef<LeafletType.Map | null>(null);
   const markerRef = useRef<LeafletType.Marker | null>(null);
 
-  // Re-initialize state whenever game changes or modal opens
+  // Track open state and game id so we only reinitialize when opening or switching games
+  const prevIsOpenRef = useRef(false);
+  const prevGameIdRef = useRef<string | null>(null);
+
+  // Re-initialize state only when modal opens or when target game changes
   useEffect(() => {
-    if (isOpen && game) {
+    const currentGameId = game?.id || game?.sessionId || null;
+    const isOpening = isOpen && !prevIsOpenRef.current;
+    const isNewGame = isOpen && currentGameId !== null && currentGameId !== prevGameIdRef.current;
+
+    prevIsOpenRef.current = isOpen;
+    prevGameIdRef.current = currentGameId;
+
+    if (isOpen && game && (isOpening || isNewGame)) {
       setTitle(game.title);
       setSport(game.sport);
       setDate(game.date);

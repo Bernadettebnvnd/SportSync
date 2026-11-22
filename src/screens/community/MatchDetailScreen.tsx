@@ -71,20 +71,21 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   unreadCount = 0,
   onSyncRoster,
 }) => {
+  const [isJoined, setIsJoined] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
   useEffect(() => {
     const syncKey = game?.sessionId || game?.inviteCode || game?.id;
-    if (syncKey) {
+    if (syncKey && !isEditModalOpen) {
       onSyncRoster?.(syncKey);
       const interval = setInterval(() => {
         onSyncRoster?.(syncKey);
       }, 4000);
       return () => clearInterval(interval);
     }
-  }, [game?.id, game?.sessionId, game?.inviteCode, onSyncRoster]);
-  const [isJoined, setIsJoined] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  }, [game?.id, game?.sessionId, game?.inviteCode, onSyncRoster, isEditModalOpen]);
   const [playerToRemove, setPlayerToRemove] = useState<{ id?: string; name: string } | null>(null);
   const [isRemovingPlayer, setIsRemovingPlayer] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
