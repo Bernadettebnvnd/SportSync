@@ -1609,7 +1609,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 checked={bringBootsNote}
                 onChange={setBringBootsNote}
                 label="Checklist: Athletic Gear &amp; Water"
-                sublabel="Remind attendees to bring athletic footwear and hydration"
+                sublabel="Remind attendees to bring athletic gears and hydration"
                 className="w-full"
               />
             </div>
