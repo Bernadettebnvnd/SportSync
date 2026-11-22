@@ -1110,3 +1110,138 @@ export async function serverSyncOAuthUser(data: {
   const token = createSessionToken(sanitized);
   return { user: sanitized, token, isComplete };
 }
+
+/**
+ * Synchronize a verified Google Identity Services ID Token user.
+ * Validates the ID token directly with Google's public tokeninfo endpoint.
+ */
+export async function serverSyncGoogleIdTokenUser(data: {
+  googleIdToken: string;
+  intendedRole?: string;
+}): Promise<{ user: SanitizedUser; token: string; isComplete: boolean }> {
+  if (!data.googleIdToken || typeof data.googleIdToken !== 'string') {
+    throw new Error('Google authentication requires a valid Google ID token.');
+  }
+
+  // Verify ID token with Google's public tokeninfo endpoint
+  const resp = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(data.googleIdToken)}`
+  );
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(errBody.error_description || errBody.error || 'Invalid or expired Google authentication credential.');
+  }
+
+  const tokenInfo = await resp.json();
+  const normalizedEmail = (tokenInfo.email || '').trim().toLowerCase();
+  if (!normalizedEmail || (tokenInfo.email_verified !== 'true' && tokenInfo.email_verified !== true)) {
+    throw new Error('Google account email is not verified.');
+  }
+
+  const emailValidation = await validateRealEmailWithMx(normalizedEmail);
+  if (!emailValidation.isValid) {
+    throw new Error(emailValidation.error || 'Google email domain is invalid or restricted.');
+  }
+
+  const googleSub = tokenInfo.sub;
+  const googleFullName = (tokenInfo.name || tokenInfo.given_name || normalizedEmail.split('@')[0]).trim();
+  const googleAvatarUrl = (tokenInfo.picture || '').trim() || undefined;
+
+  const admin = createAdminClient();
+  const dbClient = admin || createServerClient();
+  if (!dbClient) {
+    throw new Error('Database service is unavailable.');
+  }
+
+  let preExisting: {
+    id?: string;
+    auth_id?: string;
+    onboarding_completed?: boolean | string | null;
+    role?: string | null;
+  } | null = null;
+
+  const { data: preExistingByEmail } = await dbClient
+    .from('users')
+    .select('*')
+    .ilike('email', normalizedEmail)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (preExistingByEmail) {
+    preExisting = preExistingByEmail;
+  }
+
+  let authUserId = preExisting?.auth_id || preExisting?.id;
+
+  if (!authUserId && admin) {
+    try {
+      const { data: newUser } = await admin.auth.admin.createUser({
+        email: normalizedEmail,
+        email_confirm: true,
+        user_metadata: {
+          full_name: googleFullName,
+          avatar_url: googleAvatarUrl,
+          provider: 'google',
+          google_sub: googleSub,
+        },
+      });
+      if (newUser?.user?.id) {
+        authUserId = newUser.user.id;
+      }
+    } catch (e) {
+      console.warn('[Google Auth] Create auth user note:', e);
+    }
+  }
+
+  if (!authUserId) {
+    authUserId = crypto.randomUUID();
+  }
+
+  const isIntendedOwner =
+    data.intendedRole === 'facility_owner' ||
+    data.intendedRole === 'venue_owner' ||
+    data.intendedRole === 'organizer' ||
+    data.intendedRole === 'owner' ||
+    data.intendedRole === 'facility';
+  const defaultNewUserRole: UserRole = isIntendedOwner ? 'venue_owner' : 'player';
+  const resolvedUserRole: UserRole = (preExisting?.role || defaultNewUserRole) as UserRole;
+
+  const dbProfile = await upsertCanonicalPublicUser(dbClient, {
+    authUserId,
+    email: normalizedEmail,
+    fullName: googleFullName,
+    role: resolvedUserRole,
+    avatarUrl: googleAvatarUrl || null,
+    onboardingCompleted: Boolean(preExisting?.onboarding_completed === true),
+    overwriteOnboarding: false,
+  });
+
+  const isComplete =
+    Boolean(dbProfile?.onboarding_completed === true) ||
+    (await isProfileCompleteInDb(dbClient, dbProfile, tokenInfo, dbProfile?.role));
+
+  const canonicalId = dbProfile?.id || authUserId;
+  const parsedSports = parsePreferredSports(dbProfile?.preferred_sports);
+
+  const sanitized: SanitizedUser = {
+    id: canonicalId,
+    auth_id: dbProfile?.auth_id || authUserId,
+    email: normalizedEmail,
+    full_name: dbProfile?.full_name || googleFullName,
+    nickname: dbProfile?.nickname || googleFullName.split(' ')[0] || normalizedEmail.split('@')[0],
+    avatar_url: dbProfile?.avatar_url || googleAvatarUrl,
+    role: (dbProfile?.role || 'player') as UserRole,
+    primary_sport: dbProfile?.primary_sport || undefined,
+    preferred_sports: parsedSports,
+    preferred_format: dbProfile?.preferred_format || undefined,
+    skill_level: dbProfile?.skill_level || undefined,
+    city: dbProfile?.city || undefined,
+    phone: sanitizePhoneValue(dbProfile?.phone),
+    onboarding_completed: isComplete,
+    created_at: dbProfile?.created_at || new Date().toISOString(),
+  };
+
+  const token = createSessionToken(sanitized);
+  return { user: sanitized, token, isComplete };
+}

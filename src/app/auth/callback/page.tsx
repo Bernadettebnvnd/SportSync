@@ -126,6 +126,25 @@ export default function AuthCallbackPage() {
           );
         }
 
+        // If running in an OAuth popup window, signal the opener window and close
+        if (typeof window !== 'undefined' && window.opener && window.opener !== window) {
+          try {
+            window.opener.postMessage(
+              {
+                type: 'GOOGLE_AUTH_SUCCESS',
+                user: syncResult.user,
+                isComplete,
+                token: syncResult.token,
+              },
+              window.location.origin
+            );
+            window.close();
+            return;
+          } catch (e) {
+            console.warn('[OAuth Callback] Opener postMessage error:', e);
+          }
+        }
+
         const target = !isComplete
           ? (isOwner ? '/onboarding?role=owner' : '/onboarding')
           : (isOwner ? '/organizer' : '/');
@@ -181,6 +200,23 @@ export default function AuthCallbackPage() {
             const message = isUserCancelled
               ? 'Sign in with Google was cancelled. You can return to sign in or use email.'
               : (oauthErrorDesc || oauthError || 'Google authentication encountered an issue.');
+
+            if (typeof window !== 'undefined' && window.opener && window.opener !== window) {
+              try {
+                window.opener.postMessage(
+                  {
+                    type: 'GOOGLE_AUTH_ERROR',
+                    error: message,
+                  },
+                  window.location.origin
+                );
+                window.close();
+                return;
+              } catch (e) {
+                console.warn('[OAuth Callback] Opener postMessage error:', e);
+              }
+            }
+
             setErrorMessage(message);
             return;
           }
