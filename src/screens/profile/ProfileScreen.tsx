@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import React from 'react';
 import {
@@ -8,8 +9,6 @@ import {
   Sparkles,
   LogOut,
   UserCheck,
-  Calendar,
-  Activity,
   Crown,
   Edit2,
   X,
@@ -22,8 +21,8 @@ import {
   Building2,
   ArrowRight,
 } from 'lucide-react';
-import { UserAvatar, toAvatarId } from '../../illustrations/Avatars';
-import { StatTile, RatingChip } from '../../design-system/components/StatTile';
+import { UserAvatar } from '../../illustrations/Avatars';
+import { StatTile } from '../../design-system/components/StatTile';
 import { SportIcon } from '../../illustrations/SportIcons';
 import { APP_CONFIG } from '../../config/appConfig';
 import { CommunityGame } from '../../mock/types';
@@ -34,6 +33,8 @@ import { isGameExpired } from '@/lib/utils/gameExpiration';
 interface ProfileScreenProps {
   user?: {
     id?: string;
+    email?: string;
+    role?: string;
     name: string;
     username: string;
     avatarId: string;
@@ -82,23 +83,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onUpdatePreferences,
   onEditPreferences,
 }) => {
-  const isGuest = !user?.id || user?.isGuest || user?.name === 'Guest';
+  const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+  const storedId = typeof window !== 'undefined' && !isLoggedOut ? (localStorage.getItem('sportsync_user_id') || '') : '';
+  const storedEmail = typeof window !== 'undefined' && !isLoggedOut ? (localStorage.getItem('sportsync_user_email') || '') : '';
+  const storedName = typeof window !== 'undefined' && !isLoggedOut ? (localStorage.getItem('sportsync_user_name') || '') : '';
+
+  const resolvedId = (user?.id && user.id !== 'usr_guest_01')
+    ? user.id
+    : (storedId && storedId !== 'usr_guest_01' ? storedId : '');
+  const resolvedEmail = user?.email || storedEmail;
+  const hasAuthenticatedSession = !isLoggedOut && Boolean(resolvedId || resolvedEmail);
+  const isGuest = !hasAuthenticatedSession && (!user?.id || user?.isGuest || user?.name === 'Guest' || user?.name === 'Guest Player');
   const isFacilityOwner =
     !isGuest &&
-    ((user as any)?.role === 'venue_owner' ||
-      (user as any)?.role === 'organizer' ||
-      (user as any)?.role === 'facility_owner' ||
+    (user?.role === 'venue_owner' ||
+      user?.role === 'organizer' ||
+      user?.role === 'facility_owner' ||
       (typeof window !== 'undefined' &&
         (localStorage.getItem('sportsync_user_role') === 'venue_owner' ||
           localStorage.getItem('sportsync_user_role') === 'organizer' ||
           localStorage.getItem('sportsync_user_role') === 'facility_owner')));
-  const displayName = isGuest ? 'Guest Player' : user?.name || 'Player';
-  const username = isGuest ? '@guest' : user?.username || '@player';
+  const resolvedName = (user?.name && !['Guest', 'Guest Player'].includes(user.name))
+    ? user.name
+    : ((storedName && !['Guest', 'Guest Player'].includes(storedName))
+        ? storedName
+        : (resolvedEmail ? resolvedEmail.split('@')[0] : 'Player'));
+  const displayName = isGuest ? 'Guest Player' : resolvedName;
+  const cleanHandle = (resolvedName.split(' ')[0] || (resolvedEmail ? resolvedEmail.split('@')[0] : 'player'))
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '') || 'player';
+  const username = isGuest
+    ? '@guest'
+    : ((user?.username && user.username !== '@guest') ? user.username : `@${cleanHandle}`);
   const { unreadCount } = useNotifications(
-    !isGuest && (user?.name || user?.id || (user as any)?.email)
-      ? { id: user?.id, name: user?.name, email: (user as any)?.email }
+    !isGuest && (resolvedName || resolvedId || resolvedEmail)
+      ? { id: resolvedId, name: resolvedName, email: resolvedEmail }
       : undefined
   );
+
+  const userSkillProp = user?.skillLevel;
 
   // Local state for instant optimistic updates
   const getStoredSkill = React.useCallback(() => {
@@ -113,8 +136,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         } catch {}
       }
     }
-    return user?.skillLevel ? formatSkillTier(user.skillLevel) : 'Beginner';
-  }, [user?.skillLevel]);
+    return userSkillProp ? formatSkillTier(userSkillProp) : 'Beginner';
+  }, [userSkillProp]);
 
   const initialCity = user?.city && user.city !== 'Current Location' && user.city !== 'Metro Manila' ? user.city : 'Naga City';
   const initialAvailability = user?.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends');
@@ -137,8 +160,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
   // Listen to profile updates across storage and custom events
   React.useEffect(() => {
-    const handleProfileUpdate = (e?: any) => {
-      const newSkill = e?.detail?.skillLevel || getStoredSkill();
+    const handleProfileUpdate = (e?: Event) => {
+      const customEv = e as CustomEvent<{ skillLevel?: string }> | undefined;
+      const newSkill = customEv?.detail?.skillLevel || getStoredSkill();
       if (newSkill) {
         const formatted = formatSkillTier(newSkill);
         setLocalSkill(formatted);
@@ -192,10 +216,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     'Padel',
   ];
 
-  const LOCATION_OPTIONS = [
-    'Naga City',
-  ];
-
   const SKILL_LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
 
   const AVAILABILITY_OPTIONS = [
@@ -233,7 +253,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       localStorage.setItem('sportsync_user_availability', cleanAvail);
 
       const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
-      let parsed: any = {};
+      let parsed: Record<string, unknown> = {};
       if (saved) {
         try { parsed = JSON.parse(saved); } catch {}
       }

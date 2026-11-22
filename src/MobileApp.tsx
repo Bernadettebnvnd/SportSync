@@ -813,7 +813,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     message: string,
     action?: () => void
   ): boolean => {
-    const isGuest = bridge.userProfile.isGuest || !bridge.userProfile.id || bridge.userProfile.name === 'Guest Player';
+    const isGuest =
+      !isUserAuthenticated() &&
+      (bridge.userProfile.isGuest || !bridge.userProfile.id || bridge.userProfile.name === 'Guest Player');
     if (isGuest) {
       setGuestPrompt({
         isOpen: true,
@@ -825,6 +827,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }
     return true;
   };
+
+  useEffect(() => {
+    if (guestPrompt.isOpen && isUserAuthenticated()) {
+      setGuestPrompt((prev) => ({ ...prev, isOpen: false }));
+    }
+  }, [guestPrompt.isOpen, isUserAuthenticated]);
 
   // Navigate function with history stack
   const navigateTo = (screen: ScreenId) => {
@@ -1230,8 +1238,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onNavigateToResetPassword={() => navigateTo('reset-password')}
             onSuccess={(role, isNewAccount, authedUser) => {
               isLoggingOutRef.current = false;
+              setGuestPrompt((prev) => ({ ...prev, isOpen: false }));
               if (typeof window !== 'undefined') {
                 localStorage.removeItem('sportsync_logged_out');
+                localStorage.removeItem('sportsync_guest');
               }
 
               const isOwner =
@@ -1465,7 +1475,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       case 'scores':
         return (
           <LiveScoresHubScreen
-            isGuest={bridge.userProfile.isGuest}
+            isGuest={!isUserAuthenticated() && bridge.userProfile.isGuest}
             onRequireAuth={(actionName) => {
               requireAuth('Match Scoring', actionName || 'Sign in to score official matches.');
             }}
@@ -1904,11 +1914,32 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         );
 
       // Flow 6: Profile & Utility
-      case 'profile':
+      case 'profile': {
+        const authed = isUserAuthenticated();
+        const storedId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || '') : '';
+        const storedName = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '';
+        const storedEmail = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_email') || '') : '';
+        const resolvedId = bridge.userProfile.id || bridge.store.currentUser.id || storedId;
+        const resolvedName = (bridge.userProfile.name && !['Guest', 'Guest Player'].includes(bridge.userProfile.name))
+          ? bridge.userProfile.name
+          : ((bridge.store.currentUser.full_name && !['Guest', 'Guest Player'].includes(bridge.store.currentUser.full_name))
+              ? bridge.store.currentUser.full_name
+              : (storedName || (storedEmail ? storedEmail.split('@')[0] : (authed ? 'Player' : 'Guest Player'))));
+        const cleanHandle = (resolvedName.split(' ')[0] || (storedEmail ? storedEmail.split('@')[0] : 'player'))
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '') || 'player';
+        const resolvedUsername = (bridge.userProfile.username && bridge.userProfile.username !== '@guest')
+          ? bridge.userProfile.username
+          : (authed ? `@${cleanHandle}` : '@guest');
+
         return (
           <ProfileScreen
             user={{
               ...bridge.userProfile,
+              id: authed ? (resolvedId || 'usr_auth') : bridge.userProfile.id,
+              name: resolvedName,
+              username: resolvedUsername,
+              isGuest: !authed && bridge.userProfile.isGuest,
               skillLevel: (typeof window !== 'undefined' && localStorage.getItem('sportsync_user_skill'))
                 ? formatSkillTier(localStorage.getItem('sportsync_user_skill')!)
                 : bridge.userProfile.skillLevel,
@@ -1932,7 +1963,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
             onUpdatePreferences={async (prefs) => {
               await bridge.completeOnboarding({
-                fullName: bridge.userProfile.name,
+                fullName: resolvedName,
                 preferredSports: prefs.preferredSports || bridge.userProfile.preferredSports,
                 skillLevel: prefs.skillLevel || bridge.userProfile.skillLevel,
                 preferredArea: prefs.city || bridge.userProfile.city,
@@ -1946,6 +1977,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             }}
           />
         );
+      }
       case 'leaderboard':
         return (
           <AchievementsLeaderboardScreen

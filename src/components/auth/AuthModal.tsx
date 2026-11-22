@@ -146,6 +146,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
           });
 
           if (typeof window !== 'undefined') {
+            localStorage.removeItem('sportsync_logged_out');
+            localStorage.removeItem('sportsync_guest');
+            localStorage.removeItem('sportsync_skipped_onboarding');
             sessionStorage.setItem('sportsync_just_registered', 'true');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
@@ -154,10 +157,29 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
             localStorage.setItem('sportsync_pending_onboarding', 'true');
             localStorage.removeItem('matchi_onboarding_completed');
             localStorage.removeItem('sportsync_onboarding_completed');
-            localStorage.removeItem('sportsync_user_profile');
             localStorage.removeItem('sportsync_user_city');
             localStorage.removeItem('sportsync_user_sports');
             localStorage.removeItem('sportsync_user_skill');
+
+            const cleanName = data.user.full_name || fullName.trim() || data.user.email.split('@')[0];
+            const cleanHandle = (data.user.nickname || cleanName.split(' ')[0] || data.user.email.split('@')[0] || 'player')
+              .toLowerCase()
+              .replace(/[^a-z0-9_]/g, '') || 'player';
+            const initialProfile = {
+              id: data.user.id,
+              email: data.user.email,
+              name: cleanName,
+              username: `@${cleanHandle}`,
+              role: assignedRole,
+              city: data.user.city || 'Naga City',
+              primarySport: '',
+              preferredSports: [],
+              skillLevel: '',
+              onboardingCompleted: false,
+              isGuest: false,
+            };
+            localStorage.setItem('sportsync_user_profile', JSON.stringify(initialProfile));
+            localStorage.setItem('sideline_user_profile', JSON.stringify(initialProfile));
           }
 
           setSuccessMsg(
@@ -212,17 +234,37 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
 
           if (typeof window !== 'undefined') {
             localStorage.removeItem('sportsync_logged_out');
+            localStorage.removeItem('sportsync_guest');
+            localStorage.removeItem('sportsync_skipped_onboarding');
             localStorage.setItem('sportsync_user_id', data.user.id);
             localStorage.setItem('sportsync_user_email', data.user.email);
             localStorage.setItem('sportsync_user_role', isOwnerRole ? 'venue_owner' : (data.user.role || 'player'));
             localStorage.setItem('sportsync_user_name', data.user.full_name);
+
+            const cleanHandle = (data.user.nickname || (data.user.full_name ? data.user.full_name.split(' ')[0] : '') || data.user.email.split('@')[0] || 'player')
+              .toLowerCase()
+              .replace(/[^a-z0-9_]/g, '') || 'player';
 
             if (!actualOnboardingCompleted) {
               sessionStorage.setItem('sportsync_just_registered', 'true');
               localStorage.setItem('sportsync_pending_onboarding', 'true');
               localStorage.removeItem('matchi_onboarding_completed');
               localStorage.removeItem('sportsync_onboarding_completed');
-              localStorage.removeItem('sportsync_user_profile');
+              const incompleteProfile = {
+                id: data.user.id,
+                email: data.user.email,
+                name: data.user.full_name || data.user.email.split('@')[0],
+                username: `@${cleanHandle}`,
+                role: isOwnerRole ? 'venue_owner' : (data.user.role || 'player'),
+                city: data.user.city || 'Naga City',
+                primarySport: data.user.primary_sport || '',
+                preferredSports: Array.isArray(data.user.preferred_sports) ? data.user.preferred_sports : [],
+                skillLevel: data.user.skill_level || '',
+                onboardingCompleted: false,
+                isGuest: false,
+              };
+              localStorage.setItem('sportsync_user_profile', JSON.stringify(incompleteProfile));
+              localStorage.setItem('sideline_user_profile', JSON.stringify(incompleteProfile));
             } else {
               sessionStorage.removeItem('sportsync_just_registered');
               localStorage.removeItem('sportsync_pending_onboarding');
@@ -231,21 +273,21 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: AuthModal
               const userSports = Array.isArray(data.user.preferred_sports) && data.user.preferred_sports.length > 0
                 ? data.user.preferred_sports.map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
                 : ['Football'];
-              localStorage.setItem(
-                'sportsync_user_profile',
-                JSON.stringify({
-                  id: data.user.id,
-                  name: data.user.full_name,
-                  username: `@${data.user.nickname || data.user.email.split('@')[0]}`,
-                  role: data.user.role,
-                  city: data.user.city || 'Naga City',
-                  primarySport: data.user.primary_sport || 'football',
-                  preferredSports: userSports,
-                  skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
-                  onboardingCompleted: true,
-                  isGuest: false,
-                })
-              );
+              const fullProfile = {
+                id: data.user.id,
+                email: data.user.email,
+                name: data.user.full_name,
+                username: `@${cleanHandle}`,
+                role: data.user.role,
+                city: data.user.city || 'Naga City',
+                primarySport: data.user.primary_sport || 'football',
+                preferredSports: userSports,
+                skillLevel: data.user.skill_level ? (data.user.skill_level.charAt(0).toUpperCase() + data.user.skill_level.slice(1)) : 'Intermediate',
+                onboardingCompleted: true,
+                isGuest: false,
+              };
+              localStorage.setItem('sportsync_user_profile', JSON.stringify(fullProfile));
+              localStorage.setItem('sideline_user_profile', JSON.stringify(fullProfile));
             }
           }
 

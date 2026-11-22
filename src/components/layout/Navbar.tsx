@@ -92,8 +92,24 @@ export function Navbar() {
   }, []);
 
   const isFacilityView = pathname.startsWith('/organizer');
-  const storedRole = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_role') : null;
-  const isAuthenticated = Boolean(currentUser.id && currentUser.email) || Boolean(storedRole);
+  const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
+  const storedRole = typeof window !== 'undefined' && !isLoggedOut ? localStorage.getItem('sportsync_user_role') : null;
+  const storedUserId = typeof window !== 'undefined' && !isLoggedOut ? localStorage.getItem('sportsync_user_id') : null;
+  const storedUserEmail = typeof window !== 'undefined' && !isLoggedOut ? localStorage.getItem('sportsync_user_email') : null;
+  const storedUserName = typeof window !== 'undefined' && !isLoggedOut ? localStorage.getItem('sportsync_user_name') : null;
+  const isAuthenticated = !isLoggedOut && (
+    Boolean(currentUser.id && currentUser.id !== 'usr_guest_01' && currentUser.email) ||
+    Boolean(storedUserId && storedUserId !== 'usr_guest_01') ||
+    Boolean(storedUserEmail) ||
+    Boolean(storedRole)
+  );
+  const resolvedDisplayName =
+    currentUser.nickname ||
+    (currentUser.full_name && !['Guest', 'Guest Player'].includes(currentUser.full_name) ? currentUser.full_name : '') ||
+    (storedUserName && !['Guest', 'Guest Player'].includes(storedUserName) ? storedUserName : '') ||
+    (currentUser.email ? currentUser.email.split('@')[0] : '') ||
+    (storedUserEmail ? storedUserEmail.split('@')[0] : '') ||
+    'Player';
   const isOnboarded = Boolean(currentUser.onboarding_completed || currentUser.has_completed_onboarding);
   const isOwnerOrAdmin =
     currentUser.role === 'venue_owner' ||
@@ -398,10 +414,10 @@ export function Navbar() {
                     title="Account & Authentication Session"
                   >
                     <div className="w-6 h-6 rounded-full bg-[#C8FF2E] text-[#0B0F0C] flex items-center justify-center font-black text-[10px]">
-                      {currentUser.nickname?.[0] || currentUser.full_name?.[0] || 'S'}
+                      {resolvedDisplayName[0]?.toUpperCase() || 'S'}
                     </div>
                     <span className="hidden sm:inline text-xs font-bold text-[#F4F7F0] max-w-[100px] truncate">
-                      {currentUser.nickname || currentUser.full_name || 'Player'}
+                      {resolvedDisplayName}
                     </span>
                   </button>
                 )}

@@ -371,16 +371,22 @@ export function useSportSyncBridge() {
 
   // 1. Dynamic user profile with XP and Gamification
   const [userProfile, setUserProfile] = useState(() => {
+    const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
     const hasPendingOnboarding = typeof window !== 'undefined' && localStorage.getItem('sportsync_pending_onboarding') === 'true';
     const isStoreCompleted = Boolean(
       store.currentUser.onboarding_completed || store.currentUser.has_completed_onboarding
     );
     let localCompleted = false;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && !isLoggedOut) {
       localCompleted = (
         localStorage.getItem('sportsync_onboarding_completed') === 'true' ||
         localStorage.getItem('matchi_onboarding_completed') === 'true'
       );
+      const storedUserId = localStorage.getItem('sportsync_user_id') || '';
+      const storedUserEmail = localStorage.getItem('sportsync_user_email') || '';
+      const storedUserName = localStorage.getItem('sportsync_user_name') || '';
+      const storedUserRole = localStorage.getItem('sportsync_user_role') || '';
+
       const saved = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
       if (saved) {
         try {
@@ -406,22 +412,43 @@ export function useSportSyncBridge() {
               ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
               : (parsed.preferredSports || storedSports || ['Football']));
 
-          const storedSkill = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
-          const storedAvailability = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null;
+          const storedSkill = localStorage.getItem('sportsync_user_skill');
+          const storedAvailability = localStorage.getItem('sportsync_user_availability');
           const finalSkill = formatSkillTier(storedSkill || parsed.skillLevel || store.currentUser.skill_level);
           const finalAvailability = parsed.availability || storedAvailability || store.currentUser.availability || 'Weekday Evenings & Weekends';
+
+          const resolvedId = (parsed.id && parsed.id !== 'usr_guest_01')
+            ? parsed.id
+            : ((store.currentUser.id && store.currentUser.id !== 'usr_guest_01')
+                ? store.currentUser.id
+                : (storedUserId && storedUserId !== 'usr_guest_01' ? storedUserId : ''));
+          const resolvedEmail = parsed.email || store.currentUser.email || storedUserEmail || '';
+          const isRealUser = Boolean(resolvedId || resolvedEmail);
+          const resolvedName = (parsed.name && !['Guest', 'Guest Player'].includes(parsed.name.trim()))
+            ? parsed.name
+            : ((store.currentUser.full_name && !['Guest', 'Guest Player'].includes(store.currentUser.full_name.trim()))
+                ? store.currentUser.full_name
+                : ((storedUserName && !['Guest', 'Guest Player'].includes(storedUserName.trim()))
+                    ? storedUserName
+                    : (resolvedEmail ? resolvedEmail.split('@')[0] : (isRealUser ? 'Player' : 'Guest'))));
+          const cleanHandle = (store.currentUser.nickname || resolvedName.split(' ')[0] || (resolvedEmail ? resolvedEmail.split('@')[0] : 'player'))
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '') || 'player';
+          const resolvedUsername = (parsed.username && parsed.username !== '@guest')
+            ? parsed.username
+            : (isRealUser ? `@${cleanHandle}` : '@guest');
 
           const isExplicitlyDone = !hasPendingOnboarding && Boolean(parsed.onboardingCompleted || isStoreCompleted || localCompleted);
           const hasStoredProfileInfo = Boolean(
             !hasPendingOnboarding &&
             finalSports && finalSports.length > 0 &&
             finalCity &&
-            parsed.name &&
-            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(parsed.name.trim()) &&
+            resolvedName &&
+            !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(resolvedName.trim()) &&
             store.currentUser.onboarding_completed !== false
           );
           const isProfileFinished = isExplicitlyDone || hasStoredProfileInfo;
-          if (isProfileFinished && typeof window !== 'undefined') {
+          if (isProfileFinished) {
             try {
               localStorage.removeItem('sportsync_pending_onboarding');
               localStorage.setItem('sportsync_onboarding_completed', 'true');
@@ -429,21 +456,44 @@ export function useSportSyncBridge() {
           }
 
           return {
+            ...INITIAL_USER_PROFILE,
             ...parsed,
+            id: resolvedId || parsed.id,
+            email: resolvedEmail || parsed.email,
+            name: resolvedName,
+            username: resolvedUsername,
+            role: parsed.role || store.currentUser.role || storedUserRole || 'player',
             city: finalCity,
             preferredSports: finalSports,
             primarySport: finalSports[0]?.toLowerCase() || parsed.primarySport || 'football',
             skillLevel: finalSkill,
             availability: finalAvailability,
             onboardingCompleted: isProfileFinished,
+            isGuest: isRealUser ? false : Boolean(parsed.isGuest ?? true),
           };
         } catch {
           // ignore parsing error
         }
       }
     }
-    const isAuthenticated = Boolean(store.currentUser.id && store.currentUser.email);
-    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
+
+    const storedUserId = (!isLoggedOut && typeof window !== 'undefined') ? (localStorage.getItem('sportsync_user_id') || '') : '';
+    const storedUserEmail = (!isLoggedOut && typeof window !== 'undefined') ? (localStorage.getItem('sportsync_user_email') || '') : '';
+    const storedUserName = (!isLoggedOut && typeof window !== 'undefined') ? (localStorage.getItem('sportsync_user_name') || '') : '';
+    const storedUserRole = (!isLoggedOut && typeof window !== 'undefined') ? (localStorage.getItem('sportsync_user_role') || '') : '';
+
+    const effectiveId = (!isLoggedOut && store.currentUser.id && store.currentUser.id !== 'usr_guest_01')
+      ? store.currentUser.id
+      : (storedUserId && storedUserId !== 'usr_guest_01' ? storedUserId : '');
+    const effectiveEmail = (!isLoggedOut && store.currentUser.email) ? store.currentUser.email : storedUserEmail;
+    const effectiveFullName = (!isLoggedOut && store.currentUser.full_name && !['Guest', 'Guest Player'].includes(store.currentUser.full_name.trim()))
+      ? store.currentUser.full_name
+      : (storedUserName && !['Guest', 'Guest Player'].includes(storedUserName.trim())
+          ? storedUserName
+          : (effectiveEmail ? effectiveEmail.split('@')[0] : 'Player'));
+
+    const isAuthenticated = !isLoggedOut && Boolean(effectiveId || effectiveEmail);
+    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer' || storedUserRole === 'venue_owner' || storedUserRole === 'organizer' || storedUserRole === 'facility_owner';
     const isExplicitlyIncomplete = store.currentUser.onboarding_completed === false || hasPendingOnboarding;
     const hasExplicitCompletion = !isExplicitlyIncomplete && Boolean(isStoreCompleted || localCompleted);
     const hasRequiredPlayerFields = !isOwner && !isExplicitlyIncomplete && Boolean(
@@ -460,12 +510,15 @@ export function useSportSyncBridge() {
         localStorage.setItem('sportsync_onboarding_completed', 'true');
       } catch {}
     }
+    const cleanHandle = (store.currentUser.nickname || effectiveFullName.split(' ')[0] || (effectiveEmail ? effectiveEmail.split('@')[0] : 'player'))
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '') || 'player';
     return {
-      id: store.currentUser.id || store.currentUser.auth_id || (isAuthenticated ? 'usr_auth' : undefined),
-      name: isAuthenticated ? (store.currentUser.full_name || 'Player') : 'Guest',
-      username: isAuthenticated
-        ? (store.currentUser.nickname ? `@${store.currentUser.nickname.toLowerCase()}` : `@${store.currentUser.email?.split('@')[0] || 'player'}`)
-        : '@guest',
+      id: isAuthenticated ? (effectiveId || store.currentUser.auth_id || 'usr_auth') : undefined,
+      email: isAuthenticated ? effectiveEmail : undefined,
+      role: isAuthenticated ? (store.currentUser.role || storedUserRole || 'player') : undefined,
+      name: isAuthenticated ? effectiveFullName : 'Guest',
+      username: isAuthenticated ? `@${cleanHandle}` : '@guest',
       avatarId: 'alex' as const,
       level: 1,
       levelTitle: getLevelTitle(1),
@@ -504,11 +557,19 @@ export function useSportSyncBridge() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const isLoggedOut = localStorage.getItem('sportsync_logged_out') === 'true';
-      if (userProfile.isGuest || !userProfile.id || userProfile.name === 'Guest Player' || isLoggedOut) {
+      const storedUserId = localStorage.getItem('sportsync_user_id') || '';
+      const hasStoredAuth = !isLoggedOut && Boolean(storedUserId && storedUserId !== 'usr_guest_01');
+      if (isLoggedOut || ((userProfile.isGuest || !userProfile.id || userProfile.name === 'Guest Player') && !hasStoredAuth)) {
         localStorage.removeItem('sportsync_user_profile');
         localStorage.removeItem('sideline_user_profile');
-      } else {
-        localStorage.setItem('sportsync_user_profile', JSON.stringify(userProfile));
+      } else if (!userProfile.isGuest && (userProfile.id || storedUserId)) {
+        const persisted = {
+          ...userProfile,
+          id: userProfile.id || storedUserId,
+          isGuest: false,
+        };
+        localStorage.setItem('sportsync_user_profile', JSON.stringify(persisted));
+        localStorage.setItem('sideline_user_profile', JSON.stringify(persisted));
       }
     }
   }, [userProfile]);
@@ -518,13 +579,21 @@ export function useSportSyncBridge() {
     const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('sportsync_logged_out') === 'true';
     if (isLoggedOut) return;
 
-    const isGuest = !store.currentUser.id || store.currentUser.id === '' || store.currentUser.full_name === 'Guest Player';
-    const isAuthenticated = !isGuest && Boolean(store.currentUser.id && store.currentUser.email);
+    const storedUserId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || '') : '';
+    const storedUserEmail = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_email') || '') : '';
+    const storedUserName = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '';
+    const storedUserRole = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_role') || '') : '';
+
+    const isStoreGuest = !store.currentUser.id || store.currentUser.id === '' || store.currentUser.id === 'usr_guest_01' || store.currentUser.full_name === 'Guest Player';
+    const isStoreAuthenticated = !isStoreGuest && Boolean(store.currentUser.id && store.currentUser.email);
+    const hasStoredAuth = Boolean((storedUserId && storedUserId !== 'usr_guest_01') || storedUserEmail);
+    const isAuthenticated = isStoreAuthenticated || hasStoredAuth;
+
     const hasPendingOnboarding = typeof window !== 'undefined' && (
       localStorage.getItem('sportsync_pending_onboarding') === 'true' ||
       sessionStorage.getItem('sportsync_just_registered') === 'true'
     );
-    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer';
+    const isOwner = store.currentUser.role === 'venue_owner' || store.currentUser.role === 'organizer' || storedUserRole === 'venue_owner' || storedUserRole === 'organizer' || storedUserRole === 'facility_owner';
     const isExplicitlyIncomplete = store.currentUser.onboarding_completed === false || hasPendingOnboarding;
     const hasExplicitCompleted = !isExplicitlyIncomplete && Boolean(
       store.currentUser.onboarding_completed === true ||
@@ -547,35 +616,53 @@ export function useSportSyncBridge() {
     }
 
     if (isAuthenticated) {
-      setUserProfile((prev: any) => ({
-        ...prev,
-        id: store.currentUser.id || store.currentUser.auth_id || prev.id,
-        email: store.currentUser.email,
-        name: store.currentUser.full_name || prev.name,
-        username: store.currentUser.nickname
-          ? `@${store.currentUser.nickname.toLowerCase()}`
-          : (store.currentUser.email ? `@${store.currentUser.email.split('@')[0]}` : prev.username),
-        role: store.currentUser.role || prev.role,
-        city: 'Naga City',
-        primarySport: store.currentUser.primary_sport || prev.primarySport || (isCompleted ? 'pickleball' : ''),
-        preferredSports: store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0
-          ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-          : (isCompleted ? prev.preferredSports : []),
-        skillLevel: (() => {
-          const stored = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
-          if (stored) return formatSkillTier(stored);
-          if (store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels') {
-            return formatSkillTier(store.currentUser.skill_level);
-          }
-          return (prev.skillLevel && prev.skillLevel !== 'All_levels') ? prev.skillLevel : 'Beginner';
-        })(),
-        availability: store.currentUser.availability || prev.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends'),
-        onboardingCompleted: Boolean(isCompleted),
-        matchesTotal: store.currentUser.matches_played ?? prev.matchesTotal,
-        wins: store.currentUser.matches_won ?? prev.wins,
-        streakWeeks: store.currentUser.win_streak ?? prev.streakWeeks,
-        isGuest: false,
-      }));
+      setUserProfile((prev: any) => {
+        const resolvedId = (store.currentUser.id && store.currentUser.id !== 'usr_guest_01')
+          ? store.currentUser.id
+          : (store.currentUser.auth_id || prev.id || storedUserId);
+        const resolvedEmail = store.currentUser.email || prev.email || storedUserEmail;
+        const resolvedName = (store.currentUser.full_name && !['Guest', 'Guest Player'].includes(store.currentUser.full_name.trim()))
+          ? store.currentUser.full_name
+          : ((prev.name && !['Guest', 'Guest Player'].includes(prev.name.trim()))
+              ? prev.name
+              : ((storedUserName && !['Guest', 'Guest Player'].includes(storedUserName.trim()))
+                  ? storedUserName
+                  : (resolvedEmail ? resolvedEmail.split('@')[0] : 'Player')));
+        const cleanHandle = (store.currentUser.nickname || resolvedName.split(' ')[0] || (resolvedEmail ? resolvedEmail.split('@')[0] : 'player'))
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '') || 'player';
+        const resolvedUsername = store.currentUser.nickname
+          ? `@${store.currentUser.nickname.toLowerCase().replace(/[^a-z0-9_]/g, '')}`
+          : ((prev.username && prev.username !== '@guest') ? prev.username : `@${cleanHandle}`);
+
+        return {
+          ...prev,
+          id: resolvedId,
+          email: resolvedEmail,
+          name: resolvedName,
+          username: resolvedUsername,
+          role: (!isStoreGuest && store.currentUser.role) ? store.currentUser.role : (prev.role || storedUserRole || 'player'),
+          city: 'Naga City',
+          primarySport: (!isStoreGuest && store.currentUser.primary_sport) ? store.currentUser.primary_sport : (prev.primarySport || (isCompleted ? 'pickleball' : '')),
+          preferredSports: (!isStoreGuest && store.currentUser.preferred_sports && store.currentUser.preferred_sports.length > 0)
+            ? store.currentUser.preferred_sports.map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+            : (isCompleted ? prev.preferredSports : []),
+          skillLevel: (() => {
+            const stored = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_skill') : null;
+            if (stored) return formatSkillTier(stored);
+            if (!isStoreGuest && store.currentUser.skill_level && store.currentUser.skill_level !== 'all_levels') {
+              return formatSkillTier(store.currentUser.skill_level);
+            }
+            return (prev.skillLevel && prev.skillLevel !== 'All_levels') ? prev.skillLevel : 'Beginner';
+          })(),
+          availability: (!isStoreGuest && store.currentUser.availability) || prev.availability || (typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') || 'Weekday Evenings & Weekends' : 'Weekday Evenings & Weekends'),
+          onboardingCompleted: Boolean(isCompleted),
+          matchesTotal: (!isStoreGuest ? store.currentUser.matches_played : undefined) ?? prev.matchesTotal,
+          wins: (!isStoreGuest ? store.currentUser.matches_won : undefined) ?? prev.wins,
+          streakWeeks: (!isStoreGuest ? store.currentUser.win_streak : undefined) ?? prev.streakWeeks,
+          isGuest: false,
+        };
+      });
     }
   }, [
     store.currentUser.id,
@@ -4034,14 +4121,46 @@ export function useSportSyncBridge() {
     }) => {
       const cleanCity = prefs.preferredArea
         ? prefs.preferredArea.replace(/\s*\(Pilot Area\)/i, '').trim()
-        : (userProfile.city || '');
+        : (userProfile.city || 'Naga City');
       const formattedSports = prefs.preferredSports.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
       const cleanSkill = formatSkillTier(prefs.skillLevel);
       const cleanAvailability = prefs.availability || 'Weekday Evenings & Weekends';
 
+      const storedId = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_id') || '') : '';
+      const storedEmail = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_email') || '') : '';
+      const storedName = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_name') || '') : '';
+      const storedRole = typeof window !== 'undefined' ? (localStorage.getItem('sportsync_user_role') || '') : '';
+
+      const resolvedId = (store.currentUser.id && store.currentUser.id !== 'usr_guest_01')
+        ? store.currentUser.id
+        : ((userProfile.id && userProfile.id !== 'usr_guest_01')
+            ? userProfile.id
+            : (storedId && storedId !== 'usr_guest_01' ? storedId : ''));
+      const resolvedEmail = store.currentUser.email || (userProfile as any).email || storedEmail || '';
+      const resolvedName = (prefs.fullName && !['Guest', 'Guest Player'].includes(prefs.fullName.trim()))
+        ? prefs.fullName.trim()
+        : ((userProfile.name && !['Guest', 'Guest Player'].includes(userProfile.name.trim()))
+            ? userProfile.name
+            : ((store.currentUser.full_name && !['Guest', 'Guest Player'].includes(store.currentUser.full_name.trim()))
+                ? store.currentUser.full_name
+                : (storedName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'Player'))));
+      const cleanHandle = (resolvedName.split(' ')[0] || (resolvedEmail ? resolvedEmail.split('@')[0] : 'player'))
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '') || 'player';
+      const resolvedUsername = (userProfile.username && userProfile.username !== '@guest')
+        ? userProfile.username
+        : `@${cleanHandle}`;
+      const resolvedRole = (store.currentUser.role && store.currentUser.id !== 'usr_guest_01')
+        ? store.currentUser.role
+        : ((userProfile as any).role || storedRole || 'player');
+
       setUserProfile((prev: any) => ({
         ...prev,
-        name: prefs.fullName || prev.name,
+        id: resolvedId || prev.id,
+        email: resolvedEmail || prev.email,
+        role: resolvedRole,
+        name: resolvedName,
+        username: resolvedUsername,
         city: cleanCity,
         primarySport: (prefs.preferredSports[0] || 'football').toLowerCase(),
         preferredSports: formattedSports,
@@ -4077,9 +4196,15 @@ export function useSportSyncBridge() {
       const mappedSkill: SkillLevel = skillLevelMap[cleanSkill.toLowerCase()] || 'beginner';
 
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_logged_out');
+        localStorage.removeItem('sportsync_guest');
         localStorage.removeItem('sportsync_pending_onboarding');
         sessionStorage.removeItem('sportsync_just_registered');
         localStorage.removeItem('sportsync_skipped_onboarding');
+        if (resolvedId) localStorage.setItem('sportsync_user_id', resolvedId);
+        if (resolvedEmail) localStorage.setItem('sportsync_user_email', resolvedEmail);
+        if (resolvedName) localStorage.setItem('sportsync_user_name', resolvedName);
+        if (resolvedRole) localStorage.setItem('sportsync_user_role', resolvedRole);
         localStorage.setItem('sportsync_user_city', cleanCity);
         localStorage.setItem('sportsync_user_location', cleanCity);
         localStorage.setItem('sportsync_user_skill', cleanSkill.toLowerCase());
@@ -4094,12 +4219,18 @@ export function useSportSyncBridge() {
         }
         const updatedProfile = {
           ...parsed,
+          id: resolvedId || parsed.id,
+          email: resolvedEmail || parsed.email,
+          role: resolvedRole,
+          name: resolvedName,
+          username: resolvedUsername,
           city: cleanCity,
           preferredSports: formattedSports,
           primarySport: (prefs.preferredSports[0] || 'football').toLowerCase(),
           skillLevel: cleanSkill,
           availability: cleanAvailability,
           onboardingCompleted: true,
+          isGuest: false,
         };
         localStorage.setItem('sportsync_user_profile', JSON.stringify(updatedProfile));
         localStorage.setItem('sideline_user_profile', JSON.stringify(updatedProfile));
@@ -4108,8 +4239,8 @@ export function useSportSyncBridge() {
 
       try {
         await updatePlayerProfile({
-          fullName: prefs.fullName,
-          nickname: prefs.fullName.split(' ')[0],
+          fullName: resolvedName,
+          nickname: resolvedName.split(' ')[0],
           avatarUrl: prefs.avatarUrl,
           primarySport,
           preferredSports: mappedSports,
@@ -4123,8 +4254,8 @@ export function useSportSyncBridge() {
 
       try {
         await store.completePlayerOnboarding({
-          fullName: prefs.fullName,
-          nickname: prefs.fullName.split(' ')[0],
+          fullName: resolvedName,
+          nickname: resolvedName.split(' ')[0],
           preferredSports: mappedSports,
           skillLevel: mappedSkill,
           city: cleanCity,
@@ -4137,7 +4268,7 @@ export function useSportSyncBridge() {
 
       awardXp(150, 'completing profile onboarding', { applyStreakMultiplier: true });
     },
-    [awardXp, store]
+    [awardXp, store, userProfile]
   );
 
   return {

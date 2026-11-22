@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X, Shield, ArrowRight, UserPlus, LogIn } from 'lucide-react';
-import { APP_CONFIG } from '@/config/appConfig';
+import { X, Shield, UserPlus, LogIn } from 'lucide-react';
 import { SportSyncBrandLogo } from '@/components/ui/SportSyncBrandLogo';
 
 interface GuestPromptModalProps {
@@ -22,7 +21,15 @@ export function GuestPromptModal({
   onSignIn,
   onCreateAccount,
 }: GuestPromptModalProps) {
-  if (!isOpen) return null;
+  const hasAuthenticatedSession =
+    typeof window !== 'undefined' &&
+    localStorage.getItem('sportsync_logged_out') !== 'true' &&
+    Boolean(
+      (localStorage.getItem('sportsync_user_id') && localStorage.getItem('sportsync_user_id') !== 'usr_guest_01') ||
+      localStorage.getItem('sportsync_user_email')
+    );
+
+  if (!isOpen || hasAuthenticatedSession) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
