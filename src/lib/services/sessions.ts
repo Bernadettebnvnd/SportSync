@@ -1,4 +1,4 @@
-import { Session, QueueEntry, MatchFormat, SportType } from '@/types';
+import { Session, QueueEntry, MatchFormat, SportType, Venue, User, QueueStatus } from '@/types';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 import { isSessionExpired } from '@/lib/utils/gameExpiration';
 
@@ -11,7 +11,7 @@ export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<s
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        parsed.forEach((item: any) => {
+        parsed.forEach((item: string | { id?: string }) => {
           if (typeof item === 'string') {
             ids.add(item);
           } else if (item && typeof item === 'object') {
@@ -39,7 +39,7 @@ export function markSessionDeleted(sessionId: string, _sessionTitle?: string) {
   }
 }
 
-function isMissingColumnError(err: any): boolean {
+function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {
   if (!err) return false;
   const msg = (err.message || '').toLowerCase();
   return (
@@ -50,7 +50,7 @@ function isMissingColumnError(err: any): boolean {
   );
 }
 
-function extractMissingColumn(err: any): string | null {
+function extractMissingColumn(err: { message?: string } | null | undefined): string | null {
   if (!err || !err.message) return null;
   const match =
     err.message.match(/Could not find the '([^']+)' column/i) ||
@@ -118,7 +118,7 @@ function getLocalStoredSessions(): Session[] {
     const deduped: Session[] = [];
 
     parsed.forEach((s) => {
-      if (!s || !s.id || isMockSession(s)) return;
+      if (!s || !s.id || isMockSession(s) || !s.host_id || s.host_id === 'host') return;
       if (!ids.has(s.id) && s.status !== 'cancelled' && !isSessionExpired(s) && !seenIds.has(s.id)) {
         seenIds.add(s.id);
         deduped.push(s);
@@ -187,9 +187,10 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
     }
 
     // 2. Fetch venues and hosts cleanly in separate simple queries
-    const venuesMap = new Map<string, any>();
-    const usersMap = new Map<string, any>();
-    const queuesMap = new Map<string, any[]>();
+    const venuesMap = new Map<string, Venue>();
+    const usersMap = new Map<string, User>();
+    const queuesMap = new Map<string, QueueEntry[]>();
+    let usersQuerySucceeded = true;
 
     if (Array.isArray(rawSessions) && rawSessions.length > 0) {
       const sessionIds = Array.from(new Set(rawSessions.map((s) => s.id).filter(Boolean)));
@@ -204,7 +205,7 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
             .in('session_id', sessionIds)
             .neq('status', 'cancelled');
           if (Array.isArray(queues)) {
-            queues.forEach((q: any) => {
+            queues.forEach((q: QueueEntry) => {
               const list = queuesMap.get(q.session_id) || [];
               list.push(q);
               queuesMap.set(q.session_id, list);
@@ -219,10 +220,21 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
             .in('session_id', sessionIds)
             .neq('status', 'cancelled');
           if (Array.isArray(participants)) {
-            participants.forEach((p: any) => {
+            participants.forEach((p: {
+              id: string;
+              session_id: string;
+              user_id?: string;
+              user?: User;
+              user_name?: string;
+              name?: string;
+              user_avatar?: string;
+              avatar?: string;
+              status?: QueueStatus;
+              joined_at?: string;
+            }) => {
               const list = queuesMap.get(p.session_id) || [];
               const alreadyInList = list.some(
-                (existing: any) =>
+                (existing: QueueEntry) =>
                   (p.user_id && (existing.user_id === p.user_id || existing.user?.id === p.user_id)) ||
                   (p.user?.full_name && existing.user?.full_name === p.user.full_name)
               );
@@ -230,14 +242,23 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
                 list.push({
                   id: p.id,
                   session_id: p.session_id,
-                  user_id: p.user_id,
-                  user: p.user || {
-                    id: p.user_id,
+                  user_id: p.user_id || '',
+                  queue_number: list.length + 1,
+                  group_size: 1,
+                  match_format: 'doubles',
+                  partner_names: [],
+                  needs_partner: false,
+                  user: p.user || ({
+                    id: p.user_id || '',
+                    email: '',
                     full_name: p.user_name || p.name || 'Participant',
                     avatar_url: p.user_avatar || p.avatar || 'alex',
-                  },
-                  status: p.status || 'joined',
-                  joined_at: p.joined_at,
+                    role: 'player',
+                    created_at: p.joined_at || new Date().toISOString(),
+                  } as User),
+                  status: p.status || 'waiting',
+                  estimated_wait_minutes: 0,
+                  joined_at: p.joined_at || new Date().toISOString(),
                 });
                 queuesMap.set(p.session_id, list);
               }
@@ -250,35 +271,31 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
         try {
           const { data: venues } = await supabase.from('venues').select('*').in('id', venueIds);
           if (Array.isArray(venues)) {
-            venues.forEach((v: any) => venuesMap.set(v.id, v));
+            venues.forEach((v: Venue) => venuesMap.set(v.id, v));
           }
         } catch {}
       }
 
       if (hostIds.length > 0) {
+        usersQuerySucceeded = false;
         try {
-          const { data: users } = await supabase.from('users').select('*').in('id', hostIds);
-          if (Array.isArray(users)) {
-            users.forEach((u: any) => usersMap.set(u.id, u));
+          const { data: users, error: usersErr } = await supabase.from('users').select('*').in('id', hostIds);
+          if (!usersErr && Array.isArray(users)) {
+            usersQuerySucceeded = true;
+            users.forEach((u: User) => usersMap.set(u.id, u));
           }
         } catch {}
       }
     }
 
-    const data = (rawSessions || []).map((s) => {
-      let resolvedHost = s.host_id ? usersMap.get(s.host_id) : undefined;
-      if (!resolvedHost && s.description) {
-        const hostTagMatch = s.description.match(/\[HOST:(.*?)\]/i);
-        if (hostTagMatch && hostTagMatch[1]) {
-          const taggedName = hostTagMatch[1].trim();
-          resolvedHost = {
-            id: s.host_id || 'host',
-            full_name: taggedName,
-            nickname: taggedName.split(' ')[0],
-            avatar_url: 'alex',
-          };
-        }
-      }
+    const validRawSessions = (rawSessions || []).filter((s) => {
+      if (!s || !s.host_id) return false;
+      if (usersQuerySucceeded && !usersMap.has(s.host_id)) return false;
+      return true;
+    });
+
+    const data = validRawSessions.map((s) => {
+      const resolvedHost = usersMap.get(s.host_id);
       const locTagMatch = s.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
       const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
       const isInvalidLoc = (val?: string | null) =>
@@ -317,6 +334,13 @@ export async function getOpenPlaySessions(venueId?: string): Promise<Session[]> 
         combined.push(s);
       }
     });
+
+    // Prune stale cached sessions in localStorage so deleted/orphaned hosts never resurrect
+    if (!venueId && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sportsync_user_sessions', JSON.stringify(combined));
+      } catch {}
+    }
 
     return combined;
   } catch (err) {
@@ -515,7 +539,7 @@ export async function createOpenPlaySession(
       ? sessionData.host_id
       : null;
 
-  const extendedPayload: Record<string, any> = {
+  const extendedPayload: Record<string, unknown> = {
     venue_id: validVenueId,
     host_id: validHostId,
     title: sessionData.title,
@@ -537,7 +561,7 @@ export async function createOpenPlaySession(
     location_details: sessionData.location_details || null,
   };
 
-  let activePayload = { ...extendedPayload };
+  const activePayload = { ...extendedPayload };
   let { data: newSession, error } = await supabase
     .from('sessions')
     .insert(activePayload)
@@ -601,7 +625,7 @@ export async function updateOpenPlaySession(
   }
 
   try {
-    const dbUpdates: any = {};
+    const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined) dbUpdates.title = updates.title;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.sport !== undefined) dbUpdates.sport = updates.sport;

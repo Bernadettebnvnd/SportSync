@@ -43,10 +43,10 @@ export const GUEST_USER: User = {
   nickname: 'Guest',
   role: 'player',
   active_mode: 'play',
-  primary_sport: '' as any,
+  primary_sport: '' as unknown as SportType,
   preferred_sports: [],
   preferred_format: 'doubles',
-  skill_level: '' as any,
+  skill_level: '' as unknown as SkillLevel,
   availability: '',
   city: '',
   onboarding_completed: false,
@@ -127,8 +127,8 @@ async function initializeStore() {
         globalState.currentUser.onboarding_completed = false;
         globalState.currentUser.has_completed_onboarding = false;
         globalState.currentUser.preferred_sports = [];
-        globalState.currentUser.primary_sport = '' as any;
-        globalState.currentUser.skill_level = '' as any;
+        globalState.currentUser.primary_sport = '' as unknown as SportType;
+        globalState.currentUser.skill_level = '' as unknown as SkillLevel;
       }
       const storedId = localStorage.getItem('sportsync_user_id') || localStorage.getItem('matchi_user_id');
       if (storedId) {
@@ -242,7 +242,7 @@ async function initializeStore() {
       if (storedUserSkill && storedUserSkill !== 'all_levels') {
         user.skill_level = storedUserSkill as SkillLevel;
       } else if (user.skill_level === 'all_levels') {
-        user.skill_level = isUserOnboarded ? 'beginner' : ('' as any);
+        user.skill_level = isUserOnboarded ? 'beginner' : ('' as unknown as SkillLevel);
       }
 
       const storedUserAvail = typeof window !== 'undefined' ? localStorage.getItem('sportsync_user_availability') : null;
@@ -374,26 +374,38 @@ export function useMatchiStore() {
     };
   }, []);
 
-  // Reload sessions from database without discarding active local/existing sessions
+  // Reload sessions from database and prune orphaned/deleted sessions from store state
   const refreshSessions = useCallback(async () => {
     try {
       const fetched = await getOpenPlaySessions();
-      const existing = globalState.sessions.filter((s) => s && s.id && s.status !== "cancelled");
-      const mergedMap = new Map<string, Session>();
-      existing.forEach((s) => mergedMap.set(s.id, s));
+      const prevMap = new Map(globalState.sessions.filter((s) => s && s.id).map((s) => [s.id, s]));
+      const nextSessions: Session[] = [];
+      const seenIds = new Set<string>();
+
       fetched.forEach((s) => {
-        if (s && s.id) {
-          const prev = mergedMap.get(s.id);
+        if (s && s.id && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+          seenIds.add(s.id);
+          const prev = prevMap.get(s.id);
           if (prev) {
             // Preserve existing queue entries / participants if fetched has none
             const mergedQueues = (s.queues && s.queues.length > 0) ? s.queues : (prev.queues || []);
-            mergedMap.set(s.id, { ...prev, ...s, queues: mergedQueues });
+            nextSessions.push({ ...prev, ...s, queues: mergedQueues });
           } else {
-            mergedMap.set(s.id, s);
+            nextSessions.push(s);
           }
         }
       });
-      globalState.sessions = Array.from(mergedMap.values());
+
+      if (!isSupabaseConfigured) {
+        globalState.sessions.forEach((s) => {
+          if (s && s.id && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+            seenIds.add(s.id);
+            nextSessions.push(s);
+          }
+        });
+      }
+
+      globalState.sessions = nextSessions;
       notify();
       return globalState.sessions;
     } catch (err) {
@@ -532,7 +544,7 @@ export function useMatchiStore() {
         full_name: user.full_name || globalState.currentUser.full_name,
         nickname: user.nickname || user.full_name?.split(' ')[0] || globalState.currentUser.nickname,
         role: user.role || globalState.currentUser.role,
-        primary_sport: resolvedPrimarySport as any,
+        primary_sport: resolvedPrimarySport as SportType,
         preferred_sports: resolvedSports,
         preferred_format: user.preferred_format || globalState.currentUser.preferred_format,
         skill_level: user.skill_level || globalState.currentUser.skill_level,
@@ -694,7 +706,7 @@ export function useMatchiStore() {
 
         // Crucial: Update sportsync_user_profile for useSportSyncBridge & ProfileScreen
         const existingProfileRaw = localStorage.getItem('sportsync_user_profile') || localStorage.getItem('sideline_user_profile');
-        let existingProfile: any = {};
+        let existingProfile: Record<string, unknown> = {};
         if (existingProfileRaw) {
           try { existingProfile = JSON.parse(existingProfileRaw); } catch {}
         }

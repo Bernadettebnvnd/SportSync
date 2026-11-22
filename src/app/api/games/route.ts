@@ -17,6 +17,26 @@ function isValidUuid(val?: string | null): val is string {
   return Boolean(val && UUID_REGEX.test(val.trim()));
 }
 
+const DELETED_LEGACY_HOST_REGEX = /^\s*(inah|xian|shea|marianne|alex|jan)(\s|$)/i;
+
+async function isAuthAccountConfirmedMissing(
+  admin: ReturnType<typeof createAdminClient>,
+  lookupId?: string | null
+): Promise<boolean> {
+  if (!admin || !isValidUuid(lookupId)) return false;
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(lookupId.trim());
+    if (error) {
+      const status = (error as { status?: number }).status;
+      const code = (error as { code?: string }).code;
+      return status === 404 || code === 'user_not_found';
+    }
+    return !data?.user;
+  } catch {
+    return false;
+  }
+}
+
 
 const MOCK_TITLES = [
   'friday night smash',
@@ -460,12 +480,42 @@ export async function GET(req: NextRequest) {
       }
 
       if (hostIds.length > 0) {
-        const { data: uList } = await supabase
+        let uList: any[] | null = null;
+        const { data: initialUsers, error: usersErr } = await supabase
           .from('users')
-          .select('id, full_name, nickname, avatar_url')
+          .select('id, auth_id, full_name, nickname, avatar_url')
           .in('id', hostIds);
+
+        if (usersErr && isMissingColumnError(usersErr)) {
+          const { data: fallbackUsers } = await supabase
+            .from('users')
+            .select('id, full_name, nickname, avatar_url')
+            .in('id', hostIds);
+          uList = fallbackUsers;
+        } else {
+          uList = initialUsers;
+        }
+
         if (Array.isArray(uList)) {
           uList.forEach((u) => hostsMap.set(u.id, u));
+        }
+
+        const admin = createAdminClient();
+        if (admin && hostsMap.size > 0) {
+          const hostsToCheck = Array.from(hostsMap.values()).filter((u) =>
+            Boolean(u.auth_id) ||
+            DELETED_LEGACY_HOST_REGEX.test((u.full_name || u.nickname || '').trim())
+          );
+          if (hostsToCheck.length > 0) {
+            await Promise.all(
+              hostsToCheck.map(async (u) => {
+                const authLookupId = u.auth_id || u.id;
+                if (await isAuthAccountConfirmedMissing(admin, authLookupId)) {
+                  hostsMap.delete(u.id);
+                }
+              })
+            );
+          }
         }
       }
 
@@ -521,17 +571,16 @@ export async function GET(req: NextRequest) {
 
       sessions.forEach((s) => {
         if (!s || !s.id || isMockFixture(s)) return;
+        if (!s.host_id || !hostsMap.has(s.host_id)) return;
 
         const venue = s.venue_id ? venuesMap.get(s.venue_id) : undefined;
-        const host = s.host_id ? hostsMap.get(s.host_id) : undefined;
-        const hostTagMatch = s.description?.match(/\[HOST:(.*?)\]/i);
-        const taggedHost = hostTagMatch ? hostTagMatch[1].trim() : '';
+        const host = hostsMap.get(s.host_id);
         const inviteTagMatch = s.description?.match(/\[INVITE:([A-Z0-9_-]+)\]/i);
         const taggedInvite = inviteTagMatch ? inviteTagMatch[1].trim().toUpperCase() : undefined;
 
         const { date: fDate, time: fTime } = formatSessionDateTime(s.start_time);
         const members = [...(rostersMap.get(s.id) || [])];
-        const resolvedHostName = host?.full_name || host?.nickname || taggedHost || 'Match Organizer';
+        const resolvedHostName = host?.full_name || host?.nickname || 'Match Organizer';
         const resolvedHostAvatar = host?.avatar_url || 'alex';
 
         // Ensure host is included in members roster if no members were found yet

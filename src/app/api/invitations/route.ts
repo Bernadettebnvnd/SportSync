@@ -6,6 +6,25 @@ import { verifySessionToken, serverGetUser, SanitizedUser, isMissingColumnError,
 import { isGameExpired } from '@/lib/utils/gameExpiration';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DELETED_LEGACY_HOST_REGEX = /^\s*(inah|xian|shea|marianne|alex|jan)(\s|$)/i;
+
+async function isAuthAccountConfirmedMissing(
+  admin: ReturnType<typeof createAdminClient>,
+  lookupId?: string | null
+): Promise<boolean> {
+  if (!admin || !lookupId || !UUID_REGEX.test(lookupId.trim())) return false;
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(lookupId.trim());
+    if (error) {
+      const status = (error as { status?: number }).status;
+      const code = (error as { code?: string }).code;
+      return status === 404 || code === 'user_not_found';
+    }
+    return !data?.user;
+  } catch {
+    return false;
+  }
+}
 
 function getDbClient() {
   const admin = createAdminClient();
@@ -327,8 +346,58 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
 
+      const hostIds = Array.from(
+        new Set(
+          (sessions || [])
+            .map((s: DbSessionRow) => s.host_id)
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+      const hostsMap = new Map<string, { id: string; auth_id?: string | null; full_name?: string | null; nickname?: string | null; avatar_url?: string | null }>();
+
+      if (hostIds.length > 0) {
+        let uList: any[] | null = null;
+        const { data: initialUsers, error: usersErr } = await supabase
+          .from('users')
+          .select('id, auth_id, full_name, nickname, avatar_url')
+          .in('id', hostIds);
+
+        if (usersErr && isMissingColumnError(usersErr)) {
+          const { data: fallbackUsers } = await supabase
+            .from('users')
+            .select('id, full_name, nickname, avatar_url')
+            .in('id', hostIds);
+          uList = fallbackUsers;
+        } else {
+          uList = initialUsers;
+        }
+
+        if (Array.isArray(uList)) {
+          uList.forEach((u) => hostsMap.set(u.id, u));
+        }
+
+        const admin = createAdminClient();
+        if (admin && hostsMap.size > 0) {
+          const hostsToCheck = Array.from(hostsMap.values()).filter((u) =>
+            Boolean(u.auth_id) ||
+            DELETED_LEGACY_HOST_REGEX.test((u.full_name || u.nickname || '').trim())
+          );
+          if (hostsToCheck.length > 0) {
+            await Promise.all(
+              hostsToCheck.map(async (u) => {
+                const authLookupId = u.auth_id || u.id;
+                if (await isAuthAccountConfirmedMissing(admin, authLookupId)) {
+                  hostsMap.delete(u.id);
+                }
+              })
+            );
+          }
+        }
+      }
+
       const games: CommunityGame[] = (sessions || [])
         .filter((s: DbSessionRow) => {
+          if (!s.host_id || !hostsMap.has(s.host_id)) return false;
           const { date, time } = formatSessionDateTime(s.start_time ?? undefined);
           return !isGameExpired(
             {
@@ -340,6 +409,7 @@ export async function GET(req: NextRequest) {
           );
         })
         .map((s: DbSessionRow) => {
+          const host = s.host_id ? hostsMap.get(s.host_id) : undefined;
           const { date, time } = formatSessionDateTime(s.start_time ?? undefined);
           return {
             id: s.id,
@@ -354,8 +424,8 @@ export async function GET(req: NextRequest) {
             locationDetails: s.location_details || undefined,
             distance: '0.8 km away',
             hostId: s.host_id ?? undefined,
-            hostName: 'Match Organizer',
-            hostAvatar: 'alex',
+            hostName: host?.full_name || host?.nickname || 'Match Organizer',
+            hostAvatar: (host?.avatar_url as CommunityGame['hostAvatar']) || 'alex',
             spotsTotal: s.max_players || 10,
             spotsJoined: s.current_players_count || 0,
             pricePerPlayer: s.fee_cents ? Math.round(s.fee_cents / 100) : 0,
@@ -396,17 +466,57 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    let hostUser: { id: string; full_name?: string | null; nickname?: string | null; avatar_url?: string | null } | null = null;
-    if (dbSession.host_id) {
-      const { data: u, error: hostErr } = await supabase
+    if (!dbSession.host_id) {
+      return NextResponse.json(
+        { success: false, error: 'Event No Longer Available', deleted: true },
+        { status: 410 }
+      );
+    }
+
+    let hostUser: { id: string; auth_id?: string | null; full_name?: string | null; nickname?: string | null; avatar_url?: string | null } | null = null;
+    let hostErr: any = null;
+    const { data: initialHost, error: initialHostErr } = await supabase
+      .from('users')
+      .select('id, auth_id, full_name, nickname, avatar_url')
+      .eq('id', dbSession.host_id)
+      .maybeSingle();
+
+    if (initialHostErr && isMissingColumnError(initialHostErr)) {
+      const { data: fallbackHost, error: fallbackHostErr } = await supabase
         .from('users')
         .select('id, full_name, nickname, avatar_url')
         .eq('id', dbSession.host_id)
         .maybeSingle();
-      if (hostErr) {
-        console.error('[/api/invitations GET] Host user lookup error:', hostErr);
-      } else if (u) {
-        hostUser = u;
+      hostUser = fallbackHost;
+      hostErr = fallbackHostErr;
+    } else {
+      hostUser = initialHost;
+      hostErr = initialHostErr;
+    }
+
+    if (hostErr) {
+      console.error('[/api/invitations GET] Host user lookup error:', hostErr);
+    }
+
+    if (!hostErr && !hostUser) {
+      return NextResponse.json(
+        { success: false, error: 'Event No Longer Available', deleted: true },
+        { status: 410 }
+      );
+    }
+
+    const admin = createAdminClient();
+    if (
+      hostUser &&
+      admin &&
+      (Boolean(hostUser.auth_id) ||
+        DELETED_LEGACY_HOST_REGEX.test((hostUser.full_name || hostUser.nickname || '').trim()))
+    ) {
+      if (await isAuthAccountConfirmedMissing(admin, hostUser.auth_id || hostUser.id)) {
+        return NextResponse.json(
+          { success: false, error: 'Event No Longer Available', deleted: true },
+          { status: 410 }
+        );
       }
     }
 
@@ -424,12 +534,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const hostTagMatch = dbSession.description?.match(/\[HOST:(.*?)\]/i);
-    const taggedHostName = hostTagMatch ? hostTagMatch[1].trim() : '';
     const hostName =
       hostUser?.full_name ||
       hostUser?.nickname ||
-      taggedHostName ||
       'Match Organizer';
     const hostAvatar = (hostUser?.avatar_url as CommunityGame['hostAvatar']) || 'alex';
 

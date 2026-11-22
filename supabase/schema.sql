@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS public.court_availability (
 CREATE TABLE IF NOT EXISTS public.sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venue_id UUID REFERENCES public.venues(id) ON DELETE CASCADE,
-    host_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    host_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
     sport sport_type NOT NULL DEFAULT 'pickleball',

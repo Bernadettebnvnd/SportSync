@@ -699,8 +699,9 @@ export function useSportSyncBridge() {
             const deduped: CommunityGame[] = [];
             parsed.forEach((g: any) => {
               if (!g || !g.id || isMockGame(g) || isGameExpired(g)) return;
-              // Drop legacy local-only cg_* games that were never persisted in Supabase
+              // Drop legacy local-only cg_* games or orphaned games missing a real hostId
               if (String(g.id).startsWith('cg_') && (!g.sessionId || String(g.sessionId).startsWith('cg_'))) return;
+              if (!g.hostId || g.hostId === 'host') return;
               if (!isGameDeleted(g) && !seenIds.has(g.id)) {
                 const isInvalid = (val?: string | null) =>
                   !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas') || val === 'Community / Open Court' || val === 'Naga Sports Venue';
@@ -731,6 +732,7 @@ export function useSportSyncBridge() {
   });
 
   const lastSerializedGamesRef = useRef<string>('');
+  const recentlyCreatedGameIdsRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -765,7 +767,14 @@ export function useSportSyncBridge() {
             (s) => s && (s.id === g.id || s.id === g.sessionId)
           );
           if (matchSession) {
-            if (matchSession.status === 'cancelled') return null;
+            if (
+              matchSession.status === 'cancelled' ||
+              !matchSession.host_id ||
+              !matchSession.host?.id ||
+              matchSession.host.id === 'host'
+            ) {
+              return null;
+            }
             const isUserHost = Boolean(
               (userProfile.id && matchSession.host_id === userProfile.id) ||
               ((matchSession.host as any)?.auth_id && userProfile.id && (matchSession.host as any).auth_id === userProfile.id) ||
@@ -837,7 +846,7 @@ export function useSportSyncBridge() {
 
         const added: CommunityGame[] = [];
         store.sessions.forEach((s) => {
-          if (!s || !s.id) return;
+          if (!s || !s.id || !s.host_id || !s.host?.id || s.host.id === 'host') return;
           const venue = store.venues.find((v) => v.id === s.venue_id);
           if (isMockGame({ id: s.id, sessionId: s.id, title: s.title, locationName: venue?.name })) {
             return;
@@ -865,7 +874,7 @@ export function useSportSyncBridge() {
           const shortFormat = getShortFormat(s.rotation_format, s.sport);
           const resolvedHostName = isUserHost
             ? userProfile.name
-            : (s.host?.full_name || s.host?.nickname || (venue?.name ? `${venue.name} Host` : 'Match Organizer'));
+            : (s.host?.full_name || s.host?.nickname || 'Match Organizer');
           const resolvedHostAvatar = (s.host?.avatar_url as any) || 'alex';
 
           const relevantQueues = [
@@ -1133,17 +1142,67 @@ export function useSportSyncBridge() {
           }
 
           if (dbSession) {
+            if (!dbSession.host_id) {
+              rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: true });
+              setGames((prev) =>
+                prev.filter(
+                  (g) => g.id !== dbSession.id && g.sessionId !== dbSession.id && g.id !== cleanKey && g.sessionId !== cleanKey
+                )
+              );
+              if (typeof window !== 'undefined') {
+                try {
+                  const rawGames = localStorage.getItem('sportsync_community_games');
+                  if (rawGames) {
+                    const list = JSON.parse(rawGames);
+                    if (Array.isArray(list)) {
+                      localStorage.setItem(
+                        'sportsync_community_games',
+                        JSON.stringify(list.filter((g: any) => g.id !== dbSession.id && g.sessionId !== dbSession.id))
+                      );
+                    }
+                  }
+                } catch {}
+                window.dispatchEvent(new CustomEvent('sportsync:game-deleted', { detail: { gameId: dbSession.id, sessionId: dbSession.id } }));
+              }
+              return;
+            }
+
             // Fetch host separately without broken foreign key joins
             let hostUser: any = null;
-            if (dbSession.host_id) {
-              try {
-                const { data: u } = await supabase
-                  .from('users')
-                  .select('id, full_name, nickname, avatar_url')
-                  .eq('id', dbSession.host_id)
-                  .maybeSingle();
-                if (u) hostUser = u;
-              } catch {}
+            let hostLookupSucceeded = false;
+            try {
+              const { data: u, error: hostErr } = await supabase
+                .from('users')
+                .select('id, full_name, nickname, avatar_url')
+                .eq('id', dbSession.host_id)
+                .maybeSingle();
+              if (!hostErr) hostLookupSucceeded = true;
+              if (u) hostUser = u;
+            } catch {}
+
+            if (hostLookupSucceeded && !hostUser) {
+              rosterSyncCacheRef.current.set(cleanKey, { timestamp: now, notFound: true });
+              setGames((prev) =>
+                prev.filter(
+                  (g) => g.id !== dbSession.id && g.sessionId !== dbSession.id && g.id !== cleanKey && g.sessionId !== cleanKey
+                )
+              );
+              if (typeof window !== 'undefined') {
+                try {
+                  const rawGames = localStorage.getItem('sportsync_community_games');
+                  if (rawGames) {
+                    const list = JSON.parse(rawGames);
+                    if (Array.isArray(list)) {
+                      localStorage.setItem(
+                        'sportsync_community_games',
+                        JSON.stringify(list.filter((g: any) => g.id !== dbSession.id && g.sessionId !== dbSession.id))
+                      );
+                    }
+                  }
+                } catch {}
+                window.dispatchEvent(new CustomEvent('sportsync:game-deleted', { detail: { gameId: dbSession.id, sessionId: dbSession.id } }));
+              }
+              return;
             }
 
             // Fetch venue separately
@@ -1477,15 +1536,21 @@ export function useSportSyncBridge() {
                     invitedPlayers: serverMatch.invitedPlayers || existing.invitedPlayers,
                   });
                 } else {
-                  // Keep local existing game
-                  const cleanExistingLoc = !isInvalidLoc(existing.locationName) ? existing.locationName : '';
-                  const cleanExistingDetails = !isInvalidLoc(existing.locationDetails) ? existing.locationDetails : '';
-                  const finalLoc = cleanExistingLoc || cleanExistingDetails || 'Metro Naga Sports Complex';
-                  updatedPrev.push({
-                    ...existing,
-                    locationName: finalLoc,
-                    locationDetails: cleanExistingDetails || cleanExistingLoc || finalLoc,
-                  });
+                  const nowTs = Date.now();
+                  const createdAt =
+                    recentlyCreatedGameIdsRef.current.get(existing.id) ||
+                    (existing.sessionId ? recentlyCreatedGameIdsRef.current.get(existing.sessionId) : undefined);
+                  const isWithinGraceWindow = Boolean(createdAt && nowTs - createdAt < 15000);
+                  if (data.offline || isWithinGraceWindow) {
+                    const cleanExistingLoc = !isInvalidLoc(existing.locationName) ? existing.locationName : '';
+                    const cleanExistingDetails = !isInvalidLoc(existing.locationDetails) ? existing.locationDetails : '';
+                    const finalLoc = cleanExistingLoc || cleanExistingDetails || 'Metro Naga Sports Complex';
+                    updatedPrev.push({
+                      ...existing,
+                      locationName: finalLoc,
+                      locationDetails: cleanExistingDetails || cleanExistingLoc || finalLoc,
+                    });
+                  }
                 }
               });
 
@@ -2491,6 +2556,10 @@ export function useSportSyncBridge() {
       }
 
       try { store.refreshSessions?.(); } catch {}
+
+      const createdTs = Date.now();
+      if (newGame.id) recentlyCreatedGameIdsRef.current.set(newGame.id, createdTs);
+      if (newGame.sessionId) recentlyCreatedGameIdsRef.current.set(newGame.sessionId, createdTs);
 
       setGames((prev) => {
         const filtered = prev
