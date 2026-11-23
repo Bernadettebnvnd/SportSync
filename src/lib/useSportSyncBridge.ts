@@ -2346,7 +2346,7 @@ export function useSportSyncBridge() {
       color: '#C8FF2E',
     };
 
-    const combined = [...SQUAD_FRIENDS_BASE, me].sort((a, b) => b.xp - a.xp);
+    const combined = [me].sort((a, b) => b.xp - a.xp);
 
     return combined.map((player, idx) => ({
       ...player,

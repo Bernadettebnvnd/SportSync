@@ -1,5 +1,5 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
@@ -33,6 +33,8 @@ interface ConversationsListScreenProps {
   games: CommunityGame[];
   currentUserId?: string;
   currentUserName?: string;
+  currentUserEmail?: string;
+  currentUserUsername?: string;
   currentUserAvatar?: AvatarId;
   unreadByGame?: Record<string, number>;
   onBack: () => void;
@@ -54,6 +56,8 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
   games,
   currentUserId,
   currentUserName,
+  currentUserEmail,
+  currentUserUsername,
   currentUserAvatar,
   unreadByGame,
   onBack,
@@ -68,10 +72,15 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
   const [syncVersion, setSyncVersion] = useState(0);
 
   const currentFilter = useMemo(() => {
-    return currentUserId || currentUserName
-      ? { id: currentUserId, name: currentUserName }
+    return currentUserId || currentUserName || currentUserEmail || currentUserUsername
+      ? {
+          id: currentUserId,
+          name: currentUserName,
+          email: currentUserEmail,
+          username: currentUserUsername,
+        }
       : undefined;
-  }, [currentUserId, currentUserName]);
+  }, [currentUserId, currentUserName, currentUserEmail, currentUserUsername]);
 
   // 1. Strict authorization: ONLY show games the user has hosted or joined
   const authorizedGames = useMemo(() => {
@@ -212,8 +221,8 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
 
       if (lastMsg) {
         displayTime = lastMsg.time || 'Recent';
-        // Approximate time sorting from message time or fallback to now
-        lastActivityTime = Date.now();
+        const parsedMs = lastMsg.createdAt ? new Date(lastMsg.createdAt).getTime() : NaN;
+        lastActivityTime = Number.isFinite(parsedMs) ? parsedMs : 0;
       } else {
         displayTime = game.date ? `${game.date}` : 'Upcoming';
         lastActivityTime = 0;
@@ -266,10 +275,13 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
       });
     }
 
-    // Sort: Unread first, then games with recent messages, then upcoming games
+    // Sort: Unread first, then by latest message timestamp descending, then games with messages
     return list.sort((a, b) => {
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (b.unreadCount > 0 && a.unreadCount === 0) return 1;
+      if (a.lastActivityTime !== b.lastActivityTime) {
+        return b.lastActivityTime - a.lastActivityTime;
+      }
       if (a.latestMessage && !b.latestMessage) return -1;
       if (b.latestMessage && !a.latestMessage) return 1;
       return 0;
@@ -315,7 +327,7 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-[#F4F7F0] flex items-center justify-center transition-colors press-scale"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -360,7 +372,7 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#6F7B71] hover:text-white"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#6F7B71] hover:text-[#F4F7F0]"
             >
               Clear
             </button>
@@ -451,8 +463,8 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
                 onClick={() => handleSelectConversation(item)}
                 className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer group flex items-start gap-3.5 ${
                   hasUnread
-                    ? 'bg-[#1C241E] border-[#C8FF2E]/40 shadow-[0_4px_24px_rgba(0,0,0,0.5)] hover:border-[#C8FF2E]/70'
-                    : 'bg-[#141A15] border-white/5 hover:border-white/20 hover:bg-[#18201A]'
+                    ? 'bg-[#1C241E] border-[#C8FF2E]/40 shadow-sm hover:border-[#C8FF2E]/70'
+                    : 'bg-[#141A15] border-white/5 hover:border-white/20 hover:bg-[#1C241E]'
                 }`}
               >
                 {/* Left: Avatar Stack & Sport Icon */}
@@ -502,7 +514,7 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
                     <div className="flex items-center gap-1.5 min-w-0">
                       <h3
                         className={`font-display font-bold text-xs sm:text-sm truncate leading-snug ${
-                          hasUnread ? 'text-[#F4F7F0]' : 'text-[#E0E6DD]'
+                          hasUnread ? 'text-[#F4F7F0]' : 'text-[#F4F7F0]'
                         }`}
                       >
                         {game.title}
@@ -549,7 +561,7 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
                         className={`text-xs truncate leading-normal ${
                           hasUnread
                             ? 'text-[#F4F7F0] font-semibold'
-                            : 'text-[#8FA392]'
+                            : 'text-[#A5B0A6]'
                         }`}
                       >
                         <span className="text-[#A5B0A6]">
@@ -572,7 +584,7 @@ export const ConversationsListScreen: React.FC<ConversationsListScreenProps> = (
                       {unreadCount}
                     </span>
                   ) : (
-                    <ChevronRight className="w-4 h-4 text-[#6F7B71] group-hover:text-white transition-colors mt-auto" />
+                    <ChevronRight className="w-4 h-4 text-[#6F7B71] group-hover:text-[#F4F7F0] transition-colors mt-auto" />
                   )}
                 </div>
               </div>

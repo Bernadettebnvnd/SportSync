@@ -77,19 +77,41 @@ export default function AuthCallbackPage() {
 
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_logged_out');
+        localStorage.removeItem('sportsync_guest');
+        localStorage.removeItem('sportsync_skipped_onboarding');
         localStorage.setItem('sportsync_user_id', syncResult.user.id);
         localStorage.setItem('sportsync_user_email', syncResult.user.email);
         localStorage.setItem('sportsync_user_role', syncResult.user.role || 'player');
         localStorage.setItem('sportsync_user_name', syncResult.user.full_name || '');
         localStorage.setItem('matchi_user_name', syncResult.user.full_name || '');
 
+        const cleanHandle = (syncResult.user.nickname || (syncResult.user.full_name ? syncResult.user.full_name.split(' ')[0] : '') || syncResult.user.email.split('@')[0] || 'player')
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '') || 'player';
+
         if (!isComplete) {
+          sessionStorage.setItem('sportsync_just_registered', 'true');
           localStorage.setItem('sportsync_pending_onboarding', 'true');
           localStorage.removeItem('matchi_onboarding_completed');
           localStorage.removeItem('sportsync_onboarding_completed');
-          localStorage.removeItem('sportsync_user_profile');
           localStorage.removeItem('sportsync_user_city');
           localStorage.removeItem('sportsync_user_sports');
+
+          const initialProfile = {
+            id: syncResult.user.id,
+            email: syncResult.user.email,
+            name: syncResult.user.full_name || syncResult.user.email.split('@')[0],
+            username: `@${cleanHandle}`,
+            role: syncResult.user.role || 'player',
+            city: syncResult.user.city || 'Naga City',
+            primarySport: syncResult.user.primary_sport || '',
+            preferredSports: Array.isArray(syncResult.user.preferred_sports) ? syncResult.user.preferred_sports : [],
+            skillLevel: syncResult.user.skill_level || '',
+            onboardingCompleted: false,
+            isGuest: false,
+          };
+          localStorage.setItem('sportsync_user_profile', JSON.stringify(initialProfile));
+          localStorage.setItem('sideline_user_profile', JSON.stringify(initialProfile));
         } else {
           sessionStorage.removeItem('sportsync_just_registered');
           localStorage.removeItem('sportsync_pending_onboarding');
@@ -109,21 +131,21 @@ export default function AuthCallbackPage() {
           const rawSkill = syncResult.user.skill_level || 'intermediate';
           const formattedSkill = rawSkill.charAt(0).toUpperCase() + rawSkill.slice(1);
 
-          localStorage.setItem(
-            'sportsync_user_profile',
-            JSON.stringify({
-              id: syncResult.user.id,
-              name: syncResult.user.full_name,
-              username: `@${syncResult.user.nickname || syncResult.user.email.split('@')[0]}`,
-              role: syncResult.user.role || 'player',
-              city: syncResult.user.city || 'Naga City',
-              primarySport: syncResult.user.primary_sport || rawSports[0] || 'football',
-              preferredSports: formattedSports,
-              skillLevel: formattedSkill,
-              onboardingCompleted: true,
-              isGuest: false,
-            })
-          );
+          const fullProfile = {
+            id: syncResult.user.id,
+            email: syncResult.user.email,
+            name: syncResult.user.full_name,
+            username: `@${cleanHandle}`,
+            role: syncResult.user.role || 'player',
+            city: syncResult.user.city || 'Naga City',
+            primarySport: syncResult.user.primary_sport || rawSports[0] || 'football',
+            preferredSports: formattedSports,
+            skillLevel: formattedSkill,
+            onboardingCompleted: true,
+            isGuest: false,
+          };
+          localStorage.setItem('sportsync_user_profile', JSON.stringify(fullProfile));
+          localStorage.setItem('sideline_user_profile', JSON.stringify(fullProfile));
         }
 
         // If running in an OAuth popup window, signal the opener window and close

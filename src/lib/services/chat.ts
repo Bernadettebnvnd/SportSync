@@ -150,6 +150,7 @@ export async function fetchGameMessages(
       avatarId: resolvedAvatar,
       text: row.message_text,
       time: formatMessageTime(row.created_at),
+      createdAt: row.created_at,
       isHost: isSenderHost,
     });
   }
@@ -244,10 +245,15 @@ export async function sendGameMessage(params: SendGameMessageParams): Promise<Ch
 }
 
 const activeChatChannels = new Map<string, any>();
+const chatChannelEntries = new Map<
+  string,
+  { channel: any; listeners: Set<(msg: ChatMessage) => void>; altId?: string }
+>();
 
 /**
  * Subscribe to real-time chat messages for a specific game.
- * Uses both Postgres changes and Supabase broadcast for low-latency delivery.
+ * Multiplexes mounted listeners per canonical game ID so all peers share the exact
+ * `game-chat-${canonicalId}` broadcast topic without channel collisions.
  */
 export function subscribeToGameChat(
   gameId: string,
@@ -256,82 +262,112 @@ export function subscribeToGameChat(
   onNewMessage: (msg: ChatMessage) => void
 ): () => void {
   const supabase = getSupabaseClient();
-  const canonicalId = alternateId || gameId;
+  const canonicalId = gameId || alternateId || '';
   if (!supabase || !isSupabaseConfigured || !canonicalId) {
     return () => {};
   }
 
-  const subId = Math.random().toString(36).substring(2, 8);
-  const channelName = `game-chat-${canonicalId}-${subId}`;
-  const channel = supabase.channel(channelName);
+  const secondaryId = alternateId && alternateId !== canonicalId ? alternateId : undefined;
+  let entry = chatChannelEntries.get(canonicalId);
 
-  const processIncomingRow = (row: any) => {
-    if (!row || !row.id || !row.message_text) return;
+  if (!entry) {
+    const channelName = `game-chat-${canonicalId}`;
+    const channel = supabase.channel(channelName);
+    const listeners = new Set<(msg: ChatMessage) => void>();
+    entry = { channel, listeners, altId: secondaryId };
+    chatChannelEntries.set(canonicalId, entry);
 
-    const senderName = row.sender_name || 'Player';
-    const isSenderHost = Boolean(
-      (hostInfo?.hostId && row.sender_id && hostInfo.hostId === row.sender_id) ||
-      (hostInfo?.hostName && senderName.trim().toLowerCase() === hostInfo.hostName.trim().toLowerCase())
-    );
-
-    const msg: ChatMessage = {
-      id: row.id,
-      senderId: row.sender_id,
-      senderName: isSenderHost && hostInfo?.hostName ? hostInfo.hostName : senderName,
-      avatarId: (row.sender_avatar as AvatarId) || 'alex',
-      text: row.message_text,
-      time: formatMessageTime(row.created_at),
-      isHost: isSenderHost,
+    const dispatchMessage = (msg: ChatMessage) => {
+      entry?.listeners.forEach((cb) => {
+        try {
+          cb(msg);
+        } catch {}
+      });
     };
-    onNewMessage(msg);
-  };
 
-  channel
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'game_chat_messages',
-        filter: `game_id=eq.${canonicalId}`,
-      },
-      (payload) => {
-        processIncomingRow(payload.new);
-      }
-    )
-    .on('broadcast', { event: 'new_message' }, (payload) => {
-      const data = payload?.payload;
-      if (data && data.id && data.text) {
-        onNewMessage(data);
+    const processIncomingRow = (row: any) => {
+      if (!row || !row.id || !row.message_text) return;
+
+      const senderName = row.sender_name || 'Player';
+      const isSenderHost = Boolean(
+        (hostInfo?.hostId && row.sender_id && hostInfo.hostId === row.sender_id) ||
+        (hostInfo?.hostName && senderName.trim().toLowerCase() === hostInfo.hostName.trim().toLowerCase())
+      );
+
+      const msg: ChatMessage = {
+        id: row.id,
+        senderId: row.sender_id,
+        senderName: isSenderHost && hostInfo?.hostName ? hostInfo.hostName : senderName,
+        avatarId: (row.sender_avatar as AvatarId) || 'alex',
+        text: row.message_text,
+        time: formatMessageTime(row.created_at),
+        createdAt: row.created_at,
+        isHost: isSenderHost,
+      };
+      dispatchMessage(msg);
+    };
+
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'game_chat_messages',
+          filter: `game_id=eq.${canonicalId}`,
+        },
+        (payload) => {
+          processIncomingRow(payload.new);
+        }
+      )
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        const data = payload?.payload;
+        if (data && data.id && data.text) {
+          dispatchMessage(data);
+        }
+      });
+
+    if (secondaryId) {
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'game_chat_messages',
+          filter: `game_id=eq.${secondaryId}`,
+        },
+        (payload) => {
+          processIncomingRow(payload.new);
+        }
+      );
+    }
+
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        activeChatChannels.set(canonicalId, channel);
+        if (secondaryId) {
+          activeChatChannels.set(secondaryId, channel);
+        }
       }
     });
-
-  if (gameId && gameId !== canonicalId) {
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'game_chat_messages',
-        filter: `game_id=eq.${gameId}`,
-      },
-      (payload) => {
-        processIncomingRow(payload.new);
-      }
-    );
   }
 
-  channel.subscribe((status) => {
-    if (status === 'SUBSCRIBED') {
-      activeChatChannels.set(canonicalId, channel);
-    }
-  });
+  entry.listeners.add(onNewMessage);
 
   return () => {
-    activeChatChannels.delete(canonicalId);
-    try {
-      supabase.removeChannel(channel);
-    } catch {}
+    const currentEntry = chatChannelEntries.get(canonicalId);
+    if (!currentEntry) return;
+    currentEntry.listeners.delete(onNewMessage);
+    if (currentEntry.listeners.size === 0) {
+      chatChannelEntries.delete(canonicalId);
+      activeChatChannels.delete(canonicalId);
+      if (currentEntry.altId) {
+        activeChatChannels.delete(currentEntry.altId);
+      }
+      try {
+        supabase.removeChannel(currentEntry.channel);
+      } catch {}
+    }
   };
 }
 

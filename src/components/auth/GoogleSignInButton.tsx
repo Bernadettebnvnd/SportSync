@@ -79,11 +79,39 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
 
       if (typeof window !== 'undefined') {
         localStorage.removeItem('sportsync_logged_out');
+        localStorage.removeItem('sportsync_guest');
+        localStorage.removeItem('sportsync_skipped_onboarding');
         localStorage.setItem('sportsync_user_id', String(user.id || ''));
         localStorage.setItem('sportsync_user_email', String(user.email || ''));
-        localStorage.setItem('sportsync_user_role', String(user.role || 'player'));
+        localStorage.setItem('sportsync_user_role', resolvedRole);
         localStorage.setItem('sportsync_user_name', String(user.full_name || ''));
         localStorage.setItem('matchi_user_name', String(user.full_name || ''));
+
+        const userEmail = String(user.email || '');
+        const userName = String(user.full_name || userEmail.split('@')[0] || 'Player');
+        const cleanHandle = (String(user.nickname || userName.split(' ')[0] || userEmail.split('@')[0] || 'player'))
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '') || 'player';
+        const rawSports = Array.isArray(user.preferred_sports) ? (user.preferred_sports as string[]) : [];
+        const formattedSports = rawSports.map((s) => s.charAt(0).toUpperCase() + s.slice(1));
+        const rawSkill = typeof user.skill_level === 'string' ? user.skill_level : '';
+        const formattedSkill = rawSkill ? rawSkill.charAt(0).toUpperCase() + rawSkill.slice(1) : '';
+
+        const syncedProfile = {
+          id: String(user.id || ''),
+          email: userEmail,
+          name: userName,
+          username: `@${cleanHandle}`,
+          role: resolvedRole,
+          city: String(user.city || 'Naga City'),
+          primarySport: String(user.primary_sport || rawSports[0] || (isCompleteUser ? 'football' : '')),
+          preferredSports: formattedSports.length > 0 ? formattedSports : (isCompleteUser ? ['Football'] : []),
+          skillLevel: formattedSkill || (isCompleteUser ? 'Intermediate' : ''),
+          onboardingCompleted: isCompleteUser,
+          isGuest: false,
+        };
+        localStorage.setItem('sportsync_user_profile', JSON.stringify(syncedProfile));
+        localStorage.setItem('sideline_user_profile', JSON.stringify(syncedProfile));
 
         if (isCompleteUser) {
           sessionStorage.removeItem('sportsync_just_registered');
@@ -91,6 +119,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_onboarding_completed', 'true');
         } else {
+          sessionStorage.setItem('sportsync_just_registered', 'true');
           localStorage.setItem('sportsync_pending_onboarding', 'true');
           localStorage.removeItem('matchi_onboarding_completed');
           localStorage.removeItem('sportsync_onboarding_completed');

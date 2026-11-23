@@ -9,6 +9,7 @@ export interface ChatMessage {
   avatarId: AvatarId;
   text: string;
   time: string;
+  createdAt?: string;
   isMe?: boolean;
   isHost?: boolean;
 }

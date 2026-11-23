@@ -188,19 +188,59 @@ function formatSessionDateTime(startTime?: string): { date: string; time: string
   }
 }
 
-function getAuthenticatedUserFromRequest(req: NextRequest): { sub: string; email: string; role?: string } | null {
+async function getAuthenticatedUserFromRequest(req: NextRequest): Promise<{ sub: string; email: string; role?: string } | null> {
   const tokenCookie = req.cookies.get('sportsync-auth-token')?.value || req.cookies.get('sb-access-token')?.value;
   const authHeader = req.headers.get('authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-  const token = tokenCookie || bearerToken;
+  let token = tokenCookie || bearerToken;
+
+  if (!token) {
+    for (const cookie of req.cookies.getAll()) {
+      if (cookie.name.includes('-auth-token')) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(cookie.value));
+          if (Array.isArray(parsed) && parsed[0]) {
+            token = parsed[0];
+            break;
+          } else if (parsed?.access_token) {
+            token = parsed.access_token;
+            break;
+          }
+        } catch {
+          if (cookie.value && cookie.value.length > 20) {
+            token = cookie.value;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   if (!token) return null;
   const verified = verifySessionToken(token);
-  if (!verified || !verified.userId) return null;
-  return {
-    sub: verified.userId,
-    email: verified.email || '',
-    role: verified.role,
-  };
+  if (verified && verified.userId) {
+    return {
+      sub: verified.userId,
+      email: verified.email || '',
+      role: verified.role,
+    };
+  }
+
+  if (isSupabaseConfigured) {
+    const sb = createServerClient(token);
+    if (sb) {
+      const { data } = await sb.auth.getUser();
+      if (data?.user?.id) {
+        return {
+          sub: data.user.id,
+          email: data.user.email || '',
+          role: (data.user.user_metadata?.role as string) || 'player',
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -209,13 +249,11 @@ function getAuthenticatedUserFromRequest(req: NextRequest): { sub: string; email
  */
 async function resolveCanonicalHostUserId(
   supabase: NonNullable<ReturnType<typeof getSupabase>>,
-  authUser: { sub: string; email: string; role?: string } | null,
-  gameHostId?: string,
+  authUser: { sub: string; email: string; role?: string },
   gameHostName?: string
 ): Promise<string | null> {
   const candidateIds = [
-    isValidUuid(gameHostId) ? gameHostId.trim() : null,
-    isValidUuid(authUser?.sub) ? authUser!.sub.trim() : null,
+    isValidUuid(authUser.sub) ? authUser.sub.trim() : null,
   ].filter((id): id is string => Boolean(id));
 
   // 1. Check public.users by id or auth_id
@@ -302,20 +340,6 @@ async function resolveCanonicalHostUserId(
       if (upserted?.id) {
         return upserted.id;
       }
-    }
-  }
-
-  // 4. Fallback lookup by host name if provided
-  if (gameHostName && gameHostName.trim()) {
-    const { data: byName } = await supabase
-      .from('users')
-      .select('id')
-      .ilike('full_name', gameHostName.trim())
-      .limit(1)
-      .maybeSingle();
-
-    if (byName?.id) {
-      return byName.id;
     }
   }
 
@@ -432,7 +456,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Touch request auth cookie for verification awareness
-    getAuthenticatedUserFromRequest(req);
+    await getAuthenticatedUserFromRequest(req);
 
     const { data: sessions, error } = await supabase
       .from('sessions')
@@ -714,7 +738,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const authUser = getAuthenticatedUserFromRequest(req);
+    const authUser = await getAuthenticatedUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required.' },
+        { status: 401 }
+      );
+    }
 
     if (action === 'create_game') {
       const inviteCode = (game.inviteCode || Math.random().toString(36).substring(2, 8))
@@ -725,7 +755,6 @@ export async function POST(req: NextRequest) {
       const hostUserId = await resolveCanonicalHostUserId(
         supabase,
         authUser,
-        game.hostId,
         game.hostName
       );
 

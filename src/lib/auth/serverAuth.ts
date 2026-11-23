@@ -1133,6 +1133,28 @@ export async function serverSyncGoogleIdTokenUser(data: {
   }
 
   const tokenInfo = await resp.json();
+  const validIssuers = ['accounts.google.com', 'https://accounts.google.com'];
+  if (tokenInfo.iss && !validIssuers.includes(String(tokenInfo.iss))) {
+    throw new Error('Invalid Google authentication token issuer.');
+  }
+
+  const expectedGoogleClientId = (
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID ||
+    ''
+  )
+    .split(/[\r\n]|\\n/)[0]
+    .split('#')[0]
+    .replace(/^["']|["']$/g, '')
+    .trim();
+
+  if (!expectedGoogleClientId || expectedGoogleClientId === 'placeholder') {
+    throw new Error('Server configuration error: Google Client ID is not configured.');
+  }
+  if (tokenInfo.aud !== expectedGoogleClientId) {
+    throw new Error('Google authentication token audience mismatch.');
+  }
+
   const normalizedEmail = (tokenInfo.email || '').trim().toLowerCase();
   if (!normalizedEmail || (tokenInfo.email_verified !== 'true' && tokenInfo.email_verified !== true)) {
     throw new Error('Google account email is not verified.');

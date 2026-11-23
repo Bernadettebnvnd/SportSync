@@ -15,34 +15,17 @@ import { serverSyncGoogleIdTokenUser } from '@/lib/auth/serverAuth';
 export async function GET(request: Request) {
   try {
     const { searchParams, origin } = new URL(request.url);
+    const requestedOrigin = searchParams.get('origin');
+    const safeOrigin =
+      requestedOrigin && (requestedOrigin === origin || /^https?:\/\/localhost(?::\d+)?$/i.test(requestedOrigin))
+        ? requestedOrigin
+        : origin;
     const intendedRole = searchParams.get('intended_role') || searchParams.get('role') || '';
     const callbackUrl =
       searchParams.get('callback_url') ||
-      `${origin}/auth/callback${intendedRole ? `?intended_role=${encodeURIComponent(intendedRole)}` : ''}`;
+      `${safeOrigin}/auth/callback${intendedRole ? `?intended_role=${encodeURIComponent(intendedRole)}` : ''}`;
 
-    const googleClientId = cleanEnvString(
-      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID
-    );
-
-    // 1. If direct Google Client ID is configured, return official Google OAuth URL
-    if (googleClientId && googleClientId !== 'placeholder') {
-      const directGoogleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
-        googleClientId
-      )}&redirect_uri=${encodeURIComponent(
-        callbackUrl
-      )}&response_type=code&scope=${encodeURIComponent(
-        'openid email profile'
-      )}&access_type=offline&prompt=consent`;
-
-      return NextResponse.json({
-        ok: true,
-        strategy: 'direct_google',
-        clientId: googleClientId,
-        authUrl: directGoogleOAuthUrl,
-      });
-    }
-
-    // 2. If Supabase is configured, probe Supabase /auth/v1/authorize
+    // 1. Prioritize Supabase OAuth when Supabase is configured (matches /auth/callback PKCE & implicit session handling)
     const supabaseUrl = cleanEnvString(process.env.NEXT_PUBLIC_SUPABASE_URL);
     if (isSupabaseConfigured && supabaseUrl) {
       const supabaseAuthEndpoint = `${supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(
@@ -96,7 +79,7 @@ export async function GET(request: Request) {
             '4. Paste your Google Client ID and Google Client Secret into Supabase and click Save',
           ],
         });
-      } catch (probeErr: unknown) {
+      } catch {
         // Fallback: Return standard Supabase authorize endpoint if probe couldn't reach
         return NextResponse.json({
           ok: true,
@@ -104,6 +87,28 @@ export async function GET(request: Request) {
           authUrl: supabaseAuthEndpoint,
         });
       }
+    }
+
+    const googleClientId = cleanEnvString(
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID
+    );
+
+    // 2. Fallback: If Supabase is not configured and direct Google Client ID is set, use GIS / Google OAuth
+    if (googleClientId && googleClientId !== 'placeholder') {
+      const directGoogleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
+        googleClientId
+      )}&redirect_uri=${encodeURIComponent(
+        callbackUrl
+      )}&response_type=code&scope=${encodeURIComponent(
+        'openid email profile'
+      )}&access_type=offline&prompt=consent`;
+
+      return NextResponse.json({
+        ok: true,
+        strategy: 'direct_google',
+        clientId: googleClientId,
+        authUrl: directGoogleOAuthUrl,
+      });
     }
 
     return NextResponse.json({

@@ -73,7 +73,7 @@ interface AppState {
 }
 
 let globalState: AppState = {
-  currentUser: GUEST_USER,
+  currentUser: { ...GUEST_USER },
   venues: [],
   courts: [],
   sessions: [],
@@ -112,6 +112,7 @@ async function initializeStore() {
     if (isExplicitlyLoggedOut) {
       globalState.currentUser = { ...GUEST_USER };
     } else if (typeof window !== 'undefined') {
+      globalState.currentUser = { ...GUEST_USER };
       const hasPendingOnboarding = localStorage.getItem('sportsync_pending_onboarding') === 'true';
       const storedCompleted = !hasPendingOnboarding && (
         localStorage.getItem('matchi_onboarding_completed') === 'true' ||
@@ -339,7 +340,7 @@ function setupGlobalAuthListener() {
           notify();
         }
       } else if (_event === 'SIGNED_OUT') {
-        globalState.currentUser = GUEST_USER;
+        globalState.currentUser = { ...GUEST_USER };
         globalState.bookings = [];
         notify();
       }

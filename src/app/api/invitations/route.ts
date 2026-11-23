@@ -32,86 +32,53 @@ function getDbClient() {
   return createServerClient();
 }
 
-async function authenticateRequest(
-  req: NextRequest,
-  participantData?: any
-): Promise<SanitizedUser | null> {
+async function authenticateRequest(req: NextRequest): Promise<SanitizedUser | null> {
   const tokenCookie =
     req.cookies.get('sportsync-auth-token')?.value ||
     req.cookies.get('sb-access-token')?.value;
   const authHeader = req.headers.get('authorization');
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-  const token = tokenCookie || bearerToken;
-  if (token) {
-    const verified = verifySessionToken(token);
-    if (verified) {
-      const user = await serverGetUser(verified.userId);
-      if (user) return user;
-    }
+  let token = tokenCookie || bearerToken;
 
-    if (isSupabaseConfigured) {
-      const sb = createServerClient(token);
-      if (sb) {
-        const { data } = await sb.auth.getUser();
-        if (data?.user?.id) {
-          const user = await serverGetUser(data.user.id);
-          if (user) return user;
+  if (!token) {
+    for (const cookie of req.cookies.getAll()) {
+      if (cookie.name.includes('-auth-token')) {
+        try {
+          const parsed = JSON.parse(decodeURIComponent(cookie.value));
+          if (Array.isArray(parsed) && parsed[0]) {
+            token = parsed[0];
+            break;
+          } else if (parsed?.access_token) {
+            token = parsed.access_token;
+            break;
+          }
+        } catch {
+          if (cookie.value && cookie.value.length > 20) {
+            token = cookie.value;
+            break;
+          }
         }
       }
     }
   }
 
-  const pId = typeof participantData === 'string' ? participantData : participantData?.id;
-  const pEmail = typeof participantData === 'object' ? participantData?.email : undefined;
-  const pName = typeof participantData === 'object' ? participantData?.name : undefined;
-  const pAvatar = typeof participantData === 'object' ? participantData?.avatar : undefined;
+  if (!token) return null;
 
-  const candidateIds = [pEmail, pId].filter(Boolean) as string[];
-  for (const cand of candidateIds) {
-    const trimmed = cand.trim();
-    if (UUID_REGEX.test(trimmed) || trimmed.includes('@')) {
-      const user = await serverGetUser(trimmed);
-      if (user) return user;
-    }
+  const verified = verifySessionToken(token);
+  if (verified) {
+    const user = await serverGetUser(verified.userId);
+    if (user) return user;
   }
 
-  // If user provides a participant name or ID, guarantee a valid public.users row so join always succeeds
-  if (pName || pEmail || pId) {
-    const displayName = (pName || 'SportSync Player').trim();
-    const email = (pEmail || (pId && pId.includes('@') ? pId : `player_${Date.now()}@sportsync.ph`)).trim().toLowerCase();
-    const cleanId = (pId && UUID_REGEX.test(pId)) ? pId : crypto.randomUUID();
-
-    const db = getDbClient();
-    if (db) {
-      try {
-        await db.from('users').upsert(
-          {
-            id: cleanId,
-            auth_id: cleanId,
-            email,
-            full_name: displayName,
-            nickname: displayName.split(' ')[0],
-            role: 'player',
-            avatar_url: pAvatar || 'alex',
-            onboarding_completed: true,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' }
-        );
-      } catch {}
+  if (isSupabaseConfigured) {
+    const sb = createServerClient(token);
+    if (sb) {
+      const { data } = await sb.auth.getUser();
+      if (data?.user?.id) {
+        const user = await serverGetUser(data.user.id);
+        if (user) return user;
+      }
     }
-
-    return {
-      id: cleanId,
-      auth_id: cleanId,
-      email,
-      full_name: displayName,
-      nickname: displayName.split(' ')[0],
-      avatar_url: pAvatar || 'alex',
-      role: 'player',
-      onboarding_completed: true,
-      created_at: new Date().toISOString(),
-    };
   }
 
   return null;
@@ -650,10 +617,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const authUser = await authenticateRequest(
-      req,
-      body?.participant || body?.participant?.id || body?.participant?.email || body?.hostId || body?.userId
-    );
+    const authUser = await authenticateRequest(req);
     if (!authUser) {
       return NextResponse.json(
         { success: false, error: 'Authentication required.' },
@@ -795,11 +759,36 @@ export async function POST(req: NextRequest) {
       const inviteCode = (game.inviteCode || Math.random().toString(36).substring(2, 8)).trim().toUpperCase();
 
       const venueLocationName = (game.locationName || game.locationDetails || 'Naga Sports Venue').trim();
-      const venueLocationDetails = (game.locationDetails || game.locationName || venueLocationName).trim();
       const coordinates = game.coordinates || [13.6218, 123.1948];
 
+      // Resolve a valid venue_id so sessions.venue_id NOT NULL constraint never fails
+      let resolvedVenueId: string | null = null;
+      try {
+        const requestedVenueId = (game as any).venueId || (game as any).venue_id;
+        if (requestedVenueId && UUID_REGEX.test(String(requestedVenueId).trim())) {
+          const { data: exactVenue } = await supabase
+            .from('venues')
+            .select('id')
+            .eq('id', String(requestedVenueId).trim())
+            .maybeSingle();
+          if (exactVenue?.id) resolvedVenueId = exactVenue.id;
+        }
+        if (!resolvedVenueId) {
+          const { data: sysVenue } = await supabase
+            .from('venues')
+            .select('id')
+            .eq('slug', 'community-open-court-naga')
+            .maybeSingle();
+          if (sysVenue?.id) resolvedVenueId = sysVenue.id;
+        }
+        if (!resolvedVenueId) {
+          const { data: anyVenue } = await supabase.from('venues').select('id').limit(1).maybeSingle();
+          if (anyVenue?.id) resolvedVenueId = anyVenue.id;
+        }
+      } catch {}
+
       const sessionPayload: Record<string, any> = {
-        venue_id: null,
+        venue_id: resolvedVenueId,
         host_id: (game.hostId && UUID_REGEX.test(game.hostId)) ? game.hostId : authUser.id,
         title: game.title || 'Community Match',
         description: `${game.notes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${game.hostName || authUser.full_name}] [LOCATION:${venueLocationName}] [COORDS:${JSON.stringify(coordinates)}]`,

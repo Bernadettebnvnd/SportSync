@@ -58,7 +58,14 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
   isGuest = false,
 }) => {
   const { currentUser } = useMatchiStore();
-  const effectiveIsGuest = isGuest || !currentUser.id || !currentUser.email;
+  const hasStoredSession =
+    typeof window !== 'undefined' &&
+    localStorage.getItem('sportsync_logged_out') !== 'true' &&
+    Boolean(
+      (localStorage.getItem('sportsync_user_id') && localStorage.getItem('sportsync_user_id') !== 'usr_guest_01') ||
+      localStorage.getItem('sportsync_user_email')
+    );
+  const effectiveIsGuest = isGuest || (!hasStoredSession && (!currentUser.id || !currentUser.email));
 
   const [activeTab, setActiveTab] = useState<'live' | 'results' | 'score'>('live');
   const [matches, setMatches] = useState<LocalMatchScore[]>(() => {
@@ -343,7 +350,7 @@ export const LiveScoresHubScreen: React.FC<LiveScoresHubScreenProps> = ({
                     No live matches right now
                   </h4>
                   <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto">
-                    You haven't joined a live game yet. Check into a scheduled game on the Play feed to track live scores in real time.
+                    You haven&apos;t joined a live game yet. Check into a scheduled game on the Play feed to track live scores in real time.
                   </p>
                 </div>
                 {onNavigateToPlay && (
