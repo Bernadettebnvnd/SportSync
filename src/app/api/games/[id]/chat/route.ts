@@ -10,23 +10,102 @@ function isUuid(val?: unknown): boolean {
   return typeof val === 'string' && UUID_REGEX.test(val.trim());
 }
 
-function isTableMissingError(err?: { code?: string; message?: string } | null): boolean {
+type ChatDbErrorCategory =
+  | 'table_missing'
+  | 'column_missing'
+  | 'rls_denied'
+  | 'fk_violation'
+  | 'db_error';
+
+interface PostgrestErrorLike {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
+function isTableMissingError(err?: PostgrestErrorLike | null): boolean {
   if (!err) return false;
   const msg = (err.message || '').toLowerCase();
-  const code = err.code || '';
+  const code = (err.code || '').trim();
   return (
     code === 'PGRST205' ||
     code === '42P01' ||
-    msg.includes('schema cache') ||
-    msg.includes('relation "public.game_chat_messages" does not exist') ||
     msg.includes('could not find the table') ||
-    msg.includes('game_chat_messages')
+    msg.includes('relation "public.game_chat_messages" does not exist') ||
+    msg.includes('relation "game_chat_messages" does not exist')
   );
+}
+
+function classifyChatDbError(err?: PostgrestErrorLike | null): {
+  category: ChatDbErrorCategory;
+  status: number;
+  code: string;
+  userMessage: string;
+  detail: string;
+} {
+  const code = (err?.code || 'UNKNOWN').trim();
+  const msg = (err?.message || '').trim();
+  const low = msg.toLowerCase();
+
+  if (isTableMissingError(err)) {
+    return {
+      category: 'table_missing',
+      status: 503,
+      code,
+      userMessage:
+        `Chat persistence table is missing in Supabase (${code}). Run migration 20261126_ensure_game_chat_messages.sql in Supabase SQL Editor.`,
+      detail: msg || 'public.game_chat_messages table was not found in PostgREST schema cache.',
+    };
+  }
+
+  if (code === 'PGRST204' || code === '42703' || (low.includes('column') && (low.includes('does not exist') || low.includes('schema cache')))) {
+    return {
+      category: 'column_missing',
+      status: 500,
+      code,
+      userMessage: `Chat table schema is out of date (${code}). Run migration 20261126_ensure_game_chat_messages.sql.`,
+      detail: msg,
+    };
+  }
+
+  if (code === '42501' || low.includes('row-level security') || low.includes('permission denied')) {
+    return {
+      category: 'rls_denied',
+      status: 500,
+      code,
+      userMessage: `Chat write was blocked by database permissions/RLS (${code}). Run migration 20261126_ensure_game_chat_messages.sql or check SUPABASE_SERVICE_ROLE_KEY.`,
+      detail: msg,
+    };
+  }
+
+  if (code === '23503' || low.includes('foreign key constraint')) {
+    return {
+      category: 'fk_violation',
+      status: 500,
+      code,
+      userMessage: `Chat sender profile link failed (${code}). Please retry sending your message.`,
+      detail: msg,
+    };
+  }
+
+  return {
+    category: 'db_error',
+    status: 500,
+    code,
+    userMessage: msg ? `Could not save message (${code}): ${msg}` : `Failed to persist chat message (${code}).`,
+    detail: msg || 'Unexpected database error.',
+  };
+}
+
+interface AuthenticatedChatContext {
+  user: SanitizedUser;
+  supabaseJwt?: string;
 }
 
 async function authenticateRequest(
   request: NextRequest
-): Promise<SanitizedUser | null> {
+): Promise<AuthenticatedChatContext | null> {
   const tokenCookie =
     request.cookies.get('sportsync-auth-token')?.value ||
     request.cookies.get('sb-access-token')?.value;
@@ -35,22 +114,30 @@ async function authenticateRequest(
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
   let token = tokenCookie || bearerToken;
 
-  // Check any sb-*-auth-token cookie if token not yet found
-  if (!token) {
+  // Prefer Bearer token for Supabase JWT pass-through if available
+  let supabaseJwt: string | undefined =
+    bearerToken && bearerToken.split('.').length === 3 ? bearerToken : undefined;
+
+  // Check any sb-*-auth-token cookie if token or Supabase JWT not yet found
+  if (!token || !supabaseJwt) {
     for (const cookie of request.cookies.getAll()) {
       if (cookie.name.includes('-auth-token')) {
         try {
           const parsed = JSON.parse(decodeURIComponent(cookie.value));
-          if (Array.isArray(parsed) && parsed[0]) {
-            token = parsed[0];
-            break;
-          } else if (parsed?.access_token) {
-            token = parsed.access_token;
+          const candidate = Array.isArray(parsed) ? parsed[0] : parsed?.access_token;
+          if (typeof candidate === 'string' && candidate.length > 20) {
+            if (!token) token = candidate;
+            if (!supabaseJwt && candidate.split('.').length === 3) {
+              supabaseJwt = candidate;
+            }
             break;
           }
         } catch {
           if (cookie.value && cookie.value.length > 20) {
-            token = cookie.value;
+            if (!token) token = cookie.value;
+            if (!supabaseJwt && cookie.value.split('.').length === 3) {
+              supabaseJwt = cookie.value;
+            }
             break;
           }
         }
@@ -65,29 +152,33 @@ async function authenticateRequest(
   const verified = verifySessionToken(token);
   if (verified) {
     const user = await serverGetUser(verified.userId);
-    if (user) return user;
+    if (user) return { user, supabaseJwt };
   }
 
   if (isSupabaseConfigured) {
-    const sb = createServerClient(token);
+    const jwtToVerify = supabaseJwt || token;
+    const sb = createServerClient(jwtToVerify);
     if (sb) {
-      const { data, error } = await sb.auth.getUser(token);
+      const { data, error } = await sb.auth.getUser(jwtToVerify);
       if (!error && data?.user?.id) {
         const user = await serverGetUser(data.user.id);
-        if (user) return user;
+        if (user) return { user, supabaseJwt: jwtToVerify };
 
         const meta = data.user.user_metadata || {};
         const fullName = meta.full_name || meta.name || data.user.email?.split('@')[0] || 'Player';
         return {
-          id: data.user.id,
-          auth_id: data.user.id,
-          email: data.user.email || '',
-          full_name: fullName,
-          nickname: meta.nickname || fullName.split(' ')[0] || 'Player',
-          avatar_url: meta.avatar_url || 'alex',
-          role: 'player',
-          onboarding_completed: true,
-          created_at: data.user.created_at || new Date().toISOString(),
+          user: {
+            id: data.user.id,
+            auth_id: data.user.id,
+            email: data.user.email || '',
+            full_name: fullName,
+            nickname: meta.nickname || fullName.split(' ')[0] || 'Player',
+            avatar_url: meta.avatar_url || 'alex',
+            role: 'player',
+            onboarding_completed: true,
+            created_at: data.user.created_at || new Date().toISOString(),
+          },
+          supabaseJwt: jwtToVerify,
         };
       }
     }
@@ -233,16 +324,18 @@ export async function GET(
       return NextResponse.json({ error: 'Game ID is required.' }, { status: 400 });
     }
 
-    const authUser = await authenticateRequest(request);
-    if (!authUser) {
+    const authCtx = await authenticateRequest(request);
+    if (!authCtx) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
+    const { user: authUser, supabaseJwt } = authCtx;
 
     if (!isSupabaseConfigured) {
       return NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 });
     }
 
-    const supabase = createAdminClient() || createServerClient();
+    const adminClient = createAdminClient();
+    const supabase = adminClient || createServerClient(supabaseJwt);
     if (!supabase) {
       return NextResponse.json(
         { error: 'Database client is not available.' },
@@ -274,14 +367,24 @@ export async function GET(
 
     let rows: any[] = [];
     if (error) {
-      console.error('[API/Chat GET] Failed to query messages:', error);
+      const diag = classifyChatDbError(error);
+      console.error('[API/Chat GET] Failed to query messages:', {
+        category: diag.category,
+        code: diag.code,
+        message: error.message,
+        hint: error.hint,
+        usingAdminClient: Boolean(adminClient),
+        hasUserJwt: Boolean(supabaseJwt),
+        canonicalGameId,
+      });
       return NextResponse.json(
         {
-          error: isTableMissingError(error)
-            ? 'Match chat table is unavailable. Please run the game_chat_messages Supabase migration.'
-            : error.message,
+          error: diag.userMessage,
+          code: diag.code,
+          category: diag.category,
+          detail: diag.detail,
         },
-        { status: isTableMissingError(error) ? 503 : 500 }
+        { status: diag.status }
       );
     } else {
       rows = Array.isArray(data) ? [...data] : [];
@@ -348,16 +451,18 @@ export async function POST(
     }
 
     // 1. Authenticate strictly via verified session cookie or Bearer token
-    const authUser = await authenticateRequest(request);
-    if (!authUser) {
+    const authCtx = await authenticateRequest(request);
+    if (!authCtx) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
     }
+    const { user: authUser, supabaseJwt } = authCtx;
 
     if (!isSupabaseConfigured) {
       return NextResponse.json({ error: 'Supabase is not configured.' }, { status: 500 });
     }
 
-    const supabase = createAdminClient() || createServerClient();
+    const adminClient = createAdminClient();
+    const supabase = adminClient || createServerClient(supabaseJwt);
     if (!supabase) {
       return NextResponse.json(
         { error: 'Database client is not available.' },
@@ -385,11 +490,43 @@ export async function POST(
     const messageId = id && isUuid(id) ? id : crypto.randomUUID();
     const canonicalGameId = session.id;
 
-    // 3. Upsert user into public.users if valid UUID so foreign key constraint sender_id_fkey never fails
+    // 3. Resolve a verified canonical public.users.id so sender_id FK never fails
     let validSenderUuid: string | null = null;
-    if (isUuid(authUser.id)) {
-      try {
-        await supabase.from('users').upsert(
+    const candidateUserIds = Array.from(
+      new Set([authUser.id, authUser.auth_id].filter((uid): uid is string => isUuid(uid)))
+    );
+
+    if (candidateUserIds.length > 0) {
+      const orFilter = candidateUserIds.map((uid) => `id.eq.${uid},auth_id.eq.${uid}`).join(',');
+      const { data: existingById } = await supabase
+        .from('users')
+        .select('id')
+        .or(orFilter)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingById?.id) {
+        validSenderUuid = existingById.id;
+      }
+    }
+
+    if (!validSenderUuid && authUser.email) {
+      const { data: existingByEmail } = await supabase
+        .from('users')
+        .select('id')
+        .ilike('email', authUser.email.trim().toLowerCase())
+        .limit(1)
+        .maybeSingle();
+
+      if (existingByEmail?.id) {
+        validSenderUuid = existingByEmail.id;
+      }
+    }
+
+    if (!validSenderUuid && isUuid(authUser.id)) {
+      const { data: upsertedUser, error: upsertUserErr } = await supabase
+        .from('users')
+        .upsert(
           {
             id: authUser.id,
             auth_id: authUser.auth_id || authUser.id,
@@ -400,48 +537,86 @@ export async function POST(
             updated_at: resolvedTime,
           },
           { onConflict: 'id' }
-        );
-        validSenderUuid = authUser.id;
-      } catch {
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', authUser.id)
-          .maybeSingle();
-        if (existingUser?.id) {
-          validSenderUuid = existingUser.id;
-        }
+        )
+        .select('id')
+        .maybeSingle();
+
+      if (upsertedUser?.id) {
+        validSenderUuid = upsertedUser.id;
+      } else if (upsertUserErr) {
+        console.warn('[API/Chat POST] Could not upsert sender in public.users; storing message with nullable sender_id:', {
+          code: upsertUserErr.code,
+          message: upsertUserErr.message,
+        });
       }
     }
 
-    // 4. Insert message into public.game_chat_messages
-    let insertedRow: any = null;
-    const { data: inserted, error } = await supabase
+    // 4. Insert message into public.game_chat_messages (with safe fallback if sender_id FK rejects)
+    const insertPayload: Record<string, any> = {
+      id: messageId,
+      game_id: canonicalGameId,
+      sender_id: validSenderUuid,
+      sender_name: resolvedName,
+      sender_avatar: resolvedAvatar,
+      message_text: text.trim(),
+      created_at: resolvedTime,
+    };
+
+    let { data: inserted, error } = await supabase
       .from('game_chat_messages')
-      .insert({
-        id: messageId,
-        game_id: canonicalGameId,
-        sender_id: validSenderUuid,
-        sender_name: resolvedName,
-        sender_avatar: resolvedAvatar,
-        message_text: text.trim(),
-        created_at: resolvedTime,
-      })
+      .insert(insertPayload)
       .select('*')
       .single();
 
+    // If sender_id FK fails (e.g., stale user id), retry once with sender_id = null (sender_name is still stored)
+    if (error && (error.code === '23503' || error.message?.toLowerCase().includes('foreign key')) && insertPayload.sender_id !== null) {
+      console.warn('[API/Chat POST] Retrying chat insert with sender_id=null after FK rejection:', error.message);
+      insertPayload.sender_id = null;
+      const retryFk = await supabase
+        .from('game_chat_messages')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+      inserted = retryFk.data;
+      error = retryFk.error;
+    }
+
+    // If optional sender_avatar column is missing in an older schema, retry without it
+    if (error && (error.code === 'PGRST204' || error.code === '42703') && error.message?.toLowerCase().includes('sender_avatar')) {
+      delete insertPayload.sender_avatar;
+      const retryCol = await supabase
+        .from('game_chat_messages')
+        .insert(insertPayload)
+        .select('*')
+        .single();
+      inserted = retryCol.data;
+      error = retryCol.error;
+    }
+
     if (error || !inserted) {
-      console.error('[API/Chat POST] Insert failed:', error);
+      const diag = classifyChatDbError(error);
+      console.error('[API/Chat POST] Insert failed:', {
+        category: diag.category,
+        code: diag.code,
+        message: error?.message,
+        hint: error?.hint,
+        details: error?.details,
+        usingAdminClient: Boolean(adminClient),
+        hasUserJwt: Boolean(supabaseJwt),
+        canonicalGameId,
+        hasSenderUuid: Boolean(insertPayload.sender_id),
+      });
       return NextResponse.json(
         {
-          error: isTableMissingError(error)
-            ? 'Chat persistence table is unavailable. Message was not saved.'
-            : error?.message || 'Failed to persist chat message.',
+          error: diag.userMessage,
+          code: diag.code,
+          category: diag.category,
+          detail: diag.detail,
         },
-        { status: isTableMissingError(error) ? 503 : 500 }
+        { status: diag.status }
       );
     }
-    insertedRow = inserted;
+    const insertedRow = inserted;
 
     const formattedTime = formatTime12h(insertedRow.created_at) || 'Just now';
 

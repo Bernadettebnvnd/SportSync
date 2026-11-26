@@ -122,7 +122,8 @@ export async function fetchGameMessages(
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json?.error || `Failed to load chat messages (${res.status}).`);
+    const codeTag = json?.code && !String(json?.error || '').includes(String(json.code)) ? ` [${json.code}]` : '';
+    throw new Error(`${json?.error || `Failed to load chat messages (${res.status}).`}${codeTag}`);
   }
 
   const rows = Array.isArray(json.messages) ? json.messages : [];
@@ -214,7 +215,8 @@ export async function sendGameMessage(params: SendGameMessageParams): Promise<Ch
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.message) {
-    throw new Error(json?.error || `Failed to send message (${res.status}).`);
+    const codeTag = json?.code && !String(json?.error || '').includes(String(json.code)) ? ` [${json.code}]` : '';
+    throw new Error(`${json?.error || `Failed to send message (${res.status}).`}${codeTag}`);
   }
 
   const m = json.message;
