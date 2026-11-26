@@ -464,7 +464,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                   <div className="min-w-0 pr-2">
                     <span className="font-bold text-xs text-[#F4F7F0] block truncate">{hg.title}</span>
                     <span className="text-[10px] text-[#A5B0A6] block truncate">
-                      {hg.sport} • {hg.date} • {hg.spotsJoined}/{hg.spotsTotal} spots
+                      {hg.sport} • {hg.date} • {hg.spotsTotal === null ? `${hg.spotsJoined} joined · Open to all` : `${hg.spotsJoined}/${hg.spotsTotal} spots`}
                     </span>
                   </div>
                   <span className="text-[10px] px-2.5 py-1 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] font-bold border border-[#C8FF2E]/30 shrink-0">

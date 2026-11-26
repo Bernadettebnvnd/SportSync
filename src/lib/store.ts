@@ -196,15 +196,22 @@ async function initializeStore() {
         user.has_completed_onboarding === true
       );
 
-      const hasRequiredPlayerFields = !isOwner && Boolean(
+      const isExplicitlyIncompleteInDb = user.onboarding_completed === false;
+
+      const isDefaultDbSports =
+        Array.isArray(user.preferred_sports) &&
+        user.preferred_sports.length === 2 &&
+        user.preferred_sports.includes('pickleball') &&
+        user.preferred_sports.includes('badminton');
+
+      const hasRequiredPlayerFields = !isOwner && !isExplicitlyIncompleteInDb && Boolean(
         user.full_name &&
         !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(user.full_name.trim()) &&
-        ((Array.isArray(user.preferred_sports) && user.preferred_sports.length > 0) || user.primary_sport) &&
-        (user.city || user.skill_level) &&
-        user.onboarding_completed !== false
+        ((Array.isArray(user.preferred_sports) && user.preferred_sports.length > 0 && !isDefaultDbSports) || user.primary_sport) &&
+        user.skill_level
       );
 
-      const hasRequiredOwnerFields = isOwner && Boolean(
+      const hasRequiredOwnerFields = isOwner && !isExplicitlyIncompleteInDb && Boolean(
         isExplicitlyCompleteInDb
       );
 
@@ -253,10 +260,20 @@ async function initializeStore() {
 
       globalState.currentUser = user;
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('sportsync_guest');
+        localStorage.removeItem('sportsync_logged_out');
+        if (user.id && user.id !== 'usr_guest_01') {
+          localStorage.setItem('sportsync_user_id', user.id);
+        }
+        if (user.role) {
+          localStorage.setItem('sportsync_user_role', user.role);
+        }
         if (isUserOnboarded) {
+          localStorage.removeItem('sportsync_pending_onboarding');
           localStorage.setItem('matchi_onboarding_completed', 'true');
           localStorage.setItem('sportsync_onboarding_completed', 'true');
         } else {
+          localStorage.setItem('sportsync_pending_onboarding', 'true');
           localStorage.removeItem('matchi_onboarding_completed');
           localStorage.removeItem('sportsync_onboarding_completed');
         }
@@ -268,6 +285,22 @@ async function initializeStore() {
         if (user.city) {
           localStorage.setItem('sportsync_user_city', user.city);
         }
+        // Keep sportsync_user_profile hydrated for synchronous refresh checks
+        try {
+          const existingRaw = localStorage.getItem('sportsync_user_profile');
+          const existing = existingRaw ? JSON.parse(existingRaw) : {};
+          const hydratedProfile = {
+            ...existing,
+            id: user.id,
+            email: user.email || existing.email || '',
+            name: user.full_name || existing.name || 'Player',
+            role: user.role || existing.role || 'player',
+            city: user.city || existing.city || 'Naga City',
+            onboardingCompleted: isUserOnboarded,
+            isGuest: false,
+          };
+          localStorage.setItem('sportsync_user_profile', JSON.stringify(hydratedProfile));
+        } catch {}
       }
     }
 

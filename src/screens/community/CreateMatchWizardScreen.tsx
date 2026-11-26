@@ -1,46 +1,65 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
-  MapPin,
   Calendar,
   Clock,
   Share2,
   AlertCircle,
-  Users,
-  Search,
-  Crosshair,
-  Navigation,
   X,
   Sparkles,
-  Shield,
-  Loader2,
   Copy,
   Lock,
   Globe,
   Link as LinkIcon,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { AvatarId, CommunityGame } from '../../mock/types';
-import type * as LeafletType from 'leaflet';
 import { Button } from '../../design-system/components/Button';
 import { Stepper, Toggle } from '../../design-system/components/SegmentedControl';
 import { DateStrip, generateUpcomingDates } from '../../design-system/components/DateStrip';
+import { MonthCalendarSheet } from '../../design-system/components/MonthCalendarSheet';
+import { TimeWheelSheet } from '../../design-system/components/TimeWheelSheet';
+import {
+  NagaLocationPicker,
+  NAGA_CITY_CENTER,
+  NAGA_SPORTS_VENUES,
+  NagaLandmark,
+  LocationSuggestionItem,
+  isWithinNagaCity,
+  reverseGeocodeNaga,
+} from '../../components/community/NagaLocationPicker';
 import { APP_CONFIG } from '../../config/appConfig';
-import { defaultGeocodingProvider } from '../../lib/maps/provider';
 import { copyToClipboard, shareMatch } from '../../lib/shareUtils';
+import {
+  MAX_BOOKING_HORIZON_DAYS,
+  formatManilaDateLabel,
+  formatManilaDateShort,
+  formatMatchSummaryLine,
+  formatTime12h,
+  formatTimeRange12h,
+  getManilaTodayISO,
+  getManilaTomorrowISO,
+  getSmartDefaultKickoff,
+  isManilaDateTimeInPast,
+  parseTimeTo24h,
+  shiftTime24ByMinutes,
+  toManilaIsoTimestamp,
+  validateEndTime,
+} from '../../lib/datetime';
 
-export interface LocationSuggestionItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  coordinates: [number, number];
-  isLandmark?: boolean;
-}
+export {
+  NAGA_CITY_CENTER,
+  NAGA_SPORTS_VENUES,
+  reverseGeocodeNaga,
+};
+export type { NagaLandmark, LocationSuggestionItem };
 
 export const STANDARDIZED_SPORTS_OPTIONS = [
   { id: 'Basketball', label: 'Basketball', icon: '🏀' },
@@ -56,152 +75,38 @@ export const STANDARDIZED_SPORTS_OPTIONS = [
 
 export type WizardSport = (typeof STANDARDIZED_SPORTS_OPTIONS)[number]['id'];
 
-// Naga City Pilot Area Center
-export const NAGA_CITY_CENTER: [number, number] = [13.6218, 123.1948];
+const QUICK_TIME_SLOTS_24 = ['07:00', '09:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'] as const;
+const DURATION_CHIPS = [
+  { label: '+1h', minutes: 60 },
+  { label: '+1.5h', minutes: 90 },
+  { label: '+2h', minutes: 120 },
+  { label: '+3h', minutes: 180 },
+] as const;
+const FEE_PRESETS = [50, 100, 150, 200, 250, 350] as const;
+const MAX_FEE_PHP = 5000;
+const WIZARD_DRAFT_KEY = 'sportsync_create_match_draft_v1';
 
-export interface NagaLandmark {
-  id: string;
-  name: string;
-  shortName: string;
+interface WizardDraft {
+  step: number;
+  sport: WizardSport;
+  title: string;
+  scheduleMode: 'today' | 'tomorrow' | 'custom';
+  selectedDateISO: string;
+  kickoffTime24: string;
+  hasEndTime: boolean;
+  endTime24: string;
+  locationName: string;
+  locationDetails: string;
   coordinates: [number, number];
-  sports: string[];
-  barangay: string;
-}
-
-// Prominent Sports Venues & Facilities in Naga City
-export const NAGA_SPORTS_VENUES: NagaLandmark[] = [
-  {
-    id: 'robredo_coliseum',
-    name: 'Jesse M. Robredo Coliseum, Triangulo, Naga City',
-    shortName: 'Robredo Coliseum',
-    coordinates: [13.6225, 123.1932],
-    sports: ['Basketball', 'Volleyball', 'Badminton'],
-    barangay: 'Triangulo',
-  },
-  {
-    id: 'metro_naga_complex',
-    name: 'Metro Naga Sports Complex, Pacol, Naga City',
-    shortName: 'Metro Naga Complex',
-    coordinates: [13.6492, 123.2384],
-    sports: ['Football', 'Tennis', 'Badminton', 'Basketball'],
-    barangay: 'Pacol',
-  },
-  {
-    id: 'plaza_quezon',
-    name: 'Plaza Quezon Covered Court, Downtown, Naga City',
-    shortName: 'Plaza Quezon Court',
-    coordinates: [13.6247, 123.1856],
-    sports: ['Basketball', 'Volleyball'],
-    barangay: 'San Francisco',
-  },
-  {
-    id: 'adnu_gym',
-    name: 'Ateneo de Naga University Gym, Bagumbayan Sur, Naga City',
-    shortName: 'AdNU Gym',
-    coordinates: [13.6315, 123.1895],
-    sports: ['Basketball', 'Volleyball', 'Badminton'],
-    barangay: 'Bagumbayan Sur',
-  },
-  {
-    id: 'unc_palace',
-    name: 'UNC Sports Palace, J. Hernandez Ave, Naga City',
-    shortName: 'UNC Sports Palace',
-    coordinates: [13.6289, 123.1882],
-    sports: ['Basketball', 'Badminton', 'Table Tennis'],
-    barangay: 'Igualdad',
-  },
-  {
-    id: 'magsaysay_hub',
-    name: 'Magsaysay Ave Sports Center, Concepcion Pequeña, Naga City',
-    shortName: 'Magsaysay Sports Hub',
-    coordinates: [13.6312, 123.1989],
-    sports: ['Pickleball', 'Tennis', 'Badminton'],
-    barangay: 'Concepcion Pequeña',
-  },
-  {
-    id: 'naga_civic_center',
-    name: 'Naga City Civic Center & City Hall Grounds, Naga City',
-    shortName: 'City Civic Center',
-    coordinates: [13.6228, 123.196],
-    sports: ['Basketball', 'Volleyball'],
-    barangay: 'Concepcion Pequeña',
-  },
-  {
-    id: 'deca_homes_court',
-    name: 'Deca Homes Covered Court, San Felipe, Naga City',
-    shortName: 'Deca Homes Court',
-    coordinates: [13.619, 123.212],
-    sports: ['Basketball', 'Badminton'],
-    barangay: 'San Felipe',
-  },
-];
-
-// Helper to compute distance between points in km
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function getNearestNagaLandmark(lat: number, lng: number): NagaLandmark | null {
-  let nearest: NagaLandmark | null = null;
-  let minDistance = Infinity;
-
-  for (const landmark of NAGA_SPORTS_VENUES) {
-    const dist = calculateDistance(lat, lng, landmark.coordinates[0], landmark.coordinates[1]);
-    if (dist < minDistance) {
-      minDistance = dist;
-      nearest = landmark;
-    }
-  }
-
-  // Within 350m is matched directly to landmark
-  if (nearest && minDistance <= 0.35) {
-    return nearest;
-  }
-  return null;
-}
-
-export async function reverseGeocodeNaga(lat: number, lng: number): Promise<string> {
-  const landmark = getNearestNagaLandmark(lat, lng);
-  if (landmark) {
-    return landmark.name;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`,
-      { signal: controller.signal, headers: { 'Accept-Language': 'en' } }
-    );
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      const addr = data.address || {};
-      const road = addr.road || addr.pedestrian || addr.street;
-      const suburb = addr.suburb || addr.quarter || addr.neighbourhood || addr.village;
-      const city = addr.city || addr.town || 'Naga City';
-
-      if (road && suburb) return `${road}, ${suburb}, ${city}`;
-      if (road) return `${road}, ${city}`;
-      if (suburb) return `${suburb}, ${city}`;
-      if (data.display_name) {
-        return data.display_name.split(',').slice(0, 3).map((s: string) => s.trim()).join(', ');
-      }
-    }
-  } catch {}
-
-  // Fallback to coordinates in Naga City
-  return `Pinned Court (${lat.toFixed(4)}, ${lng.toFixed(4)}), Naga City`;
+  hasPin: boolean;
+  selectedVenueId: string;
+  isUnlimitedSpots: boolean;
+  playersCount: number;
+  skillLevel: 'Casual' | 'Competitive';
+  splitCost: boolean;
+  pricePerPlayer: number;
+  bringBootsNote: boolean;
+  visibility: 'Public' | 'Invite';
 }
 
 interface CreateMatchWizardScreenProps {
@@ -215,10 +120,13 @@ interface CreateMatchWizardScreenProps {
     title: string;
     date: string;
     time?: string;
+    endTime?: string | null;
+    startsAt?: string;
+    endsAt?: string | null;
     formattedDate?: string;
     locationName: string;
     locationDetails?: string;
-    playersCount: number;
+    playersCount: number | null;
     skillLevel: 'Casual' | 'Competitive';
     pricePerPlayer: number;
     notes?: string;
@@ -227,7 +135,7 @@ interface CreateMatchWizardScreenProps {
     inviteCode?: string;
     venueId?: string;
     invitedPlayers?: Array<{ id: string; name: string; avatarId?: AvatarId }>;
-  }) => Promise<any> | void;
+  }) => Promise<unknown> | void;
 }
 
 export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = ({
@@ -238,7 +146,30 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
   onFinish,
   onMatchCreated,
 }) => {
-  const [step, setStep] = useState(1); // 1 to 4, then 5 = Success
+  const smartDefault = useMemo(() => getSmartDefaultKickoff(), []);
+  const todayISO = getManilaTodayISO();
+  const tomorrowISO = getManilaTomorrowISO();
+  const isTodayUnavailable = smartDefault.scheduleMode === 'tomorrow';
+
+  // Restore non-sensitive draft from sessionStorage on mount
+  const initialDraft = useMemo<Partial<WizardDraft> | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = sessionStorage.getItem(WIZARD_DRAFT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<WizardDraft>;
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [step, setStep] = useState<number>(() => {
+    const saved = initialDraft?.step;
+    return typeof saved === 'number' && saved >= 1 && saved <= 4 ? saved : 1;
+  });
+
   const [availablePlayers, setAvailablePlayers] = useState<
     Array<{ id: string; name: string; avatarId: AvatarId }>
   >([]);
@@ -281,91 +212,340 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     };
   }, [currentUserId, currentUserName]);
 
-  // Date & Time helpers for valid scheduling
-  const now = new Date();
-  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const tomorrowObj = new Date(now);
-  tomorrowObj.setDate(now.getDate() + 1);
-  const tomorrowISO = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+  // Step 1
+  const [sport, setSport] = useState<WizardSport>(initialDraft?.sport || 'Basketball');
+  const [title, setTitle] = useState<string>(initialDraft?.title || '');
 
-  const currentHour = now.getHours();
-  const currentMin = now.getMinutes();
-  const defaultTodayHour = Math.min(22, Math.max(currentHour + 2, 19));
-  const defaultTodayTime = `${String(defaultTodayHour).padStart(2, '0')}:00`;
-  const isTooLateToday = currentHour >= 21;
+  // Step 2: Date & Time (Asia/Manila)
+  const initialDateISO = useMemo(() => {
+    const d = initialDraft?.selectedDateISO;
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= todayISO) return d;
+    return smartDefault.isoDate;
+  }, [initialDraft, todayISO, smartDefault.isoDate]);
 
-  // Form states
-  const [sport, setSport] = useState<WizardSport>('Basketball');
-  const [title, setTitle] = useState('');
-  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(isTooLateToday ? 'tomorrow' : 'today');
-  const [date, setDate] = useState(() => isTooLateToday ? `Tomorrow (18:00)` : `Today (${defaultTodayTime})`);
-  const [customDate, setCustomDate] = useState(() => isTooLateToday ? tomorrowISO : todayISO);
-  const [customTime, setCustomTime] = useState(() => isTooLateToday ? '18:00' : defaultTodayTime);
+  const initialKickoff24 = useMemo(() => {
+    const t = initialDraft?.kickoffTime24;
+    if (t && !isManilaDateTimeInPast(initialDateISO, t)) return t;
+    return smartDefault.time24;
+  }, [initialDraft, initialDateISO, smartDefault.time24]);
 
-  // Location states in Naga City
-  const [locationName, setLocationName] = useState('');
-  const [locationDetails, setLocationDetails] = useState('');
-  const [coordinates, setCoordinates] = useState<[number, number]>(NAGA_SPORTS_VENUES[0].coordinates);
-  const [selectedVenueId, setSelectedVenueId] = useState<string>('');
-  const [locationSearchQuery, setLocationSearchQuery] = useState(
-    ''
+  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(() => {
+    if (initialDraft?.scheduleMode) return initialDraft.scheduleMode;
+    return smartDefault.scheduleMode;
+  });
+  const [selectedDateISO, setSelectedDateISO] = useState<string>(initialDateISO);
+  const [kickoffTime24, setKickoffTime24] = useState<string>(initialKickoff24);
+  const [hasEndTime, setHasEndTime] = useState<boolean>(Boolean(initialDraft?.hasEndTime));
+  const [endTime24, setEndTime24] = useState<string>(
+    initialDraft?.endTime24 || shiftTime24ByMinutes(initialKickoff24, 120)
   );
-  const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestionItem[]>([]);
-  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
-  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const searchContainerRef = useRef<HTMLDivElement | null>(null);
-  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locateNotice, setLocateNotice] = useState<string | null>(null);
 
-  // Roster states
-  const [playersCount, setPlayersCount] = useState(10);
-  const [playersCountInput, setPlayersCountInput] = useState('10');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [activeTimeWheel, setActiveTimeWheel] = useState<'start' | 'end' | null>(null);
+
+  // Step 2: Location in Naga City
+  const [locationName, setLocationName] = useState<string>(initialDraft?.locationName || '');
+  const [locationDetails, setLocationDetails] = useState<string>(initialDraft?.locationDetails || '');
+  const [coordinates, setCoordinates] = useState<[number, number]>(() => {
+    const c = initialDraft?.coordinates;
+    if (Array.isArray(c) && c.length === 2 && isWithinNagaCity(c[0], c[1])) {
+      return [c[0], c[1]];
+    }
+    return NAGA_SPORTS_VENUES[0].coordinates;
+  });
+  const [hasPin, setHasPin] = useState<boolean>(Boolean(initialDraft?.hasPin && initialDraft?.locationName));
+  const [selectedVenueId, setSelectedVenueId] = useState<string>(initialDraft?.selectedVenueId || '');
+
+  // Step 3: Roster & Fee
+  const [isUnlimitedSpots, setIsUnlimitedSpots] = useState<boolean>(Boolean(initialDraft?.isUnlimitedSpots));
+  const [playersCount, setPlayersCount] = useState<number>(() => {
+    const c = initialDraft?.playersCount;
+    return typeof c === 'number' && c >= 2 && c <= 24 ? c : 10;
+  });
+  const [playersCountInput, setPlayersCountInput] = useState<string>(String(playersCount));
   const [spotsError, setSpotsError] = useState<string | null>(null);
 
-  const handlePlayersCountChange = (val: string) => {
-    const digitsOnly = val.replace(/[^0-9]/g, '');
-    setPlayersCountInput(digitsOnly);
-    if (digitsOnly === '') {
-      setPlayersCount(0);
-      setSpotsError('Player capacity must be between 2 and 24.');
-      return;
-    }
-    const parsed = parseInt(digitsOnly, 10);
-    setPlayersCount(parsed);
-    if (parsed < 2 || parsed > 24) {
-      setSpotsError('Player capacity must be between 2 and 24.');
-    } else {
-      setSpotsError(null);
-      if (error === 'Player capacity must be between 2 and 24.') {
-        setError(null);
-      }
-    }
-  };
+  const [skillLevel, setSkillLevel] = useState<'Casual' | 'Competitive'>(
+    initialDraft?.skillLevel || 'Casual'
+  );
+  const [splitCost, setSplitCost] = useState<boolean>(initialDraft?.splitCost ?? true);
+  const [pricePerPlayer, setPricePerPlayer] = useState<number>(
+    typeof initialDraft?.pricePerPlayer === 'number' ? initialDraft.pricePerPlayer : 150
+  );
+  const [lastNonZeroFee, setLastNonZeroFee] = useState<number>(
+    typeof initialDraft?.pricePerPlayer === 'number' && initialDraft.pricePerPlayer > 0
+      ? initialDraft.pricePerPlayer
+      : 150
+  );
+  const [feeError, setFeeError] = useState<string | null>(null);
+  const [bringBootsNote, setBringBootsNote] = useState<boolean>(initialDraft?.bringBootsNote ?? true);
 
-  const handlePlayersCountBlur = () => {
-    if (!playersCountInput) {
-      setSpotsError('Player capacity must be between 2 and 24.');
-      return;
-    }
-    const num = parseInt(playersCountInput, 10);
-    if (isNaN(num) || num < 2 || num > 24) {
-      setSpotsError('Player capacity must be between 2 and 24.');
-    } else {
-      setSpotsError(null);
-      setPlayersCount(num);
-    }
-  };
-  const [skillLevel, setSkillLevel] = useState<'Casual' | 'Competitive'>('Casual');
-  const [splitCost, setSplitCost] = useState(true);
-  const [pricePerPlayer, setPricePerPlayer] = useState(150);
-  const [bringBootsNote, setBringBootsNote] = useState(true);
-  const [visibility, setVisibility] = useState<'Public' | 'Invite'>('Public');
+  // Step 4: Visibility & Invites
+  const [visibility, setVisibility] = useState<'Public' | 'Invite'>(initialDraft?.visibility || 'Public');
   const [inviteCode] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
   const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([]);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [copiedPublicShare, setCopiedPublicShare] = useState(false);
+
+  // UI & confirmation states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  // Persist non-sensitive draft in sessionStorage (cleared on publish or discard)
+  useEffect(() => {
+    if (typeof window === 'undefined' || step >= 5) return;
+    try {
+      const draft: WizardDraft = {
+        step,
+        sport,
+        title,
+        scheduleMode,
+        selectedDateISO,
+        kickoffTime24,
+        hasEndTime,
+        endTime24,
+        locationName,
+        locationDetails,
+        coordinates,
+        hasPin,
+        selectedVenueId,
+        isUnlimitedSpots,
+        playersCount,
+        skillLevel,
+        splitCost,
+        pricePerPlayer,
+        bringBootsNote,
+        visibility,
+      };
+      sessionStorage.setItem(WIZARD_DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [
+    step,
+    sport,
+    title,
+    scheduleMode,
+    selectedDateISO,
+    kickoffTime24,
+    hasEndTime,
+    endTime24,
+    locationName,
+    locationDetails,
+    coordinates,
+    hasPin,
+    selectedVenueId,
+    isUnlimitedSpots,
+    playersCount,
+    skillLevel,
+    splitCost,
+    pricePerPlayer,
+    bringBootsNote,
+    visibility,
+  ]);
+
+  const clearDraft = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(WIZARD_DRAFT_KEY);
+      } catch {}
+    }
+  };
+
+  const hasUnsavedInput = useMemo(() => {
+    if (step >= 5) return false;
+    return Boolean(
+      title.trim().length > 0 ||
+        locationName.trim().length > 0 ||
+        locationDetails.trim().length > 0 ||
+        hasEndTime ||
+        step > 1
+    );
+  }, [step, title, locationName, locationDetails, hasEndTime]);
+
+  const handleRequestClose = () => {
+    if (hasUnsavedInput) {
+      setShowDiscardConfirm(true);
+    } else {
+      clearDraft();
+      onClose();
+    }
+  };
+
+  // Shift end time by the same delta whenever kickoff changes so duration is preserved
+  const updateKickoffTime = useCallback(
+    (nextTime24: string, switchToCustom = true) => {
+      const prevParsed = parseTimeTo24h(kickoffTime24);
+      const nextParsed = parseTimeTo24h(nextTime24);
+      if (hasEndTime && prevParsed && nextParsed) {
+        const delta =
+          nextParsed.hour24 * 60 + nextParsed.minute - (prevParsed.hour24 * 60 + prevParsed.minute);
+        if (delta !== 0) {
+          setEndTime24((prevEnd) => shiftTime24ByMinutes(prevEnd, delta));
+        }
+      }
+      setKickoffTime24(nextTime24);
+      if (switchToCustom) {
+        setScheduleMode('custom');
+      }
+      setError(null);
+    },
+    [kickoffTime24, hasEndTime]
+  );
+
+  const handleSelectDateISO = (iso: string) => {
+    const safeIso = iso < todayISO ? todayISO : iso;
+    setSelectedDateISO(safeIso);
+    setScheduleMode('custom');
+    // If picking today and current kickoff is in the past, bump to smart default
+    if (safeIso === todayISO && isManilaDateTimeInPast(safeIso, kickoffTime24)) {
+      const smart = getSmartDefaultKickoff();
+      if (smart.isoDate === todayISO) {
+        updateKickoffTime(smart.time24, true);
+      }
+    }
+    setError(null);
+  };
+
+  const handleSelectTodayPreset = () => {
+    if (isTodayUnavailable) return;
+    setScheduleMode('today');
+    setSelectedDateISO(todayISO);
+    updateKickoffTime(smartDefault.time24, false);
+  };
+
+  const handleSelectTomorrowPreset = () => {
+    setScheduleMode('tomorrow');
+    setSelectedDateISO(tomorrowISO);
+    updateKickoffTime('18:00', false);
+  };
+
+  const handleAddEndTime = () => {
+    setHasEndTime(true);
+    setEndTime24(shiftTime24ByMinutes(kickoffTime24, 120));
+  };
+
+  const handleRemoveEndTime = () => {
+    setHasEndTime(false);
+    setError(null);
+  };
+
+  const handleDurationChip = (minutes: number) => {
+    setHasEndTime(true);
+    setEndTime24(shiftTime24ByMinutes(kickoffTime24, minutes));
+    setError(null);
+  };
+
+  const endTimeValidation = useMemo(() => {
+    if (!hasEndTime) return null;
+    return validateEndTime(selectedDateISO, kickoffTime24, endTime24);
+  }, [hasEndTime, selectedDateISO, kickoffTime24, endTime24]);
+
+  // Roster numeric field: free typing while focused, clamp 2-24 on blur/commit
+  const handlePlayersCountChange = (val: string) => {
+    const digitsOnly = val.replace(/[^0-9]/g, '');
+    setPlayersCountInput(digitsOnly);
+    if (digitsOnly === '') {
+      setSpotsError('Enter between 2 and 24 players');
+      return;
+    }
+    const parsed = parseInt(digitsOnly, 10);
+    if (parsed < 2 || parsed > 24) {
+      setSpotsError('Must be between 2 and 24 players');
+    } else {
+      setPlayersCount(parsed);
+      setSpotsError(null);
+    }
+  };
+
+  const handlePlayersCountBlur = () => {
+    if (!playersCountInput.trim()) {
+      setPlayersCountInput(String(playersCount));
+      setSpotsError(null);
+      return;
+    }
+    const num = parseInt(playersCountInput, 10);
+    if (!Number.isFinite(num)) {
+      setPlayersCountInput(String(playersCount));
+      setSpotsError(null);
+      return;
+    }
+    const clamped = Math.max(2, Math.min(24, num));
+    setPlayersCount(clamped);
+    setPlayersCountInput(String(clamped));
+    setSpotsError(null);
+  };
+
+  const handleFeeChange = (nextFee: number) => {
+    setPricePerPlayer(nextFee);
+    if (nextFee > 0) setLastNonZeroFee(nextFee);
+  };
+
+  const handleSplitCostToggle = (checked: boolean) => {
+    setSplitCost(checked);
+    if (checked) {
+      setPricePerPlayer((prev) => (prev > 0 ? prev : lastNonZeroFee || 150));
+    }
+  };
+
+  // Step validation reason (drives disabled Next Step button + helper text)
+  const stepValidationReason = useMemo<string | null>(() => {
+    if (step === 1) {
+      if (!title.trim() || title.trim().length < 3) {
+        return 'Enter a match title (at least 3 characters)';
+      }
+      return null;
+    }
+    if (step === 2) {
+      if (selectedDateISO < todayISO) {
+        return 'Choose a date today or later';
+      }
+      if (isManilaDateTimeInPast(selectedDateISO, kickoffTime24)) {
+        return 'Choose a kickoff time in the future';
+      }
+      if (hasEndTime && endTimeValidation && !endTimeValidation.valid) {
+        return endTimeValidation.error || 'End time must be after kickoff';
+      }
+      if (!locationName.trim()) {
+        return 'Pin a location in Naga City';
+      }
+      if (!isWithinNagaCity(coordinates[0], coordinates[1])) {
+        return 'Pilot area is Naga City only';
+      }
+      return null;
+    }
+    if (step === 3) {
+      if (!isUnlimitedSpots) {
+        const parsed = parseInt(playersCountInput, 10);
+        if (!Number.isFinite(parsed) || parsed < 2 || parsed > 24) {
+          return 'Enter total spots between 2 and 24';
+        }
+      }
+      if (splitCost && (pricePerPlayer < 0 || pricePerPlayer > MAX_FEE_PHP)) {
+        return `Fee must be between ${APP_CONFIG.currency}0 and ${APP_CONFIG.currency}${MAX_FEE_PHP}`;
+      }
+      return null;
+    }
+    return null;
+  }, [
+    step,
+    title,
+    selectedDateISO,
+    todayISO,
+    kickoffTime24,
+    hasEndTime,
+    endTimeValidation,
+    locationName,
+    coordinates,
+    isUnlimitedSpots,
+    playersCountInput,
+    splitCost,
+    pricePerPlayer,
+  ]);
+
+  const scheduleSummaryLine = useMemo(
+    () => formatMatchSummaryLine(selectedDateISO, kickoffTime24, hasEndTime ? endTime24 : null),
+    [selectedDateISO, kickoffTime24, hasEndTime, endTime24]
+  );
 
   const toggleInvitedFriend = (friendId: string) => {
     setInvitedFriendIds((prev) =>
@@ -375,35 +555,29 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
   const persistDraftInvitation = useCallback(async () => {
     if (!inviteCode || typeof window === 'undefined') return;
-    const matchTime = scheduleMode === 'today'
-      ? defaultTodayTime
-      : scheduleMode === 'tomorrow'
-      ? '18:00'
-      : customTime;
-    const dateLabel = scheduleMode === 'today'
-      ? 'Today'
-      : scheduleMode === 'tomorrow'
-      ? 'Tomorrow'
-      : customDate;
-    const activeCount = parseInt(playersCountInput, 10) || playersCount;
-    const resolvedHostName = currentUserName?.trim() || 'Match Organizer';
-    const resolvedHostAvatar = currentUserAvatar || 'alex';
-    const resolvedHostId = currentUserId || 'organizer';
+    const activeCapacity = isUnlimitedSpots ? null : playersCount;
+    const startsAtIso = toManilaIsoTimestamp(selectedDateISO, kickoffTime24);
+    const endsAtIso =
+      hasEndTime && endTimeValidation?.valid ? endTimeValidation.endIso : null;
+
     const draftGame: CommunityGame = {
       id: 'game_' + inviteCode,
-      sport: (sport as any) || 'Basketball',
-      title: title.trim() || (sport + ' Match'),
-      format: (activeCount <= 4 ? '2v2 Doubles' : '5v5') as any,
+      sport: (sport as CommunityGame['sport']) || 'Basketball',
+      title: title.trim() || `${sport} Match`,
+      format: (activeCapacity !== null && activeCapacity <= 4 ? '2v2 Doubles' : '5v5') as CommunityGame['format'],
       skillLevel: skillLevel || 'Casual',
-      date: dateLabel,
-      time: matchTime,
+      date: formatManilaDateLabel(selectedDateISO),
+      time: formatTimeRange12h(kickoffTime24, hasEndTime ? endTime24 : null),
+      endTime: hasEndTime ? formatTime12h(endTime24) : null,
+      startsAt: startsAtIso,
+      endsAt: endsAtIso,
       locationName: locationName.trim() || 'Naga City Venue',
       locationDetails: locationDetails.trim() || undefined,
       distance: 'Naga City • 0.5 km away',
-      hostId: resolvedHostId,
-      hostName: resolvedHostName,
-      hostAvatar: resolvedHostAvatar,
-      spotsTotal: activeCount,
+      hostId: currentUserId || 'organizer',
+      hostName: currentUserName || 'Player',
+      hostAvatar: currentUserAvatar || 'alex',
+      spotsTotal: activeCapacity,
       spotsJoined: 0,
       pricePerPlayer: splitCost ? pricePerPlayer : 0,
       notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
@@ -413,6 +587,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       inviteCode,
       members: [],
     };
+
     try {
       await fetch('/api/invitations', {
         method: 'POST',
@@ -420,18 +595,41 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         body: JSON.stringify({ game: draftGame }),
       });
     } catch {}
-  }, [visibility, inviteCode, scheduleMode, defaultTodayTime, customTime, customDate, sport, title, playersCount, playersCountInput, skillLevel, locationName, locationDetails, splitCost, pricePerPlayer, bringBootsNote, coordinates]);
+  }, [
+    inviteCode,
+    isUnlimitedSpots,
+    playersCount,
+    selectedDateISO,
+    kickoffTime24,
+    hasEndTime,
+    endTime24,
+    endTimeValidation,
+    sport,
+    title,
+    skillLevel,
+    locationName,
+    locationDetails,
+    currentUserId,
+    currentUserName,
+    currentUserAvatar,
+    splitCost,
+    pricePerPlayer,
+    bringBootsNote,
+    coordinates,
+    visibility,
+  ]);
 
   useEffect(() => {
     if (visibility === 'Invite' && (step === 4 || step === 5)) {
-      persistDraftInvitation();
+      void persistDraftInvitation();
     }
   }, [visibility, step, persistDraftInvitation]);
 
   const handleCopyInviteLink = async () => {
-    const url = typeof window !== 'undefined'
-      ? `${window.location.origin}/?invite=${inviteCode}`
-      : `https://sportsync.ph/?invite=${inviteCode}`;
+    const url =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/?invite=${inviteCode}`
+        : `https://sportsync.ph/?invite=${inviteCode}`;
     await persistDraftInvitation();
     const success = await copyToClipboard(url);
     if (success) {
@@ -456,348 +654,6 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     );
   };
 
-  // Async submission & validation state
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Leaflet map references
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<LeafletType.Map | null>(null);
-  const markerRef = useRef<LeafletType.Marker | null>(null);
-
-  // Step 2: Initialize & manage interactive Leaflet map centered on Naga
-  useEffect(() => {
-    if (step !== 2 || typeof window === 'undefined') return;
-
-    let isMounted = true;
-
-    import('leaflet').then((L) => {
-      if (!isMounted || !mapContainerRef.current) return;
-
-      // Clean up previous instance if any
-      if ((mapContainerRef.current as any)._leaflet_id && mapInstanceRef.current) {
-        mapInstanceRef.current.invalidateSize();
-        return;
-      }
-
-      if ((mapContainerRef.current as any)._leaflet_id) {
-        (mapContainerRef.current as any)._leaflet_id = null;
-      }
-
-      const map = L.map(mapContainerRef.current, {
-        center: coordinates,
-        zoom: 15,
-        zoomControl: false,
-      });
-      mapInstanceRef.current = map;
-
-      // Custom electric lime pin icon
-      const createPinIcon = () =>
-        L.divIcon({
-          html: `
-            <div style="position: relative; width: 38px; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;">
-              <div style="
-                position: absolute;
-                top: 2px;
-                width: 32px;
-                height: 32px;
-                border-radius: 9999px;
-                background: rgba(200, 255, 46, 0.4);
-                animation: pulse 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-              "></div>
-              <div style="
-                position: relative;
-                width: 30px;
-                height: 30px;
-                border-radius: 9999px;
-                background: #0B0F0C;
-                border: 3px solid #C8FF2E;
-                box-shadow: 0 0 14px rgba(200, 255, 46, 0.8), 0 4px 6px rgba(0,0,0,0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 14px;
-              ">
-                📍
-              </div>
-              <div style="
-                width: 0;
-                height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid #C8FF2E;
-                margin-top: -1px;
-              "></div>
-            </div>
-          `,
-          className: 'sportsync-naga-pin',
-          iconSize: [38, 44],
-          iconAnchor: [19, 44],
-        });
-
-      // Tile Layer: OpenStreetMap
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap',
-      }).addTo(map);
-
-      // Add draggable pin
-      const marker = L.marker(coordinates, {
-        icon: createPinIcon(),
-        draggable: true,
-      }).addTo(map);
-      markerRef.current = marker;
-
-      // When dragging pin on map:
-      marker.on('dragend', async () => {
-        const pos = marker.getLatLng();
-        const newCoords: [number, number] = [pos.lat, pos.lng];
-        setCoordinates(newCoords);
-        setSelectedVenueId('');
-        setShowLocationDropdown(false);
-        setIsResolvingLocation(true);
-        const name = await reverseGeocodeNaga(pos.lat, pos.lng);
-        setLocationName(name);
-        setLocationSearchQuery(name);
-        setIsResolvingLocation(false);
-        setError(null);
-      });
-
-      // When clicking or tapping anywhere on the Naga map to pinpoint:
-      map.on('click', async (e: LeafletType.LeafletMouseEvent) => {
-        const newCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
-        marker.setLatLng(e.latlng);
-        setCoordinates(newCoords);
-        setSelectedVenueId('');
-        setShowLocationDropdown(false);
-        map.panTo(e.latlng, { animate: true, duration: 0.4 });
-        setIsResolvingLocation(true);
-        const name = await reverseGeocodeNaga(e.latlng.lat, e.latlng.lng);
-        setLocationName(name);
-        setLocationSearchQuery(name);
-        setIsResolvingLocation(false);
-        setError(null);
-      });
-
-      // Invalidate size to guarantee responsive sizing in phone containers
-      setTimeout(() => {
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize();
-        }
-      }, 250);
-    });
-
-    return () => {
-      isMounted = false;
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.remove();
-        } catch {}
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [step]);
-
-  // Handle selection of a known Naga City sports venue chip
-  const handleSelectNagaVenue = (venue: NagaLandmark) => {
-    setCoordinates(venue.coordinates);
-    setLocationName(venue.name);
-    setLocationSearchQuery(venue.name);
-    setSelectedVenueId(venue.id);
-    setShowLocationDropdown(false);
-    setError(null);
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(venue.coordinates, 16, { duration: 0.8 });
-      if (markerRef.current) {
-        markerRef.current.setLatLng(venue.coordinates);
-      }
-    }
-  };
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(event.target as Node)
-      ) {
-        setShowLocationDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  // Handle location search as player types with Map API integration
-  const handleLocationInputChange = (val: string) => {
-    setLocationSearchQuery(val);
-    setLocationName(val);
-    if (error) setError(null);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (!val || val.trim().length < 2) {
-      setLocationSuggestions([]);
-      setShowLocationDropdown(false);
-      setIsSearchingLocation(false);
-      return;
-    }
-
-    setShowLocationDropdown(true);
-    setIsSearchingLocation(true);
-
-    searchTimeoutRef.current = setTimeout(async () => {
-      const q = val.trim().toLowerCase();
-
-      // 1. Local matching for Naga sports facilities & landmarks
-      const localMatches: LocationSuggestionItem[] = NAGA_SPORTS_VENUES
-        .filter(
-          (v) =>
-            v.name.toLowerCase().includes(q) ||
-            v.shortName.toLowerCase().includes(q) ||
-            v.barangay.toLowerCase().includes(q) ||
-            v.sports.some((s) => s.toLowerCase().includes(q))
-        )
-        .map((v) => ({
-          id: v.id,
-          title: v.name,
-          subtitle: `${v.barangay}, Naga City • ${v.sports.slice(0, 2).join(', ')}`,
-          coordinates: v.coordinates,
-          isLandmark: true,
-        }));
-
-      // 2. Query Map API provider (Nominatim / Geocoding API)
-      let apiMatches: LocationSuggestionItem[] = [];
-      try {
-        const geoResults = await defaultGeocodingProvider.search(val);
-        apiMatches = geoResults.map((item) => ({
-          id: item.placeId,
-          title: item.shortName || item.displayName,
-          subtitle: item.displayName,
-          coordinates: [item.latitude, item.longitude] as [number, number],
-          isLandmark: false,
-        }));
-      } catch (err) {
-        console.warn('Map API location search failed:', err);
-      }
-
-      // 3. Deduplicate
-      const combined = [...localMatches];
-      for (const item of apiMatches) {
-        const alreadyExists = combined.some(
-          (c) =>
-            calculateDistance(c.coordinates[0], c.coordinates[1], item.coordinates[0], item.coordinates[1]) < 0.2 ||
-            c.title.toLowerCase() === item.title.toLowerCase()
-        );
-        if (!alreadyExists) {
-          combined.push(item);
-        }
-      }
-
-      setLocationSuggestions(combined.slice(0, 6));
-      setIsSearchingLocation(false);
-    }, 280);
-  };
-
-  // Select location suggestion and accurately fly & pin map
-  const handleSelectSuggestedLocation = (item: LocationSuggestionItem) => {
-    setLocationName(item.title);
-    setLocationSearchQuery(item.title);
-    setCoordinates(item.coordinates);
-    setSelectedVenueId(item.id);
-    setShowLocationDropdown(false);
-    setLocationSuggestions([]);
-    setError(null);
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(item.coordinates, 16, { duration: 0.8 });
-      if (markerRef.current) {
-        markerRef.current.setLatLng(item.coordinates);
-      }
-    }
-  };
-
-  // Center on Naga City center button
-  const handleCenterNaga = () => {
-    setCoordinates(NAGA_CITY_CENTER);
-    setSelectedVenueId('');
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(NAGA_CITY_CENTER, 14, { duration: 0.8 });
-      if (markerRef.current) {
-        markerRef.current.setLatLng(NAGA_CITY_CENTER);
-      }
-    }
-  };
-
-  // Geolocation trigger
-  const handleLocateMe = () => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setLocateNotice('GPS not available on this device.');
-      setTimeout(() => setLocateNotice(null), 3000);
-      return;
-    }
-
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        setIsLocating(false);
-        const userCoords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        setCoordinates(userCoords);
-        setSelectedVenueId('');
-
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo(userCoords, 16, { duration: 0.8 });
-          if (markerRef.current) {
-            markerRef.current.setLatLng(userCoords);
-          }
-        }
-
-        setIsResolvingLocation(true);
-        const name = await reverseGeocodeNaga(userCoords[0], userCoords[1]);
-        setLocationName(name);
-        setIsResolvingLocation(false);
-        setLocateNotice('Pinpoint set to current GPS location');
-        setTimeout(() => setLocateNotice(null), 3000);
-      },
-      () => {
-        setIsLocating(false);
-        handleCenterNaga();
-        setLocateNotice('Centered on Naga City (Pilot Testing Area)');
-        setTimeout(() => setLocateNotice(null), 3000);
-      },
-      { timeout: 8000, enableHighAccuracy: true }
-    );
-  };
-
-  const handleCustomScheduleChange = (dStr: string, tStr: string) => {
-    const validDate = dStr < todayISO ? todayISO : dStr;
-    setCustomDate(validDate);
-    setCustomTime(tStr);
-    setDate(`${validDate} (${tStr})`);
-  };
-
-  const adjustCustomDateByDays = (deltaDays: number) => {
-    const parts = (customDate || todayISO).split('-').map(Number);
-    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date();
-    d.setDate(d.getDate() + deltaDays);
-    const nextISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    handleCustomScheduleChange(nextISO < todayISO ? todayISO : nextISO, customTime);
-  };
-
-  const adjustCustomTimeByMinutes = (deltaMins: number) => {
-    const [rawH, rawM] = (customTime || '18:00').split(':').map(Number);
-    const h = Number.isFinite(rawH) ? rawH : 18;
-    const m = Number.isFinite(rawM) ? rawM : 0;
-    const clamped = Math.max(0, Math.min(23 * 60 + 45, h * 60 + m + deltaMins));
-    const nextTime = `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
-    handleCustomScheduleChange(customDate, nextTime);
-  };
-
   const triggerConfetti = () => {
     try {
       confetti({
@@ -809,94 +665,36 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
     } catch {}
   };
 
-  const validateStep = (currentStep: number): boolean => {
-    setError(null);
-    if (currentStep === 1) {
-      if (!title.trim() || title.trim().length < 3) {
-        setError('Please enter a match title with at least 3 characters.');
-        return false;
-      }
-    }
-    if (currentStep === 2) {
-      if (!locationName.trim()) {
-        setError('Please specify or pinpoint a pitch or court venue in Naga.');
-        return false;
-      }
-      if (scheduleMode === 'today' && isTooLateToday) {
-        setError('It is too late to schedule a game for today. Please choose tomorrow or a custom date.');
-        return false;
-      }
-      if (scheduleMode === 'custom') {
-        if (!customDate || customDate < todayISO) {
-          setError('Please select a valid upcoming date.');
-          return false;
-        }
-        if (customDate === todayISO) {
-          const [th, tm] = customTime.split(':').map(Number);
-          if (th < currentHour || (th === currentHour && tm <= currentMin)) {
-            setError("Please select a future kickoff time for today's match.");
-            return false;
-          }
-        }
-      }
-    }
-    if (currentStep === 3) {
-      const parsedCount = parseInt(playersCountInput, 10);
-      if (isNaN(parsedCount) || parsedCount < 2 || parsedCount > 24) {
-        setSpotsError('Player capacity must be between 2 and 24.');
-        setError('Player capacity must be between 2 and 24.');
-        return false;
-      }
-      if (splitCost && pricePerPlayer < 0) {
-        setError('Price per player cannot be negative.');
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const handleNext = () => {
-    if (!validateStep(step)) return;
-
-    if (step < 4) {
-      setStep(step + 1);
-    } else if (step === 4) {
-      handlePublish();
-    }
-  };
-
   const handlePublish = async () => {
     if (isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
 
     try {
-      const matchTime = scheduleMode === 'today'
-        ? defaultTodayTime
-        : scheduleMode === 'tomorrow'
-        ? '18:00'
-        : customTime;
-
-      const dateLabel = scheduleMode === 'today'
-        ? 'Today'
-        : scheduleMode === 'tomorrow'
-        ? 'Tomorrow'
-        : customDate;
-
-      const formattedSchedule = `${dateLabel} • ${matchTime}`;
+      const startsAtIso = toManilaIsoTimestamp(selectedDateISO, kickoffTime24);
+      const endsAtIso =
+        hasEndTime && endTimeValidation?.valid ? endTimeValidation.endIso : null;
+      const activeCapacity = isUnlimitedSpots
+        ? null
+        : Math.max(2, Math.min(24, parseInt(playersCountInput, 10) || playersCount));
 
       await onMatchCreated({
         sport,
         title: title.trim(),
-        date: dateLabel,
-        time: matchTime,
-        formattedDate: formattedSchedule,
+        date: selectedDateISO,
+        time: kickoffTime24,
+        endTime: hasEndTime ? endTime24 : null,
+        startsAt: startsAtIso,
+        endsAt: endsAtIso,
+        formattedDate: scheduleSummaryLine,
         locationName: locationName.trim(),
         locationDetails: locationDetails.trim() || undefined,
-        playersCount: parseInt(playersCountInput, 10) || playersCount,
+        playersCount: activeCapacity,
         skillLevel,
         pricePerPlayer: splitCost ? pricePerPlayer : 0,
-        notes: bringBootsNote ? 'Bring proper athletic gear and hydration' : 'Organized via SportSync Matchmaking',
+        notes: bringBootsNote
+          ? 'Bring proper athletic gear and hydration'
+          : 'Organized via SportSync Matchmaking',
         coordinates,
         visibility,
         inviteCode,
@@ -913,27 +711,63 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             : undefined,
       });
 
+      clearDraft();
       setStep(5);
       triggerConfetti();
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : 'Failed to publish match. Please check your connection and retry.';
+        err instanceof Error
+          ? err.message
+          : 'Failed to publish match. Please check your connection and retry.';
       setError(message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleNext = () => {
+    if (stepValidationReason) {
+      setError(stepValidationReason);
+      return;
+    }
+    setError(null);
+    if (step < 4) {
+      setStep((s) => s + 1);
+    } else if (step === 4) {
+      void handlePublish();
+    }
+  };
+
+  const upcomingDates = useMemo(() => generateUpcomingDates(14), []);
+
+  const feeSummaryText = useMemo(() => {
+    if (!splitCost || pricePerPlayer <= 0) return null;
+    if (isUnlimitedSpots) {
+      return `${APP_CONFIG.currency}${pricePerPlayer.toLocaleString()} per player`;
+    }
+    const validSpots = Math.max(2, Math.min(24, parseInt(playersCountInput, 10) || playersCount));
+    const total = validSpots * pricePerPlayer;
+    return `${validSpots} spots × ${APP_CONFIG.currency}${pricePerPlayer.toLocaleString()} = ${APP_CONFIG.currency}${total.toLocaleString()} total`;
+  }, [splitCost, pricePerPlayer, isUnlimitedSpots, playersCountInput, playersCount]);
+
   return (
-    <div className="w-full h-full min-h-[580px] flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative">
+    <div className="w-full h-[100dvh] flex flex-col bg-[#0B0F0C] text-[#F4F7F0] select-none relative overflow-hidden">
       {/* Top Fixed Header & Step Progress Bar */}
       <div className="px-4 pt-4 pb-2 sm:px-5 shrink-0 bg-[#0B0F0C] z-10 border-b border-white/5">
         <div className="flex items-center justify-between mb-2.5">
           <button
             type="button"
-            onClick={step > 1 && step < 5 ? () => { setError(null); setStep(step - 1); } : onClose}
-            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
-            title={step > 1 ? 'Go back a step' : 'Cancel and close'}
+            onClick={
+              step > 1 && step < 5
+                ? () => {
+                    setError(null);
+                    setStep(step - 1);
+                  }
+                : handleRequestClose
+            }
+            className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors press-scale"
+            title={step > 1 && step < 5 ? 'Go back a step' : 'Cancel and close'}
+            aria-label={step > 1 && step < 5 ? 'Go back a step' : 'Close wizard'}
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -944,7 +778,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             </span>
             <span className="text-[10px] text-[#A5B0A6]">
               {step === 1 && 'Sport & Title'}
-              {step === 2 && 'Location & Time'}
+              {step === 2 && 'When & Where'}
               {step === 3 && 'Roster & Fee'}
               {step === 4 && 'Review Details'}
               {step === 5 && 'Live on Discovery'}
@@ -953,9 +787,10 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
 
           <button
             type="button"
-            onClick={onClose}
-            className="w-9 h-9 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-[#FFA394] flex items-center justify-center transition-colors press-scale"
+            onClick={handleRequestClose}
+            className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-[#FFA394] flex items-center justify-center transition-colors press-scale"
             title="Close"
+            aria-label="Close wizard"
           >
             <X className="w-4 h-4" />
           </button>
@@ -977,10 +812,13 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       </div>
 
       {/* Main Scrollable Step Content Container */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4 space-y-4 no-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-3 pb-8 sm:px-5 sm:pt-4 space-y-4 no-scrollbar">
         {/* Error Banner */}
         {error && (
-          <div className="p-3 rounded-2xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2 animate-in fade-in">
+          <div
+            role="alert"
+            className="p-3 rounded-2xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2 animate-in fade-in"
+          >
             <AlertCircle className="w-4 h-4 shrink-0 text-[#E0533C]" />
             <span className="leading-tight">{error}</span>
           </div>
@@ -1000,7 +838,6 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </p>
             </div>
 
-            {/* Standardized Sports Grid (Mobile Aligned) */}
             <div>
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-2">
                 Select Sport Category
@@ -1032,7 +869,6 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </div>
             </div>
 
-            {/* Match Title Input & Suggestions */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider">
@@ -1047,11 +883,11 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   setTitle(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="e.g. 5v5 Sunset Pickup Game" autoComplete="off"
-                className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
+                placeholder="e.g. 5v5 Sunset Pickup Game"
+                autoComplete="off"
+                className="w-full min-h-[48px] h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
               />
 
-              {/* Title Suggestions */}
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {[
                   '5v5 Open Pickup',
@@ -1066,7 +902,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                       setTitle(`${sport}: ${sug}`);
                       setError(null);
                     }}
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-[#141A15] border border-white/10 text-[#A5B0A6] hover:text-[#C8FF2E] hover:border-[#C8FF2E]/40 transition-colors"
+                    className="min-h-[36px] text-[11px] px-3 py-1.5 rounded-full bg-[#141A15] border border-white/10 text-[#A5B0A6] hover:text-[#C8FF2E] hover:border-[#C8FF2E]/40 transition-colors"
                   >
                     + {sug}
                   </button>
@@ -1077,7 +913,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
         )}
 
         {/* =========================================================================
-            STEP 2: SCHEDULE & INTERACTIVE NAGA CITY LOCATION PINPOINTER
+            STEP 2: WHEN & WHERE (CALENDAR, 12H TIME WHEEL, OPTIONAL END TIME, NAGA MAP)
            ========================================================================= */}
         {step === 2 && (
           <div className="space-y-4 animate-in fade-in">
@@ -1092,149 +928,126 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 When &amp; where to play?
               </h2>
               <p className="text-xs text-[#A5B0A6]">
-                Tap anywhere on the Naga map to pinpoint the exact pitch or court.
+                Pick your date, kickoff time, and court location in Naga City.
               </p>
             </div>
 
-            {/* Schedule Selector */}
-            <div>
-              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-1.5">
+            {/* Date & Kickoff Time Section */}
+            <div className="space-y-2.5">
+              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
                 Kickoff Date &amp; Time
               </label>
+
+              {/* 3 Non-Wrapping Preset Pills (Today / Tomorrow / Custom) */}
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  disabled={isTooLateToday}
-                  onClick={() => {
-                    setScheduleMode('today');
-                    setDate(`Today (${defaultTodayTime})`);
-                  }}
-                  className={`h-11 rounded-2xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all press-scale ${
-                    isTooLateToday
+                  disabled={isTodayUnavailable}
+                  aria-disabled={isTodayUnavailable}
+                  onClick={handleSelectTodayPreset}
+                  className={`min-h-[44px] px-2 rounded-2xl border text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden transition-all press-scale ${
+                    isTodayUnavailable
                       ? 'bg-[#141A15] border-white/5 text-[#6F7B71] opacity-40 cursor-not-allowed'
                       : scheduleMode === 'today'
                       ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
-                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
+                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6] hover:text-white'
                   }`}
                 >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>Today {defaultTodayTime}</span>
+                  <span className="truncate">Today {formatTime12h(smartDefault.time24)}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setScheduleMode('tomorrow');
-                    setDate('Tomorrow (18:00)');
-                  }}
-                  className={`h-11 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all press-scale ${
+                  onClick={handleSelectTomorrowPreset}
+                  className={`min-h-[44px] px-2 rounded-2xl border text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap overflow-hidden transition-all press-scale ${
                     scheduleMode === 'tomorrow'
-                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
-                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
+                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-sm'
+                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6] hover:text-white'
                   }`}
                 >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Tomorrow 18:00</span>
+                  <span className="truncate">Tomorrow 6:00 PM</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setScheduleMode('custom');
-                    setDate(`${customDate} (${customTime})`);
-                  }}
-                  className={`h-11 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-1 transition-all press-scale ${
+                  onClick={() => setScheduleMode('custom')}
+                  className={`min-h-[44px] px-2 rounded-2xl border text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-all press-scale ${
                     scheduleMode === 'custom'
-                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
-                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
+                      ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] font-bold shadow-sm'
+                      : 'bg-[#1C241E] border-white/10 text-[#A5B0A6] hover:text-white'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
                   <span>Custom</span>
                 </button>
               </div>
 
+              {/* Custom Date & Time Picker Card */}
               {scheduleMode === 'custom' && (
-                <div className="mt-2 p-3 rounded-2xl bg-[#141A15] border border-white/10 space-y-3">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Select Date</span>
-                      <div className="inline-flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          aria-label="Previous day"
-                          disabled={customDate <= todayISO}
-                          onClick={() => adjustCustomDateByDays(-1)}
-                          className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
-                        >
-                          -1d
-                        </button>
-                        <span className="text-xs font-mono font-bold text-[#C8FF2E] px-1">{customDate}</span>
-                        <button
-                          type="button"
-                          aria-label="Next day"
-                          onClick={() => adjustCustomDateByDays(1)}
-                          className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] hover:border-[#C8FF2E]"
-                        >
-                          +1d
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Next week"
-                          onClick={() => adjustCustomDateByDays(7)}
-                          className="h-7 px-2 rounded-lg bg-[#1C241E] border border-white/10 text-[11px] font-bold text-[#A5B0A6] hover:text-[#C8FF2E]"
-                        >
-                          +7d
-                        </button>
-                      </div>
+                <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/10 space-y-3.5">
+                  {/* Date: One Tappable Human-Formatted Field + Horizontal DateStrip */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">
+                        Date
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCalendarOpen(true)}
+                        className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-xs font-display font-bold text-[#F4F7F0] flex items-center gap-2 transition-all press-scale"
+                      >
+                        <Calendar className="w-4 h-4 text-[#C8FF2E]" />
+                        <span>{formatManilaDateShort(selectedDateISO)}</span>
+                      </button>
                     </div>
                     <DateStrip
-                      dates={generateUpcomingDates(14)}
-                      selectedId={customDate}
-                      onSelect={(iso) => handleCustomScheduleChange(iso, customTime)}
-                      showCalendarPicker={false}
+                      dates={upcomingDates}
+                      selectedId={selectedDateISO}
+                      onSelect={(iso) => handleSelectDateISO(iso)}
+                      showCalendarPicker={true}
+                      onOpenCalendar={() => setIsCalendarOpen(true)}
                     />
                   </div>
 
-                  <div className="space-y-1.5 pt-2 border-t border-white/5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Select Kickoff Time</span>
-                      <div className="inline-flex items-center bg-[#1C241E] border border-white/10 rounded-xl p-0.5 gap-1.5">
-                        <button
-                          type="button"
-                          aria-label="Earlier kickoff time"
-                          disabled={customTime <= '00:00'}
-                          onClick={() => adjustCustomTimeByMinutes(-15)}
-                          className="w-7 h-7 rounded-lg bg-[#263028] text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
-                        >
-                          -
-                        </button>
-                        <span className="font-mono text-xs font-bold text-[#C8FF2E] px-1.5 tabular-nums">{customTime}</span>
-                        <button
-                          type="button"
-                          aria-label="Later kickoff time"
-                          disabled={customTime >= '23:45'}
-                          onClick={() => adjustCustomTimeByMinutes(15)}
-                          className="w-7 h-7 rounded-lg bg-[#C8FF2E] text-xs font-bold text-[#0B0F0C] disabled:opacity-30"
-                        >
-                          +
-                        </button>
-                      </div>
+                  {/* Kickoff Time: One Tappable 12h Field + Quick Chips */}
+                  <div className="space-y-2 pt-2.5 border-t border-white/5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">
+                        Kickoff Time
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTimeWheel('start')}
+                        className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-sm font-display font-bold text-[#C8FF2E] tabular-nums flex items-center gap-2 transition-all press-scale"
+                      >
+                        <Clock className="w-4 h-4 text-[#C8FF2E]" />
+                        <span>{formatTime12h(kickoffTime24)}</span>
+                      </button>
                     </div>
+
                     <div className="grid grid-cols-4 gap-1.5">
-                      {['07:00', '09:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'].map((slot) => {
-                        const activeSlot = customTime === slot;
+                      {QUICK_TIME_SLOTS_24.map((slot) => {
+                        const activeSlot = kickoffTime24 === slot;
+                        const isPast = isManilaDateTimeInPast(selectedDateISO, slot);
                         return (
                           <button
                             key={slot}
                             type="button"
+                            disabled={isPast}
+                            aria-disabled={isPast}
                             aria-pressed={activeSlot}
-                            onClick={() => handleCustomScheduleChange(customDate, slot)}
-                            className={`py-1.5 rounded-xl text-xs font-mono font-semibold border transition-all press-scale ${
-                              activeSlot
+                            title={isPast ? 'This time has already passed today' : undefined}
+                            onClick={() => {
+                              if (isPast) return;
+                              updateKickoffTime(slot, true);
+                            }}
+                            className={`min-h-[44px] py-2 px-1 rounded-xl text-[11px] font-semibold border transition-all press-scale whitespace-nowrap ${
+                              isPast
+                                ? 'bg-[#141A15] text-[#6F7B71]/50 border-white/5 opacity-40 cursor-not-allowed'
+                                : activeSlot
                                 ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
                                 : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:border-white/20 hover:text-white'
                             }`}
                           >
-                            {slot}
+                            {formatTime12h(slot)}
                           </button>
                         );
                       })}
@@ -1242,207 +1055,112 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Naga Location Pinpointing & Venue Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Pinpoint Location (Naga City)</span>
-                  <span className="text-[#C8FF2E]">*</span>
-                </label>
-                {isResolvingLocation && (
-                  <span className="text-[10px] text-[#C8FF2E] flex items-center gap-1 animate-pulse">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Resolving...
-                  </span>
-                )}
-              </div>
+              {/* Optional End Time Row */}
+              <div className="p-3 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5">
+                {!hasEndTime ? (
+                  <button
+                    type="button"
+                    onClick={handleAddEndTime}
+                    className="w-full min-h-[44px] px-2 flex items-center justify-between text-xs font-semibold text-[#C8FF2E] hover:text-[#d4ff52] transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="w-4 h-4" />
+                      <span>Add end time</span>
+                    </span>
+                    <span className="text-[11px] text-[#6F7B71] font-normal">Optional</span>
+                  </button>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">
+                        End Time (Optional)
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTimeWheel('end')}
+                          className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-sm font-display font-bold text-[#F4F7F0] tabular-nums flex items-center gap-2 transition-all press-scale"
+                        >
+                          <Clock className="w-4 h-4 text-[#C8FF2E]" />
+                          <span>{formatTime12h(endTime24)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveEndTime}
+                          aria-label="Remove end time"
+                          title="Remove end time"
+                          className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-[#1C241E] border border-white/10 text-[#A5B0A6] hover:text-[#FF5C5C] flex items-center justify-center transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
 
-              {/* Location Input with MapPin Icon & Map API Dropdown */}
-              <div ref={searchContainerRef} className="relative mb-2 z-[450]">
-                <div className="relative flex items-center">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#C8FF2E] pointer-events-none">
-                    {isSearchingLocation ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={locationSearchQuery}
-                    onChange={(e) => handleLocationInputChange(e.target.value)}
-                    onFocus={() => {
-                      if (locationSuggestions.length > 0) setShowLocationDropdown(true);
-                    }}
-                    placeholder="Search venue or address (e.g. Robredo Coliseum, Pacol, Naga City)..." autoComplete="off"
-                    className="w-full h-12 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all truncate"
-                  />
-                  {locationSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLocationSearchQuery('');
-                        setLocationName('');
-                        setLocationSuggestions([]);
-                        setShowLocationDropdown(false);
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#65756B] hover:text-white transition-colors cursor-pointer"
-                      title="Clear location search"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {DURATION_CHIPS.map((chip) => {
+                        const targetEnd = shiftTime24ByMinutes(kickoffTime24, chip.minutes);
+                        const isMatch = endTime24 === targetEnd;
+                        return (
+                          <button
+                            key={chip.label}
+                            type="button"
+                            aria-pressed={isMatch}
+                            onClick={() => handleDurationChip(chip.minutes)}
+                            className={`min-h-[44px] rounded-xl text-xs font-bold border transition-all press-scale ${
+                              isMatch
+                                ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
+                                : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {chip.label}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                {/* Suggestions Dropdown from Map API & Landmarks */}
-                {showLocationDropdown && (locationSuggestions.length > 0 || isSearchingLocation) && (
-                  <div className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-white/10 bg-[#141A15]/98 backdrop-blur-xl shadow-2xl p-1.5 space-y-1 max-h-60 overflow-y-auto no-scrollbar z-[500]">
-                    {isSearchingLocation && locationSuggestions.length === 0 && (
-                      <div className="p-3 text-xs text-[#A5B0A6] flex items-center justify-center gap-2">
-                        <Loader2 className="w-3.5 h-3.5 text-[#C8FF2E] animate-spin" />
-                        <span>Searching Map API...</span>
+                    {endTimeValidation && !endTimeValidation.valid && (
+                      <div className="px-3 py-2 rounded-xl bg-[#FF5C5C]/15 border border-[#FF5C5C]/35 text-[#FF8F8F] text-xs flex items-center gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{endTimeValidation.error}</span>
                       </div>
                     )}
-                    {locationSuggestions.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => handleSelectSuggestedLocation(item)}
-                        className="w-full text-left p-2.5 rounded-xl hover:bg-[#1C241E] flex items-center justify-between gap-2.5 transition-colors cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-7 h-7 rounded-lg bg-[#0B0F0C] border border-white/5 flex items-center justify-center text-[#C8FF2E] shrink-0 group-hover:border-[#C8FF2E]/40 group-hover:scale-105 transition-all">
-                            <MapPin className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-[#F4F7F0] truncate group-hover:text-[#C8FF2E]">
-                                {item.title}
-                              </span>
-                              {item.isLandmark && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30 font-bold shrink-0">
-                                  Venue
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-[#A5B0A6] block truncate">
-                              {item.subtitle}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-[10px] text-[#C8FF2E] font-semibold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          Pin to map &rarr;
-                        </span>
-                      </button>
-                    ))}
                   </div>
                 )}
               </div>
 
-              {/* Naga City Prominent Venues Quick Chips */}
-              <div className="mb-2">
-                <span className="text-[10px] font-semibold text-[#A5B0A6] block mb-1">
-                  Quick Select Naga Facilities &amp; Hubs:
+              {/* Live Date/Time Summary Line */}
+              <div className="px-3.5 py-2.5 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/25 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#A5B0A6] font-medium">Match Schedule</span>
+                <span className="text-xs font-display font-bold text-[#C8FF2E] tabular-nums">
+                  {scheduleSummaryLine}
                 </span>
-                <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                  {NAGA_SPORTS_VENUES.map((venue) => {
-                    const isSelected = selectedVenueId === venue.id;
-                    return (
-                      <button
-                        key={venue.id}
-                        type="button"
-                        onClick={() => handleSelectNagaVenue(venue)}
-                        className={`text-[11px] px-3 py-1.5 rounded-full border shrink-0 transition-all press-scale flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold shadow-sm'
-                            : 'bg-[#141A15] text-[#A5B0A6] border-white/10 hover:border-white/20 hover:text-white'
-                        }`}
-                      >
-                        <MapPin className={`w-3 h-3 ${isSelected ? 'text-[#0B0F0C]' : 'text-[#C8FF2E]'}`} />
-                        <span>{venue.shortName}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Interactive Naga Leaflet Pinpoint Map Container */}
-              <div className="w-full h-56 sm:h-64 rounded-2xl border border-white/15 overflow-hidden relative shadow-lg bg-[#141A15]">
-                {/* Real interactive Leaflet Map canvas */}
-                <div ref={mapContainerRef} className="w-full h-full z-0" />
-
-                {/* Map Floating Control Overlay: Locate Me & Center Naga */}
-                <div className="absolute top-2.5 right-2.5 z-[400] flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleLocateMe}
-                    disabled={isLocating}
-                    title="Find my current location"
-                    className="h-8 px-2.5 rounded-xl bg-[#0B0F0C]/90 backdrop-blur-md border border-white/15 text-[#C8FF2E] text-[11px] font-bold flex items-center gap-1 shadow-md hover:bg-[#141A15] transition-all press-scale disabled:opacity-50"
-                  >
-                    {isLocating ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Crosshair className="w-3.5 h-3.5" />
-                    )}
-                    <span>Locate</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCenterNaga}
-                    title="Center on Naga City Center"
-                    className="h-8 px-2.5 rounded-xl bg-[#0B0F0C]/90 backdrop-blur-md border border-white/15 text-[#A5B0A6] hover:text-white text-[11px] font-semibold flex items-center gap-1 shadow-md hover:bg-[#141A15] transition-all press-scale"
-                  >
-                    <Navigation className="w-3.5 h-3.5 text-[#C8FF2E]" />
-                    <span>Naga</span>
-                  </button>
-                </div>
-
-                {/* Bottom Map Info Pill: Coordinates & Tap Instruction */}
-                <div className="absolute bottom-2 left-2 right-2 z-[400] pointer-events-none">
-                  <div className="bg-[#0B0F0C]/90 backdrop-blur-md border border-[#C8FF2E]/30 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] text-[#F4F7F0] shadow-md">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <div className="w-2 h-2 rounded-full bg-[#C8FF2E] animate-ping" />
-                      <span className="font-mono text-[10px] text-[#A5B0A6] truncate">
-                        {coordinates[0].toFixed(4)}°N, {coordinates[1].toFixed(4)}°E
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold text-[#C8FF2E] shrink-0 ml-1">
-                      Tap map to pin
-                    </span>
-                  </div>
-                </div>
-
-                {/* Temporary Notice Banner */}
-                {locateNotice && (
-                  <div className="absolute top-2.5 left-2.5 right-24 z-[450] bg-[#0B0F0C]/95 border border-[#C8FF2E] text-[#C8FF2E] text-[10px] font-bold px-2.5 py-1 rounded-xl shadow-lg animate-in fade-in">
-                    {locateNotice}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-3">
-                <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center justify-between mb-1.5">
-                  <span>Location Details</span>
-                  <span className="text-[10px] text-[#A5B0A6] font-normal">Optional</span>
-                </label>
-                <input
-                  type="text"
-                  value={locationDetails}
-                  onChange={(e) => setLocationDetails(e.target.value)}
-                  placeholder="Unit, building, landmark, or specific directions..."
-                  autoComplete="off"
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
-                />
               </div>
             </div>
+
+            {/* Naga City Location Pinpointer */}
+            <NagaLocationPicker
+              isActive={step === 2}
+              locationName={locationName}
+              locationDetails={locationDetails}
+              coordinates={coordinates}
+              hasPin={hasPin}
+              selectedVenueId={selectedVenueId}
+              showQuickHubs={true}
+              onChangeLocation={(update) => {
+                setLocationName(update.locationName);
+                setCoordinates(update.coordinates);
+                setHasPin(update.hasPin);
+                setSelectedVenueId(update.selectedVenueId || '');
+                if (error) setError(null);
+              }}
+              onChangeLocationDetails={setLocationDetails}
+            />
           </div>
         )}
 
         {/* =========================================================================
-            STEP 3: ROSTER, CAPACITY & COST SPLIT
+            STEP 3: ROSTER CAPACITY (WITH UNLIMITED) & SINGLE FEE CONTROL
            ========================================================================= */}
         {step === 3 && (
           <div className="space-y-4 animate-in fade-in">
@@ -1451,39 +1169,77 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 Roster capacity &amp; fee
               </h2>
               <p className="text-xs text-[#A5B0A6] mt-0.5">
-                Set max attendee spots and optional court fee cost-split.
+                Set attendee spots or open to all, plus optional court fee split.
               </p>
             </div>
 
-            {/* Total Spots Stepper Card (Mobile Aligned) */}
-            <div className={`p-3.5 sm:p-4 rounded-2xl bg-[#141A15] border ${spotsError ? 'border-[#FF5C5C]/50' : 'border-white/5'} flex items-center justify-between gap-3`}>
-              <div>
-                <span className="font-display font-bold text-sm text-[#F4F7F0] block">
-                  Total Spots
-                </span>
-                <span className="text-xs text-[#A5B0A6]">Min 2, Max 24 players</span>
+            {/* Total Spots Card (with Unlimited Toggle inside the same card) */}
+            <div
+              className={`p-3.5 sm:p-4 rounded-2xl bg-[#141A15] border ${
+                !isUnlimitedSpots && spotsError ? 'border-[#FF5C5C]/50' : 'border-white/5'
+              } space-y-3`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="font-display font-bold text-sm text-[#F4F7F0] block">
+                    Total Spots
+                  </span>
+                  {!isUnlimitedSpots && (
+                    <span className="text-xs text-[#A5B0A6]">Min 2, Max 24 players</span>
+                  )}
+                </div>
+                {isUnlimitedSpots ? (
+                  <span className="min-h-[44px] px-4 rounded-xl bg-[#C8FF2E]/15 border border-[#C8FF2E]/40 text-[#C8FF2E] font-display font-bold text-sm inline-flex items-center">
+                    Unlimited
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={playersCountInput}
+                      onChange={(e) => handlePlayersCountChange(e.target.value)}
+                      onBlur={handlePlayersCountBlur}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.currentTarget.blur();
+                        }
+                      }}
+                      placeholder="10"
+                      aria-label="Total Spots"
+                      className={`w-20 min-h-[44px] h-11 px-3 text-center rounded-xl bg-[#1C241E] border ${
+                        spotsError
+                          ? 'border-[#FF5C5C] text-[#FF5C5C]'
+                          : 'border-white/10 text-[#F4F7F0] focus:border-[#C8FF2E]'
+                      } text-base font-bold font-mono focus:outline-none transition-all select-text`}
+                    />
+                    <span className="text-xs font-semibold text-[#A5B0A6]">spots</span>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={playersCountInput}
-                  onChange={(e) => handlePlayersCountChange(e.target.value)}
-                  onBlur={handlePlayersCountBlur}
-                  placeholder="10"
-                  aria-label="Total Spots"
-                  className={`w-20 h-11 px-3 text-center rounded-xl bg-[#1C241E] border ${spotsError ? 'border-[#FF5C5C] text-[#FF5C5C]' : 'border-white/10 text-[#F4F7F0] focus:border-[#C8FF2E]'} text-base font-bold font-mono focus:outline-none transition-all`}
+
+              {!isUnlimitedSpots && spotsError && (
+                <div className="p-2.5 rounded-xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#E0533C]" />
+                  <span>{spotsError}</span>
+                </div>
+              )}
+
+              <div className="pt-2.5 border-t border-white/5">
+                <Toggle
+                  checked={isUnlimitedSpots}
+                  onChange={(checked) => {
+                    setIsUnlimitedSpots(checked);
+                    if (checked) setSpotsError(null);
+                  }}
+                  label="Open for all / No spot limit"
+                  sublabel="Anyone can join without a player cap"
+                  className="w-full"
                 />
-                <span className="text-xs font-semibold text-[#A5B0A6]">spots</span>
               </div>
             </div>
-            {spotsError && (
-              <div className="p-2.5 rounded-xl bg-[#E0533C]/15 border border-[#E0533C]/40 text-[#FFA394] text-xs flex items-center gap-2 -mt-2 animate-in fade-in">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[#E0533C]" />
-                <span>{spotsError}</span>
-              </div>
-            )}
 
             {/* Skill Level Selection */}
             <div>
@@ -1494,7 +1250,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 <button
                   type="button"
                   onClick={() => setSkillLevel('Casual')}
-                  className={`p-3 rounded-2xl border text-left transition-all press-scale ${
+                  className={`min-h-[56px] p-3 rounded-2xl border text-left transition-all press-scale ${
                     skillLevel === 'Casual'
                       ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E]'
                       : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
@@ -1506,7 +1262,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 <button
                   type="button"
                   onClick={() => setSkillLevel('Competitive')}
-                  className={`p-3 rounded-2xl border text-left transition-all press-scale ${
+                  className={`min-h-[56px] p-3 rounded-2xl border text-left transition-all press-scale ${
                     skillLevel === 'Competitive'
                       ? 'bg-[#141A15] border-[#C8FF2E] text-[#C8FF2E]'
                       : 'bg-[#1C241E] border-white/5 text-[#A5B0A6]'
@@ -1518,86 +1274,70 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </div>
             </div>
 
-            {/* Cost Split Toggle & Stepper Card */}
+            {/* Cost Split Toggle & Single Fee Control */}
             <div className="p-3.5 sm:p-4 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
               <Toggle
                 checked={splitCost}
-                onChange={setSplitCost}
+                onChange={handleSplitCostToggle}
                 label="Split Court Fee"
                 sublabel="Share venue rental fee per attendee"
                 className="w-full"
               />
               {splitCost && (
-                <div className="pt-2.5 border-t border-white/5 space-y-2.5">
+                <div className="pt-2.5 border-t border-white/5 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs text-[#A5B0A6] block font-semibold">Fee per attendee:</span>
-                      <span className="text-[10px] text-[#6F7B71]">Philippine Pesos (₱) • Type or select</span>
+                    <div className="min-w-0">
+                      <span className="text-xs text-[#F4F7F0] block font-semibold">
+                        Fee per attendee
+                      </span>
+                      <span className="text-[11px] text-[#6F7B71] block whitespace-nowrap">
+                        Per player, in {APP_CONFIG.currency}
+                      </span>
                     </div>
                     <Stepper
                       value={pricePerPlayer}
-                      onChange={setPricePerPlayer}
+                      onChange={handleFeeChange}
                       min={0}
-                      max={5000}
+                      max={MAX_FEE_PHP}
                       step={10}
                       prefix={APP_CONFIG.currency}
                       ariaLabel="fee per attendee"
+                      onOutOfBoundsChange={setFeeError}
                     />
                   </div>
+
+                  {feeError && (
+                    <p className="text-[11px] text-[#FFA394]">{feeError}</p>
+                  )}
+
+                  {/* Quick Preset Pills (no Free pill — toggle off means free) */}
                   <div className="grid grid-cols-6 gap-1.5">
-                    {[50, 100, 150, 200, 250, 350].map((preset) => {
+                    {FEE_PRESETS.map((preset) => {
                       const isPresetSelected = pricePerPlayer === preset;
                       return (
                         <button
                           key={preset}
                           type="button"
                           aria-pressed={isPresetSelected}
-                          onClick={() => setPricePerPlayer(preset)}
-                          className={`py-1.5 rounded-xl text-[11px] font-mono font-semibold border transition-all press-scale ${
+                          onClick={() => handleFeeChange(preset)}
+                          className={`min-h-[44px] py-1.5 rounded-xl text-[11px] font-mono font-semibold border transition-all press-scale ${
                             isPresetSelected
                               ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold shadow-sm'
                               : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:border-white/20 hover:text-white'
                           }`}
                         >
-                          {APP_CONFIG.currency}{preset}
+                          {APP_CONFIG.currency}
+                          {preset}
                         </button>
                       );
                     })}
                   </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[11px] text-[#A5B0A6] shrink-0 font-medium">Or type exact:</span>
-                    <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#C8FF2E] pointer-events-none">
-                        {APP_CONFIG.currency}
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={pricePerPlayer === 0 ? '' : pricePerPlayer}
-                        onChange={(e) => {
-                          const cleaned = e.target.value.replace(/[^0-9]/g, '');
-                          if (cleaned === '') {
-                            setPricePerPlayer(0);
-                          } else {
-                            const val = parseInt(cleaned, 10);
-                            if (!isNaN(val) && val <= 5000) {
-                              setPricePerPlayer(val);
-                            }
-                          }
-                        }}
-                        placeholder="e.g. 210 (Free: 0)"
-                        aria-label="Custom price per attendee"
-                        className="w-full h-8 pl-7 pr-3 rounded-lg bg-[#1C241E] border border-white/10 hover:border-white/20 focus:border-[#C8FF2E] text-xs font-mono font-semibold text-[#F4F7F0] focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/40 transition-all placeholder:text-[#6F7B71]"
-                      />
-                    </div>
-                  </div>
-                  {![50, 100, 150, 200, 250, 350].includes(pricePerPlayer) && (
-                    <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/30 text-xs text-[#A5B0A6] animate-in fade-in">
-                      <span className="text-[11px]">Custom price applied:</span>
-                      <span className="font-mono font-bold text-[#C8FF2E]">
-                        {pricePerPlayer === 0 ? 'Free' : `${APP_CONFIG.currency}${pricePerPlayer} / attendee`}
-                      </span>
+
+                  {/* One-Line Live Fee Summary */}
+                  {feeSummaryText && (
+                    <div className="px-3 py-2 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/25 flex items-center justify-between text-xs">
+                      <span className="text-[#A5B0A6]">Estimated Fee</span>
+                      <span className="font-mono font-bold text-[#C8FF2E]">{feeSummaryText}</span>
                     </div>
                   )}
                 </div>
@@ -1609,7 +1349,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <Toggle
                 checked={bringBootsNote}
                 onChange={setBringBootsNote}
-                label="Checklist: Athletic Gear &amp; Water"
+                label="Checklist: Athletic Gear & Water"
                 sublabel="Remind attendees to bring athletic gears and hydration"
                 className="w-full"
               />
@@ -1631,14 +1371,13 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </p>
             </div>
 
-            {/* Review Card */}
             <div className="p-4 sm:p-5 rounded-3xl bg-[#141A15] border border-[#C8FF2E]/40 shadow-xl space-y-3">
               <div className="flex items-center justify-between">
                 <span className="px-2.5 py-0.5 rounded-full bg-[#C8FF2E] text-[#0B0F0C] font-bold text-[10px] uppercase">
                   {sport}
                 </span>
                 <span className="text-xs font-bold text-[#3DDC84]">
-                  {playersCount} Spots • {skillLevel}
+                  {isUnlimitedSpots ? 'Open to all' : `${playersCount} Spots`} • {skillLevel}
                 </span>
               </div>
 
@@ -1649,16 +1388,19 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <div className="text-xs text-[#A5B0A6] space-y-1.5 pt-1 border-t border-white/5">
                 <p className="flex items-center gap-1.5">
                   <span className="text-[#C8FF2E]">📍</span>
-                  <span className="text-[#F4F7F0] font-medium truncate">{locationName}{locationDetails ? ` • ${locationDetails}` : ''}</span>
+                  <span className="text-[#F4F7F0] font-medium truncate">
+                    {locationName}
+                    {locationDetails ? ` • ${locationDetails}` : ''}
+                  </span>
                 </p>
                 <p className="flex items-center gap-1.5">
                   <span className="text-[#C8FF2E]">⏰</span>
-                  <span>{date}</span>
+                  <span className="text-[#F4F7F0] font-medium">{scheduleSummaryLine}</span>
                 </p>
                 <p className="flex items-center gap-1.5">
                   <span className="text-[#C8FF2E]">💵</span>
                   <span>
-                    {splitCost
+                    {splitCost && pricePerPlayer > 0
                       ? `${APP_CONFIG.currency}${pricePerPlayer} / player split`
                       : 'Free open pickup game'}
                   </span>
@@ -1684,7 +1426,6 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               </div>
             </div>
 
-            {/* Visibility Pills */}
             <div>
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-2">
                 Visibility
@@ -1698,7 +1439,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                       key={v}
                       type="button"
                       onClick={() => setVisibility(v)}
-                      className={`py-2 px-1 rounded-xl text-xs font-semibold border text-center transition-all press-scale ${
+                      className={`min-h-[44px] py-2 px-2 rounded-xl text-xs font-semibold border text-center transition-all press-scale ${
                         isSelected
                           ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
                           : 'bg-[#1C241E] text-[#A5B0A6] border-white/5'
@@ -1722,7 +1463,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                       Invite-Only Access
                     </span>
                     <p className="text-[11px] text-[#A5B0A6] leading-relaxed mt-0.5">
-                      Only players with your private invite link or invited friends can view and join this match. It will not be shown on the public discovery feed.
+                      Only players with your private invite link or invited friends can view and join this match.
                     </p>
                   </div>
                 </div>
@@ -1734,12 +1475,18 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                   <div className="flex items-center gap-2 p-2 rounded-xl bg-[#0B0F0C] border border-white/10">
                     <LinkIcon className="w-4 h-4 text-[#C8FF2E] shrink-0 ml-1" />
                     <span className="text-xs font-mono text-[#F4F7F0] truncate flex-1 select-all">
-                      {typeof window !== 'undefined' ? `${window.location.origin}/?invite=${inviteCode}` : `https://sportsync.ph/?invite=${inviteCode}`}
+                      {typeof window !== 'undefined'
+                        ? `${window.location.origin}/?invite=${inviteCode}`
+                        : `https://sportsync.ph/?invite=${inviteCode}`}
                     </span>
                     <button
                       type="button"
                       onClick={handleCopyInviteLink}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all press-scale flex items-center gap-1.5 shrink-0 ${copiedInvite ? 'bg-[#3DDC84] text-[#0B0F0C]' : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#d4ff52]'}`}
+                      className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold transition-all press-scale flex items-center gap-1.5 shrink-0 ${
+                        copiedInvite
+                          ? 'bg-[#3DDC84] text-[#0B0F0C]'
+                          : 'bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#d4ff52]'
+                      }`}
                     >
                       {copiedInvite ? (
                         <>
@@ -1772,7 +1519,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                       <span className="text-[11px] text-[#A5B0A6] py-1">Loading players...</span>
                     ) : availablePlayers.length === 0 ? (
                       <span className="text-[11px] text-[#A5B0A6] py-1">
-                        No other players found yet &mdash; share an invite link instead.
+                        No other players found yet — share an invite link instead.
                       </span>
                     ) : (
                       availablePlayers.slice(0, 8).map((f) => {
@@ -1782,7 +1529,11 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                             key={f.id}
                             type="button"
                             onClick={() => toggleInvitedFriend(f.id)}
-                            className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all press-scale ${isInvited ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]' : 'bg-[#0B0F0C] border-white/5 text-[#A5B0A6]'}`}
+                            className={`p-2 rounded-2xl border flex flex-col items-center shrink-0 transition-all press-scale ${
+                              isInvited
+                                ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
+                                : 'bg-[#0B0F0C] border-white/5 text-[#A5B0A6]'
+                            }`}
                           >
                             <div className="relative">
                               <UserAvatar id={f.avatarId} name={f.name} size={32} />
@@ -1819,9 +1570,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
               <span className="text-xs font-bold text-[#3DDC84] uppercase tracking-widest block mb-1">
                 Match Live on Feed
               </span>
-              <h2 className="font-display font-black text-2xl text-[#F4F7F0]">
-                Game Created!
-              </h2>
+              <h2 className="font-display font-black text-2xl text-[#F4F7F0]">Game Created!</h2>
               <p className="text-xs text-[#A5B0A6] max-w-xs mx-auto mt-1">
                 Your match has been pinned in Naga City and published to player discovery.
               </p>
@@ -1830,22 +1579,31 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
             <div className="p-4 rounded-2xl bg-[#141A15] border border-white/10 max-w-xs mx-auto text-left space-y-2.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#A5B0A6]">Match:</span>
-                <span className="text-[#C8FF2E] font-bold truncate max-w-[150px]">{title}</span>
+                <span className="text-[#C8FF2E] font-bold truncate max-w-[160px]">{title}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[#A5B0A6]">Schedule:</span>
+                <span className="text-white truncate max-w-[175px]">{scheduleSummaryLine}</span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#A5B0A6]">Location:</span>
-                <span className="text-white truncate max-w-[150px]">{locationName}{locationDetails ? ` (${locationDetails})` : ''}</span>
+                <span className="text-white truncate max-w-[160px]">
+                  {locationName}
+                  {locationDetails ? ` (${locationDetails})` : ''}
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-[#A5B0A6]">Spots:</span>
-                <span className="text-white font-mono">{playersCount} capacity</span>
+                <span className="text-white font-mono">
+                  {isUnlimitedSpots ? 'Open to all' : `${playersCount} capacity`}
+                </span>
               </div>
               {visibility === 'Invite' ? (
                 <Button
                   variant="social"
                   size="sm"
                   leftIcon={copiedInvite ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  className="w-full text-xs font-bold mt-2"
+                  className="w-full text-xs font-bold mt-2 min-h-[44px]"
                   onClick={handleCopyInviteLink}
                 >
                   {copiedInvite ? 'Invite Link Copied!' : 'Copy Private Invite Link'}
@@ -1854,8 +1612,14 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 <Button
                   variant="social"
                   size="sm"
-                  leftIcon={copiedPublicShare ? <Check className="w-4 h-4 stroke-[2.5]" /> : <Share2 className="w-4 h-4" />}
-                  className="w-full text-xs font-bold mt-2"
+                  leftIcon={
+                    copiedPublicShare ? (
+                      <Check className="w-4 h-4 stroke-[2.5]" />
+                    ) : (
+                      <Share2 className="w-4 h-4" />
+                    )
+                  }
+                  className="w-full text-xs font-bold mt-2 min-h-[44px]"
                   onClick={handleSharePublicMatch}
                 >
                   {copiedPublicShare ? 'Match Link Copied!' : 'Share Match Invite'}
@@ -1868,7 +1632,7 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
                 variant="primary"
                 size="lg"
                 onClick={onFinish || onClose}
-                className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)]"
+                className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)] min-h-[48px]"
               >
                 Open Match Room &amp; Roster
               </Button>
@@ -1878,27 +1642,112 @@ export const CreateMatchWizardScreen: React.FC<CreateMatchWizardScreenProps> = (
       </div>
 
       {/* =========================================================================
-          STICKY BOTTOM CTA BUTTON FOR STEPS 1-4 (MOBILE ALIGNED)
+          IN-FLOW FOOTER CTA (NEVER COVERED BY iOS SAFARI TOOLBAR OR KEYBOARD)
          ========================================================================= */}
       {step < 5 && (
-        <div className="sticky bottom-0 z-20 w-full px-4 py-3 sm:px-5 bg-gradient-to-t from-[#0B0F0C] via-[#0B0F0C]/95 to-transparent border-t border-white/5">
-          <Button
-            variant="primary"
-            size="lg"
-            isLoading={isSubmitting}
-            disabled={isSubmitting}
-            onClick={handleNext}
-            rightIcon={step < 4 ? <ArrowRight className="w-5 h-5" /> : undefined}
-            className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)] min-h-[48px]"
+        <div className="shrink-0 z-20 w-full px-4 pt-3 sm:px-5 bg-[#0B0F0C] border-t border-white/10 safe-area-bottom-12 space-y-1.5">
+          {stepValidationReason && (
+            <p className="text-[11px] text-[#A5B0A6] text-center" role="status">
+              {stepValidationReason}
+            </p>
+          )}
+          <div
+            onClick={() => {
+              if (stepValidationReason && !isSubmitting) {
+                setError(stepValidationReason);
+              }
+            }}
           >
-            {isSubmitting
-              ? 'Saving & Publishing...'
-              : step === 4
-              ? visibility === 'Invite'
-                ? 'Publish Invite-Only Match'
-                : 'Publish Match to Naga Feed'
-              : 'Next Step'}
-          </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              isLoading={isSubmitting}
+              disabled={isSubmitting || Boolean(stepValidationReason)}
+              onClick={handleNext}
+              rightIcon={step < 4 ? <ArrowRight className="w-5 h-5" /> : undefined}
+              className="w-full font-bold shadow-[0_8px_24px_rgba(200,255,46,0.3)] min-h-[48px]"
+            >
+              {isSubmitting
+                ? 'Saving & Publishing...'
+                : step === 4
+                ? visibility === 'Invite'
+                  ? 'Publish Invite-Only Match'
+                  : 'Publish Match to Naga Feed'
+                : 'Next Step'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly Calendar Bottom Sheet */}
+      <MonthCalendarSheet
+        isOpen={isCalendarOpen}
+        selectedDateISO={selectedDateISO}
+        maxHorizonDays={MAX_BOOKING_HORIZON_DAYS}
+        onSelect={handleSelectDateISO}
+        onClose={() => setIsCalendarOpen(false)}
+      />
+
+      {/* 12-Hour Apple-Clock Time Wheel Bottom Sheet */}
+      <TimeWheelSheet
+        isOpen={activeTimeWheel !== null}
+        value24={activeTimeWheel === 'end' ? endTime24 : kickoffTime24}
+        selectedDateISO={selectedDateISO}
+        blockPastTimes={activeTimeWheel === 'start'}
+        title={activeTimeWheel === 'end' ? 'Select End Time' : 'Select Kickoff Time'}
+        onChange={(next24) => {
+          if (activeTimeWheel === 'end') {
+            setEndTime24(next24);
+          } else {
+            updateKickoffTime(next24, true);
+          }
+        }}
+        onClose={() => setActiveTimeWheel(null)}
+      />
+
+      {/* Unsaved Draft Close Confirmation Dialog */}
+      {showDiscardConfirm && (
+        <div
+          className="fixed inset-0 z-[750] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDiscardConfirm(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Discard match draft"
+            className="w-full max-w-xs rounded-3xl bg-[#141A15] border border-white/10 p-5 space-y-4 shadow-2xl"
+          >
+            <div>
+              <h3 className="font-display font-bold text-base text-[#F4F7F0]">
+                Discard match draft?
+              </h3>
+              <p className="text-xs text-[#A5B0A6] mt-1 leading-relaxed">
+                You have unsaved match details. Leaving now will clear your progress.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDiscardConfirm(false)}
+                className="min-h-[44px] rounded-2xl bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] hover:bg-[#263028] transition-colors"
+              >
+                Keep Editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearDraft();
+                  setShowDiscardConfirm(false);
+                  onClose();
+                }}
+                className="min-h-[44px] rounded-2xl bg-[#FF5C5C]/20 border border-[#FF5C5C]/40 text-xs font-bold text-[#FF8F8F] hover:bg-[#FF5C5C]/30 transition-colors"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

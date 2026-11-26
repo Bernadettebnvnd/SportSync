@@ -21,6 +21,7 @@ import { UserAvatar } from '../../illustrations/Avatars';
 import { CommunityGame } from '../../mock/types';
 import { APP_CONFIG } from '../../config/appConfig';
 import { shareMatch, copyToClipboard } from '../../lib/shareUtils';
+import { formatTimeRange12h } from '@/lib/datetime';
 
 interface InvitationLandingScreenProps {
   inviteCode: string;
@@ -62,7 +63,9 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   onSyncInvitation,
 }) => {
   const syncRef = React.useRef(onSyncInvitation);
-  syncRef.current = onSyncInvitation;
+  useEffect(() => {
+    syncRef.current = onSyncInvitation;
+  }, [onSyncInvitation]);
 
   useEffect(() => {
     if (inviteCode && syncRef.current) {
@@ -104,27 +107,28 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
     );
   }, [game, currentUserName, currentUserId]);
 
-  const isRosterFull = Boolean(game && game.spotsJoined >= game.spotsTotal);
+  const gameWithMeta = game as (CommunityGame & { deleted?: boolean }) | null;
+  const isRosterFull = Boolean(game && game.spotsTotal !== null && game.spotsJoined >= game.spotsTotal);
   const isDeleted = Boolean(
-    (game as any)?.status === 'cancelled' ||
-    (game as any)?.deleted === true ||
+    gameWithMeta?.status === 'cancelled' ||
+    gameWithMeta?.deleted === true ||
     errorMessage?.toLowerCase().includes('no longer available') ||
     errorMessage?.toLowerCase().includes('deleted') ||
     errorMessage?.toLowerCase().includes('cancelled')
   );
 
   const isEnded = Boolean(
-    (game as any)?.status === 'completed' ||
-    (game as any)?.status === 'ended' ||
+    gameWithMeta?.status === 'completed' ||
+    gameWithMeta?.status === 'ended' ||
     errorMessage?.toLowerCase().includes('ended') ||
     errorMessage?.toLowerCase().includes('concluded')
   );
 
   const isExpiredOrRevoked = Boolean(
-    (game as any)?.invitationStatus === 'expired' ||
-    (game as any)?.invitationStatus === 'revoked' ||
-    (game as any)?.status === 'expired' ||
-    (game as any)?.status === 'revoked' ||
+    gameWithMeta?.invitationStatus === 'expired' ||
+    gameWithMeta?.invitationStatus === 'revoked' ||
+    gameWithMeta?.status === 'expired' ||
+    gameWithMeta?.status === 'revoked' ||
     errorMessage?.toLowerCase().includes('no longer valid') ||
     errorMessage?.toLowerCase().includes('expired') ||
     errorMessage?.toLowerCase().includes('revoked')
@@ -506,7 +510,9 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
   }
 
   const spotsCount = Array.isArray(game.members) ? game.members.length : game.spotsJoined;
-  const spotsLeft = Math.max(0, game.spotsTotal - spotsCount);
+  const isUnlimited = game.spotsTotal === null;
+  const spotsLeft = isUnlimited ? Infinity : Math.max(0, (game.spotsTotal as number) - spotsCount);
+  const displayTime = formatTimeRange12h(game.time, game.endTime ?? game.endsAt ?? null);
 
   return (
     <div className="w-full flex flex-col bg-[#0B0F0C] text-[#F4F7F0] pb-28 select-none">
@@ -587,7 +593,9 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                   You are the Match Organizer
                 </span>
                 <span className="text-[10px] text-[#A5B0A6]">
-                  {spotsCount} / {game.spotsTotal} spots filled • {spotsLeft} remaining
+                  {isUnlimited
+                    ? `${spotsCount} joined • Open to all`
+                    : `${spotsCount} / ${game.spotsTotal} spots filled • ${spotsLeft} remaining`}
                 </span>
               </div>
             </div>
@@ -668,7 +676,7 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
             </div>
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-[#C8FF2E] shrink-0" />
-              <span className="text-[#F4F7F0] font-medium">{game.time}</span>
+              <span className="text-[#F4F7F0] font-medium">{displayTime}</span>
             </div>
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-[#C8FF2E] shrink-0 mt-0.5" />
@@ -694,10 +702,10 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                 Roster Status
               </span>
               <div className="font-display font-bold text-sm text-[#F4F7F0] mt-0.5">
-                {spotsCount} / {game.spotsTotal}
+                {isUnlimited ? `${spotsCount} joined` : `${spotsCount} / ${game.spotsTotal}`}
               </div>
               <span className="text-[10px] text-[#3DDC84]">
-                {spotsLeft} spot{spotsLeft === 1 ? '' : 's'} open
+                {isUnlimited ? 'Open to all' : `${spotsLeft} spot${spotsLeft === 1 ? '' : 's'} open`}
               </span>
             </div>
 
@@ -734,12 +742,18 @@ export const InvitationLandingScreen: React.FC<InvitationLandingScreenProps> = (
                   Player Lineup
                 </h3>
                 <span className="text-xs text-[#A5B0A6]">
-                  {spotsCount} of {game.spotsTotal} spots taken
+                  {isUnlimited ? `${spotsCount} joined` : `${spotsCount} of ${game.spotsTotal} spots taken`}
                 </span>
               </div>
-              <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
-                {spotsLeft} spots left
-              </span>
+              {isUnlimited ? (
+                <span className="text-xs font-bold text-[#C8FF2E] bg-[#C8FF2E]/15 px-2.5 py-1 rounded-full border border-[#C8FF2E]/30">
+                  Open to all
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
+                  {spotsLeft} spot{spotsLeft === 1 ? '' : 's'} left
+                </span>
+              )}
             </div>
 
             <div className="divide-y divide-white/5 pt-1">

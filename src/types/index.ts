@@ -281,8 +281,9 @@ export interface Session {
   court_names?: string[];
   start_time: string;
   end_time: string;
+  ends_at?: string | null;
   fee_cents: number;
-  max_players: number;
+  max_players: number | null;
   current_players_count: number;
   rotation_format: string;
   status: 'upcoming' | 'active' | 'completed' | 'cancelled';

@@ -4,6 +4,13 @@ import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, serverGetUser, SanitizedUser, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
+import {
+  formatManilaDateLabel,
+  formatTime12h,
+  formatTimeRange12h,
+  parseTimeTo24h,
+  validateEndTime,
+} from '@/lib/datetime';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DELETED_LEGACY_HOST_REGEX = /^\s*(inah|xian|shea|marianne|alex|jan)(\s|$)/i;
@@ -95,7 +102,12 @@ function getManilaDateParts(date: Date = new Date()): { year: number; month: num
   return { year: y, month: m, day: d, ymd };
 }
 
-function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: string; endIso: string } {
+function parseIsoSchedule(
+  dateStr?: string,
+  timeStr?: string,
+  endTimeStr?: string | null,
+  explicitEndsAt?: string | null
+): { startIso: string; endIso: string; endsAtIso: string | null; error?: string } {
   const manilaNow = getManilaDateParts();
   let y = manilaNow.year;
   let m = manilaNow.month; // 1-indexed
@@ -104,20 +116,21 @@ function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: strin
   const rawDate = (dateStr || '').trim();
   const dNorm = rawDate.toLowerCase();
 
-  if (dNorm === 'tomorrow') {
+  if (dNorm === 'tomorrow' || dNorm.startsWith('tomorrow ')) {
     const tom = new Date(Date.UTC(y, m - 1, d + 1));
     y = tom.getUTCFullYear();
     m = tom.getUTCMonth() + 1;
     d = tom.getUTCDate();
-  } else if (dNorm && dNorm !== 'today') {
-    const isoMatch = rawDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  } else if (dNorm && dNorm !== 'today' && !dNorm.startsWith('today ')) {
+    const isoMatch = rawDate.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (isoMatch) {
       y = parseInt(isoMatch[1], 10);
       m = parseInt(isoMatch[2], 10);
       d = parseInt(isoMatch[3], 10);
     } else {
-      const hasYear = /\b\d{4}\b/.test(rawDate);
-      const parsed = new Date(hasYear ? rawDate : `${rawDate}, ${y}`);
+      const cleaned = rawDate.replace(/\(.*?\)/g, '').trim();
+      const hasYear = /\b\d{4}\b/.test(cleaned);
+      const parsed = new Date(hasYear ? cleaned : `${cleaned}, ${y}`);
       if (!isNaN(parsed.getTime())) {
         y = hasYear && parsed.getFullYear() >= 2020 ? parsed.getFullYear() : y;
         m = parsed.getMonth() + 1;
@@ -128,26 +141,10 @@ function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: strin
 
   let startH = 18;
   let startMin = 0;
-  if (timeStr) {
-    const cleanTime = timeStr.trim();
-    const twelveHr = cleanTime.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
-    if (twelveHr) {
-      let ph = parseInt(twelveHr[1], 10);
-      const pm = twelveHr[2] ? parseInt(twelveHr[2], 10) : 0;
-      const mer = twelveHr[3].toUpperCase();
-      if (mer === 'PM' && ph < 12) ph += 12;
-      if (mer === 'AM' && ph === 12) ph = 0;
-      startH = ph;
-      startMin = pm;
-    } else {
-      const parts = cleanTime.split(':');
-      if (parts.length >= 2) {
-        const h = parseInt(parts[0], 10);
-        const min = parseInt(parts[1], 10);
-        if (!isNaN(h) && h >= 0 && h <= 23) startH = h;
-        if (!isNaN(min) && min >= 0 && min <= 59) startMin = min;
-      }
-    }
+  const parsedTime = parseTimeTo24h(timeStr);
+  if (parsedTime) {
+    startH = parsedTime.hour24;
+    startMin = parsedTime.minute;
   }
 
   const yyyy = String(y).padStart(4, '0');
@@ -155,51 +152,67 @@ function parseIsoSchedule(dateStr?: string, timeStr?: string): { startIso: strin
   const dd = String(d).padStart(2, '0');
   const hh = String(startH).padStart(2, '0');
   const min = String(startMin).padStart(2, '0');
+  const isoDate = `${yyyy}-${mm}-${dd}`;
+  const startTime24 = `${hh}:${min}`;
 
-  const start = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00+08:00`);
+  const start = new Date(`${isoDate}T${startTime24}:00+08:00`);
   const validStart = isNaN(start.getTime()) ? new Date() : start;
+  const startIso = validStart.toISOString();
+
+  if (explicitEndsAt && explicitEndsAt.trim()) {
+    const endDate = new Date(explicitEndsAt);
+    if (isNaN(endDate.getTime()) || endDate.getTime() <= validStart.getTime()) {
+      return {
+        startIso,
+        endIso: new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        endsAtIso: null,
+        error: 'End time must be after kickoff.',
+      };
+    }
+    const endsAtIso = endDate.toISOString();
+    return { startIso, endIso: endsAtIso, endsAtIso };
+  }
+
+  if (endTimeStr && endTimeStr.trim()) {
+    const check = validateEndTime(isoDate, startTime24, endTimeStr);
+    if (!check.valid) {
+      return {
+        startIso,
+        endIso: new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        endsAtIso: null,
+        error: check.error || 'End time must be after kickoff.',
+      };
+    }
+    const endDate = new Date(check.endIso);
+    const endsAtIso = endDate.toISOString();
+    return { startIso, endIso: endsAtIso, endsAtIso };
+  }
+
   const end = new Date(validStart.getTime() + 2 * 60 * 60 * 1000);
-  return { startIso: validStart.toISOString(), endIso: end.toISOString() };
+  return { startIso, endIso: end.toISOString(), endsAtIso: null };
 }
 
-function formatSessionDateTime(startTime?: string): { date: string; time: string } {
-  if (!startTime) return { date: 'Upcoming', time: '18:00' };
+function formatSessionDateTime(
+  startTime?: string,
+  endsAt?: string | null
+): { date: string; time: string; endTime: string | null } {
+  if (!startTime) return { date: 'Upcoming', time: '6:00 PM', endTime: null };
   if (!startTime.includes('T') && !startTime.includes('-')) {
-    return { date: 'Today', time: startTime };
+    const endLabel = endsAt ? formatTime12h(endsAt) : null;
+    return { date: 'Today', time: formatTimeRange12h(startTime, endLabel), endTime: endLabel };
   }
   try {
     const d = new Date(startTime);
-    if (isNaN(d.getTime())) return { date: 'Upcoming', time: startTime };
+    if (isNaN(d.getTime())) return { date: 'Upcoming', time: formatTime12h(startTime), endTime: null };
 
-    const todayManila = getManilaDateParts();
-    const tomDate = new Date(Date.UTC(todayManila.year, todayManila.month - 1, todayManila.day + 1));
-    const tomorrowYmd = `${tomDate.getUTCFullYear()}-${String(tomDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tomDate.getUTCDate()).padStart(2, '0')}`;
-    const targetManila = getManilaDateParts(d);
+    const dateLabel = formatManilaDateLabel(d);
+    const startLabel = formatTime12h(startTime);
+    const endLabel = endsAt ? formatTime12h(endsAt) : null;
+    const timeLabel = formatTimeRange12h(startLabel, endLabel);
 
-    const isToday = targetManila.ymd === todayManila.ymd;
-    const isTomorrow = targetManila.ymd === tomorrowYmd;
-
-    const dateLabel = isToday
-      ? 'Today'
-      : isTomorrow
-      ? 'Tomorrow'
-      : d.toLocaleDateString('en-US', {
-          timeZone: 'Asia/Manila',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        });
-
-    const timeLabel = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d);
-
-    return { date: dateLabel, time: timeLabel };
+    return { date: dateLabel, time: timeLabel, endTime: endLabel };
   } catch {
-    return { date: 'Upcoming', time: startTime };
+    return { date: 'Upcoming', time: formatTime12h(startTime), endTime: null };
   }
 }
 
@@ -213,6 +226,7 @@ interface DbSessionRow {
   skill_level?: string | null;
   start_time?: string | null;
   end_time?: string | null;
+  ends_at?: string | null;
   fee_cents?: number | null;
   max_players?: number | null;
   current_players_count?: number | null;
@@ -377,7 +391,7 @@ export async function GET(req: NextRequest) {
         })
         .map((s: DbSessionRow) => {
           const host = s.host_id ? hostsMap.get(s.host_id) : undefined;
-          const { date, time } = formatSessionDateTime(s.start_time ?? undefined);
+          const { date, time, endTime } = formatSessionDateTime(s.start_time ?? undefined, s.ends_at ?? null);
           return {
             id: s.id,
             sessionId: s.id,
@@ -387,13 +401,16 @@ export async function GET(req: NextRequest) {
             skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as CommunityGame['skillLevel'],
             date,
             time,
+            endTime,
+            startsAt: s.start_time || undefined,
+            endsAt: s.ends_at ?? null,
             locationName: s.location_details || 'Verified Court Facility',
             locationDetails: s.location_details || undefined,
             distance: '0.8 km away',
             hostId: s.host_id ?? undefined,
             hostName: host?.full_name || host?.nickname || 'Match Organizer',
             hostAvatar: (host?.avatar_url as CommunityGame['hostAvatar']) || 'alex',
-            spotsTotal: s.max_players || 10,
+            spotsTotal: s.max_players === null || s.max_players === undefined ? null : Number(s.max_players),
             spotsJoined: s.current_players_count || 0,
             pricePerPlayer: s.fee_cents ? Math.round(s.fee_cents / 100) : 0,
             notes: s.description || '',
@@ -536,9 +553,13 @@ export async function GET(req: NextRequest) {
     // queues is the authoritative session participant table in Supabase
 
     const allMembers = Array.from(membersMap.values());
-    const totalSpots = dbSession.max_players || 10;
+    const totalSpots: number | null =
+      dbSession.max_players === null || dbSession.max_players === undefined ? null : Number(dbSession.max_players);
     const joinedCount = Math.max(allMembers.length, dbSession.current_players_count || 0);
-    const { date: formattedDate, time: formattedTime } = formatSessionDateTime(dbSession.start_time ?? undefined);
+    const { date: formattedDate, time: formattedTime, endTime: formattedEndTime } = formatSessionDateTime(
+      dbSession.start_time ?? undefined,
+      dbSession.ends_at ?? null
+    );
 
     const locTagMatch = dbSession.description?.match(/\[LOCATION:(.*?)\]/i);
     const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
@@ -573,6 +594,9 @@ export async function GET(req: NextRequest) {
       skillLevel: dbSession.skill_level === 'all_levels' ? 'Casual' : 'Competitive',
       date: formattedDate,
       time: formattedTime,
+      endTime: formattedEndTime,
+      startsAt: dbSession.start_time || undefined,
+      endsAt: dbSession.ends_at ?? null,
       locationName: resolvedLocation,
       locationDetails: dbSession.location_details || taggedLoc || resolvedLocation,
       coordinates: (dbSession as any).coordinates || parsedCoords,
@@ -581,7 +605,7 @@ export async function GET(req: NextRequest) {
       hostName,
       hostAvatar,
       spotsTotal: totalSpots,
-      spotsJoined: Math.min(totalSpots, joinedCount),
+      spotsJoined: totalSpots === null ? joinedCount : Math.min(totalSpots, joinedCount),
       pricePerPlayer: dbSession.fee_cents ? Math.round(dbSession.fee_cents / 100) : 0,
       notes: cleanNotes,
       isPublic: dbSession.visibility ? dbSession.visibility !== 'Invite' : true,
@@ -798,8 +822,9 @@ export async function POST(req: NextRequest) {
         court_ids: [],
         start_time: startIso,
         end_time: endIso,
+        ends_at: (game.endsAt ?? null) || (game.endTime ? parseIsoSchedule(game.date, game.time, game.endTime, game.endsAt ?? null).endsAtIso : null),
         fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
-        max_players: game.spotsTotal || 10,
+        max_players: game.spotsTotal === null ? null : (game.spotsTotal ?? 10),
         current_players_count: game.spotsJoined || 1,
         rotation_format: game.format || '5v5',
         status: 'active',
@@ -894,33 +919,91 @@ export async function POST(req: NextRequest) {
       const coordinates = game.coordinates || [13.6218, 123.1948];
       const newDesc = `${rawNotes || 'Organized via SportSync Matchmaking'} [INVITE:${inviteCode}] [HOST:${hostName}] [LOCATION:${venueLoc}] [COORDS:${JSON.stringify(coordinates)}]`;
 
+      // Validate capacity update: null (unlimited) or integer 2-24, and never below joined count
+      let nextMaxPlayers: number | null | undefined = undefined;
+      if (game.spotsTotal !== undefined) {
+        if (game.spotsTotal === null) {
+          nextMaxPlayers = null;
+        } else {
+          const parsedCap = Number(game.spotsTotal);
+          if (!Number.isInteger(parsedCap) || parsedCap < 2 || parsedCap > 24) {
+            return NextResponse.json(
+              { success: false, error: 'Capacity must be between 2 and 24 players, or unlimited.' },
+              { status: 400 }
+            );
+          }
+          const { count: joinedNow } = await supabase
+            .from('queues')
+            .select('*', { count: 'exact', head: true })
+            .eq('session_id', dbSession.id)
+            .neq('status', 'cancelled');
+          const effectiveJoined = Math.max(joinedNow || 0, dbSession.current_players_count || 0);
+          if (parsedCap < effectiveJoined) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: `Total spots cannot be less than the ${effectiveJoined} players already joined.`,
+              },
+              { status: 400 }
+            );
+          }
+          nextMaxPlayers = parsedCap;
+        }
+      }
+
       const sessionUpdates: Record<string, any> = {
         title: game.title || dbSession.title,
         description: newDesc,
-        max_players: game.spotsTotal || dbSession.max_players,
+        max_players: nextMaxPlayers !== undefined ? nextMaxPlayers : dbSession.max_players,
         fee_cents: game.pricePerPlayer !== undefined ? Math.round(game.pricePerPlayer * 100) : dbSession.fee_cents,
         location_details: game.locationDetails || game.locationName || dbSession.location_details,
         updated_at: nowIso,
       };
-      if (game.date || game.time) {
-        const existingSchedule = formatSessionDateTime(dbSession.start_time ?? undefined);
-        const { startIso, endIso } = parseIsoSchedule(
+      if (game.date || game.time || game.endTime !== undefined || game.endsAt !== undefined) {
+        const existingSchedule = formatSessionDateTime(dbSession.start_time ?? undefined, dbSession.ends_at ?? null);
+        const parsedSched = parseIsoSchedule(
           game.date || existingSchedule.date,
-          game.time || existingSchedule.time
+          game.time || existingSchedule.time,
+          game.endTime !== undefined ? game.endTime : undefined,
+          game.endsAt !== undefined ? game.endsAt : undefined
         );
-        sessionUpdates.start_time = startIso;
-        sessionUpdates.end_time = endIso;
+        if (parsedSched.error) {
+          return NextResponse.json({ success: false, error: parsedSched.error }, { status: 400 });
+        }
+        sessionUpdates.start_time = parsedSched.startIso;
+        sessionUpdates.end_time = parsedSched.endIso;
+        if (game.endTime !== undefined || game.endsAt !== undefined) {
+          sessionUpdates.ends_at = parsedSched.endsAtIso;
+        }
       }
       if (game.visibility) {
         sessionUpdates.visibility = game.visibility;
       }
 
-      const { data: updatedDb, error: updateDbErr } = await supabase
+      let { data: updatedDb, error: updateDbErr } = await supabase
         .from('sessions')
         .update(sessionUpdates)
         .eq('id', dbSession.id)
         .select('*')
         .single();
+
+      while (updateDbErr && isMissingColumnError(updateDbErr)) {
+        const missing = extractMissingColumn(updateDbErr);
+        if (missing && missing in sessionUpdates) {
+          delete sessionUpdates[missing];
+        } else {
+          delete sessionUpdates.ends_at;
+        }
+        const retry = await supabase
+          .from('sessions')
+          .update(sessionUpdates)
+          .eq('id', dbSession.id)
+          .select('*')
+          .single();
+        updatedDb = retry.data;
+        updateDbErr = retry.error;
+        if (updatedDb || !isMissingColumnError(updateDbErr)) break;
+      }
 
       if (updateDbErr || !updatedDb) {
         console.error('[/api/invitations POST update_game] session update failed:', updateDbErr);
@@ -930,7 +1013,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const { date: updatedDate, time: updatedTime } = formatSessionDateTime(updatedDb.start_time ?? undefined);
+      const { date: updatedDate, time: updatedTime, endTime: updatedEndTime } = formatSessionDateTime(
+        updatedDb.start_time ?? undefined,
+        updatedDb.ends_at ?? null
+      );
       return NextResponse.json({
         success: true,
         session: updatedDb,
@@ -938,8 +1024,12 @@ export async function POST(req: NextRequest) {
           ...game,
           id: updatedDb.id,
           sessionId: updatedDb.id,
-          date: game.date || updatedDate,
-          time: game.time || updatedTime,
+          date: updatedDate,
+          time: updatedTime,
+          endTime: updatedEndTime,
+          startsAt: updatedDb.start_time || undefined,
+          endsAt: updatedDb.ends_at ?? null,
+          spotsTotal: updatedDb.max_players === null || updatedDb.max_players === undefined ? null : Number(updatedDb.max_players),
           notes: rawNotes,
         },
       });
@@ -989,9 +1079,9 @@ export async function POST(req: NextRequest) {
         (q: { user_id?: string | null }) =>
           q.user_id === authUser.id || (Boolean(authUser.auth_id) && q.user_id === authUser.auth_id)
       );
-      const maxPlayers = dbSession.max_players || 10;
+      const maxPlayers = dbSession.max_players === null || dbSession.max_players === undefined ? null : Number(dbSession.max_players);
 
-      if (!alreadyInQueue && activeQueueRows.length >= maxPlayers) {
+      if (!alreadyInQueue && maxPlayers !== null && activeQueueRows.length >= maxPlayers) {
         return NextResponse.json(
           {
             success: false,
@@ -1061,7 +1151,7 @@ export async function POST(req: NextRequest) {
       });
 
       const finalMembers = Array.from(dbMembersMap.values());
-      const finalSpotsJoined = Math.min(maxPlayers, finalMembers.length);
+      const finalSpotsJoined = maxPlayers === null ? finalMembers.length : Math.min(maxPlayers, finalMembers.length);
 
       const { error: updateErr } = await supabase
         .from('sessions')
@@ -1381,7 +1471,8 @@ export async function POST(req: NextRequest) {
         const activeRows = Array.isArray(currentHostQueues) ? currentHostQueues : [];
         const hostAlreadyJoined = activeRows.some((q) => q.user_id === authUser.id);
 
-        if (!hostAlreadyJoined && activeRows.length >= (dbSession.max_players || 10)) {
+        const hostMaxPlayers = dbSession.max_players === null || dbSession.max_players === undefined ? null : Number(dbSession.max_players);
+        if (!hostAlreadyJoined && hostMaxPlayers !== null && activeRows.length >= hostMaxPlayers) {
           return NextResponse.json(
             { success: false, error: 'Cannot join lineup: Match roster is already full.' },
             { status: 409 }

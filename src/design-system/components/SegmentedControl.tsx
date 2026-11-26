@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 // 1. Segmented Control
 export interface SegmentOption<T extends string = string> {
@@ -100,7 +100,7 @@ export const Toggle: React.FC<{
   );
 };
 
-// 3. Player / Count Stepper
+// 3. Player / Count / Fee Stepper (single numeric input + press-and-hold auto-repeat)
 export const Stepper: React.FC<{
   value: number;
   onChange: (val: number) => void;
@@ -112,37 +112,66 @@ export const Stepper: React.FC<{
   ariaLabel?: string;
   className?: string;
   allowInput?: boolean;
+  onOutOfBoundsChange?: (message: string | null) => void;
 }> = ({
   value,
   onChange,
   min = 1,
-  max = 22,
+  max = 24,
   step = 1,
   unit = '',
   prefix = '',
   ariaLabel = 'value',
   className = '',
   allowInput = true,
+  onOutOfBoundsChange,
 }) => {
   const [localVal, setLocalVal] = useState<string>(String(value));
   const [isFocused, setIsFocused] = useState(false);
+  const valueRef = useRef<number>(value);
 
   useEffect(() => {
-    if (!isFocused) {
-      setLocalVal(String(value));
-    }
-  }, [value, isFocused]);
+    valueRef.current = value;
+  }, [value]);
 
-  const handleDecrement = () => {
-    const next = Math.max(min, Number((value - step).toFixed(2)));
-    onChange(next);
-    setLocalVal(String(next));
+  const displayedVal = isFocused ? localVal : String(value);
+
+  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopHold = () => {
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    if (holdIntervalRef.current) {
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
   };
 
-  const handleIncrement = () => {
-    const next = Math.min(max, Number((value + step).toFixed(2)));
-    onChange(next);
-    setLocalVal(String(next));
+  useEffect(() => stopHold, []);
+
+  const stepBy = (direction: -1 | 1) => {
+    const current = valueRef.current;
+    const rawNext = Number((current + direction * step).toFixed(2));
+    const next = Math.max(min, Math.min(max, rawNext));
+    if (next !== current) {
+      valueRef.current = next;
+      onChange(next);
+      setLocalVal(String(next));
+      onOutOfBoundsChange?.(null);
+    }
+  };
+
+  const startHold = (direction: -1 | 1) => {
+    stopHold();
+    stepBy(direction);
+    holdTimeoutRef.current = setTimeout(() => {
+      holdIntervalRef.current = setInterval(() => {
+        stepBy(direction);
+      }, 90);
+    }, 380);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,49 +180,76 @@ export const Stepper: React.FC<{
     const sanitized = isDecimalAllowed ? raw.replace(/[^0-9.]/g, '') : raw.replace(/[^0-9]/g, '');
     setLocalVal(sanitized);
 
-    if (sanitized !== '' && sanitized !== '.') {
-      const parsed = parseFloat(sanitized);
-      if (!isNaN(parsed) && parsed <= max) {
-        onChange(parsed);
-      }
+    if (sanitized === '' || sanitized === '.') {
+      onOutOfBoundsChange?.(null);
+      return;
+    }
+
+    const parsed = isDecimalAllowed ? parseFloat(sanitized) : parseInt(sanitized, 10);
+    if (!Number.isFinite(parsed)) return;
+
+    if (parsed < min) {
+      onOutOfBoundsChange?.(`Minimum is ${prefix}${min}${unit ? ` ${unit}` : ''}`);
+    } else if (parsed > max) {
+      onOutOfBoundsChange?.(`Maximum is ${prefix}${max}${unit ? ` ${unit}` : ''}`);
+    } else {
+      onOutOfBoundsChange?.(null);
     }
   };
 
-  const handleInputBlur = () => {
+  const commitInput = () => {
     setIsFocused(false);
-    if (!localVal || localVal === '' || localVal === '.') {
-      onChange(min);
-      setLocalVal(String(min));
+    const isDecimalAllowed = step % 1 !== 0;
+    const trimmed = localVal.trim();
+    if (!trimmed || trimmed === '.') {
+      // Revert empty input to last valid value
+      setLocalVal(String(valueRef.current));
+      onOutOfBoundsChange?.(null);
       return;
     }
-    const parsed = parseFloat(localVal);
-    if (isNaN(parsed) || parsed < min) {
-      onChange(min);
-      setLocalVal(String(min));
-    } else if (parsed > max) {
-      onChange(max);
-      setLocalVal(String(max));
-    } else {
-      const finalVal = Number(parsed.toFixed(step % 1 !== 0 ? 1 : 0));
-      onChange(finalVal);
-      setLocalVal(String(finalVal));
+
+    const parsed = isDecimalAllowed ? parseFloat(trimmed) : parseInt(trimmed, 10);
+    if (!Number.isFinite(parsed)) {
+      setLocalVal(String(valueRef.current));
+      onOutOfBoundsChange?.(null);
+      return;
     }
+
+    const clamped = Math.max(min, Math.min(max, parsed));
+    const finalVal = Number(clamped.toFixed(isDecimalAllowed ? 1 : 0));
+    valueRef.current = finalVal;
+    onChange(finalVal);
+    setLocalVal(String(finalVal));
+    onOutOfBoundsChange?.(null);
   };
 
   return (
     <div
-      className={`inline-flex items-center bg-[#1C241E] border border-white/10 rounded-2xl p-1 gap-1 select-none ${className}`}
+      className={`inline-flex items-center bg-[#1C241E] border border-white/10 rounded-2xl p-1 gap-1.5 select-none ${className}`}
     >
       <button
         type="button"
         aria-label={`Decrease ${ariaLabel}`}
-        onClick={handleDecrement}
+        onPointerDown={(e) => {
+          if (value <= min || e.button !== 0) return;
+          e.preventDefault();
+          startHold(-1);
+        }}
+        onPointerUp={stopHold}
+        onPointerLeave={stopHold}
+        onPointerCancel={stopHold}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            stepBy(-1);
+          }
+        }}
         disabled={value <= min}
-        className="w-9 h-9 rounded-xl bg-[#263028] text-[#F4F7F0] hover:bg-[#323e34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
+        className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-[#263028] text-[#F4F7F0] hover:bg-[#323e34] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
       >
         -
       </button>
-      <div className="min-w-[70px] px-1 text-center flex items-center justify-center">
+      <div className="min-w-[78px] px-1 text-center flex items-center justify-center flex-1">
         {prefix && (
           <span className="font-display font-bold text-base text-[#C8FF2E] mr-0.5 select-none shrink-0">
             {prefix}
@@ -204,35 +260,50 @@ export const Stepper: React.FC<{
             type="text"
             inputMode={step % 1 !== 0 ? 'decimal' : 'numeric'}
             pattern={step % 1 !== 0 ? '[0-9.]*' : '[0-9]*'}
-            value={localVal}
+            value={displayedVal}
             onChange={handleInputChange}
             onFocus={(e) => {
+              setLocalVal(String(value));
               setIsFocused(true);
               e.target.select();
             }}
-            onBlur={handleInputBlur}
+            onBlur={commitInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                e.preventDefault();
                 e.currentTarget.blur();
               }
             }}
             aria-label={ariaLabel}
-            title="Click or tap to type custom amount"
-            className="w-16 bg-white/5 border border-white/10 hover:border-white/25 focus:border-[#C8FF2E] rounded-lg px-1.5 py-0.5 text-center font-display font-bold text-base text-[#F4F7F0] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/50 transition-all cursor-text select-text"
+            title="Tap to type exact amount"
+            className="w-20 min-h-[44px] bg-white/5 border border-white/10 hover:border-white/25 focus:border-[#C8FF2E] rounded-xl px-2 py-1 text-center font-display font-bold text-base text-[#F4F7F0] tabular-nums focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/50 transition-all cursor-text select-text"
           />
         ) : (
           <span className="font-display font-bold text-base text-[#F4F7F0] tabular-nums">
             {value}
           </span>
         )}
-        {unit && <span className="text-xs text-[#A5B0A6] ml-1 select-none shrink-0">{unit}</span>}
+        {unit && <span className="text-xs text-[#A5B0A6] ml-1.5 select-none shrink-0">{unit}</span>}
       </div>
       <button
         type="button"
         aria-label={`Increase ${ariaLabel}`}
-        onClick={handleIncrement}
+        onPointerDown={(e) => {
+          if (value >= max || e.button !== 0) return;
+          e.preventDefault();
+          startHold(1);
+        }}
+        onPointerUp={stopHold}
+        onPointerLeave={stopHold}
+        onPointerCancel={stopHold}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            stepBy(1);
+          }
+        }}
         disabled={value >= max}
-        className="w-9 h-9 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
+        className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-[#C8FF2E] text-[#0B0F0C] hover:bg-[#bbee26] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center font-bold text-lg press-scale transition-all shrink-0"
       >
         +
       </button>

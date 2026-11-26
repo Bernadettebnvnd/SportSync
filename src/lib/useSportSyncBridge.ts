@@ -18,6 +18,12 @@ import { updatePlayerProfile } from './services/auth';
 import { markSessionDeleted } from './services/sessions';
 import { addNotification, resetNotificationCache, broadcastNotification } from './notifications';
 import { isGameExpired, isSessionExpired, filterActiveGames } from './utils/gameExpiration';
+import {
+  formatManilaDateLabel,
+  formatTime12h,
+  formatTimeRange12h,
+  toManilaIsoTimestamp,
+} from './datetime';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -264,38 +270,12 @@ export function formatSessionDateTime(startTime?: string, status?: string): { da
       return { date: 'Today', time: startTime };
     }
 
-    const now = new Date();
-    const isToday =
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate();
-
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const isTomorrow =
-      d.getFullYear() === tomorrow.getFullYear() &&
-      d.getMonth() === tomorrow.getMonth() &&
-      d.getDate() === tomorrow.getDate();
-
-    let dateStr = isToday
-      ? 'Today'
-      : isTomorrow
-      ? 'Tomorrow'
-      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-    if (status === 'active' && !isToday && !isTomorrow) {
-      dateStr = 'Active Now';
-    }
-
-    const timeStr = d.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+    const dateStr = formatManilaDateLabel(d);
+    const timeStr = formatTime12h(startTime);
 
     return { date: dateStr, time: timeStr };
   } catch {
-    return { date: 'Today', time: startTime };
+    return { date: 'Today', time: formatTime12h(startTime) };
   }
 }
 
@@ -818,10 +798,8 @@ export function useSportSyncBridge() {
             });
 
             const updatedMembers = queueMembers.length > 0 ? queueMembers : (g.members || []);
-            const spotsJoined = Math.min(
-              g.spotsTotal,
-              Math.max(updatedMembers.length, matchSession.current_players_count || 0)
-            );
+            const rawJoined = Math.max(updatedMembers.length, matchSession.current_players_count || 0);
+            const spotsJoined = g.spotsTotal === null ? rawJoined : Math.min(g.spotsTotal, rawJoined);
 
             const cleanSessionNotes = (matchSession.description || '')
               .replace(/\[INVITE:.*?\]/gi, '')
@@ -906,10 +884,12 @@ export function useSportSyncBridge() {
           });
 
           const initialMembers = queueMembers;
-          const initialSpotsJoined = Math.min(
-            s.max_players || 12,
-            initialMembers.length
-          );
+          const resolvedSessionCap: number | null =
+            s.max_players === null || s.max_players === undefined ? null : Number(s.max_players);
+          const initialSpotsJoined =
+            resolvedSessionCap === null
+              ? initialMembers.length
+              : Math.min(resolvedSessionCap, initialMembers.length);
 
           const locTagMatch = s.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
           const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
@@ -949,7 +929,10 @@ export function useSportSyncBridge() {
             format: (shortFormat || s.rotation_format || '5v5') as any,
             skillLevel: (s.skill_level === 'all_levels' ? 'Casual' : 'Competitive') as any,
             date: formattedDate || 'Today',
-            time: formattedTime || s.start_time || '18:00',
+            time: formatTimeRange12h(formattedTime || s.start_time || '18:00', s.ends_at ?? null),
+            endTime: s.ends_at ? formatTime12h(s.ends_at) : null,
+            startsAt: s.start_time || undefined,
+            endsAt: s.ends_at ?? null,
             locationName: resolvedLoc,
             locationDetails: cleanDetails || cleanTagged || resolvedLoc,
             coordinates: (s as any).coordinates || parsedCoords,
@@ -957,7 +940,7 @@ export function useSportSyncBridge() {
             hostId: isUserHost ? userProfile.id : s.host_id,
             hostName: resolvedHostName,
             hostAvatar: resolvedHostAvatar,
-            spotsTotal: s.max_players || 12,
+            spotsTotal: resolvedSessionCap,
             spotsJoined: initialSpotsJoined,
             pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
             notes: cleanSessionNotes || 'Verified SportSync session',
@@ -1082,7 +1065,14 @@ export function useSportSyncBridge() {
                   hostName: remoteGame.hostName || g.hostName,
                   hostAvatar: remoteGame.hostAvatar || g.hostAvatar,
                   hostId: remoteGame.hostId || g.hostId,
-                  spotsJoined: Math.min(g.spotsTotal, updatedSpots),
+                  spotsTotal: remoteGame.spotsTotal !== undefined ? remoteGame.spotsTotal : g.spotsTotal,
+                  spotsJoined:
+                    (remoteGame.spotsTotal !== undefined ? remoteGame.spotsTotal : g.spotsTotal) === null
+                      ? updatedSpots
+                      : Math.min(
+                          (remoteGame.spotsTotal !== undefined ? remoteGame.spotsTotal : g.spotsTotal) as number,
+                          updatedSpots
+                        ),
                   members: combinedMembers,
                 };
                 updatedMatch = updated;
@@ -2361,10 +2351,13 @@ export function useSportSyncBridge() {
       title: string;
       date: string;
       time?: string;
+      endTime?: string | null;
+      startsAt?: string;
+      endsAt?: string | null;
       formattedDate?: string;
       locationName: string;
       locationDetails?: string;
-      playersCount: number;
+      playersCount: number | null;
       skillLevel: 'Casual' | 'Competitive' | 'Beginner' | 'Intermediate';
       pricePerPlayer: number;
       notes?: string;
@@ -2390,44 +2383,18 @@ export function useSportSyncBridge() {
         }
       }
 
-      const formatStr = getShortFormat(undefined, gameData.sport) || (gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5');
+      const formatStr =
+        getShortFormat(undefined, gameData.sport) ||
+        (gameData.playersCount !== null && gameData.playersCount <= 4 ? '2v2 Doubles' : '5v5');
       const userAvatar = (userProfile.avatarId || 'alex') as AvatarId;
       const userName = userProfile.name || 'Player';
 
       const finalInviteCode = gameData.inviteCode || Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      const now = new Date();
-      let startYear = now.getFullYear();
-      let startMonth = now.getMonth();
-      let startDay = now.getDate();
-      const dNorm = (displayDate || '').trim().toLowerCase();
-      if (dNorm === 'tomorrow') {
-        const tom = new Date(now);
-        tom.setDate(now.getDate() + 1);
-        startYear = tom.getFullYear();
-        startMonth = tom.getMonth();
-        startDay = tom.getDate();
-      } else if (dNorm && dNorm !== 'today') {
-        const parsed = new Date(displayDate);
-        if (!isNaN(parsed.getTime())) {
-          startYear = parsed.getFullYear();
-          startMonth = parsed.getMonth();
-          startDay = parsed.getDate();
-        }
-      }
-      let startH = 18;
-      let startM = 0;
-      if (displayTime) {
-        const parts = displayTime.trim().split(':');
-        if (parts.length >= 2) {
-          const ph = parseInt(parts[0], 10);
-          const pm = parseInt(parts[1], 10);
-          if (!isNaN(ph)) startH = ph;
-          if (!isNaN(pm)) startM = pm;
-        }
-      }
-      const startIso = new Date(startYear, startMonth, startDay, startH, startM, 0).toISOString();
-      const endIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
+      const startIso = gameData.startsAt || toManilaIsoTimestamp(displayDate, displayTime);
+      const endIso =
+        gameData.endsAt ||
+        new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
 
       let newGame: CommunityGame = {
         id: assignedId,
@@ -2436,8 +2403,11 @@ export function useSportSyncBridge() {
         title: gameData.title,
         format: formatStr as any,
         skillLevel: (gameData.skillLevel as any) || 'Casual',
-        date: displayDate,
-        time: displayTime,
+        date: formatManilaDateLabel(displayDate),
+        time: formatTimeRange12h(displayTime, gameData.endTime ?? gameData.endsAt ?? null),
+        endTime: gameData.endTime ? formatTime12h(gameData.endTime) : gameData.endsAt ? formatTime12h(gameData.endsAt) : null,
+        startsAt: startIso,
+        endsAt: gameData.endsAt ?? null,
         locationName: gameData.locationName,
         locationDetails: gameData.locationDetails,
         distance: distanceStr,
@@ -2710,10 +2680,13 @@ export function useSportSyncBridge() {
         sport?: string;
         date?: string;
         time?: string;
+        endTime?: string | null;
+        startsAt?: string;
+        endsAt?: string | null;
         locationName?: string;
         locationDetails?: string;
         skillLevel?: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
-        spotsTotal?: number;
+        spotsTotal?: number | null;
         pricePerPlayer?: number;
         notes?: string;
         coordinates?: [number, number];
@@ -2737,12 +2710,27 @@ export function useSportSyncBridge() {
         return { success: false, error: 'Unauthorized: You can only edit games you created.' };
       }
 
+      const nextDateLabel = updates.date !== undefined ? formatManilaDateLabel(updates.date) : targetGame.date;
+      const nextEndTime =
+        updates.endTime !== undefined
+          ? updates.endTime
+            ? formatTime12h(updates.endTime)
+            : null
+          : targetGame.endTime ?? null;
+      const nextTimeLabel =
+        updates.time !== undefined || updates.endTime !== undefined || updates.endsAt !== undefined
+          ? formatTimeRange12h(updates.time ?? targetGame.time, nextEndTime ?? updates.endsAt ?? null)
+          : targetGame.time;
+
       const updatedGame: CommunityGame = {
         ...targetGame,
         title: updates.title !== undefined ? updates.title : targetGame.title,
         sport: updates.sport !== undefined ? (updates.sport as any) : targetGame.sport,
-        date: updates.date !== undefined ? updates.date : targetGame.date,
-        time: updates.time !== undefined ? updates.time : targetGame.time,
+        date: nextDateLabel,
+        time: nextTimeLabel,
+        endTime: nextEndTime,
+        startsAt: updates.startsAt !== undefined ? updates.startsAt : targetGame.startsAt,
+        endsAt: updates.endsAt !== undefined ? updates.endsAt : targetGame.endsAt,
         locationName: updates.locationName !== undefined ? updates.locationName : targetGame.locationName,
         locationDetails: updates.locationDetails !== undefined ? updates.locationDetails : targetGame.locationDetails,
         skillLevel: updates.skillLevel !== undefined ? updates.skillLevel : targetGame.skillLevel,
@@ -2757,8 +2745,8 @@ export function useSportSyncBridge() {
       };
 
       if (updates.spotsTotal !== undefined) {
-        updatedGame.format = updates.spotsTotal <= 4 ? '2v2 Doubles' : '5v5';
-        if (updatedGame.spotsJoined > updatedGame.spotsTotal) {
+        updatedGame.format = updates.spotsTotal !== null && updates.spotsTotal <= 4 ? '2v2 Doubles' : '5v5';
+        if (updatedGame.spotsTotal !== null && updatedGame.spotsJoined > updatedGame.spotsTotal) {
           updatedGame.spotsJoined = updatedGame.spotsTotal;
         }
       }
@@ -2797,7 +2785,8 @@ export function useSportSyncBridge() {
             description: `${cleanNotes} [LOCATION:${updatedGame.locationName}]`,
             max_players: updatedGame.spotsTotal,
             fee_cents: updatedGame.pricePerPlayer * 100,
-            start_time: updatedGame.time,
+            start_time: updatedGame.startsAt || updatedGame.time,
+            ends_at: updatedGame.endsAt ?? null,
             location_details: updatedGame.locationDetails || updatedGame.locationName,
           });
         }
@@ -3199,8 +3188,8 @@ export function useSportSyncBridge() {
         };
       }
 
-      // 2. Check if roster is full
-      if (targetGame.spotsJoined >= targetGame.spotsTotal) {
+      // 2. Check if roster is full (null capacity = unlimited / open to all)
+      if (targetGame.spotsTotal !== null && targetGame.spotsJoined >= targetGame.spotsTotal) {
         return {
           success: false,
           message: 'This game roster is already full.',
@@ -3400,9 +3389,10 @@ export function useSportSyncBridge() {
         ? targetGame.members
         : [...targetGame.members, { name: userName, avatar: userAvatar, id: userProfile.id }];
 
+      const rawNextJoined = Math.max(nextMembers.length, targetGame.spotsJoined + (alreadyHasMember ? 0 : 1));
       const updatedGame: CommunityGame = {
         ...targetGame,
-        spotsJoined: Math.min(targetGame.spotsTotal, Math.max(nextMembers.length, targetGame.spotsJoined + (alreadyHasMember ? 0 : 1))),
+        spotsJoined: targetGame.spotsTotal === null ? rawNextJoined : Math.min(targetGame.spotsTotal, rawNextJoined),
         members: nextMembers,
       };
 
@@ -3412,11 +3402,12 @@ export function useSportSyncBridge() {
         );
         if (matchIdx >= 0) {
           const next = [...prev];
+          const nextRowJoined = Math.max(nextMembers.length, next[matchIdx].spotsJoined + (alreadyHasMember ? 0 : 1));
           next[matchIdx] = {
             ...next[matchIdx],
             ...updatedGame,
             members: nextMembers,
-            spotsJoined: Math.min(targetGame.spotsTotal, Math.max(nextMembers.length, next[matchIdx].spotsJoined + (alreadyHasMember ? 0 : 1))),
+            spotsJoined: targetGame.spotsTotal === null ? nextRowJoined : Math.min(targetGame.spotsTotal, nextRowJoined),
           };
           return next;
         }
@@ -3863,7 +3854,9 @@ export function useSportSyncBridge() {
         const updatedGame: CommunityGame = data.game || {
           ...targetGame,
           spotsJoined: participate
-            ? Math.min(targetGame.spotsTotal, targetGame.spotsJoined + 1)
+            ? targetGame.spotsTotal === null
+              ? targetGame.spotsJoined + 1
+              : Math.min(targetGame.spotsTotal, targetGame.spotsJoined + 1)
             : Math.max(0, targetGame.spotsJoined - 1),
           members: participate
             ? [

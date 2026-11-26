@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight, Users, Clock, MapPin, Plus, Compass } from 'lucide-react';
 import { CommunityGame } from '../../mock/types';
 import { AvatarStack } from './AvatarStack';
+import { formatTimeRange12h } from '@/lib/datetime';
 
 interface MatchCardProps {
   game: CommunityGame;
@@ -10,8 +11,11 @@ interface MatchCardProps {
 }
 
 export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className = '' }) => {
-  const isAlmostFull = game.spotsTotal - game.spotsJoined <= 2 && game.spotsTotal - game.spotsJoined > 0;
-  const isFull = game.spotsJoined >= game.spotsTotal;
+  const isUnlimited = game.spotsTotal === null;
+  const spotsLeft = isUnlimited ? Infinity : Math.max(0, (game.spotsTotal as number) - game.spotsJoined);
+  const isAlmostFull = !isUnlimited && spotsLeft <= 2 && spotsLeft > 0;
+  const isFull = !isUnlimited && spotsLeft <= 0;
+  const displayTime = formatTimeRange12h(game.time, game.endTime ?? game.endsAt ?? null);
 
   // Ref B sport tile icon color
   const sportTileStyles: Record<string, string> = {
@@ -64,9 +68,9 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
         </div>
 
         <div className="flex items-center gap-3 text-xs text-[#A5B0A6] mb-2">
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 whitespace-nowrap">
             <Clock className="w-3.5 h-3.5 text-[#6F7B71]" />
-            {game.date} • {game.time}
+            {game.date} • {displayTime}
           </span>
           <span className="flex items-center gap-1 truncate">
             <MapPin className="w-3.5 h-3.5 text-[#6F7B71]" />
@@ -83,13 +87,18 @@ export const MatchCard: React.FC<MatchCardProps> = ({ game, onClick, className =
               maxVisible={3}
             />
             <span className="text-xs font-semibold text-[#F4F7F0] tabular-nums">
-              {game.spotsJoined}/{game.spotsTotal} joined
+              {isUnlimited ? `${game.spotsJoined} joined` : `${game.spotsJoined}/${game.spotsTotal} joined`}
             </span>
           </div>
 
+          {isUnlimited && (
+            <span className="text-[11px] font-bold text-[#C8FF2E] bg-[#C8FF2E]/15 px-2 py-0.5 rounded-full border border-[#C8FF2E]/30">
+              Open to all
+            </span>
+          )}
           {isAlmostFull && (
             <span className="text-[11px] font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2 py-0.5 rounded-full border border-[#FF8FC7]/30">
-              {game.spotsTotal - game.spotsJoined} spots left!
+              {spotsLeft} spot{spotsLeft === 1 ? '' : 's'} left!
             </span>
           )}
           {isFull && (

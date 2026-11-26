@@ -2,30 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/serverAuth';
+import { formatTime12h } from '@/lib/datetime';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isUuid(val?: unknown): boolean {
   return typeof val === 'string' && UUID_REGEX.test(val.trim());
-}
-
-interface CachedChatMessage {
-  id: string;
-  game_id: string;
-  sender_id: string | null;
-  sender_name: string;
-  sender_avatar: string;
-  message_text: string;
-  created_at: string;
-}
-
-const globalForChat = globalThis as unknown as {
-  sportsyncChatStore?: Map<string, CachedChatMessage[]>;
-};
-
-const chatStore = globalForChat.sportsyncChatStore || new Map<string, CachedChatMessage[]>();
-if (!globalForChat.sportsyncChatStore) {
-  globalForChat.sportsyncChatStore = chatStore;
 }
 
 function isTableMissingError(err?: { code?: string; message?: string } | null): boolean {
@@ -292,30 +274,17 @@ export async function GET(
 
     let rows: any[] = [];
     if (error) {
-      if (isTableMissingError(error)) {
-        console.warn('[API/Chat GET] game_chat_messages table not in schema cache; using in-memory store.');
-        const combined = new Map<string, any>();
-        for (const tId of targetIds) {
-          const list = chatStore.get(tId) || [];
-          list.forEach((m) => combined.set(m.id, m));
-        }
-        rows = Array.from(combined.values()).sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-      } else {
-        console.error('[API/Chat GET] Failed to query messages:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
+      console.error('[API/Chat GET] Failed to query messages:', error);
+      return NextResponse.json(
+        {
+          error: isTableMissingError(error)
+            ? 'Match chat table is unavailable. Please run the game_chat_messages Supabase migration.'
+            : error.message,
+        },
+        { status: isTableMissingError(error) ? 503 : 500 }
+      );
     } else {
       rows = Array.isArray(data) ? [...data] : [];
-      for (const tId of targetIds) {
-        const memList = chatStore.get(tId) || [];
-        for (const m of memList) {
-          if (!rows.some((r) => r.id === m.id)) {
-            rows.push(m);
-          }
-        }
-      }
       rows.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     }
     const senderIds = Array.from(
@@ -462,46 +431,19 @@ export async function POST(
       .single();
 
     if (error || !inserted) {
-      if (isTableMissingError(error)) {
-        console.warn('[API/Chat POST] game_chat_messages table not in schema cache; caching in-memory & broadcasting.');
-        insertedRow = {
-          id: messageId,
-          game_id: canonicalGameId,
-          sender_id: validSenderUuid,
-          sender_name: resolvedName,
-          sender_avatar: resolvedAvatar,
-          message_text: text.trim(),
-          created_at: resolvedTime,
-        };
-        const list = chatStore.get(canonicalGameId) || [];
-        list.push(insertedRow);
-        chatStore.set(canonicalGameId, list);
-        if (gameId !== canonicalGameId) {
-          const altList = chatStore.get(gameId) || [];
-          altList.push(insertedRow);
-          chatStore.set(gameId, altList);
-        }
-      } else {
-        console.error('[API/Chat POST] Insert failed:', error);
-        return NextResponse.json(
-          { error: error?.message || 'Failed to persist chat message.' },
-          { status: 500 }
-        );
-      }
-    } else {
-      insertedRow = inserted;
-      const list = chatStore.get(canonicalGameId) || [];
-      if (!list.some((m) => m.id === inserted.id)) {
-        list.push(inserted);
-        chatStore.set(canonicalGameId, list);
-      }
+      console.error('[API/Chat POST] Insert failed:', error);
+      return NextResponse.json(
+        {
+          error: isTableMissingError(error)
+            ? 'Chat persistence table is unavailable. Message was not saved.'
+            : error?.message || 'Failed to persist chat message.',
+        },
+        { status: isTableMissingError(error) ? 503 : 500 }
+      );
     }
+    insertedRow = inserted;
 
-    const formattedTime = new Date(insertedRow.created_at).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
+    const formattedTime = formatTime12h(insertedRow.created_at) || 'Just now';
 
     const responseMsg = {
       id: insertedRow.id,

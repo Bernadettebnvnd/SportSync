@@ -1,35 +1,54 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import type * as LeafletType from 'leaflet';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
-  MapPin,
   Calendar,
   Clock,
-  Users,
-  Search,
-  Check,
   Loader2,
   AlertCircle,
   Sparkles,
-  Layers,
   Save,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import { CommunityGame, SportType } from '@/mock/types';
+import { CommunityGame } from '@/mock/types';
 import { APP_CONFIG } from '@/config/appConfig';
-import { Stepper } from '@/design-system/components/SegmentedControl';
+import { Stepper, Toggle } from '@/design-system/components/SegmentedControl';
 import { DateStrip, generateUpcomingDates } from '@/design-system/components/DateStrip';
-import { defaultGeocodingProvider } from '@/lib/maps/provider';
+import { MonthCalendarSheet } from '@/design-system/components/MonthCalendarSheet';
+import { TimeWheelSheet } from '@/design-system/components/TimeWheelSheet';
 import {
-  STANDARDIZED_SPORTS_OPTIONS,
-  WizardSport,
-  NAGA_SPORTS_VENUES,
+  NagaLocationPicker,
   NAGA_CITY_CENTER,
-  NagaLandmark,
-  LocationSuggestionItem,
-  reverseGeocodeNaga,
-} from '@/screens/community/CreateMatchWizardScreen';
+  NAGA_SPORTS_VENUES,
+  isWithinNagaCity,
+} from '@/components/community/NagaLocationPicker';
+import { STANDARDIZED_SPORTS_OPTIONS } from '@/screens/community/CreateMatchWizardScreen';
+import {
+  MAX_BOOKING_HORIZON_DAYS,
+  formatManilaDateShort,
+  formatMatchSummaryLine,
+  formatTime12h,
+  getManilaTodayISO,
+  getManilaTomorrowISO,
+  isManilaDateTimeInPast,
+  parseTimeTo24h,
+  resolveFlexibleDateToManilaISO,
+  shiftTime24ByMinutes,
+  toManilaIsoTimestamp,
+  validateEndTime,
+} from '@/lib/datetime';
+
+const QUICK_TIME_SLOTS_24 = ['07:00', '09:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'] as const;
+const DURATION_CHIPS = [
+  { label: '+1h', minutes: 60 },
+  { label: '+1.5h', minutes: 90 },
+  { label: '+2h', minutes: 120 },
+  { label: '+3h', minutes: 180 },
+] as const;
+const FEE_PRESETS = [50, 100, 150, 200, 250, 350] as const;
+const MAX_FEE_PHP = 5000;
 
 interface EditGameModalProps {
   isOpen: boolean;
@@ -40,14 +59,56 @@ interface EditGameModalProps {
     sport: string;
     date: string;
     time: string;
+    endTime?: string | null;
+    startsAt?: string;
+    endsAt?: string | null;
     locationName: string;
     locationDetails?: string;
     skillLevel: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
-    spotsTotal: number;
+    spotsTotal: number | null;
     pricePerPlayer: number;
     notes?: string;
     coordinates?: [number, number];
   }) => Promise<void> | void;
+}
+
+function extractKickoffAndEnd24(game: CommunityGame): {
+  kickoff24: string;
+  hasEnd: boolean;
+  end24: string;
+} {
+  if (game.startsAt) {
+    const startParsed = parseTimeTo24h(game.startsAt);
+    const endParsed = game.endsAt ? parseTimeTo24h(game.endsAt) : game.endTime ? parseTimeTo24h(game.endTime) : null;
+    const k = startParsed?.hhmm || '18:00';
+    return {
+      kickoff24: k,
+      hasEnd: Boolean(endParsed),
+      end24: endParsed?.hhmm || shiftTime24ByMinutes(k, 120),
+    };
+  }
+
+  const rawTime = (game.time || '18:00').trim();
+  if (rawTime.includes(' - ') || rawTime.includes(' – ')) {
+    const [sPart, ePart] = rawTime.split(/\s[-–]\s/);
+    const sp = parseTimeTo24h(sPart);
+    const ep = parseTimeTo24h(ePart);
+    const k = sp?.hhmm || '18:00';
+    return {
+      kickoff24: k,
+      hasEnd: Boolean(ep),
+      end24: ep?.hhmm || shiftTime24ByMinutes(k, 120),
+    };
+  }
+
+  const sp = parseTimeTo24h(rawTime);
+  const ep = game.endTime ? parseTimeTo24h(game.endTime) : game.endsAt ? parseTimeTo24h(game.endsAt) : null;
+  const k = sp?.hhmm || '18:00';
+  return {
+    kickoff24: k,
+    hasEnd: Boolean(ep),
+    end24: ep?.hhmm || shiftTime24ByMinutes(k, 120),
+  };
 }
 
 export const EditGameModal: React.FC<EditGameModalProps> = ({
@@ -56,95 +117,83 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const now = new Date();
-  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const tomorrowObj = new Date(now);
-  tomorrowObj.setDate(now.getDate() + 1);
-  const tomorrowISO = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+  const todayISO = getManilaTodayISO();
+  const tomorrowISO = getManilaTomorrowISO();
 
-  // Form states initialized with existing game values
-  const [title, setTitle] = useState(game.title);
-  const [sport, setSport] = useState<string>(game.sport);
-
-  // Schedule parsing
-  const initialScheduleMode = () => {
-    if (game.date.toLowerCase().includes('today')) return 'today';
-    if (game.date.toLowerCase().includes('tomorrow')) return 'tomorrow';
-    return 'custom';
-  };
-  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(initialScheduleMode);
-  const [date, setDate] = useState(game.date);
-  const [time, setTime] = useState(game.time || '18:00');
-  const [customDate, setCustomDate] = useState(() => (/^\d{4}-\d{2}-\d{2}$/.test(game.date) ? game.date : todayISO));
-
-  const adjustEditDateByDays = (deltaDays: number) => {
-    const parts = (customDate || todayISO).split('-').map(Number);
-    const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2]) : new Date();
-    d.setDate(d.getDate() + deltaDays);
-    const nextISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    setCustomDate(nextISO < todayISO ? todayISO : nextISO);
+  const resolveInitialCoords = (g: CommunityGame): [number, number] => {
+    if (
+      g.coordinates &&
+      Array.isArray(g.coordinates) &&
+      g.coordinates.length === 2 &&
+      isWithinNagaCity(g.coordinates[0], g.coordinates[1])
+    ) {
+      return g.coordinates;
+    }
+    const match = NAGA_SPORTS_VENUES.find(
+      (v) =>
+        g.locationName.toLowerCase().includes(v.shortName.toLowerCase()) ||
+        g.locationName.toLowerCase().includes(v.barangay.toLowerCase())
+    );
+    return match ? match.coordinates : NAGA_CITY_CENTER;
   };
 
-  const adjustEditTimeByMinutes = (deltaMins: number) => {
-    const [rawH, rawM] = (time || '18:00').split(':').map(Number);
-    const h = Number.isFinite(rawH) ? rawH : 18;
-    const m = Number.isFinite(rawM) ? rawM : 0;
-    const clamped = Math.max(0, Math.min(23 * 60 + 45, h * 60 + m + deltaMins));
-    setTime(`${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`);
-  };
-
-  // Location states
   const isInvalidLoc = (val?: string | null) =>
     !val || val.includes('Upper Deck') || val.includes('Pasig') || val.includes('Ortigas');
+
+  const initialTimes = extractKickoffAndEnd24(game);
+  const initialDateIso = resolveFlexibleDateToManilaISO(game.startsAt || game.date);
+
+  const [title, setTitle] = useState(game.title);
+  const [sport, setSport] = useState<string>(game.sport);
+  const [scheduleMode, setScheduleMode] = useState<'today' | 'tomorrow' | 'custom'>(() => {
+    if (initialDateIso === todayISO) return 'today';
+    if (initialDateIso === tomorrowISO) return 'tomorrow';
+    return 'custom';
+  });
+  const [selectedDateISO, setSelectedDateISO] = useState<string>(initialDateIso);
+  const [kickoffTime24, setKickoffTime24] = useState<string>(initialTimes.kickoff24);
+  const [hasEndTime, setHasEndTime] = useState<boolean>(initialTimes.hasEnd);
+  const [endTime24, setEndTime24] = useState<string>(initialTimes.end24);
+
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [activeTimeWheel, setActiveTimeWheel] = useState<'start' | 'end' | null>(null);
+
   const initialSafeLoc = !isInvalidLoc(game.locationName)
     ? game.locationName
-    : (!isInvalidLoc(game.locationDetails) ? game.locationDetails! : 'Metro Naga Sports Complex');
+    : !isInvalidLoc(game.locationDetails)
+    ? game.locationDetails!
+    : 'Metro Naga Sports Complex';
   const initialSafeDetails = !isInvalidLoc(game.locationDetails) ? game.locationDetails! : '';
 
   const [locationName, setLocationName] = useState(initialSafeLoc);
   const [locationDetails, setLocationDetails] = useState(initialSafeDetails);
-  const [locationSearchQuery, setLocationSearchQuery] = useState(initialSafeLoc);
-  const [coordinates, setCoordinates] = useState<[number, number]>(() => {
-    if (game.coordinates && Array.isArray(game.coordinates) && game.coordinates.length === 2) {
-      return game.coordinates;
-    }
-    // Check if location matches a known Naga venue
-    const match = NAGA_SPORTS_VENUES.find((v) =>
-      game.locationName.toLowerCase().includes(v.shortName.toLowerCase()) ||
-      game.locationName.toLowerCase().includes(v.barangay.toLowerCase())
-    );
-    return match ? match.coordinates : NAGA_CITY_CENTER;
-  });
+  const [coordinates, setCoordinates] = useState<[number, number]>(() => resolveInitialCoords(game));
+  const [hasPin, setHasPin] = useState<boolean>(true);
+  const [selectedVenueId, setSelectedVenueId] = useState<string>('');
 
-  const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestionItem[]>([]);
-  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
-  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const searchContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // Roster, Skill, & Price states
   const [skillLevel, setSkillLevel] = useState<'Beginner' | 'Casual' | 'Intermediate' | 'Competitive'>(
     game.skillLevel || 'Casual'
   );
-  const [spotsTotal, setSpotsTotal] = useState<number>(game.spotsTotal || 10);
+  const [isUnlimitedSpots, setIsUnlimitedSpots] = useState<boolean>(game.spotsTotal === null);
+  const [spotsTotal, setSpotsTotal] = useState<number>(
+    game.spotsTotal === null ? Math.max(10, game.spotsJoined || 2) : game.spotsTotal
+  );
+  const [spotsInput, setSpotsInput] = useState<string>(String(spotsTotal));
+  const [spotsError, setSpotsError] = useState<string | null>(null);
+
+  const [splitCost, setSplitCost] = useState<boolean>((game.pricePerPlayer || 0) > 0);
   const [pricePerPlayer, setPricePerPlayer] = useState<number>(game.pricePerPlayer || 0);
+  const [lastNonZeroFee, setLastNonZeroFee] = useState<number>(
+    game.pricePerPlayer && game.pricePerPlayer > 0 ? game.pricePerPlayer : 150
+  );
   const [notes, setNotes] = useState<string>(game.notes || '');
 
-  // Validation & Saving states
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
 
-  // Leaflet map references
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<LeafletType.Map | null>(null);
-  const markerRef = useRef<LeafletType.Marker | null>(null);
-
-  // Track open state and game id so we only reinitialize when opening or switching games
   const prevIsOpenRef = useRef(false);
   const prevGameIdRef = useRef<string | null>(null);
 
-  // Re-initialize state only when modal opens or when target game changes
   useEffect(() => {
     const currentGameId = game?.id || game?.sessionId || null;
     const isOpening = isOpen && !prevIsOpenRef.current;
@@ -154,250 +203,129 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
     prevGameIdRef.current = currentGameId;
 
     if (isOpen && game && (isOpening || isNewGame)) {
+      const nextIso = resolveFlexibleDateToManilaISO(game.startsAt || game.date);
+      const nextTimes = extractKickoffAndEnd24(game);
       setTitle(game.title);
       setSport(game.sport);
-      setDate(game.date);
-      setTime(game.time || '18:00');
-      if (/^\d{4}-\d{2}-\d{2}$/.test(game.date)) {
-        setCustomDate(game.date);
-      }
+      setSelectedDateISO(nextIso);
+      setScheduleMode(nextIso === todayISO ? 'today' : nextIso === tomorrowISO ? 'tomorrow' : 'custom');
+      setKickoffTime24(nextTimes.kickoff24);
+      setHasEndTime(nextTimes.hasEnd);
+      setEndTime24(nextTimes.end24);
+
       const safeLoc = !isInvalidLoc(game.locationName)
         ? game.locationName
-        : (!isInvalidLoc(game.locationDetails) ? game.locationDetails! : 'Metro Naga Sports Complex');
+        : !isInvalidLoc(game.locationDetails)
+        ? game.locationDetails!
+        : 'Metro Naga Sports Complex';
       const safeDet = !isInvalidLoc(game.locationDetails) ? game.locationDetails! : '';
       setLocationName(safeLoc);
       setLocationDetails(safeDet);
-      setLocationSearchQuery(safeLoc);
+      setCoordinates(resolveInitialCoords(game));
+      setHasPin(Boolean(safeLoc));
+      setSelectedVenueId('');
+
       setSkillLevel(game.skillLevel || 'Casual');
-      setSpotsTotal(game.spotsTotal || 10);
-      setPricePerPlayer(game.pricePerPlayer || 0);
+      const unlimited = game.spotsTotal === null;
+      const numericSpots = unlimited ? Math.max(10, game.spotsJoined || 2) : game.spotsTotal!;
+      setIsUnlimitedSpots(unlimited);
+      setSpotsTotal(numericSpots);
+      setSpotsInput(String(numericSpots));
+      setSpotsError(null);
+
+      const fee = game.pricePerPlayer || 0;
+      setSplitCost(fee > 0);
+      setPricePerPlayer(fee);
+      setLastNonZeroFee(fee > 0 ? fee : 150);
       setNotes(game.notes || '');
       setValidationError(null);
+    }
+  }, [isOpen, game, todayISO, tomorrowISO]);
 
-      if (game.coordinates && Array.isArray(game.coordinates) && game.coordinates.length === 2) {
-        setCoordinates(game.coordinates);
-      } else {
-        const match = NAGA_SPORTS_VENUES.find((v) =>
-          game.locationName.toLowerCase().includes(v.shortName.toLowerCase()) ||
-          game.locationName.toLowerCase().includes(v.barangay.toLowerCase())
-        );
-        setCoordinates(match ? match.coordinates : NAGA_CITY_CENTER);
+  const updateKickoffTime = (next24: string) => {
+    const prevParsed = parseTimeTo24h(kickoffTime24);
+    const nextParsed = parseTimeTo24h(next24);
+    if (hasEndTime && prevParsed && nextParsed) {
+      const delta =
+        nextParsed.hour24 * 60 + nextParsed.minute - (prevParsed.hour24 * 60 + prevParsed.minute);
+      if (delta !== 0) {
+        setEndTime24((prevEnd) => shiftTime24ByMinutes(prevEnd, delta));
       }
     }
-  }, [isOpen, game]);
+    setKickoffTime24(next24);
+    setValidationError(null);
+  };
 
-  // Leaflet map initialization
-  useEffect(() => {
-    if (!isOpen || typeof window === 'undefined') return;
+  const endTimeValidation = useMemo(() => {
+    if (!hasEndTime) return null;
+    return validateEndTime(selectedDateISO, kickoffTime24, endTime24);
+  }, [hasEndTime, selectedDateISO, kickoffTime24, endTime24]);
 
-    let isMounted = true;
+  const scheduleSummaryLine = useMemo(
+    () => formatMatchSummaryLine(selectedDateISO, kickoffTime24, hasEndTime ? endTime24 : null),
+    [selectedDateISO, kickoffTime24, hasEndTime, endTime24]
+  );
 
-    // Small delay to ensure modal DOM is visible and measured
-    const timer = setTimeout(() => {
-      import('leaflet').then((L) => {
-        if (!isMounted || !mapContainerRef.current) return;
+  const upcomingDates = useMemo(() => generateUpcomingDates(14), []);
+  const joinedCount = Math.max(
+    Array.isArray(game.members) ? game.members.length : 0,
+    game.spotsJoined || 0
+  );
+  const minAllowedSpots = Math.max(2, joinedCount);
 
-        // Clean up previous instance if any
-        if ((mapContainerRef.current as any)._leaflet_id && mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize();
-          return;
-        }
-
-        if ((mapContainerRef.current as any)._leaflet_id) {
-          (mapContainerRef.current as any)._leaflet_id = null;
-        }
-
-        const map = L.map(mapContainerRef.current, {
-          center: coordinates,
-          zoom: 15,
-          zoomControl: false,
-        });
-        mapInstanceRef.current = map;
-
-        const createPinIcon = () =>
-          L.divIcon({
-            html: `
-              <div style="position: relative; width: 36px; height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;">
-                <div style="
-                  position: absolute;
-                  top: 2px;
-                  width: 30px;
-                  height: 30px;
-                  border-radius: 9999px;
-                  background: rgba(200, 255, 46, 0.4);
-                  animation: pulse 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-                "></div>
-                <div style="
-                  position: relative;
-                  width: 28px;
-                  height: 28px;
-                  border-radius: 9999px;
-                  background: #0B0F0C;
-                  border: 3px solid #C8FF2E;
-                  box-shadow: 0 0 14px rgba(200, 255, 46, 0.8), 0 4px 6px rgba(0,0,0,0.5);
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 13px;
-                ">
-                  📍
-                </div>
-                <div style="
-                  width: 0;
-                  height: 0;
-                  border-left: 5px solid transparent;
-                  border-right: 5px solid transparent;
-                  border-top: 6px solid #C8FF2E;
-                  margin-top: -1px;
-                "></div>
-              </div>
-            `,
-            className: 'sportsync-edit-pin',
-            iconSize: [36, 42],
-            iconAnchor: [18, 42],
-          });
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap',
-        }).addTo(map);
-
-        const marker = L.marker(coordinates, {
-          icon: createPinIcon(),
-          draggable: true,
-        }).addTo(map);
-        markerRef.current = marker;
-
-        marker.on('dragend', async () => {
-          const pos = marker.getLatLng();
-          const newCoords: [number, number] = [pos.lat, pos.lng];
-          setCoordinates(newCoords);
-          setShowLocationDropdown(false);
-          setIsResolvingLocation(true);
-          const resolvedName = await reverseGeocodeNaga(pos.lat, pos.lng);
-          setLocationName(resolvedName);
-          setLocationSearchQuery(resolvedName);
-          setIsResolvingLocation(false);
-          setValidationError(null);
-        });
-
-        map.on('click', async (e: LeafletType.LeafletMouseEvent) => {
-          const newCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
-          marker.setLatLng(e.latlng);
-          setCoordinates(newCoords);
-          setShowLocationDropdown(false);
-          map.panTo(e.latlng, { animate: true, duration: 0.4 });
-          setIsResolvingLocation(true);
-          const resolvedName = await reverseGeocodeNaga(e.latlng.lat, e.latlng.lng);
-          setLocationName(resolvedName);
-          setLocationSearchQuery(resolvedName);
-          setIsResolvingLocation(false);
-          setValidationError(null);
-        });
-
-        setTimeout(() => {
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.invalidateSize();
-          }
-        }, 200);
-      });
-    }, 100);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.remove();
-        } catch {}
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [isOpen]);
-
-  // Handle location search with debouncing
-  const handleLocationInputChange = (val: string) => {
-    setLocationSearchQuery(val);
-    setLocationName(val);
-    if (validationError) setValidationError(null);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (!val || val.trim().length < 2) {
-      setLocationSuggestions([]);
-      setShowLocationDropdown(false);
-      setIsSearchingLocation(false);
+  const handleSpotsInputChange = (val: string) => {
+    const digits = val.replace(/[^0-9]/g, '');
+    setSpotsInput(digits);
+    if (digits === '') {
+      setSpotsError(`Enter between ${minAllowedSpots} and 24 players`);
       return;
     }
-
-    setShowLocationDropdown(true);
-    setIsSearchingLocation(true);
-
-    searchTimeoutRef.current = setTimeout(async () => {
-      const q = val.trim().toLowerCase();
-
-      const localMatches: LocationSuggestionItem[] = NAGA_SPORTS_VENUES
-        .filter(
-          (v) =>
-            v.name.toLowerCase().includes(q) ||
-            v.shortName.toLowerCase().includes(q) ||
-            v.barangay.toLowerCase().includes(q) ||
-            v.sports.some((s) => s.toLowerCase().includes(q))
-        )
-        .map((v) => ({
-          id: v.id,
-          title: v.name,
-          subtitle: `${v.barangay}, Naga City • ${v.sports.slice(0, 2).join(', ')}`,
-          coordinates: v.coordinates,
-          isLandmark: true,
-        }));
-
-      let apiMatches: LocationSuggestionItem[] = [];
-      try {
-        const geoResults = await defaultGeocodingProvider.search(val);
-        apiMatches = geoResults.map((item) => ({
-          id: item.placeId,
-          title: item.shortName || item.displayName,
-          subtitle: item.displayName,
-          coordinates: [item.latitude, item.longitude] as [number, number],
-          isLandmark: false,
-        }));
-      } catch (err) {
-        console.warn('Map API location search failed:', err);
-      }
-
-      const combined = [...localMatches];
-      for (const item of apiMatches) {
-        const alreadyExists = combined.some(
-          (c) => c.title.toLowerCase() === item.title.toLowerCase()
-        );
-        if (!alreadyExists) {
-          combined.push(item);
-        }
-      }
-
-      setLocationSuggestions(combined.slice(0, 6));
-      setIsSearchingLocation(false);
-    }, 280);
-  };
-
-  const handleSelectSuggestedLocation = (item: LocationSuggestionItem) => {
-    setLocationName(item.title);
-    setLocationSearchQuery(item.title);
-    setCoordinates(item.coordinates);
-    setShowLocationDropdown(false);
-    setLocationSuggestions([]);
-    setValidationError(null);
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(item.coordinates, 16, { duration: 0.8 });
-      if (markerRef.current) {
-        markerRef.current.setLatLng(item.coordinates);
-      }
+    const parsed = parseInt(digits, 10);
+    if (parsed < joinedCount) {
+      setSpotsError(`Cannot be less than the ${joinedCount} players already joined`);
+    } else if (parsed < 2 || parsed > 24) {
+      setSpotsError('Must be between 2 and 24 players');
+    } else {
+      setSpotsTotal(parsed);
+      setSpotsError(null);
     }
   };
+
+  const handleSpotsInputBlur = () => {
+    if (!spotsInput.trim()) {
+      setSpotsInput(String(spotsTotal));
+      setSpotsError(null);
+      return;
+    }
+    const parsed = parseInt(spotsInput, 10);
+    if (!Number.isFinite(parsed)) {
+      setSpotsInput(String(spotsTotal));
+      setSpotsError(null);
+      return;
+    }
+    if (parsed < joinedCount) {
+      setSpotsError(`Cannot be less than the ${joinedCount} players already joined`);
+      return;
+    }
+    const clamped = Math.max(minAllowedSpots, Math.min(24, parsed));
+    setSpotsTotal(clamped);
+    setSpotsInput(String(clamped));
+    setSpotsError(null);
+  };
+
+  const handleFeeChange = (nextFee: number) => {
+    setPricePerPlayer(nextFee);
+    if (nextFee > 0) setLastNonZeroFee(nextFee);
+  };
+
+  const feeSummaryText = useMemo(() => {
+    if (!splitCost || pricePerPlayer <= 0) return null;
+    if (isUnlimitedSpots) {
+      return `${APP_CONFIG.currency}${pricePerPlayer.toLocaleString()} per player`;
+    }
+    const validSpots = Math.max(minAllowedSpots, Math.min(24, parseInt(spotsInput, 10) || spotsTotal));
+    return `${validSpots} spots × ${APP_CONFIG.currency}${pricePerPlayer.toLocaleString()} = ${APP_CONFIG.currency}${(validSpots * pricePerPlayer).toLocaleString()} total`;
+  }, [splitCost, pricePerPlayer, isUnlimitedSpots, minAllowedSpots, spotsInput, spotsTotal]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -406,50 +334,62 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
       setValidationError('Please enter a match title with at least 3 characters.');
       return;
     }
-
     if (!locationName.trim()) {
-      setValidationError('Please specify a match location.');
+      setValidationError('Please pin a match location in Naga City.');
+      return;
+    }
+    if (!isWithinNagaCity(coordinates[0], coordinates[1])) {
+      setValidationError('Pilot area is Naga City only.');
+      return;
+    }
+    if (hasEndTime && endTimeValidation && !endTimeValidation.valid) {
+      setValidationError(endTimeValidation.error || 'End time must be after kickoff.');
       return;
     }
 
-    if (spotsTotal < (game.spotsJoined || 1)) {
-      setValidationError(
-        `Total slots cannot be less than the ${game.spotsJoined} players already registered.`
-      );
-      return;
+    let finalSpotsTotal: number | null = null;
+    if (!isUnlimitedSpots) {
+      const parsed = parseInt(spotsInput, 10);
+      if (!Number.isFinite(parsed) || parsed < 2 || parsed > 24) {
+        setValidationError('Total spots must be between 2 and 24 players.');
+        return;
+      }
+      if (parsed < joinedCount) {
+        setValidationError(`Total spots cannot be less than the ${joinedCount} players already joined.`);
+        return;
+      }
+      finalSpotsTotal = parsed;
     }
 
     setValidationError(null);
     setIsSaving(true);
 
     try {
-      let finalDate = date;
-      if (scheduleMode === 'today') {
-        finalDate = `Today (${time})`;
-      } else if (scheduleMode === 'tomorrow') {
-        finalDate = `Tomorrow (${time})`;
-      } else if (scheduleMode === 'custom') {
-        finalDate = `${customDate} (${time})`;
-      }
+      const startsAtIso = toManilaIsoTimestamp(selectedDateISO, kickoffTime24);
+      const endsAtIso =
+        hasEndTime && endTimeValidation?.valid ? endTimeValidation.endIso : null;
 
       await onSave({
         title: title.trim(),
         sport,
-        date: finalDate,
-        time,
+        date: selectedDateISO,
+        time: kickoffTime24,
+        endTime: hasEndTime ? endTime24 : null,
+        startsAt: startsAtIso,
+        endsAt: endsAtIso,
         locationName: locationName.trim(),
         locationDetails: locationDetails.trim() || undefined,
         skillLevel,
-        spotsTotal,
-        pricePerPlayer,
+        spotsTotal: finalSpotsTotal,
+        pricePerPlayer: splitCost ? pricePerPlayer : 0,
         notes: notes.trim(),
         coordinates,
       });
 
       onClose();
-    } catch (err: any) {
-      console.error('Failed to save game edits:', err);
-      setValidationError(err?.message || 'Failed to update game details. Please try again.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update game details. Please try again.';
+      setValidationError(msg);
     } finally {
       setIsSaving(false);
     }
@@ -459,7 +399,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[550] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[550] flex items-center justify-center p-2 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSaving) onClose();
       }}
@@ -468,7 +408,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-game-modal-title"
-        className="relative w-full max-w-xl rounded-3xl bg-[#0B0F0C] border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[88vh] select-none animate-in zoom-in-95 duration-200 text-[#F4F7F0]"
+        className="relative w-full max-w-xl rounded-3xl bg-[#0B0F0C] border border-white/10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88dvh] select-none animate-in zoom-in-95 duration-200 text-[#F4F7F0]"
       >
         {/* Modal Header */}
         <div className="p-4 sm:p-5 pb-3 border-b border-white/10 bg-[#0B0F0C] shrink-0">
@@ -478,15 +418,12 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
               <span className="font-display font-bold text-xs uppercase tracking-wider text-[#C8FF2E]">
                 Host Game Management
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1C241E] text-[#A5B0A6] border border-white/5">
-                Edit Match Details
-              </span>
             </div>
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="w-8 h-8 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors disabled:opacity-50"
+              className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-[#1C241E] text-[#A5B0A6] hover:text-white flex items-center justify-center transition-colors disabled:opacity-50"
               aria-label="Close edit game modal"
             >
               <X className="w-4 h-4" />
@@ -496,21 +433,20 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
             Edit Hosted Game
           </h2>
           <p className="text-xs text-[#A5B0A6]">
-            Update match schedule, venue location, slots, or notes for all players.
+            Update match schedule, Naga venue pin, spots, fee, or notes for all players.
           </p>
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 no-scrollbar">
-          {/* Validation Error Banner */}
+        <form onSubmit={handleSave} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 pb-8 space-y-5 no-scrollbar">
           {validationError && (
-            <div className="p-3 rounded-2xl bg-[#FF5C5C]/15 border border-[#FF5C5C]/40 text-[#FF8F8F] text-xs flex items-center gap-2 animate-in fade-in">
+            <div role="alert" className="p-3 rounded-2xl bg-[#FF5C5C]/15 border border-[#FF5C5C]/40 text-[#FF8F8F] text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-[#FF5C5C]" />
               <span className="leading-tight">{validationError}</span>
             </div>
           )}
 
-          {/* Section 1: Sport Category */}
+          {/* Sport Category */}
           <div>
             <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-2">
               Sport Category <span className="text-[#C8FF2E]">*</span>
@@ -539,7 +475,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Match Title */}
+          {/* Match Title */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider">
@@ -553,46 +489,50 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. 5v5 Sunset Pickup Game"
-              className="w-full h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
+              className="w-full min-h-[48px] h-12 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-sm text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none transition-all"
             />
           </div>
 
-          {/* Section 3: Date & Kickoff Time */}
-          <div>
-            <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-1.5">
+          {/* Schedule: Same MonthCalendarSheet + TimeWheelSheet + Optional End Time */}
+          <div className="space-y-2.5">
+            <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
               Kickoff Date &amp; Time <span className="text-[#C8FF2E]">*</span>
             </label>
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setScheduleMode('today')}
-                className={`h-11 rounded-2xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all press-scale ${
+                onClick={() => {
+                  setScheduleMode('today');
+                  setSelectedDateISO(todayISO);
+                }}
+                className={`min-h-[44px] px-2 rounded-2xl border text-xs font-bold flex items-center justify-center whitespace-nowrap transition-all press-scale ${
                   scheduleMode === 'today'
-                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
+                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E]'
                     : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
                 }`}
               >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Today</span>
+                Today
               </button>
               <button
                 type="button"
-                onClick={() => setScheduleMode('tomorrow')}
-                className={`h-11 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all press-scale ${
+                onClick={() => {
+                  setScheduleMode('tomorrow');
+                  setSelectedDateISO(tomorrowISO);
+                }}
+                className={`min-h-[44px] px-2 rounded-2xl border text-xs font-semibold flex items-center justify-center whitespace-nowrap transition-all press-scale ${
                   scheduleMode === 'tomorrow'
-                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
+                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] font-bold'
                     : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
                 }`}
               >
-                <Clock className="w-3.5 h-3.5" />
-                <span>Tomorrow</span>
+                Tomorrow
               </button>
               <button
                 type="button"
                 onClick={() => setScheduleMode('custom')}
-                className={`h-11 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-1 transition-all press-scale ${
+                className={`min-h-[44px] px-2 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-all press-scale ${
                   scheduleMode === 'custom'
-                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
+                    ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] font-bold'
                     : 'bg-[#1C241E] border-white/10 text-[#A5B0A6]'
                 }`}
               >
@@ -601,302 +541,296 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3 p-3 rounded-2xl bg-[#141A15] border border-white/10">
+            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/10 space-y-3">
               {scheduleMode === 'custom' && (
-                <div className="space-y-1.5 pb-2.5 border-b border-white/5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Pick Date</span>
-                    <div className="inline-flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        aria-label="Previous day"
-                        disabled={customDate <= todayISO}
-                        onClick={() => adjustEditDateByDays(-1)}
-                        className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
-                      >
-                        -1d
-                      </button>
-                      <span className="text-xs font-mono font-bold text-[#C8FF2E] px-1">{customDate}</span>
-                      <button
-                        type="button"
-                        aria-label="Next day"
-                        onClick={() => adjustEditDateByDays(1)}
-                        className="h-7 px-2.5 rounded-lg bg-[#1C241E] border border-white/10 text-xs font-bold text-[#F4F7F0] hover:border-[#C8FF2E]"
-                      >
-                        +1d
-                      </button>
-                    </div>
+                <div className="space-y-2 pb-2.5 border-b border-white/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Date</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCalendarOpen(true)}
+                      className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-xs font-display font-bold text-[#F4F7F0] flex items-center gap-2 transition-all press-scale"
+                    >
+                      <Calendar className="w-4 h-4 text-[#C8FF2E]" />
+                      <span>{formatManilaDateShort(selectedDateISO)}</span>
+                    </button>
                   </div>
                   <DateStrip
-                    dates={generateUpcomingDates(14)}
-                    selectedId={customDate}
-                    onSelect={(iso) => setCustomDate(iso)}
-                    showCalendarPicker={false}
+                    dates={upcomingDates}
+                    selectedId={selectedDateISO}
+                    onSelect={(iso) => {
+                      setSelectedDateISO(iso);
+                      setScheduleMode('custom');
+                    }}
+                    showCalendarPicker={true}
+                    onOpenCalendar={() => setIsCalendarOpen(true)}
                   />
                 </div>
               )}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">Kickoff Time</span>
-                  <div className="inline-flex items-center bg-[#1C241E] border border-white/10 rounded-xl p-0.5 gap-1.5">
-                    <button
-                      type="button"
-                      aria-label="Earlier kickoff time"
-                      disabled={time <= '00:00'}
-                      onClick={() => adjustEditTimeByMinutes(-15)}
-                      className="w-7 h-7 rounded-lg bg-[#263028] text-xs font-bold text-[#F4F7F0] disabled:opacity-30"
-                    >
-                      -
-                    </button>
-                    <span className="font-mono text-xs font-bold text-[#C8FF2E] px-1.5 tabular-nums">{time}</span>
-                    <button
-                      type="button"
-                      aria-label="Later kickoff time"
-                      disabled={time >= '23:45'}
-                      onClick={() => adjustEditTimeByMinutes(15)}
-                      className="w-7 h-7 rounded-lg bg-[#C8FF2E] text-xs font-bold text-[#0B0F0C] disabled:opacity-30"
-                    >
-                      +
-                    </button>
-                  </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">
+                    Kickoff Time
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTimeWheel('start')}
+                    className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-sm font-display font-bold text-[#C8FF2E] tabular-nums flex items-center gap-2 transition-all press-scale"
+                  >
+                    <Clock className="w-4 h-4 text-[#C8FF2E]" />
+                    <span>{formatTime12h(kickoffTime24)}</span>
+                  </button>
                 </div>
+
                 <div className="grid grid-cols-4 gap-1.5">
-                  {['07:00', '09:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'].map((slot) => {
-                    const activeSlot = time === slot;
+                  {QUICK_TIME_SLOTS_24.map((slot) => {
+                    const activeSlot = kickoffTime24 === slot;
+                    const isPast = isManilaDateTimeInPast(selectedDateISO, slot);
                     return (
                       <button
                         key={slot}
                         type="button"
+                        disabled={isPast}
+                        aria-disabled={isPast}
                         aria-pressed={activeSlot}
-                        onClick={() => setTime(slot)}
-                        className={`py-1.5 rounded-xl text-xs font-mono font-semibold border transition-all press-scale ${
-                          activeSlot
+                        onClick={() => {
+                          if (!isPast) updateKickoffTime(slot);
+                        }}
+                        className={`min-h-[44px] py-1.5 px-1 rounded-xl text-[11px] font-semibold border transition-all press-scale whitespace-nowrap ${
+                          isPast
+                            ? 'bg-[#141A15] text-[#6F7B71]/50 border-white/5 opacity-40 cursor-not-allowed'
+                            : activeSlot
                             ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
-                            : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:border-white/20 hover:text-white'
+                            : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
                         }`}
                       >
-                        {slot}
+                        {formatTime12h(slot)}
                       </button>
                     );
                   })}
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Section 4: Location Search & Map Pinpointer */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center gap-1.5">
-                <span>Location &amp; Pitch Venue</span>
-                <span className="text-[#C8FF2E]">*</span>
-              </label>
-              {isResolvingLocation && (
-                <span className="text-[10px] text-[#C8FF2E] flex items-center gap-1 animate-pulse">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Resolving...
-                </span>
-              )}
-            </div>
-
-            {/* Location Input with Search Icon */}
-            <div ref={searchContainerRef} className="relative mb-2 z-[50]">
-              <div className="relative flex items-center">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#C8FF2E] pointer-events-none">
-                  {isSearchingLocation ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4" />
-                  )}
-                </div>
-                <input
-                  type="text"
-                  value={locationSearchQuery}
-                  onChange={(e) => handleLocationInputChange(e.target.value)}
-                  onFocus={() => {
-                    if (locationSuggestions.length > 0) setShowLocationDropdown(true);
-                  }}
-                  placeholder="Search venue or address (e.g. Robredo Coliseum, Pacol)..."
-                  className="w-full h-12 pl-10 pr-9 rounded-2xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all truncate"
-                />
-                {locationSearchQuery && (
+              {/* Optional End Time */}
+              <div className="pt-2.5 border-t border-white/5">
+                {!hasEndTime ? (
                   <button
                     type="button"
                     onClick={() => {
-                      setLocationSearchQuery('');
-                      setLocationName('');
-                      setLocationSuggestions([]);
-                      setShowLocationDropdown(false);
+                      setHasEndTime(true);
+                      setEndTime24(shiftTime24ByMinutes(kickoffTime24, 120));
                     }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#65756B] hover:text-white transition-colors"
+                    className="w-full min-h-[44px] flex items-center justify-between text-xs font-semibold text-[#C8FF2E]"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="w-4 h-4" />
+                      <span>Add end time</span>
+                    </span>
+                    <span className="text-[11px] text-[#6F7B71] font-normal">Optional</span>
                   </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#A5B0A6]">
+                        End Time (Optional)
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTimeWheel('end')}
+                          className="min-h-[44px] px-3.5 rounded-xl bg-[#1C241E] border border-white/10 hover:border-[#C8FF2E] text-sm font-display font-bold text-[#F4F7F0] tabular-nums flex items-center gap-2"
+                        >
+                          <Clock className="w-4 h-4 text-[#C8FF2E]" />
+                          <span>{formatTime12h(endTime24)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHasEndTime(false)}
+                          aria-label="Remove end time"
+                          className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl bg-[#1C241E] border border-white/10 text-[#A5B0A6] hover:text-[#FF5C5C] flex items-center justify-center"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {DURATION_CHIPS.map((chip) => {
+                        const targetEnd = shiftTime24ByMinutes(kickoffTime24, chip.minutes);
+                        const isMatch = endTime24 === targetEnd;
+                        return (
+                          <button
+                            key={chip.label}
+                            type="button"
+                            onClick={() => setEndTime24(targetEnd)}
+                            className={`min-h-[44px] rounded-xl text-xs font-bold border transition-all ${
+                              isMatch
+                                ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E]'
+                                : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
+                            }`}
+                          >
+                            {chip.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {endTimeValidation && !endTimeValidation.valid && (
+                      <p className="text-xs text-[#FF8F8F]">{endTimeValidation.error}</p>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* Suggestions Dropdown from Map API */}
-              {showLocationDropdown && (locationSuggestions.length > 0 || isSearchingLocation) && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-white/10 bg-[#141A15]/98 backdrop-blur-xl shadow-2xl p-1.5 space-y-1 max-h-56 overflow-y-auto no-scrollbar z-[500]">
-                  {locationSuggestions.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectSuggestedLocation(item)}
-                      className="w-full text-left p-2.5 rounded-xl hover:bg-[#1C241E] flex items-center justify-between gap-2.5 transition-colors cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-[#0B0F0C] border border-white/5 flex items-center justify-center text-[#C8FF2E] shrink-0">
-                          <MapPin className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <span className="text-xs font-bold text-[#F4F7F0] truncate block group-hover:text-[#C8FF2E]">
-                            {item.title}
-                          </span>
-                          <span className="text-[10px] text-[#A5B0A6] block truncate">
-                            {item.subtitle}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-[#C8FF2E] font-semibold shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        Pin &rarr;
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Interactive Leaflet Map for Pinpointing */}
-            <div className="relative w-full h-44 rounded-2xl overflow-hidden border border-white/10 bg-[#141A15]">
-              <div ref={mapContainerRef} className="w-full h-full" />
-              <div className="absolute bottom-2 left-2 right-2 z-[400] px-2.5 py-1.5 rounded-xl bg-[#0B0F0C]/85 backdrop-blur-md border border-white/10 text-[10px] text-[#A5B0A6] flex items-center justify-between">
-                <span className="truncate pr-2">📍 {locationName}</span>
-                <span className="text-[#C8FF2E] font-bold shrink-0">Drag pin to reposition</span>
+              <div className="px-3 py-2 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/25 flex items-center justify-between text-xs">
+                <span className="text-[#A5B0A6]">Schedule</span>
+                <span className="font-display font-bold text-[#C8FF2E]">{scheduleSummaryLine}</span>
               </div>
-            </div>
-
-            <div className="mt-2.5">
-              <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider flex items-center justify-between mb-1">
-                <span>Location Details</span>
-                <span className="text-[10px] text-[#A5B0A6] font-normal">Optional</span>
-              </label>
-              <input
-                type="text"
-                value={locationDetails}
-                onChange={(e) => setLocationDetails(e.target.value)}
-                placeholder="Unit, building, landmark, or specific directions..."
-                autoComplete="off"
-                className="w-full h-11 px-3.5 rounded-xl bg-[#1C241E] border border-white/10 text-xs sm:text-sm text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none transition-all"
-              />
             </div>
           </div>
 
-          {/* Section 5: Available Slots & Skill Level */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Available Slots */}
-            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5 flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-                  Total Roster Slots
-                </label>
-                <span className="text-[10px] text-[#6F7B71]">
-                  {game.spotsJoined} joined
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <Stepper
-                  value={spotsTotal}
-                  onChange={setSpotsTotal}
-                  min={Math.max(2, game.spotsJoined || 1)}
-                  max={30}
-                  step={1}
-                  unit="spots"
-                  ariaLabel="total roster slots"
-                  className="w-full justify-between"
-                />
-              </div>
-            </div>
+          {/* Shared Naga Location Picker */}
+          <NagaLocationPicker
+            isActive={isOpen}
+            locationName={locationName}
+            locationDetails={locationDetails}
+            coordinates={coordinates}
+            hasPin={hasPin}
+            selectedVenueId={selectedVenueId}
+            showQuickHubs={false}
+            onChangeLocation={(update) => {
+              setLocationName(update.locationName);
+              setCoordinates(update.coordinates);
+              setHasPin(update.hasPin);
+              setSelectedVenueId(update.selectedVenueId || '');
+            }}
+            onChangeLocationDetails={setLocationDetails}
+          />
 
-            {/* Price Per Player */}
-            <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-[10px] font-bold text-[#A5B0A6] uppercase tracking-wider block">
-                  Cost Share ({APP_CONFIG.currency})
-                </label>
-                <span className="text-[10px] text-[#6F7B71]">
-                  {pricePerPlayer === 0 ? 'Free game' : 'Per player'}
+          {/* Total Spots (with Unlimited Toggle) */}
+          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="font-display font-bold text-sm text-[#F4F7F0] block">
+                  Total Spots
                 </span>
-              </div>
-              <Stepper
-                value={pricePerPlayer}
-                onChange={setPricePerPlayer}
-                min={0}
-                max={5000}
-                step={10}
-                prefix={APP_CONFIG.currency}
-                ariaLabel="cost share per player"
-                className="w-full justify-between"
-              />
-              <div className="grid grid-cols-5 gap-1">
-                {[0, 100, 150, 200, 300].map((preset) => {
-                  const activeFee = pricePerPlayer === preset;
-                  return (
-                    <button
-                      key={preset}
-                      type="button"
-                      aria-pressed={activeFee}
-                      onClick={() => setPricePerPlayer(preset)}
-                      className={`py-1 rounded-lg text-[10px] font-mono font-semibold border transition-all ${
-                        activeFee
-                          ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
-                          : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
-                      }`}
-                    >
-                      {preset === 0 ? 'Free' : `${APP_CONFIG.currency}${preset}`}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-2 pt-0.5">
-                <span className="text-[10px] text-[#A5B0A6] shrink-0 font-medium">Or type exact:</span>
-                <div className="relative flex-1">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-[#C8FF2E] pointer-events-none">
-                    {APP_CONFIG.currency}
+                {!isUnlimitedSpots && (
+                  <span className="text-xs text-[#A5B0A6]">
+                    Min {minAllowedSpots}, Max 24 players ({joinedCount} joined)
                   </span>
+                )}
+              </div>
+              {isUnlimitedSpots ? (
+                <span className="min-h-[44px] px-4 rounded-xl bg-[#C8FF2E]/15 border border-[#C8FF2E]/40 text-[#C8FF2E] font-display font-bold text-sm inline-flex items-center">
+                  Unlimited
+                </span>
+              ) : (
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
-                    value={pricePerPlayer === 0 ? '' : pricePerPlayer}
-                    onChange={(e) => {
-                      const cleaned = e.target.value.replace(/[^0-9]/g, '');
-                      if (cleaned === '') {
-                        setPricePerPlayer(0);
-                      } else {
-                        const val = parseInt(cleaned, 10);
-                        if (!isNaN(val) && val <= 5000) {
-                          setPricePerPlayer(val);
-                        }
-                      }
-                    }}
-                    placeholder="e.g. 210 (Free: 0)"
-                    aria-label="Custom cost share per player"
-                    className="w-full h-7 pl-6 pr-2.5 rounded-lg bg-[#1C241E] border border-white/10 hover:border-white/20 focus:border-[#C8FF2E] text-[11px] font-mono font-semibold text-[#F4F7F0] focus:outline-none focus:ring-1 focus:ring-[#C8FF2E]/40 transition-all placeholder:text-[#6F7B71]"
+                    value={spotsInput}
+                    onChange={(e) => handleSpotsInputChange(e.target.value)}
+                    onBlur={handleSpotsInputBlur}
+                    aria-label="Total Spots"
+                    className={`w-20 min-h-[44px] h-11 px-3 text-center rounded-xl bg-[#1C241E] border ${
+                      spotsError ? 'border-[#FF5C5C] text-[#FF5C5C]' : 'border-white/10 text-[#F4F7F0] focus:border-[#C8FF2E]'
+                    } text-base font-bold font-mono focus:outline-none select-text`}
                   />
-                </div>
-              </div>
-              {![0, 100, 150, 200, 300].includes(pricePerPlayer) && (
-                <div className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#1C241E]/80 border border-[#C8FF2E]/30 text-[10px] text-[#A5B0A6]">
-                  <span>Custom cost share:</span>
-                  <span className="font-mono font-bold text-[#C8FF2E]">
-                    {APP_CONFIG.currency}{pricePerPlayer} / player
-                  </span>
+                  <span className="text-xs font-semibold text-[#A5B0A6]">spots</span>
                 </div>
               )}
             </div>
+
+            {!isUnlimitedSpots && spotsError && (
+              <p className="text-xs text-[#FF8F8F]">{spotsError}</p>
+            )}
+
+            <div className="pt-2.5 border-t border-white/5">
+              <Toggle
+                checked={isUnlimitedSpots}
+                onChange={(checked) => {
+                  setIsUnlimitedSpots(checked);
+                  if (checked) {
+                    setSpotsError(null);
+                  } else {
+                    const safeSpots = Math.max(minAllowedSpots, Math.min(24, spotsTotal));
+                    setSpotsTotal(safeSpots);
+                    setSpotsInput(String(safeSpots));
+                  }
+                }}
+                label="Open for all / No spot limit"
+                sublabel="Anyone can join without a player cap"
+                className="w-full"
+              />
+            </div>
           </div>
 
-          {/* Section 6: Skill Level */}
+          {/* Single Fee Control (Split Court Fee Toggle + Stepper + Presets) */}
+          <div className="p-3.5 rounded-2xl bg-[#141A15] border border-white/5 space-y-3">
+            <Toggle
+              checked={splitCost}
+              onChange={(checked) => {
+                setSplitCost(checked);
+                if (checked) {
+                  setPricePerPlayer((prev) => (prev > 0 ? prev : lastNonZeroFee || 150));
+                }
+              }}
+              label="Split Court Fee"
+              sublabel="Share venue rental fee per attendee"
+              className="w-full"
+            />
+            {splitCost && (
+              <div className="pt-2.5 border-t border-white/5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-semibold text-[#F4F7F0] block">Fee per attendee</span>
+                    <span className="text-[11px] text-[#6F7B71] whitespace-nowrap">
+                      Per player, in {APP_CONFIG.currency}
+                    </span>
+                  </div>
+                  <Stepper
+                    value={pricePerPlayer}
+                    onChange={handleFeeChange}
+                    min={0}
+                    max={MAX_FEE_PHP}
+                    step={10}
+                    prefix={APP_CONFIG.currency}
+                    ariaLabel="fee per attendee"
+                  />
+                </div>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {FEE_PRESETS.map((preset) => {
+                    const activeFee = pricePerPlayer === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        aria-pressed={activeFee}
+                        onClick={() => handleFeeChange(preset)}
+                        className={`min-h-[44px] py-1.5 rounded-xl text-[11px] font-mono font-semibold border transition-all ${
+                          activeFee
+                            ? 'bg-[#C8FF2E] text-[#0B0F0C] border-[#C8FF2E] font-bold'
+                            : 'bg-[#1C241E] text-[#A5B0A6] border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {APP_CONFIG.currency}
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+                {feeSummaryText && (
+                  <div className="px-3 py-2 rounded-xl bg-[#1C241E]/80 border border-[#C8FF2E]/25 flex items-center justify-between text-xs">
+                    <span className="text-[#A5B0A6]">Estimated Fee</span>
+                    <span className="font-mono font-bold text-[#C8FF2E]">{feeSummaryText}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Skill Level */}
           <div>
             <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-2">
               Target Skill Tier
@@ -909,7 +843,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
                     key={lvl}
                     type="button"
                     onClick={() => setSkillLevel(lvl)}
-                    className={`h-11 rounded-xl text-xs font-bold transition-all border press-scale ${
+                    className={`min-h-[44px] h-11 rounded-xl text-xs font-bold transition-all border press-scale ${
                       isSelected
                         ? 'bg-[#1C241E] border-[#C8FF2E] text-[#C8FF2E] shadow-sm'
                         : 'bg-[#141A15] border-white/5 text-[#A5B0A6] hover:text-white'
@@ -922,7 +856,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
             </div>
           </div>
 
-          {/* Section 7: Host Notes */}
+          {/* Host Notes */}
           <div>
             <label className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider block mb-1.5">
               Host Notes &amp; Entry Instructions
@@ -931,19 +865,19 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Bring your boots. Court lights are booked from 7pm. Meet by Court 2 entrance."
+              placeholder="e.g. Bring your gear. Court lights booked from 7:00 PM."
               className="w-full p-3 rounded-2xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] placeholder-[#65756B] focus:border-[#C8FF2E] focus:outline-none resize-none leading-relaxed"
             />
           </div>
         </form>
 
-        {/* Modal Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-white/10 bg-[#0B0F0C] shrink-0 flex items-center justify-end gap-3">
+        {/* Modal Footer */}
+        <div className="p-4 sm:p-5 border-t border-white/10 bg-[#0B0F0C] shrink-0 flex items-center justify-end gap-3 safe-area-bottom-12">
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="h-12 px-5 rounded-2xl bg-[#141A15] hover:bg-[#1C241E] text-xs font-bold text-[#A5B0A6] hover:text-white border border-white/10 transition-all press-scale disabled:opacity-50"
+            className="min-h-[48px] px-5 rounded-2xl bg-[#141A15] hover:bg-[#1C241E] text-xs font-bold text-[#A5B0A6] hover:text-white border border-white/10 transition-all press-scale disabled:opacity-50"
           >
             Cancel
           </button>
@@ -951,7 +885,7 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="h-12 px-7 rounded-2xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-xs font-display font-bold text-[#0B0F0C] shadow-[0_0_20px_rgba(200,255,46,0.3)] transition-all press-scale flex items-center justify-center gap-2 disabled:opacity-50"
+            className="min-h-[48px] px-7 rounded-2xl bg-[#C8FF2E] hover:bg-[#d4ff52] text-xs font-display font-bold text-[#0B0F0C] shadow-[0_0_20px_rgba(200,255,46,0.3)] transition-all press-scale flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {isSaving ? (
               <>
@@ -967,6 +901,33 @@ export const EditGameModal: React.FC<EditGameModalProps> = ({
           </button>
         </div>
       </div>
+
+      <MonthCalendarSheet
+        isOpen={isCalendarOpen}
+        selectedDateISO={selectedDateISO}
+        maxHorizonDays={MAX_BOOKING_HORIZON_DAYS}
+        onSelect={(iso) => {
+          setSelectedDateISO(iso);
+          setScheduleMode('custom');
+        }}
+        onClose={() => setIsCalendarOpen(false)}
+      />
+
+      <TimeWheelSheet
+        isOpen={activeTimeWheel !== null}
+        value24={activeTimeWheel === 'end' ? endTime24 : kickoffTime24}
+        selectedDateISO={selectedDateISO}
+        blockPastTimes={false}
+        title={activeTimeWheel === 'end' ? 'Select End Time' : 'Select Kickoff Time'}
+        onChange={(next24) => {
+          if (activeTimeWheel === 'end') {
+            setEndTime24(next24);
+          } else {
+            updateKickoffTime(next24);
+          }
+        }}
+        onClose={() => setActiveTimeWheel(null)}
+      />
     </div>
   );
 };

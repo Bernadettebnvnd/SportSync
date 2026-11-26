@@ -39,6 +39,7 @@ export const FindGamesScreen: React.FC<FindGamesScreenProps> = ({
         if (!matchesSearch) return false;
       }
       if (activeFilter === 'urgent') {
+        if (g.spotsTotal === null) return false;
         const left = g.spotsTotal - g.spotsJoined;
         if (!(left <= 2 && left > 0)) return false;
       }

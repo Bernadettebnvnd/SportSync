@@ -3,6 +3,7 @@ import { ArrowLeft, Search, TrendingUp, History, X, MapPin, Calendar } from 'luc
 import { Venue, CommunityGame, AvatarId } from '../../mock/types';
 import { UserAvatar } from '../../illustrations/Avatars';
 import { useMatchiStore } from '../../lib/store';
+import { formatManilaDateLabel, formatTime12h, formatTimeRange12h } from '@/lib/datetime';
 
 interface SearchScreenProps {
   onBack: () => void;
@@ -84,13 +85,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
       title: s.title,
       format: (s.rotation_format || '5v5') as CommunityGame['format'],
       skillLevel: 'Intermediate',
-      date: s.start_time ? s.start_time.split('T')[0] : 'Today',
-      time: s.start_time && s.start_time.includes('T') ? s.start_time.split('T')[1].slice(0, 5) : (s.start_time || '18:00'),
+      date: s.start_time ? formatManilaDateLabel(s.start_time) : 'Today',
+      time: s.start_time ? formatTimeRange12h(s.start_time, s.ends_at ?? null) : '6:00 PM',
+      endTime: s.ends_at ? formatTime12h(s.ends_at) : null,
+      startsAt: s.start_time || undefined,
+      endsAt: s.ends_at ?? null,
       locationName: s.location_details || 'Naga City',
       distance: '1.0 km',
       hostName: s.host?.full_name || 'Organizer',
       hostAvatar: 'alex',
-      spotsTotal: s.max_players || 10,
+      spotsTotal: s.max_players === null || s.max_players === undefined ? null : s.max_players,
       spotsJoined: s.current_players_count || 1,
       pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
       notes: s.description || '',
@@ -228,11 +232,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                       <span className="text-xs font-semibold text-[#F4F7F0] block">{g.title}</span>
                       <span className="text-[10px] text-[#A5B0A6] flex items-center gap-1 mt-0.5">
                         <Calendar className="w-3 h-3 text-[#C8FF2E]" />
-                        {g.sport} • {g.date} • {g.time}
+                        {g.sport} • {g.date} • {formatTimeRange12h(g.time, g.endTime ?? g.endsAt ?? null)}
                       </span>
                     </div>
                     <span className="text-[10px] text-[#A5B0A6]">
-                      {g.spotsJoined}/{g.spotsTotal} joined
+                      {g.spotsTotal === null ? `${g.spotsJoined} · Open` : `${g.spotsJoined}/${g.spotsTotal} joined`}
                     </span>
                   </button>
                 ))}
@@ -269,11 +273,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                     <div>
                       <h4 className="font-display font-bold text-xs text-[#F4F7F0]">{game.title}</h4>
                       <span className="text-[10px] text-[#A5B0A6]">
-                        {game.sport} • {game.locationName} • {game.date} {game.time}
+                        {game.sport} • {game.locationName} • {game.date} {formatTimeRange12h(game.time, game.endTime ?? game.endsAt ?? null)}
                       </span>
                     </div>
                     <span className="text-xs font-bold text-[#C8FF2E]">
-                      {game.spotsJoined}/{game.spotsTotal}
+                      {game.spotsTotal === null ? 'Open' : `${game.spotsJoined}/${game.spotsTotal}`}
                     </span>
                   </div>
                 ))}

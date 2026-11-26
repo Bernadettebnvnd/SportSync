@@ -263,7 +263,14 @@ export async function isProfileCompleteInDb(
     return false;
   }
 
-  // 3. For players, check if required setup fields are complete
+  // Explicit false in DB always means onboarding has NOT been completed yet
+  if (profile?.onboarding_completed === false || profile?.onboarding_completed === 'false') {
+    return false;
+  }
+
+  // 3. For legacy player rows where onboarding_completed is NULL/undefined,
+  // require non-default preferred_sports AND an explicit skill_level saved via onboarding.
+  // Never auto-flip onboarding_completed here; new/Google accounts must complete Interest Check.
   const fullName = (profile?.full_name || authMetadata?.full_name || '').trim();
   const isGenericName =
     !fullName ||
@@ -274,18 +281,17 @@ export async function isProfileCompleteInDb(
     fullName.toLowerCase() === 'google player';
 
   const parsedSports = parsePreferredSports(profile?.preferred_sports || authMetadata?.preferred_sports);
-  const hasSports = parsedSports.length > 0 || Boolean(profile?.primary_sport || authMetadata?.primary_sport);
-  const hasCity = Boolean(profile?.city || authMetadata?.city);
-  const hasSkill = Boolean(profile?.skill_level || authMetadata?.skill_level);
+  const isDbDefaultSports =
+    parsedSports.length === 2 &&
+    parsedSports.includes('pickleball') &&
+    parsedSports.includes('badminton');
+  const hasExplicitSports =
+    (parsedSports.length > 0 && !isDbDefaultSports) ||
+    Boolean(profile?.primary_sport || authMetadata?.primary_sport);
+  const rawSkill = String(profile?.skill_level || authMetadata?.skill_level || '').trim().toLowerCase();
+  const hasExplicitSkill = Boolean(rawSkill && rawSkill !== 'all_levels');
 
-  if (!isGenericName && hasSports && (hasCity || hasSkill)) {
-    if (dbClient && profile?.id && profile?.onboarding_completed !== true) {
-      dbClient
-        .from('users')
-        .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
-        .eq('id', profile.id)
-        .then(() => {}, () => {});
-    }
+  if (!isGenericName && hasExplicitSports && hasExplicitSkill) {
     return true;
   }
 
@@ -411,7 +417,10 @@ async function upsertCanonicalPublicUser(
   if (params.city) newPayload.city = params.city;
   const cleanPhone = sanitizePhoneValue(params.phone);
   if (cleanPhone) newPayload.phone = cleanPhone;
-  if (params.onboardingCompleted) newPayload.onboarding_completed = true;
+  newPayload.onboarding_completed = Boolean(params.onboardingCompleted);
+  if (!params.onboardingCompleted) {
+    newPayload.preferred_sports = [];
+  }
 
   let { data: inserted, error: insertErr } = await dbClient
     .from('users')
@@ -1082,9 +1091,10 @@ export async function serverSyncOAuthUser(data: {
     overwriteOnboarding: false,
   });
 
-  const isComplete =
-    Boolean(dbProfile?.onboarding_completed === true) ||
-    (await isProfileCompleteInDb(dbClient, dbProfile, verifiedMeta, dbProfile?.role));
+  const isComplete = !preExisting
+    ? false
+    : Boolean(dbProfile?.onboarding_completed === true) ||
+      (await isProfileCompleteInDb(dbClient, dbProfile, verifiedMeta, dbProfile?.role));
 
   const canonicalId = dbProfile?.id || targetAuthId;
   const parsedSports = parsePreferredSports(dbProfile?.preferred_sports);
@@ -1239,9 +1249,10 @@ export async function serverSyncGoogleIdTokenUser(data: {
     overwriteOnboarding: false,
   });
 
-  const isComplete =
-    Boolean(dbProfile?.onboarding_completed === true) ||
-    (await isProfileCompleteInDb(dbClient, dbProfile, tokenInfo, dbProfile?.role));
+  const isComplete = !preExisting
+    ? false
+    : Boolean(dbProfile?.onboarding_completed === true) ||
+      (await isProfileCompleteInDb(dbClient, dbProfile, tokenInfo, dbProfile?.role));
 
   const canonicalId = dbProfile?.id || authUserId;
   const parsedSports = parsePreferredSports(dbProfile?.preferred_sports);

@@ -7,6 +7,7 @@ import {
   getUnreadChatNotificationsCount,
   markGameChatNotificationsAsRead,
 } from '../notifications';
+import { formatTime12h } from '@/lib/datetime';
 
 export interface DbChatMessage {
   id: string;
@@ -41,7 +42,7 @@ export function formatMessageTime(isoString?: string): string {
   try {
     const date = new Date(isoString);
     if (isNaN(date.getTime())) return 'Just now';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return formatTime12h(isoString) || 'Just now';
   } catch {
     return 'Just now';
   }
@@ -121,9 +122,6 @@ export async function fetchGameMessages(
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (json?.error && (json.error.includes('schema cache') || json.error.includes('game_chat_messages'))) {
-      return [];
-    }
     throw new Error(json?.error || `Failed to load chat messages (${res.status}).`);
   }
 
@@ -216,18 +214,6 @@ export async function sendGameMessage(params: SendGameMessageParams): Promise<Ch
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.message) {
-    if (json?.error && (json.error.includes('schema cache') || json.error.includes('game_chat_messages'))) {
-      return {
-        id: messageId,
-        senderId: params.senderId,
-        senderName: params.senderName,
-        avatarId: (params.senderAvatar as AvatarId) || 'alex',
-        text: text.trim(),
-        time: formatMessageTime(new Date().toISOString()),
-        isMe: true,
-        isHost,
-      };
-    }
     throw new Error(json?.error || `Failed to send message (${res.status}).`);
   }
 

@@ -551,8 +551,12 @@ export async function createOpenPlaySession(
     court_ids: validCourtUuids,
     start_time: startTimeIso,
     end_time: endTimeIso,
+    ends_at: sessionData.ends_at ?? null,
     fee_cents: Math.round(Number(sessionData.fee_cents) || 0),
-    max_players: Math.max(2, Math.min(24, Number(sessionData.max_players) || 10)),
+    max_players:
+      sessionData.max_players === null
+        ? null
+        : Math.max(2, Math.min(24, Number(sessionData.max_players) || 10)),
     current_players_count: 0,
     rotation_format: sessionData.rotation_format || '5v5',
     status: 'active',
@@ -631,6 +635,7 @@ export async function updateOpenPlaySession(
     if (updates.sport !== undefined) dbUpdates.sport = updates.sport;
     if (updates.start_time !== undefined) dbUpdates.start_time = updates.start_time;
     if (updates.end_time !== undefined) dbUpdates.end_time = updates.end_time;
+    if (updates.ends_at !== undefined) dbUpdates.ends_at = updates.ends_at;
     if (updates.fee_cents !== undefined) dbUpdates.fee_cents = updates.fee_cents;
     if (updates.max_players !== undefined) dbUpdates.max_players = updates.max_players;
     if (updates.skill_level !== undefined) dbUpdates.skill_level = updates.skill_level;

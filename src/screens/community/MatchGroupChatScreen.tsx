@@ -16,8 +16,11 @@ import {
   UserPlus,
   Lock,
   Loader2,
+  AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { ChatBubble, SystemMessage, ChatMessage } from '../../design-system/components/ChatBubble';
+import { formatTimeRange12h, formatTime12h } from '@/lib/datetime';
 import { UserAvatar, AvatarId } from '../../illustrations/Avatars';
 import { CommunityGame } from '../../mock/types';
 import { shareMatch } from '../../lib/shareUtils';
@@ -148,9 +151,33 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     };
   }, [game, effectiveUserId, effectiveUserName, joinedPlayers]);
 
-  // Standardized canonical chat room key across all devices
-  const chatRoomId = game?.sessionId || game?.id || '';
-  const altId = game?.id && game?.id !== chatRoomId ? game?.id : (game?.sessionId && game?.sessionId !== chatRoomId ? game?.sessionId : undefined);
+  // Standardized canonical chat room key (always prefer canonical UUID session.id)
+  const gameIdProp = game?.id;
+  const gameSessionIdProp = game?.sessionId;
+  const gameInviteCodeProp = game?.inviteCode;
+
+  const chatRoomId = useMemo(() => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (gameSessionIdProp && uuidRegex.test(gameSessionIdProp)) return gameSessionIdProp;
+    if (gameIdProp && uuidRegex.test(gameIdProp)) return gameIdProp;
+    return gameSessionIdProp || gameIdProp || '';
+  }, [gameSessionIdProp, gameIdProp]);
+
+  const legacyRoomKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (gameIdProp && gameIdProp !== chatRoomId) keys.add(gameIdProp);
+    if (gameSessionIdProp && gameSessionIdProp !== chatRoomId) keys.add(gameSessionIdProp);
+    if (gameInviteCodeProp) {
+      keys.add(`game_${gameInviteCodeProp}`);
+      keys.add(gameInviteCodeProp);
+    }
+    return Array.from(keys);
+  }, [gameIdProp, gameSessionIdProp, gameInviteCodeProp, chatRoomId]);
+
+  const altId = legacyRoomKeys[0];
+
+  type LocalChatMessage = ChatMessage & { sendStatus?: 'sending' | 'sent' | 'failed'; errorMsg?: string };
+  const [failedMessages, setFailedMessages] = useState<LocalChatMessage[]>([]);
 
   const markCurrentChatRead = useCallback(() => {
     markGameChatAsRead(game?.id || chatRoomId, altId, game?.title, {
@@ -167,12 +194,36 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       return;
     }
 
-    // Initialize from local cache first if available
+    // Initialize from local cache & migrate any legacy invite-code cache entries into canonical room ID
     let initialCached: ChatMessage[] = [];
     if (typeof window !== 'undefined') {
       try {
+        const mergedMap = new Map<string, ChatMessage>();
+        for (const legacyKey of legacyRoomKeys) {
+          const rawLegacy = localStorage.getItem(`sportsync_chat_${legacyKey}`);
+          if (rawLegacy) {
+            const parsedLegacy: ChatMessage[] = JSON.parse(rawLegacy);
+            if (Array.isArray(parsedLegacy)) {
+              parsedLegacy.forEach((m) => {
+                if (m?.id) mergedMap.set(m.id, m);
+              });
+            }
+            localStorage.removeItem(`sportsync_chat_${legacyKey}`);
+          }
+        }
         const raw = localStorage.getItem(`sportsync_chat_${chatRoomId}`);
-        if (raw) initialCached = JSON.parse(raw);
+        if (raw) {
+          const parsed: ChatMessage[] = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((m) => {
+              if (m?.id) mergedMap.set(m.id, m);
+            });
+          }
+        }
+        initialCached = Array.from(mergedMap.values());
+        if (initialCached.length > 0) {
+          localStorage.setItem(`sportsync_chat_${chatRoomId}`, JSON.stringify(initialCached.slice(-100)));
+        }
       } catch {}
     }
     setMessages(initialCached);
@@ -318,38 +369,35 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     });
   }, [messages, effectiveUserId, effectiveUserName]);
 
-  // Dynamic spots calculation based on actual host and joined players
-  const spotsTotal = game?.spotsTotal || 10;
+  // Dynamic spots calculation (null spotsTotal = Open to all / Unlimited)
+  const spotsTotal: number | null = game?.spotsTotal === null ? null : (game?.spotsTotal ?? 10);
+  const isUnlimitedSpots = spotsTotal === null;
   const confirmedCount = (hostParticipant ? 1 : 0) + joinedPlayers.length;
-  const spotsJoined = Math.min(spotsTotal, Math.max(confirmedCount, game?.spotsJoined || confirmedCount));
-  const spotsLeft = Math.max(0, spotsTotal - spotsJoined);
+  const rawSpotsJoined = Math.max(confirmedCount, game?.spotsJoined || confirmedCount);
+  const spotsJoined = isUnlimitedSpots ? rawSpotsJoined : Math.min(spotsTotal as number, rawSpotsJoined);
+  const spotsLeft = isUnlimitedSpots ? Infinity : Math.max(0, (spotsTotal as number) - spotsJoined);
   const matchTitle = game?.title || 'SportSync Match';
 
-  // 5. Send Message Handler
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || !chatRoomId || isSending) return;
-
-    const textToSend = inputText.trim();
-    setInputText('');
+  // 5. Send Message Handler (surfaces real DB persistence errors with per-message retry)
+  const submitMessageText = async (textToSend: string, retryTempId?: string) => {
+    if (!textToSend.trim() || !chatRoomId || isSending) return;
     setIsSending(true);
+    if (retryTempId) {
+      setFailedMessages((prev) => prev.filter((m) => m.id !== retryTempId));
+    }
 
     try {
-      // If user is host, use game.hostName. If player, use their specific profile name from Supabase.
       const senderDisplayName = isHost && game?.hostName ? game.hostName : effectiveUserName;
 
-      // Compile list of recipients (host + all joined players, excluding sender)
       const recipientMap = new Map<string, { id?: string; name: string }>();
       const normSender = senderDisplayName.trim().toLowerCase();
 
-      // Check host
       const hostName = game?.hostName || hostParticipant?.name;
       const hostId = game?.hostId || hostParticipant?.id;
       if (hostName && hostName.trim().toLowerCase() !== normSender && (!hostId || !effectiveUserId || hostId !== effectiveUserId)) {
         recipientMap.set((hostId || hostName).toLowerCase(), { id: hostId, name: hostName });
       }
 
-      // Check joined players from state & game.members
       [...joinedPlayers, ...(game?.members || [])].forEach((p) => {
         if (!p?.name) return;
         const normPName = p.name.trim().toLowerCase();
@@ -362,17 +410,18 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       });
 
       const recipientsList = Array.from(recipientMap.values());
+      const formattedTimeLabel = formatTimeRange12h(game?.time, game?.endTime ?? game?.endsAt ?? null);
       const scheduleStr =
-        game?.date && game?.time
-          ? `${game.date} • ${game.time}`
-          : (game as any)?.schedule || game?.date || game?.time || '';
+        game?.date && formattedTimeLabel
+          ? `${game.date} • ${formattedTimeLabel}`
+          : (game as any)?.schedule || game?.date || formattedTimeLabel || '';
 
       const sentMsg = await sendGameMessage({
         gameId: chatRoomId,
         senderId: effectiveUserId,
         senderName: senderDisplayName,
         senderAvatar: effectiveUserAvatar,
-        text: textToSend,
+        text: textToSend.trim(),
         isHost,
         gameTitle: matchTitle,
         sport: game?.sport,
@@ -381,11 +430,6 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         recipients: recipientsList,
       });
 
-      // Note: Recipient notifications are created, persisted to Supabase, and broadcasted to each
-      // recipient's targeted Realtime channel directly by the server API route (/api/games/[id]/chat).
-      // The sender's local storage should never be polluted with other players' notifications.
-
-      // Optimistic update if not already received via subscription
       setMessages((prev) => {
         if (prev.some((m) => m.id === sentMsg.id)) return prev;
         const nextList = [...prev, { ...sentMsg, isMe: true }];
@@ -397,16 +441,37 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         return nextList;
       });
 
-      // Broadcast to all peers connected to the active subscribed channel
       await broadcastGameMessage(chatRoomId, sentMsg);
       scrollToBottom();
     } catch (err: any) {
-      console.warn('[MatchChat] Failed to send message:', err);
-      setInputText(textToSend);
-      showFeedback(err?.message || 'Failed to send message. Please try again.');
+      console.warn('[MatchChat] Failed to persist message:', err);
+      const errMsg = err?.message || 'Could not save message. Tap retry to send again.';
+      const failedItem: LocalChatMessage = {
+        id: retryTempId || `failed_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderId: effectiveUserId,
+        senderName: isHost && game?.hostName ? game.hostName : effectiveUserName,
+        avatarId: effectiveUserAvatar,
+        text: textToSend.trim(),
+        time: formatTime12h(new Date().toISOString()),
+        isMe: true,
+        isHost,
+        sendStatus: 'failed',
+        errorMsg: errMsg,
+      };
+      setFailedMessages((prev) => [...prev, failedItem]);
+      showFeedback(errMsg);
+      scrollToBottom();
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || !chatRoomId || isSending) return;
+    const textToSend = inputText.trim();
+    setInputText('');
+    await submitMessageText(textToSend);
   };
 
   const handleQuickReply = (text: string) => {
@@ -518,7 +583,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
   // Case C: Authorized Host or Joined Player — Full Match Group Chat & Roster
   return (
-    <div className="w-full h-full flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative">
+    <div className="w-full h-[var(--vvh,100dvh)] max-h-[100dvh] flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative overflow-hidden">
       {/* Toast Feedback */}
       {feedback && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[700] w-11/12 max-w-sm p-3.5 rounded-2xl bg-[#141A15] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200">
@@ -550,7 +615,11 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
                 className="text-[11px] text-[#C8FF2E] hover:underline font-medium flex items-center gap-1.5 cursor-pointer"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[#C8FF2E] animate-pulse" />
-                <span>{spotsJoined} of {spotsTotal} players in roster</span>
+                <span>
+                  {isUnlimitedSpots
+                    ? `${spotsJoined} player${spotsJoined === 1 ? '' : 's'} · Open to all`
+                    : `${spotsJoined} of ${spotsTotal} players in roster`}
+                </span>
                 <span className="text-[#A5B0A6]">({activeTab === 'chat' ? 'View Roster' : 'Open Chat'})</span>
               </button>
             </div>
@@ -608,7 +677,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Roster ({spotsJoined}/{spotsTotal})</span>
+            <span>Roster ({isUnlimitedSpots ? spotsJoined : `${spotsJoined}/${spotsTotal}`})</span>
           </button>
         </div>
       </div>
@@ -650,11 +719,33 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
               <ChatBubble key={msg.id} message={msg} />
             ))}
 
+            {/* Failed messages with inline retry button */}
+            {failedMessages.map((msg) => (
+              <div key={msg.id} className="space-y-1 opacity-85">
+                <ChatBubble message={msg} />
+                <div className="flex items-center justify-end gap-2 pr-1">
+                  <span className="text-[11px] text-[#FF8F8F] flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>Not saved</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSending}
+                    onClick={() => void submitMessageText(msg.text, msg.id)}
+                    className="min-h-[32px] px-2.5 py-1 rounded-lg bg-[#FF5C5C]/20 border border-[#FF5C5C]/40 text-[11px] font-bold text-[#FF8F8F] hover:bg-[#FF5C5C]/30 flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Retry</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+
             <div ref={messagesEndRef} />
           </div>
 
           {/* Quick Replies & Input Bar */}
-          <div className="p-3 bg-[#141A15] border-t border-white/5 space-y-2 shrink-0">
+          <div className="p-3 bg-[#141A15] border-t border-white/5 space-y-2 shrink-0 safe-area-bottom-12">
             {/* Quick replies */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {['On my way! 🏃', 'Bringing bibs', 'Pitch 2 right?', '10 mins away'].map((qr) => (
@@ -709,27 +800,33 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
                   Roster Capacity
                 </span>
                 <h3 className="font-display font-black text-lg text-[#F4F7F0]">
-                  {spotsJoined} / {spotsTotal} Confirmed Players
+                  {isUnlimitedSpots
+                    ? `${spotsJoined} Confirmed Player${spotsJoined === 1 ? '' : 's'}`
+                    : `${spotsJoined} / ${spotsTotal} Confirmed Players`}
                 </h3>
               </div>
               <span
                 className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                  spotsLeft === 0
+                  isUnlimitedSpots
+                    ? 'bg-[#C8FF2E]/15 text-[#C8FF2E] border border-[#C8FF2E]/30'
+                    : spotsLeft === 0
                     ? 'bg-[#3DDC84]/20 text-[#3DDC84] border border-[#3DDC84]/30'
                     : 'bg-[#FF8FC7]/20 text-[#FF8FC7] border border-[#FF8FC7]/30'
                 }`}
               >
-                {spotsLeft === 0 ? 'Roster Full' : `${spotsLeft} Spots Open`}
+                {isUnlimitedSpots ? 'Open to all' : spotsLeft === 0 ? 'Roster Full' : `${spotsLeft} Spots Open`}
               </span>
             </div>
 
-            {/* Capacity Meter */}
-            <div className="w-full h-2 rounded-full bg-[#1C241E] overflow-hidden">
-              <div
-                className="h-full bg-[#C8FF2E] transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.round((spotsJoined / spotsTotal) * 100))}%` }}
-              />
-            </div>
+            {/* Capacity Meter (shown when finite capacity is set) */}
+            {!isUnlimitedSpots && spotsTotal !== null && (
+              <div className="w-full h-2 rounded-full bg-[#1C241E] overflow-hidden">
+                <div
+                  className="h-full bg-[#C8FF2E] transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.round((spotsJoined / spotsTotal) * 100))}%` }}
+                />
+              </div>
+            )}
 
             {/* Quick Share / Invite Action */}
             <div className="pt-1 flex items-center gap-2">
@@ -870,7 +967,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
           </div>
 
           {/* Open Roster Slots */}
-          {spotsLeft > 0 && (
+          {!isUnlimitedSpots && spotsLeft > 0 && (
             <div className="space-y-2">
               <span className="text-[11px] font-bold text-[#A5B0A6] uppercase tracking-wider px-1 block">
                 Open Slots ({spotsLeft})

@@ -63,10 +63,26 @@ export class OsmNominatimProvider implements IGeocodingProvider {
   async search(query: string): Promise<GeocodingResult[]> {
     if (!query || query.trim().length < 2) return [];
 
+    // Prefer our cached, Naga-City-bounded Next.js proxy on the client
+    if (typeof window !== 'undefined') {
+      try {
+        const res = await fetch(`/api/geocode?mode=search&q=${encodeURIComponent(query.trim())}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json?.results)) {
+            return json.results;
+          }
+        }
+      } catch (err) {
+        console.warn('Proxy geocoding search failed:', err);
+      }
+    }
+
     try {
+      const q = query.trim().toLowerCase().includes('naga') ? query.trim() : `${query.trim()}, Naga City`;
       const url = `${this.endpoint}?format=json&q=${encodeURIComponent(
-        query.trim()
-      )}&countrycodes=ph&limit=5`;
+        q
+      )}&countrycodes=ph&viewbox=123.14,13.685,123.27,13.575&bounded=1&limit=5`;
       const res = await fetch(url, {
         headers: {
           'Accept-Language': 'en',

@@ -1,5 +1,6 @@
 import { TeamCrestId } from '../illustrations/TeamCrests';
 import { AvatarId } from '../illustrations/Avatars';
+import type { Court } from '../types';
 export type { AvatarId };
 
 export type SportType =
@@ -139,7 +140,7 @@ export interface Venue {
   availableSlots: string[];
   latitude?: number;
   longitude?: number;
-  courts?: any[];
+  courts?: Court[];
   phone?: string;
   operatingHours?: string;
   featuredSports?: string[];
@@ -154,12 +155,15 @@ export interface CommunityGame {
   skillLevel: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
   date: string;
   time: string;
+  endTime?: string | null;
+  startsAt?: string;
+  endsAt?: string | null;
   locationName: string;
   locationDetails?: string;
   distance: string;
   hostName: string;
   hostAvatar: AvatarId;
-  spotsTotal: number;
+  spotsTotal: number | null;
   spotsJoined: number;
   pricePerPlayer: number;
   notes: string;

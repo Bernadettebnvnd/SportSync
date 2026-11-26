@@ -68,14 +68,14 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
         className="pointer-events-none absolute inset-0 overflow-hidden"
       >
         <div
-          className="absolute -top-36 left-1/2 -translate-x-1/2 w-[780px] h-[480px] rounded-full blur-[130px] opacity-40"
+          className="absolute -top-36 left-1/2 -translate-x-1/2 w-[min(780px,100vw)] h-[480px] rounded-full blur-[130px] opacity-40"
           style={{
             background:
               'radial-gradient(circle, rgba(15, 42, 34, 0.95) 0%, rgba(200, 255, 46, 0.14) 55%, rgba(11, 15, 12, 0) 100%)',
           }}
         />
         <div
-          className="absolute top-1/3 right-0 w-[420px] h-[420px] rounded-full blur-[140px] opacity-25"
+          className="absolute top-1/3 right-0 w-[min(420px,90vw)] h-[420px] rounded-full blur-[140px] opacity-25"
           style={{
             background:
               'radial-gradient(circle, rgba(200, 255, 46, 0.18) 0%, rgba(15, 42, 34, 0.4) 60%, transparent 100%)',

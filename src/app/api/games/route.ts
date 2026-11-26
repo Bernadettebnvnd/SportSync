@@ -4,6 +4,14 @@ import { CommunityGame } from '@/mock/types';
 import { createAdminClient, createServerClient, isSupabaseConfigured } from '@/lib/supabase/server';
 import { verifySessionToken, isMissingColumnError, extractMissingColumn } from '@/lib/auth/serverAuth';
 import { isGameExpired } from '@/lib/utils/gameExpiration';
+import {
+  formatManilaDateLabel,
+  formatTime12h,
+  formatTimeRange12h,
+  getManilaParts,
+  parseTimeTo24h,
+  validateEndTime,
+} from '@/lib/datetime';
 
 function getSupabase() {
   const admin = createAdminClient();
@@ -79,7 +87,12 @@ function getManilaDateParts(date: Date = new Date()): { year: number; month: num
   return { year: y, month: m, day: d, ymd };
 }
 
-function parseManilaSchedule(dateStr?: string, timeStr?: string): { startIso: string; endIso: string } {
+function parseManilaSchedule(
+  dateStr?: string,
+  timeStr?: string,
+  endTimeStr?: string | null,
+  explicitEndsAt?: string | null
+): { startIso: string; endIso: string; endsAtIso: string | null; error?: string } {
   const manilaNow = getManilaDateParts();
   let y = manilaNow.year;
   let m = manilaNow.month; // 1-indexed
@@ -88,20 +101,21 @@ function parseManilaSchedule(dateStr?: string, timeStr?: string): { startIso: st
   const rawDate = (dateStr || '').trim();
   const dNorm = rawDate.toLowerCase();
 
-  if (dNorm === 'tomorrow') {
+  if (dNorm === 'tomorrow' || dNorm.startsWith('tomorrow ')) {
     const tom = new Date(Date.UTC(y, m - 1, d + 1));
     y = tom.getUTCFullYear();
     m = tom.getUTCMonth() + 1;
     d = tom.getUTCDate();
-  } else if (dNorm && dNorm !== 'today') {
-    const isoMatch = rawDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  } else if (dNorm && dNorm !== 'today' && !dNorm.startsWith('today ')) {
+    const isoMatch = rawDate.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (isoMatch) {
       y = parseInt(isoMatch[1], 10);
       m = parseInt(isoMatch[2], 10);
       d = parseInt(isoMatch[3], 10);
     } else {
-      const hasYear = /\b\d{4}\b/.test(rawDate);
-      const parsed = new Date(hasYear ? rawDate : `${rawDate}, ${y}`);
+      const cleaned = rawDate.replace(/\(.*?\)/g, '').trim();
+      const hasYear = /\b\d{4}\b/.test(cleaned);
+      const parsed = new Date(hasYear ? cleaned : `${cleaned}, ${y}`);
       if (!isNaN(parsed.getTime())) {
         y = hasYear && parsed.getFullYear() >= 2020 ? parsed.getFullYear() : y;
         m = parsed.getMonth() + 1;
@@ -112,26 +126,10 @@ function parseManilaSchedule(dateStr?: string, timeStr?: string): { startIso: st
 
   let startH = 18;
   let startM = 0;
-  if (timeStr) {
-    const cleanTime = timeStr.trim();
-    const twelveHr = cleanTime.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
-    if (twelveHr) {
-      let ph = parseInt(twelveHr[1], 10);
-      const pm = twelveHr[2] ? parseInt(twelveHr[2], 10) : 0;
-      const mer = twelveHr[3].toUpperCase();
-      if (mer === 'PM' && ph < 12) ph += 12;
-      if (mer === 'AM' && ph === 12) ph = 0;
-      startH = ph;
-      startM = pm;
-    } else {
-      const parts = cleanTime.split(':');
-      if (parts.length >= 2) {
-        const ph = parseInt(parts[0], 10);
-        const pm = parseInt(parts[1], 10);
-        if (!isNaN(ph) && ph >= 0 && ph <= 23) startH = ph;
-        if (!isNaN(pm) && pm >= 0 && pm <= 59) startM = pm;
-      }
-    }
+  const parsedTime = parseTimeTo24h(timeStr);
+  if (parsedTime) {
+    startH = parsedTime.hour24;
+    startM = parsedTime.minute;
   }
 
   const yyyy = String(y).padStart(4, '0');
@@ -139,52 +137,76 @@ function parseManilaSchedule(dateStr?: string, timeStr?: string): { startIso: st
   const dd = String(d).padStart(2, '0');
   const hh = String(startH).padStart(2, '0');
   const min = String(startM).padStart(2, '0');
+  const isoDate = `${yyyy}-${mm}-${dd}`;
+  const startTime24 = `${hh}:${min}`;
 
-  const startDate = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00+08:00`);
+  const startDate = new Date(`${isoDate}T${startTime24}:00+08:00`);
   const validStart = isNaN(startDate.getTime()) ? new Date() : startDate;
   const startIso = validStart.toISOString();
-  const endIso = new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
-  return { startIso, endIso };
+
+  // Handle explicit optional end time (ends_at)
+  if (explicitEndsAt && explicitEndsAt.trim()) {
+    const endDate = new Date(explicitEndsAt);
+    if (isNaN(endDate.getTime()) || endDate.getTime() <= validStart.getTime()) {
+      return {
+        startIso,
+        endIso: new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        endsAtIso: null,
+        error: 'End time must be after kickoff.',
+      };
+    }
+    const endsAtIso = endDate.toISOString();
+    return { startIso, endIso: endsAtIso, endsAtIso };
+  }
+
+  if (endTimeStr && endTimeStr.trim()) {
+    const check = validateEndTime(isoDate, startTime24, endTimeStr);
+    if (!check.valid) {
+      return {
+        startIso,
+        endIso: new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        endsAtIso: null,
+        error: check.error || 'End time must be after kickoff.',
+      };
+    }
+    const endDate = new Date(check.endIso);
+    const endsAtIso = endDate.toISOString();
+    return { startIso, endIso: endsAtIso, endsAtIso };
+  }
+
+  const defaultEndIso = new Date(validStart.getTime() + 2 * 60 * 60 * 1000).toISOString();
+  return { startIso, endIso: defaultEndIso, endsAtIso: null };
 }
 
-function formatSessionDateTime(startTime?: string): { date: string; time: string } {
-  if (!startTime) return { date: 'Today', time: '18:00' };
+function formatSessionDateTime(
+  startTime?: string,
+  endsAt?: string | null
+): { date: string; time: string; endTime: string | null } {
+  if (!startTime) return { date: 'Today', time: '6:00 PM', endTime: null };
   if (!startTime.includes('T') && !startTime.includes('-')) {
-    return { date: 'Today', time: startTime };
+    const endLabel = endsAt ? formatTime12h(endsAt) : null;
+    return {
+      date: 'Today',
+      time: formatTimeRange12h(startTime, endLabel),
+      endTime: endLabel,
+    };
   }
   try {
     const d = new Date(startTime);
-    if (isNaN(d.getTime())) return { date: 'Today', time: startTime };
+    if (isNaN(d.getTime())) {
+      return { date: 'Today', time: formatTime12h(startTime), endTime: null };
+    }
 
-    const todayManila = getManilaDateParts();
-    const tomDate = new Date(Date.UTC(todayManila.year, todayManila.month - 1, todayManila.day + 1));
-    const tomorrowYmd = `${tomDate.getUTCFullYear()}-${String(tomDate.getUTCMonth() + 1).padStart(2, '0')}-${String(tomDate.getUTCDate()).padStart(2, '0')}`;
-    const targetManila = getManilaDateParts(d);
+    const dateLabel = formatManilaDateLabel(d);
+    const startLabel = formatTime12h(startTime);
+    const endLabel = endsAt ? formatTime12h(endsAt) : null;
+    const timeLabel = formatTimeRange12h(startLabel, endLabel);
 
-    const isToday = targetManila.ymd === todayManila.ymd;
-    const isTomorrow = targetManila.ymd === tomorrowYmd;
-
-    const dateLabel = isToday
-      ? 'Today'
-      : isTomorrow
-      ? 'Tomorrow'
-      : d.toLocaleDateString('en-US', {
-          timeZone: 'Asia/Manila',
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        });
-
-    const timeLabel = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d);
-
-    return { date: dateLabel, time: timeLabel };
+    // Ensure Asia/Manila parts are touched consistently
+    void getManilaParts(d);
+    return { date: dateLabel, time: timeLabel, endTime: endLabel };
   } catch {
-    return { date: 'Today', time: startTime };
+    return { date: 'Today', time: formatTime12h(startTime), endTime: null };
   }
 }
 
@@ -602,7 +624,7 @@ export async function GET(req: NextRequest) {
         const inviteTagMatch = s.description?.match(/\[INVITE:([A-Z0-9_-]+)\]/i);
         const taggedInvite = inviteTagMatch ? inviteTagMatch[1].trim().toUpperCase() : undefined;
 
-        const { date: fDate, time: fTime } = formatSessionDateTime(s.start_time);
+        const { date: fDate, time: fTime, endTime: fEndTime } = formatSessionDateTime(s.start_time, s.ends_at ?? null);
         const members = [...(rostersMap.get(s.id) || [])];
         const resolvedHostName = host?.full_name || host?.nickname || 'Match Organizer';
         const resolvedHostAvatar = host?.avatar_url || 'alex';
@@ -616,10 +638,10 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        const spotsJoined = Math.min(
-          s.max_players || 12,
-          Math.max(members.length, s.current_players_count || 0)
-        );
+        const resolvedMaxPlayers: number | null =
+          s.max_players === null || s.max_players === undefined ? null : Number(s.max_players);
+        const rawJoined = Math.max(members.length, s.current_players_count || 0);
+        const spotsJoined = resolvedMaxPlayers === null ? rawJoined : Math.min(resolvedMaxPlayers, rawJoined);
 
         const locTagMatch = s.description?.match(/\[(?:LOCATION|LOC):(.*?)\]/i);
         const taggedLoc = locTagMatch ? locTagMatch[1].trim() : '';
@@ -665,6 +687,9 @@ export async function GET(req: NextRequest) {
           skillLevel: (s.skill_level === 'competitive' || s.skill_level === 'intermediate' ? 'Competitive' : 'Casual') as any,
           date: fDate,
           time: fTime,
+          endTime: fEndTime,
+          startsAt: s.start_time || undefined,
+          endsAt: s.ends_at ?? null,
           locationName: resolvedLocation,
           locationDetails: cleanLocationDetails || cleanTaggedLoc || resolvedLocation,
           distance: 'Naga City • 0.5 km away',
@@ -672,7 +697,7 @@ export async function GET(req: NextRequest) {
           hostId: s.host_id,
           hostName: resolvedHostName,
           hostAvatar: resolvedHostAvatar,
-          spotsTotal: s.max_players || 12,
+          spotsTotal: resolvedMaxPlayers,
           spotsJoined,
           pricePerPlayer: Math.round((s.fee_cents || 0) / 100),
           notes: cleanNotes || 'Verified SportSync match',
@@ -853,7 +878,31 @@ export async function POST(req: NextRequest) {
       ];
       const validSport = validSports.find((vs) => sLower.includes(vs)) || 'basketball';
 
-      const { startIso, endIso } = parseManilaSchedule(game.date, game.time);
+      const scheduleParsed = parseManilaSchedule(game.date, game.time, game.endTime ?? null, game.endsAt ?? null);
+      if (scheduleParsed.error) {
+        return NextResponse.json(
+          { success: false, error: scheduleParsed.error },
+          { status: 400 }
+        );
+      }
+      const { startIso, endIso, endsAtIso } = scheduleParsed;
+
+      // Validate capacity server-side: either null (unlimited) or integer 2-24
+      let validatedMaxPlayers: number | null;
+      if (game.spotsTotal === null) {
+        validatedMaxPlayers = null;
+      } else if (game.spotsTotal === undefined) {
+        validatedMaxPlayers = 10;
+      } else {
+        const parsedCap = Number(game.spotsTotal);
+        if (!Number.isInteger(parsedCap) || parsedCap < 2 || parsedCap > 24) {
+          return NextResponse.json(
+            { success: false, error: 'Capacity must be between 2 and 24 players, or unlimited.' },
+            { status: 400 }
+          );
+        }
+        validatedMaxPlayers = parsedCap;
+      }
 
       const isInvalidLocInput = (val?: string | null) =>
         !val ||
@@ -896,8 +945,9 @@ export async function POST(req: NextRequest) {
         court_ids: [],
         start_time: startIso,
         end_time: endIso,
+        ends_at: endsAtIso,
         fee_cents: Math.round((game.pricePerPlayer || 0) * 100),
-        max_players: Math.max(2, Math.min(24, game.spotsTotal || 10)),
+        max_players: validatedMaxPlayers,
         current_players_count: Math.max(1, initialMembers.length),
         rotation_format: game.format || '5v5',
         status: 'active',
@@ -1078,10 +1128,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      const { date: finalDate, time: finalTime, endTime: finalEndTime } = formatSessionDateTime(
+        inserted.start_time || startIso,
+        inserted.ends_at ?? endsAtIso
+      );
+
       const finalGame: CommunityGame = {
         ...game,
         id: inserted.id,
         sessionId: inserted.id,
+        date: finalDate,
+        time: finalTime,
+        endTime: finalEndTime,
+        startsAt: inserted.start_time || startIso,
+        endsAt: inserted.ends_at ?? endsAtIso,
         hostId: hostUserId || game.hostId,
         locationName: venueLocationName,
         locationDetails: venueLocationDetails,
@@ -1089,6 +1149,7 @@ export async function POST(req: NextRequest) {
         inviteCode,
         isPublic: game.visibility ? game.visibility !== 'Invite' : true,
         visibility: game.visibility || 'Public',
+        spotsTotal: validatedMaxPlayers,
         spotsJoined: Math.max(1, initialMembers.length),
         members: initialMembers,
       };

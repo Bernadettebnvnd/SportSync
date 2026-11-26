@@ -29,6 +29,7 @@ import { EditGameModal } from '@/components/community/EditGameModal';
 import { DeleteGameConfirmationDialog } from '@/components/community/DeleteGameConfirmationDialog';
 import { shareMatch, copyToClipboard, getMatchShareUrl } from '../../lib/shareUtils';
 import { getUnreadChatNotificationsCount } from '../../lib/notifications';
+import { formatTimeRange12h } from '@/lib/datetime';
 
 interface MatchDetailScreenProps {
   game: CommunityGame | null;
@@ -41,9 +42,13 @@ interface MatchDetailScreenProps {
     sport: string;
     date: string;
     time: string;
+    endTime?: string | null;
+    startsAt?: string;
+    endsAt?: string | null;
     locationName: string;
+    locationDetails?: string;
     skillLevel: 'Beginner' | 'Casual' | 'Intermediate' | 'Competitive';
-    spotsTotal: number;
+    spotsTotal: number | null;
     pricePerPlayer: number;
     notes?: string;
     coordinates?: [number, number];
@@ -203,7 +208,10 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
   const effectiveIsJoined = isJoined || isAlreadyMember;
 
   const lineupCount = Array.isArray(game?.members) ? game.members.length : (game?.spotsJoined || 0);
-  const spotsLeft = Math.max(0, (game?.spotsTotal || 10) - lineupCount);
+  const isUnlimited = game?.spotsTotal === null;
+  const spotsLeft = isUnlimited ? Infinity : Math.max(0, (game?.spotsTotal ?? 10) - lineupCount);
+  const isFull = !isUnlimited && spotsLeft <= 0;
+  const displayTime = formatTimeRange12h(game?.time, game?.endTime ?? game?.endsAt ?? null);
 
   const isHostParticipating = useMemo(() => {
     if (!isHost || !Array.isArray(game?.members)) return false;
@@ -477,7 +485,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
               </div>
               <button
                 type="button"
-                disabled={isTogglingParticipation || (!isHostParticipating && spotsLeft <= 0)}
+                disabled={isTogglingParticipation || (!isHostParticipating && isFull)}
                 onClick={async () => {
                   if (!onToggleHostParticipation) return;
                   setIsTogglingParticipation(true);
@@ -557,7 +565,7 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 Date &amp; Kickoff
               </span>
               <span className="font-semibold text-[#F4F7F0]">
-                {game.date} • {game.time}
+                {game.date} • {displayTime}
               </span>
             </div>
           </div>
@@ -613,13 +621,21 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
                 Player Lineup
               </h3>
               <span className="text-xs text-[#A5B0A6]">
-                {lineupCount} of {game.spotsTotal} spots taken
+                {isUnlimited
+                  ? `${lineupCount} player${lineupCount === 1 ? '' : 's'} joined`
+                  : `${lineupCount} of ${game.spotsTotal} spots taken`}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
-                {spotsLeft} spots left
-              </span>
+              {isUnlimited ? (
+                <span className="text-xs font-bold text-[#C8FF2E] bg-[#C8FF2E]/15 px-2.5 py-1 rounded-full border border-[#C8FF2E]/30">
+                  Open to all
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-[#FF8FC7] bg-[#FF8FC7]/15 px-2.5 py-1 rounded-full border border-[#FF8FC7]/30">
+                  {spotsLeft} spot{spotsLeft === 1 ? '' : 's'} left
+                </span>
+              )}
               <button
                 type="button"
                 onClick={handleShareMatch}
@@ -783,17 +799,17 @@ export const MatchDetailScreen: React.FC<MatchDetailScreenProps> = ({
           </div>
         ) : (
           <Button
-            variant={effectiveIsJoined ? 'secondary' : (spotsLeft === 0 ? 'secondary' : 'primary')}
+            variant={effectiveIsJoined ? 'secondary' : (isFull ? 'secondary' : 'primary')}
             size="lg"
-            onClick={effectiveIsJoined ? handleJoinClick : (spotsLeft === 0 ? undefined : handleJoinClick)}
-            disabled={!effectiveIsJoined && spotsLeft === 0}
+            onClick={effectiveIsJoined ? handleJoinClick : (isFull ? undefined : handleJoinClick)}
+            disabled={!effectiveIsJoined && isFull}
             className="flex-1 h-14 font-display font-bold text-base shadow-[0_0_24px_rgba(200,255,46,0.3)]"
           >
             {effectiveIsJoined
               ? 'Joined • Open Team Chat'
               : !hasUnlockedInviteToken
               ? 'Join Match (Invite Only)'
-              : spotsLeft === 0
+              : isFull
               ? 'Game Roster Full'
               : 'Join Match Now'}
           </Button>

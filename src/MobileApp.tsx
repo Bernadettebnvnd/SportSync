@@ -2106,8 +2106,23 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       )}
 
       {/* Screen Render */}
-      <div className={`flex-1 w-full no-scrollbar ${currentScreen === 'create-match' ? 'h-full flex flex-col overflow-hidden' : 'overflow-y-auto'} ${showBottomNav ? 'pb-28 sm:pb-32' : ''}`}>
-        {renderScreen()}
+      <div
+        className={`flex-1 w-full no-scrollbar ${
+          currentScreen === 'create-match' || currentScreen === 'match-chat'
+            ? 'h-[100dvh] flex flex-col overflow-hidden'
+            : 'overflow-y-auto'
+        } ${showBottomNav ? 'pb-28 sm:pb-32' : ''}`}
+      >
+        {bridge.store.isLoading &&
+        currentScreen === 'landing' &&
+        (typeof window === 'undefined' || localStorage.getItem('sportsync_logged_out') !== 'true') ? (
+          <div className="w-full min-h-[100dvh] bg-[#0B0F0C] flex flex-col items-center justify-center gap-3 select-none">
+            <div className="w-9 h-9 rounded-full border-2 border-[#C8FF2E] border-t-transparent animate-spin" />
+            <span className="text-xs font-medium text-[#A5B0A6]">Restoring your session...</span>
+          </div>
+        ) : (
+          renderScreen()
+        )}
       </div>
 
       {/* Floating Bottom Nav */}

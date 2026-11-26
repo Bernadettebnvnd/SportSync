@@ -113,11 +113,18 @@ export function OnboardingGuard() {
       (!isPending && hasStoredCompletion)
     );
 
-    const hasRequiredPlayerFields = !isOwner && Boolean(
+    const isExplicitlyIncomplete = currentUser.onboarding_completed === false;
+    const isDefaultDbSports =
+      Array.isArray(currentUser.preferred_sports) &&
+      currentUser.preferred_sports.length === 2 &&
+      currentUser.preferred_sports.includes('pickleball') &&
+      currentUser.preferred_sports.includes('badminton');
+
+    const hasRequiredPlayerFields = !isOwner && !isExplicitlyIncomplete && !isPending && Boolean(
       currentUser.full_name &&
       !['Guest', 'Guest Player', 'Player', 'SportSync Player', 'Google Player'].includes(currentUser.full_name.trim()) &&
-      ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0) || currentUser.primary_sport) &&
-      (currentUser.city || currentUser.skill_level)
+      ((Array.isArray(currentUser.preferred_sports) && currentUser.preferred_sports.length > 0 && !isDefaultDbSports) || currentUser.primary_sport) &&
+      currentUser.skill_level
     );
 
     const activeOwnerIds = [currentUser.id, currentUser.auth_id, storedUserId].filter(
