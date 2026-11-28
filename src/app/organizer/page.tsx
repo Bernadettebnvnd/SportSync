@@ -13,6 +13,7 @@ import { useTheme } from '@/lib/theme';
 import { getLocalStoredVenues } from '@/lib/services/venues';
 import { Venue, Payment, Match, EmptyCourtOpportunity, SportType, Court, Booking } from '@/types';
 import { addNotification } from '@/lib/notifications';
+import { formatTime12h, formatTimeRange12h } from '@/lib/datetime';
 import {
   formatCurrency,
   formatTimeAgo,
@@ -434,12 +435,12 @@ function OrganizerDashboardContent() {
   }, [primaryVenue, courts]);
 
   const timelineSlotRanges = useMemo(() => [
-    { time: '08:00 - 10:00', start: '08:00', end: '10:00' },
-    { time: '10:00 - 12:00', start: '10:00', end: '12:00' },
-    { time: '13:00 - 15:00', start: '13:00', end: '15:00' },
-    { time: '15:00 - 17:00', start: '15:00', end: '17:00' },
-    { time: '17:00 - 19:00', start: '17:00', end: '19:00' },
-    { time: '19:00 - 21:00', start: '19:00', end: '21:00' },
+    { time: '8:00 AM - 10:00 AM', start: '08:00', end: '10:00' },
+    { time: '10:00 AM - 12:00 PM', start: '10:00', end: '12:00' },
+    { time: '1:00 PM - 3:00 PM', start: '13:00', end: '15:00' },
+    { time: '3:00 PM - 5:00 PM', start: '15:00', end: '17:00' },
+    { time: '5:00 PM - 7:00 PM', start: '17:00', end: '19:00' },
+    { time: '7:00 PM - 9:00 PM', start: '19:00', end: '21:00' },
   ], []);
 
   const todayDateStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -463,10 +464,14 @@ function OrganizerDashboardContent() {
             (b.court_id === court.id || b.court?.name === court.name) &&
             b.status !== 'rejected' &&
             b.status !== 'cancelled' &&
-            (b.start_time === slot.start || (b.start_time < slot.end && b.end_time > slot.start))
+            (b.start_time === slot.start ||
+              formatTime12h(b.start_time) === formatTime12h(slot.start) ||
+              (b.start_time < slot.end && b.end_time > slot.start))
         );
         const hasSession = facilitySessions.some(
-          (s) => s.court_ids?.includes(court.id) && s.start_time === slot.start
+          (s) =>
+            s.court_ids?.includes(court.id) &&
+            (s.start_time === slot.start || formatTime12h(s.start_time) === formatTime12h(slot.start))
         );
         if (!hasBooking && !hasSession) {
           count++;
@@ -792,7 +797,7 @@ function OrganizerDashboardContent() {
 
       if (conflicting) {
         setReviewActionError(
-          `Double-Booking Conflict: ${b.court?.name || 'This court'} is already reserved by confirmed booking ${conflicting.booking_reference} for ${conflicting.start_time} - ${conflicting.end_time}. Please resolve the conflict.`
+          `Double-Booking Conflict: ${b.court?.name || 'This court'} is already reserved by confirmed booking ${conflicting.booking_reference} for ${formatTimeRange12h(conflicting.start_time, conflicting.end_time)}. Please resolve the conflict.`
         );
         return;
       }
@@ -1182,7 +1187,7 @@ function OrganizerDashboardContent() {
                       </div>
                       <div className="text-xs font-bold text-[#1A241E] mt-1">{resolveCustomerInfo(pb).name}</div>
                       <div className="text-[11px] text-[#65756B]">
-                        {pb.court?.name || 'Court'} &bull; {pb.booking_date} &bull; {pb.start_time} - {pb.end_time}
+                        {pb.court?.name || 'Court'} &bull; {pb.booking_date} &bull; {formatTimeRange12h(pb.start_time, pb.end_time)}
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-2 border-t border-[#E8E5DF]">
@@ -1286,15 +1291,20 @@ function OrganizerDashboardContent() {
                               (b.court_id === court.id || b.court?.name?.toLowerCase() === court.name?.toLowerCase()) &&
                               b.status !== 'cancelled' &&
                               b.status !== 'rejected' &&
-                              (b.start_time === slot.start || (b.start_time < slot.end && b.end_time > slot.start))
+                              (b.start_time === slot.start ||
+                                formatTime12h(b.start_time) === formatTime12h(slot.start) ||
+                                (b.start_time < slot.end && b.end_time > slot.start))
                           );
 
                           const hasSession = facilitySessions.find(
-                            (s) => s.court_ids?.includes(court.id) && s.start_time === slot.start
+                            (s) =>
+                              s.court_ids?.includes(court.id) &&
+                              (s.start_time === slot.start || formatTime12h(s.start_time) === formatTime12h(slot.start))
                           );
 
                           if (courtBooking && courtBooking.status === 'confirmed') {
                             const courtCustomer = resolveCustomerInfo(courtBooking);
+                            const displaySlotTime = formatTimeRange12h(courtBooking.start_time, courtBooking.end_time) || slot.time;
                             return (
                               <div
                                 key={sIdx}
@@ -1304,13 +1314,14 @@ function OrganizerDashboardContent() {
                                 <span className="font-extrabold block truncate">
                                   {courtCustomer.name !== 'Customer' ? courtCustomer.name : 'Confirmed'}
                                 </span>
-                                <span className="text-[#E9C46A] text-[9px] block">{slot.time}</span>
+                                <span className="text-[#E9C46A] text-[9px] block">{displaySlotTime}</span>
                               </div>
                             );
                           }
 
                           if (courtBooking && courtBooking.status === 'pending') {
                             const courtCustomer = resolveCustomerInfo(courtBooking);
+                            const displaySlotTime = formatTimeRange12h(courtBooking.start_time, courtBooking.end_time) || slot.time;
                             return (
                               <div
                                 key={sIdx}
@@ -1320,12 +1331,13 @@ function OrganizerDashboardContent() {
                                 <span className="font-extrabold block truncate">
                                   {courtCustomer.name !== 'Customer' ? courtCustomer.name : 'Pending Review'}
                                 </span>
-                                <span className="text-amber-700 text-[9px] block">{slot.time}</span>
+                                <span className="text-amber-700 text-[9px] block">{displaySlotTime}</span>
                               </div>
                             );
                           }
 
                           if (hasSession) {
+                            const displaySessionTime = formatTimeRange12h(hasSession.start_time, hasSession.end_time) || slot.time;
                             return (
                               <div
                                 key={sIdx}
@@ -1333,7 +1345,7 @@ function OrganizerDashboardContent() {
                                 title={`Open Play: ${hasSession.title}`}
                               >
                                 <span className="block truncate">{hasSession.title || 'Open Play'}</span>
-                                <span className="text-[#A35C2B] text-[9px] block">{slot.time}</span>
+                                <span className="text-[#A35C2B] text-[9px] block">{displaySessionTime}</span>
                               </div>
                             );
                           }
@@ -1453,7 +1465,7 @@ function OrganizerDashboardContent() {
                         <div className="text-[11px] text-[#65756B] flex items-center gap-2 mt-0.5">
                           <span className="capitalize">{booking.sport}</span>
                           <span>&bull;</span>
-                          <span>{booking.start_time} - {booking.end_time}</span>
+                          <span>{formatTimeRange12h(booking.start_time, booking.end_time)}</span>
                         </div>
                       </div>
                     </div>
@@ -1678,7 +1690,7 @@ function OrganizerDashboardContent() {
                         </td>
                         <td className="py-3.5 pr-3 text-[#65756B]">
                           <div className="font-medium text-[#1A241E]">{b.booking_date}</div>
-                          <div className="text-[10px]">{b.start_time} - {b.end_time}</div>
+                          <div className="text-[10px]">{formatTimeRange12h(b.start_time, b.end_time)}</div>
                         </td>
                         <td className="py-3.5 pr-3">
                           <span
@@ -1830,7 +1842,7 @@ function OrganizerDashboardContent() {
                   <div>
                     <div className="flex items-center gap-1.5 text-xs text-[#65756B]">
                       <Clock className="w-3.5 h-3.5 text-[#2D724E]" />
-                      <span>{opp.date} &bull; {opp.timeRange}</span>
+                      <span>{opp.date} &bull; {formatTimeRange12h(opp.timeRange)}</span>
                     </div>
                     <div className="text-base font-bold text-[#1A241E] mt-1">
                       {opp.hoursUnbooked} Idle Hours (₱0 Current Earnings)
@@ -2222,7 +2234,7 @@ function OrganizerDashboardContent() {
                     <span className="text-xs font-mono font-bold text-[#2D724E]">{newGameTime || 'Select Time'}</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {['06:00 - 08:00', '08:00 - 10:00', '16:00 - 18:00', '18:00 - 20:00', '20:00 - 22:00'].map((slot) => (
+                    {['6:00 AM - 8:00 AM', '8:00 AM - 10:00 AM', '4:00 PM - 6:00 PM', '6:00 PM - 8:00 PM', '8:00 PM - 10:00 PM'].map((slot) => (
                       <button
                         key={slot}
                         type="button"
@@ -2318,7 +2330,7 @@ function OrganizerDashboardContent() {
                       <div className="text-[11px] text-[#65756B] flex items-center gap-2 mt-0.5">
                         <span className="capitalize text-[#2D724E] font-semibold">{session.sport}</span>
                         <span>&bull;</span>
-                        <span>{session.start_time} - {session.end_time}</span>
+                        <span>{formatTimeRange12h(session.start_time, session.end_time)}</span>
                         <span>&bull;</span>
                         <span>Max {session.max_players} players</span>
                       </div>
@@ -2715,8 +2727,8 @@ function OrganizerDashboardContent() {
                 </span>
                 <p className="text-[#1A241E] font-medium">
                   {primaryVenue.operating_hours && typeof primaryVenue.operating_hours === 'object'
-                    ? String(Object.values(primaryVenue.operating_hours)[0] || 'Monday – Sunday: 06:00 – 23:00')
-                    : 'Monday – Sunday: 06:00 – 23:00'}
+                    ? formatTimeRange12h(String(Object.values(primaryVenue.operating_hours)[0])) || 'Monday – Sunday: 6:00 AM – 11:00 PM'
+                    : 'Monday – Sunday: 6:00 AM – 11:00 PM'}
                 </p>
                 <p className="text-[#65756B]">Online court booking open 24/7 on SportSync.</p>
               </div>
@@ -3000,7 +3012,7 @@ function OrganizerDashboardContent() {
                     <span>Double-Booking Conflict Detected</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    This court is already reserved by confirmed booking <strong>{conflictBooking.booking_reference}</strong> ({resolveCustomerInfo(conflictBooking).name}) for {conflictBooking.start_time} - {conflictBooking.end_time}. You cannot confirm this booking without overlap.
+                    This court is already reserved by confirmed booking <strong>{conflictBooking.booking_reference}</strong> ({resolveCustomerInfo(conflictBooking).name}) for {formatTimeRange12h(conflictBooking.start_time, conflictBooking.end_time)}. You cannot confirm this booking without overlap.
                   </p>
                 </div>
               )}
@@ -3024,7 +3036,7 @@ function OrganizerDashboardContent() {
                 <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#E8E5DF] space-y-1">
                   <span className="text-[10px] uppercase font-bold text-[#65756B] tracking-wider block">Schedule</span>
                   <div className="font-bold text-[#1A241E]">{b.booking_date}</div>
-                  <div className="text-[11px] text-[#65756B]">{b.start_time} - {b.end_time}</div>
+                  <div className="text-[11px] text-[#65756B]">{formatTimeRange12h(b.start_time, b.end_time)}</div>
                   <div className="text-[11px] text-[#65756B]">{b.duration_minutes || 60} mins duration</div>
                 </div>
 
@@ -3124,7 +3136,7 @@ function OrganizerDashboardContent() {
             </div>
 
             <p className="text-xs text-[#65756B]">
-              Are you sure you want to decline booking <strong>{bookingToReject.booking_reference}</strong> ({resolveCustomerInfo(bookingToReject).name} on {bookingToReject.booking_date} at {bookingToReject.start_time})? The player will be notified immediately.
+              Are you sure you want to decline booking <strong>{bookingToReject.booking_reference}</strong> ({resolveCustomerInfo(bookingToReject).name} on {bookingToReject.booking_date} at {formatTime12h(bookingToReject.start_time)})? The player will be notified immediately.
             </p>
 
             <div>

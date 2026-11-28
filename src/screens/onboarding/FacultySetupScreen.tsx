@@ -141,9 +141,9 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
   ];
 
   const hourPresets = [
-    { label: 'Full Day (06:00 - 23:00)', value: '06:00 - 23:00' },
-    { label: 'Campus Hours (07:00 - 21:00)', value: '07:00 - 21:00' },
-    { label: 'Evening Prime (15:00 - 23:00)', value: '15:00 - 23:00' },
+    { label: 'Full Day (6:00 AM - 11:00 PM)', value: '6:00 AM - 11:00 PM' },
+    { label: 'Campus Hours (7:00 AM - 9:00 PM)', value: '7:00 AM - 9:00 PM' },
+    { label: 'Evening Prime (3:00 PM - 11:00 PM)', value: '3:00 PM - 11:00 PM' },
   ];
 
   const amenityOptions = [
@@ -245,7 +245,7 @@ export const FacultySetupScreen: React.FC<FacultySetupScreenProps> = ({
           address: fullAddress,
           city: 'Naga City',
           featuredSports: normalizedSports,
-          operatingHours: operatingHours.trim() || '06:00 - 23:00',
+          operatingHours: operatingHours.trim() || '6:00 AM - 11:00 PM',
           amenities,
           facilityType,
           bookingMode,
