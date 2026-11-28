@@ -5,9 +5,152 @@ import { verifySessionToken, serverGetUser, SanitizedUser } from '@/lib/auth/ser
 import { formatTime12h } from '@/lib/datetime';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CHAT_STORAGE_BUCKET = 'sportsync-chat';
 
 function isUuid(val?: unknown): boolean {
   return typeof val === 'string' && UUID_REGEX.test(val.trim());
+}
+
+interface StoredChatRow {
+  id: string;
+  game_id: string;
+  sender_id: string | null;
+  sender_name: string;
+  sender_avatar: string;
+  message_text: string;
+  created_at: string;
+}
+
+const globalForChatStorage = globalThis as unknown as {
+  sportsyncChatBucketReady?: boolean;
+  sportsyncChatStorageCache?: Map<string, StoredChatRow>;
+  sportsyncChatStorageWarned?: boolean;
+};
+
+const chatStorageCache =
+  globalForChatStorage.sportsyncChatStorageCache || new Map<string, StoredChatRow>();
+if (!globalForChatStorage.sportsyncChatStorageCache) {
+  globalForChatStorage.sportsyncChatStorageCache = chatStorageCache;
+}
+
+function cacheStoredChatRow(objectPath: string, row: StoredChatRow) {
+  if (chatStorageCache.size > 2000) {
+    const oldestKey = chatStorageCache.keys().next().value;
+    if (oldestKey) chatStorageCache.delete(oldestKey);
+  }
+  chatStorageCache.set(objectPath, row);
+}
+
+async function ensureChatStorageBucket(
+  adminClient: NonNullable<ReturnType<typeof createAdminClient>>
+): Promise<boolean> {
+  if (globalForChatStorage.sportsyncChatBucketReady) return true;
+
+  const { data: existing, error: getErr } = await adminClient.storage.getBucket(CHAT_STORAGE_BUCKET);
+  if (existing && !getErr) {
+    globalForChatStorage.sportsyncChatBucketReady = true;
+    return true;
+  }
+
+  const { error: createErr } = await adminClient.storage.createBucket(CHAT_STORAGE_BUCKET, {
+    public: false,
+    allowedMimeTypes: ['application/json'],
+  });
+
+  if (!createErr || /already exists/i.test(createErr.message || '')) {
+    globalForChatStorage.sportsyncChatBucketReady = true;
+    return true;
+  }
+
+  console.error('[API/Chat StorageFallback] Failed to ensure storage bucket:', createErr);
+  return false;
+}
+
+async function readChatMessagesFromStorage(
+  adminClient: NonNullable<ReturnType<typeof createAdminClient>>,
+  canonicalGameId: string
+): Promise<{ rows: StoredChatRow[]; ok: boolean }> {
+  const ready = await ensureChatStorageBucket(adminClient);
+  if (!ready) return { rows: [], ok: false };
+
+  const safeRoom = canonicalGameId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const folder = `rooms/${safeRoom}`;
+  const { data: files, error: listErr } = await adminClient.storage
+    .from(CHAT_STORAGE_BUCKET)
+    .list(folder, {
+      limit: 500,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+
+  if (listErr) {
+    console.error('[API/Chat StorageFallback] Failed to list room messages:', listErr);
+    return { rows: [], ok: false };
+  }
+
+  const jsonFiles = (files || []).filter(
+    (f) => f?.name && f.name.endsWith('.json') && !f.name.startsWith('.')
+  );
+
+  const missingFiles = jsonFiles.filter((f) => !chatStorageCache.has(`${folder}/${f.name}`));
+  if (missingFiles.length > 0) {
+    await Promise.all(
+      missingFiles.map(async (f) => {
+        const objectPath = `${folder}/${f.name}`;
+        try {
+          const { data: blob, error: dlErr } = await adminClient.storage
+            .from(CHAT_STORAGE_BUCKET)
+            .download(objectPath);
+          if (dlErr || !blob) return;
+          const text = await blob.text();
+          const parsed = JSON.parse(text) as StoredChatRow;
+          if (parsed && parsed.id && parsed.message_text) {
+            cacheStoredChatRow(objectPath, parsed);
+          }
+        } catch (err) {
+          console.warn('[API/Chat StorageFallback] Failed to parse message object:', objectPath, err);
+        }
+      })
+    );
+  }
+
+  const rows: StoredChatRow[] = [];
+  for (const f of jsonFiles) {
+    const cached = chatStorageCache.get(`${folder}/${f.name}`);
+    if (cached) rows.push(cached);
+  }
+  rows.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  return { rows, ok: true };
+}
+
+async function writeChatMessageToStorage(
+  adminClient: NonNullable<ReturnType<typeof createAdminClient>>,
+  row: StoredChatRow
+): Promise<boolean> {
+  const ready = await ensureChatStorageBucket(adminClient);
+  if (!ready) return false;
+
+  const safeRoom = row.game_id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const tsMs = Number.isFinite(new Date(row.created_at).getTime())
+    ? new Date(row.created_at).getTime()
+    : Date.now();
+  const safeId = row.id.replace(/[^a-zA-Z0-9_-]/g, '');
+  const objectPath = `rooms/${safeRoom}/${String(tsMs).padStart(15, '0')}_${safeId}.json`;
+  const payload = Buffer.from(JSON.stringify(row), 'utf8');
+
+  const { error: uploadErr } = await adminClient.storage
+    .from(CHAT_STORAGE_BUCKET)
+    .upload(objectPath, payload, {
+      contentType: 'application/json',
+      upsert: true,
+    });
+
+  if (uploadErr) {
+    console.error('[API/Chat StorageFallback] Failed to upload message:', uploadErr);
+    return false;
+  }
+
+  cacheStoredChatRow(objectPath, row);
+  return true;
 }
 
 type ChatDbErrorCategory =
@@ -367,25 +510,49 @@ export async function GET(
 
     let rows: any[] = [];
     if (error) {
-      const diag = classifyChatDbError(error);
-      console.error('[API/Chat GET] Failed to query messages:', {
-        category: diag.category,
-        code: diag.code,
-        message: error.message,
-        hint: error.hint,
-        usingAdminClient: Boolean(adminClient),
-        hasUserJwt: Boolean(supabaseJwt),
-        canonicalGameId,
-      });
-      return NextResponse.json(
-        {
-          error: diag.userMessage,
-          code: diag.code,
+      if (isTableMissingError(error) && adminClient) {
+        if (!globalForChatStorage.sportsyncChatStorageWarned) {
+          globalForChatStorage.sportsyncChatStorageWarned = true;
+          console.warn(
+            '[API/Chat] public.game_chat_messages table is missing (PGRST205); using durable Supabase Storage fallback bucket until migration 20261126_ensure_game_chat_messages.sql is run.'
+          );
+        }
+        const storageResult = await readChatMessagesFromStorage(adminClient, canonicalGameId);
+        if (storageResult.ok) {
+          rows = storageResult.rows;
+        } else {
+          const diag = classifyChatDbError(error);
+          return NextResponse.json(
+            {
+              error: diag.userMessage,
+              code: diag.code,
+              category: diag.category,
+              detail: diag.detail,
+            },
+            { status: diag.status }
+          );
+        }
+      } else {
+        const diag = classifyChatDbError(error);
+        console.error('[API/Chat GET] Failed to query messages:', {
           category: diag.category,
-          detail: diag.detail,
-        },
-        { status: diag.status }
-      );
+          code: diag.code,
+          message: error.message,
+          hint: error.hint,
+          usingAdminClient: Boolean(adminClient),
+          hasUserJwt: Boolean(supabaseJwt),
+          canonicalGameId,
+        });
+        return NextResponse.json(
+          {
+            error: diag.userMessage,
+            code: diag.code,
+            category: diag.category,
+            detail: diag.detail,
+          },
+          { status: diag.status }
+        );
+      }
     } else {
       rows = Array.isArray(data) ? [...data] : [];
       rows.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -593,7 +760,32 @@ export async function POST(
       error = retryCol.error;
     }
 
-    if (error || !inserted) {
+    let insertedRow: any = inserted;
+    if (error || !insertedRow) {
+      if (isTableMissingError(error) && adminClient) {
+        if (!globalForChatStorage.sportsyncChatStorageWarned) {
+          globalForChatStorage.sportsyncChatStorageWarned = true;
+          console.warn(
+            '[API/Chat] public.game_chat_messages table is missing (PGRST205); persisting chat messages via Supabase Storage fallback until migration 20261126_ensure_game_chat_messages.sql is run.'
+          );
+        }
+        const fallbackRow: StoredChatRow = {
+          id: messageId,
+          game_id: canonicalGameId,
+          sender_id: validSenderUuid,
+          sender_name: resolvedName,
+          sender_avatar: resolvedAvatar,
+          message_text: text.trim(),
+          created_at: resolvedTime,
+        };
+        const savedToStorage = await writeChatMessageToStorage(adminClient, fallbackRow);
+        if (savedToStorage) {
+          insertedRow = fallbackRow;
+        }
+      }
+    }
+
+    if (!insertedRow) {
       const diag = classifyChatDbError(error);
       console.error('[API/Chat POST] Insert failed:', {
         category: diag.category,
@@ -616,7 +808,6 @@ export async function POST(
         { status: diag.status }
       );
     }
-    const insertedRow = inserted;
 
     const formattedTime = formatTime12h(insertedRow.created_at) || 'Just now';
 
@@ -635,19 +826,31 @@ export async function POST(
     // 5. Broadcast message over Supabase Realtime channel for instantaneous peer delivery
     try {
       const chatChannel = supabase.channel(`game-chat-${canonicalGameId}`);
-      await chatChannel.send({
-        type: 'broadcast',
-        event: 'new_message',
-        payload: {
-          id: responseMsg.id,
-          senderId: responseMsg.senderId,
-          senderName: responseMsg.senderName,
-          avatarId: responseMsg.senderAvatar,
-          text: responseMsg.text,
-          time: responseMsg.time,
-          isHost: responseMsg.isHost,
-        },
-      });
+      const broadcastPayload = {
+        id: responseMsg.id,
+        senderId: responseMsg.senderId,
+        senderName: responseMsg.senderName,
+        avatarId: responseMsg.senderAvatar,
+        text: responseMsg.text,
+        time: responseMsg.time,
+        createdAt: responseMsg.createdAt,
+        isHost: responseMsg.isHost,
+      };
+      try {
+        if (typeof (chatChannel as any).httpSend === 'function') {
+          await (chatChannel as any).httpSend('new_message', broadcastPayload);
+        } else {
+          await chatChannel.send({
+            type: 'broadcast',
+            event: 'new_message',
+            payload: broadcastPayload,
+          });
+        }
+      } finally {
+        try {
+          await supabase.removeChannel(chatChannel);
+        } catch {}
+      }
     } catch (bcErr) {
       console.warn('[API/Chat POST] Realtime broadcast notice:', bcErr);
     }

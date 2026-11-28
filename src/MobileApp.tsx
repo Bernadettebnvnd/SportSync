@@ -371,7 +371,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   } | null>(null);
   const [personalizationDraft, setPersonalizationDraft] = useState<any>(null);
   const [isEditingFromProfile, setIsEditingFromProfile] = useState<boolean>(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastState, setToastState] = useState<{ message: string; type: 'success' | 'info' | 'alert' } | null>(null);
+  const toastMessage = toastState?.message ?? null;
+  const toastType = toastState?.type ?? 'success';
+  const setToastMessage = useCallback((msg: string | null, type: 'success' | 'info' | 'alert' = 'success') => {
+    setToastState(msg ? { message: msg, type } : null);
+  }, []);
   const [courtSearchFilter, setCourtSearchFilter] = useState<{ query?: string; sport?: string; city?: string }>({});
   const [activeInviteCode, setActiveInviteCode] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -1690,7 +1695,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             currentUserAvatar={bridge.userProfile.avatarId}
             onBack={goBack}
             onOpenMatchDetail={() => navigateTo('match-detail')}
-            onToast={(msg) => setToastMessage(msg)}
+            onToast={(msg, type) => setToastMessage(msg, type)}
           />
         );
       }
@@ -2066,7 +2071,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       {toastMessage && (
         <Toast
           message={toastMessage}
-          type="success"
+          type={toastType}
           isOpen={true}
           onClose={() => setToastMessage(null)}
         />

@@ -44,7 +44,7 @@ interface MatchGroupChatScreenProps {
   currentUserId?: string;
   currentUserAvatar?: AvatarId;
   onOpenMatchDetail?: () => void;
-  onToast?: (msg: string) => void;
+  onToast?: (msg: string, type?: 'success' | 'info' | 'alert') => void;
 }
 
 export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
@@ -58,7 +58,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'roster'>('chat');
   const [inputText, setInputText] = useState('');
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
@@ -74,12 +74,13 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const showFeedback = (msg: string) => {
+  const showFeedback = (msg: string, tone: 'success' | 'error' = 'success') => {
     if (onToast) {
-      onToast(msg);
+      onToast(msg, tone === 'error' ? 'alert' : 'success');
+      return;
     }
-    setFeedback(msg);
-    setTimeout(() => setFeedback(null), 3000);
+    setFeedback({ message: msg, tone });
+    setTimeout(() => setFeedback(null), 3500);
   };
 
   // Scroll to bottom when new messages arrive
@@ -271,8 +272,8 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
     loadMessages(true);
 
-    // Subscribe to real-time message changes
-    const unsubscribe = subscribeToGameChat(game?.id || chatRoomId, chatRoomId, hostInfo, (incoming) => {
+    // Subscribe to real-time message changes using canonical room ID first so channel matches server broadcast
+    const unsubscribe = subscribeToGameChat(chatRoomId, altId, hostInfo, (incoming) => {
       if (!isMounted) return;
 
       markCurrentChatRead();
@@ -459,7 +460,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         errorMsg: errMsg,
       };
       setFailedMessages((prev) => [...prev, failedItem]);
-      showFeedback(errMsg);
+      showFeedback(errMsg, 'error');
       scrollToBottom();
     } finally {
       setIsSending(false);
@@ -584,12 +585,20 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
   // Case C: Authorized Host or Joined Player — Full Match Group Chat & Roster
   return (
     <div className="w-full h-[var(--vvh,100dvh)] max-h-[100dvh] flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative overflow-hidden">
-      {/* Toast Feedback */}
+      {/* Toast Feedback (fallback when parent onToast is not provided) */}
       {feedback && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[700] w-11/12 max-w-sm p-3.5 rounded-2xl bg-[#141A15] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200">
-          <CheckCircle2 className="w-5 h-5 text-[#C8FF2E] shrink-0" />
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-[700] w-11/12 max-w-sm p-3.5 rounded-2xl bg-[#141A15] border shadow-[0_10px_30px_rgba(0,0,0,0.8)] backdrop-blur-xl flex items-center gap-2.5 animate-in slide-in-from-top-4 duration-200 ${
+            feedback.tone === 'error' ? 'border-[#FF8FC7]/40' : 'border-[#C8FF2E]/40'
+          }`}
+        >
+          {feedback.tone === 'error' ? (
+            <AlertCircle className="w-5 h-5 text-[#FF8FC7] shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-[#C8FF2E] shrink-0" />
+          )}
           <span className="text-xs font-semibold text-[#F4F7F0] flex-1">
-            {feedback}
+            {feedback.message}
           </span>
         </div>
       )}
@@ -700,7 +709,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
             )}
 
             {/* Empty Messages State */}
-            {!loadingMessages && messages.length === 0 && (
+            {!loadingMessages && messages.length === 0 && failedMessages.length === 0 && (
               <div className="py-12 flex flex-col items-center justify-center text-center px-4">
                 <div className="w-12 h-12 rounded-2xl bg-[#141A15] border border-white/5 flex items-center justify-center text-[#A5B0A6] mb-3">
                   <MessageSquare className="w-6 h-6 text-[#A5B0A6]" />
