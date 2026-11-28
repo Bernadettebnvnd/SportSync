@@ -21,6 +21,24 @@ export function getDeletedSessionTombstones(): { ids: Set<string>; titles: Set<s
       }
     }
   } catch {}
+
+  try {
+    const rawGames = localStorage.getItem('sportsync_deleted_game_ids');
+    if (rawGames) {
+      const parsed = JSON.parse(rawGames);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: string | { id?: string; sessionId?: string }) => {
+          if (typeof item === 'string') {
+            ids.add(item);
+          } else if (item && typeof item === 'object') {
+            if (item.id) ids.add(item.id);
+            if (item.sessionId) ids.add(item.sessionId);
+          }
+        });
+      }
+    }
+  } catch {}
+
   return { ids, titles };
 }
 

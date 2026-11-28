@@ -1,5 +1,5 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/refs, react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/refs, react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useMatchiStore } from './store';
@@ -1349,10 +1349,72 @@ export function useSportSyncBridge() {
     const supabase = getSupabaseClient();
     let channel: any = null;
 
+    const handleRemoteGameDeleted = (targetId: string) => {
+      if (!targetId) return;
+      markGameDeleted(targetId, undefined, targetId);
+      markSessionDeleted(targetId);
+      setGames((prev) => prev.filter((g) => g.id !== targetId && g.sessionId !== targetId));
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('sportsync_joined_games');
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              localStorage.setItem('sportsync_joined_games', JSON.stringify(list.filter((id) => id !== targetId)));
+            }
+          }
+        } catch {}
+        try {
+          const rawGames = localStorage.getItem('sportsync_community_games');
+          if (rawGames) {
+            const list = JSON.parse(rawGames);
+            if (Array.isArray(list)) {
+              localStorage.setItem('sportsync_community_games', JSON.stringify(list.filter((g: any) => g.id !== targetId && g.sessionId !== targetId)));
+            }
+          }
+        } catch {}
+        try {
+          const rawSessions = localStorage.getItem('sportsync_user_sessions');
+          if (rawSessions) {
+            const list = JSON.parse(rawSessions);
+            if (Array.isArray(list)) {
+              localStorage.setItem('sportsync_user_sessions', JSON.stringify(list.filter((s: any) => s.id !== targetId)));
+            }
+          }
+        } catch {}
+        try {
+          const rawBookings = localStorage.getItem('sportsync_my_bookings');
+          if (rawBookings) {
+            const list = JSON.parse(rawBookings);
+            if (Array.isArray(list)) {
+              const updated = list.filter((b: any) => b.gameId !== targetId && b.sessionId !== targetId);
+              localStorage.setItem('sportsync_my_bookings', JSON.stringify(updated));
+            }
+          }
+        } catch {}
+        window.dispatchEvent(new CustomEvent('sportsync:game-deleted', { detail: { gameId: targetId, sessionId: targetId } }));
+      }
+      try { store.refreshSessions?.(); } catch {}
+    };
+
     if (supabase && isSupabaseConfigured) {
       try {
         channel = supabase
           .channel('sportsync-live-match-rosters')
+          .on(
+            'broadcast',
+            { event: 'game_deleted' },
+            (payload: any) => {
+              const deletedId =
+                payload?.payload?.gameId ||
+                payload?.payload?.sessionId ||
+                payload?.gameId ||
+                payload?.sessionId;
+              if (deletedId) {
+                handleRemoteGameDeleted(deletedId);
+              }
+            }
+          )
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'queues' },
@@ -1370,28 +1432,7 @@ export function useSportSyncBridge() {
               const isDelete = payload?.eventType === 'DELETE' || payload?.new?.status === 'cancelled';
               const sId = payload?.old?.id || payload?.new?.id;
               if (isDelete && sId) {
-                setGames((prev) => prev.filter((g) => g.id !== sId && g.sessionId !== sId));
-                if (typeof window !== 'undefined') {
-                  try {
-                    const raw = localStorage.getItem('sportsync_joined_games');
-                    if (raw) {
-                      const list = JSON.parse(raw);
-                      if (Array.isArray(list)) {
-                        localStorage.setItem('sportsync_joined_games', JSON.stringify(list.filter((id) => id !== sId)));
-                      }
-                    }
-                  } catch {}
-                  try {
-                    const rawGames = localStorage.getItem('sportsync_community_games');
-                    if (rawGames) {
-                      const list = JSON.parse(rawGames);
-                      if (Array.isArray(list)) {
-                        localStorage.setItem('sportsync_community_games', JSON.stringify(list.filter((g: any) => g.id !== sId && g.sessionId !== sId)));
-                      }
-                    }
-                  } catch {}
-                  window.dispatchEvent(new CustomEvent('sportsync:game-deleted', { detail: { gameId: sId, sessionId: sId } }));
-                }
+                handleRemoteGameDeleted(sId);
               } else if (sId) {
                 try { store.refreshSessions?.(); } catch {}
                 syncSessionRoster(sId, true);
@@ -1452,7 +1493,7 @@ export function useSportSyncBridge() {
           } else if (type === 'GAME_DELETED') {
             const targetId = gameId || sessionId;
             if (targetId) {
-              setGames((prev) => prev.filter((g) => g.id !== targetId && g.sessionId !== targetId));
+              handleRemoteGameDeleted(targetId);
             }
           }
         };
@@ -1540,6 +1581,11 @@ export function useSportSyncBridge() {
                       locationName: finalLoc,
                       locationDetails: cleanExistingDetails || cleanExistingLoc || finalLoc,
                     });
+                  } else {
+                    // Deleted or cancelled from server: permanently register tombstones so store.sessions never resurrects it
+                    markGameDeleted(existing.id, undefined, existing.sessionId);
+                    if (existing.sessionId) markSessionDeleted(existing.sessionId);
+                    markSessionDeleted(existing.id);
                   }
                 }
               });
@@ -3063,6 +3109,19 @@ export function useSportSyncBridge() {
         }
 
         try {
+          const rawSessions = localStorage.getItem('sportsync_user_sessions');
+          if (rawSessions) {
+            const list = JSON.parse(rawSessions);
+            if (Array.isArray(list)) {
+              localStorage.setItem(
+                'sportsync_user_sessions',
+                JSON.stringify(list.filter((s: any) => s.id !== targetGame.id && s.id !== targetGame.sessionId))
+              );
+            }
+          }
+        } catch {}
+
+        try {
           window.dispatchEvent(
             new CustomEvent('sportsync:game-deleted', {
               detail: {
@@ -3073,20 +3132,71 @@ export function useSportSyncBridge() {
             })
           );
         } catch {}
+
+        try {
+          const bc = new BroadcastChannel('sportsync_games_sync');
+          bc.postMessage({
+            type: 'GAME_DELETED',
+            gameId: targetGame.id,
+            sessionId: targetGame.sessionId || targetGame.id,
+          });
+          bc.close();
+        } catch {}
       }
 
+      // Immediately broadcast over Supabase Realtime so other devices update without refresh
+      if (supabase && isSupabaseConfigured) {
+        try {
+          const ch = supabase.channel('sportsync-live-match-rosters');
+          ch.send({
+            type: 'broadcast',
+            event: 'game_deleted',
+            payload: {
+              gameId: targetGame.id,
+              sessionId: sessionIdToDelete || targetGame.id,
+              inviteCode: targetGame.inviteCode,
+            },
+          }).catch(() => {});
+        } catch {}
+      }
+
+      // Request deletion on server API with resilient dual endpoints
+      let apiDeletionSuccess = false;
       try {
-        await fetch('/api/invitations', {
+        const res = await fetch('/api/invitations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'delete_game',
             gameId: targetGame.id,
-            sessionId: targetGame.sessionId,
+            sessionId: sessionIdToDelete || targetGame.id,
             inviteCode: targetGame.inviteCode,
           }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data?.success) {
+          apiDeletionSuccess = true;
+        }
       } catch {}
+
+      if (!apiDeletionSuccess) {
+        try {
+          const res = await fetch('/api/games', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'delete_game',
+              gameId: targetGame.id,
+              sessionId: sessionIdToDelete || targetGame.id,
+              inviteCode: targetGame.inviteCode,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.success) {
+            apiDeletionSuccess = true;
+          }
+        } catch {}
+      }
 
       // 8. Clean up database records and store sessions permanently
       try {

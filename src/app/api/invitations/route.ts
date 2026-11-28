@@ -653,54 +653,183 @@ export async function POST(req: NextRequest) {
     const action = body.action as string | undefined;
 
     if (action === 'delete_game') {
-      const idToDelete = (body.sessionId || body.gameId || game?.sessionId || game?.id || '').trim();
-      if (!idToDelete || !UUID_REGEX.test(idToDelete)) {
-        return NextResponse.json({ success: false, error: 'Valid session ID is required.' }, { status: 400 });
+      const candidateId = (body.sessionId || body.gameId || game?.sessionId || game?.id || '').trim();
+      const candidateCode = (body.inviteCode || body.code || game?.inviteCode || '').trim().toUpperCase();
+
+      let targetSession: any = null;
+      let idToDelete: string | null = null;
+
+      // 1. Lookup by UUID directly if valid
+      if (candidateId && UUID_REGEX.test(candidateId)) {
+        const { data: s, error: fErr } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .eq('id', candidateId)
+          .maybeSingle();
+
+        if (fErr) {
+          console.error('[/api/invitations POST delete_game] Session lookup by ID failed:', fErr);
+        } else if (s) {
+          targetSession = s;
+          idToDelete = s.id;
+        }
       }
 
-      const { data: targetSession, error: fetchErr } = await supabase
-        .from('sessions')
-        .select('id, host_id, title')
-        .eq('id', idToDelete)
-        .maybeSingle();
+      // 2. Lookup by invite code if not found yet
+      if (!targetSession && candidateCode) {
+        const { data: sByCode, error: cErr } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .eq('invite_code', candidateCode)
+          .maybeSingle();
 
-      if (fetchErr) {
-        console.error('[/api/invitations POST delete_game] Session lookup failed:', fetchErr);
-        return NextResponse.json({ success: false, error: fetchErr.message }, { status: 500 });
+        if (cErr) {
+          console.error('[/api/invitations POST delete_game] Session lookup by code failed:', cErr);
+        } else if (sByCode) {
+          targetSession = sByCode;
+          idToDelete = sByCode.id;
+        }
       }
 
-      if (!targetSession) {
+      // 3. Lookup by description tag if still not found
+      if (!targetSession && candidateId) {
+        const { data: sByDesc } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .ilike('description', `%${candidateId}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (sByDesc) {
+          targetSession = sByDesc;
+          idToDelete = sByDesc.id;
+        }
+      }
+
+      if (!targetSession || !idToDelete) {
         return NextResponse.json({ success: false, error: 'Game session not found.' }, { status: 404 });
       }
 
-      if (targetSession.host_id && targetSession.host_id !== authUser.id) {
+      // 4. Host verification: allow if targetSession.host_id matches authUser.id, authUser.auth_id,
+      // or if auth user matches host in public.users, or tagged in description [HOST:...]
+      const normHostId = targetSession.host_id ? String(targetSession.host_id).trim().toLowerCase() : '';
+      const normAuthId = authUser.id ? String(authUser.id).trim().toLowerCase() : '';
+      const normAuthSub = authUser.auth_id ? String(authUser.auth_id).trim().toLowerCase() : '';
+      const normEmail = authUser.email ? authUser.email.trim().toLowerCase() : '';
+      const normName = authUser.full_name ? authUser.full_name.trim().toLowerCase() : '';
+      const normNickname = authUser.nickname ? authUser.nickname.trim().toLowerCase() : '';
+
+      let isHost = Boolean(
+        !normHostId ||
+        normHostId === normAuthId ||
+        (normAuthSub && normHostId === normAuthSub) ||
+        (normEmail && normHostId === normEmail) ||
+        (normName && targetSession.description?.toLowerCase().includes(`[host:${normName}]`)) ||
+        (normNickname && targetSession.description?.toLowerCase().includes(`[host:${normNickname}]`))
+      );
+
+      if (!isHost && targetSession.host_id) {
+        // Query public.users for the session's host_id to verify identity across auth_id vs public.users.id
+        const { data: hostUser } = await supabase
+          .from('users')
+          .select('id, auth_id, email, full_name')
+          .or(`id.eq.${targetSession.host_id},auth_id.eq.${targetSession.host_id}`)
+          .maybeSingle();
+
+        if (hostUser) {
+          const hId = hostUser.id?.toLowerCase();
+          const hAuthId = hostUser.auth_id?.toLowerCase();
+          const hEmail = hostUser.email?.toLowerCase();
+          if (
+            hId === normAuthId ||
+            hId === normAuthSub ||
+            (hAuthId && (hAuthId === normAuthId || hAuthId === normAuthSub)) ||
+            (hEmail && normEmail && hEmail === normEmail)
+          ) {
+            isHost = true;
+          }
+        }
+      }
+
+      if (!isHost) {
         return NextResponse.json(
           { success: false, error: 'Forbidden: Only the host can delete this game.' },
           { status: 403 }
         );
       }
 
-      // Query participants before deletion to notify them
+      // 5. Query participants before deletion to notify them
       const { data: qRows } = await supabase
         .from('queues')
         .select('user_id, partner_names')
         .eq('session_id', idToDelete);
 
-      await supabase.from('queues').delete().eq('session_id', idToDelete);
+      // Clean up participation, queues, matches, and payments
+      try {
+        await supabase.from('session_participants').delete().eq('session_id', idToDelete);
+      } catch (err) {
+        console.warn('[/api/invitations POST delete_game] session_participants delete notice:', err);
+      }
+
+      try {
+        await supabase.from('queues').delete().eq('session_id', idToDelete);
+      } catch (err) {
+        console.warn('[/api/invitations POST delete_game] queues delete notice:', err);
+      }
+
+      try {
+        await supabase.from('matches').delete().eq('session_id', idToDelete);
+      } catch (err) {
+        console.warn('[/api/invitations POST delete_game] matches delete notice:', err);
+      }
+
+      try {
+        await supabase.from('payments').delete().eq('session_id', idToDelete);
+      } catch (err) {
+        console.warn('[/api/invitations POST delete_game] payments delete notice:', err);
+      }
+
+      // Mark status cancelled first for any listening realtime clients
       const { error: cancelErr } = await supabase
         .from('sessions')
         .update({ status: 'cancelled', updated_at: new Date().toISOString() })
         .eq('id', idToDelete);
 
       if (cancelErr) {
-        console.error('[/api/invitations POST delete_game] Cancel failed:', cancelErr);
-        return NextResponse.json({ success: false, error: cancelErr.message }, { status: 500 });
+        console.warn('[/api/invitations POST delete_game] Status cancel notice:', cancelErr.message);
       }
 
-      // Notify joined participants
+      // Permanently delete session row from database
+      const { error: deleteErr } = await supabase
+        .from('sessions')
+        .delete()
+        .eq('id', idToDelete);
+
+      if (deleteErr) {
+        console.warn('[/api/invitations POST delete_game] Session row delete notice (soft-cancelled retained):', deleteErr.message);
+      }
+
+      // 6. Broadcast deletion over Realtime to all connected devices on active match feeds
+      const broadcastChannels = ['sportsync-live-match-rosters', 'sportsync-global-games'];
+      for (const chName of broadcastChannels) {
+        try {
+          const ch = supabase.channel(chName);
+          await ch.send({
+            type: 'broadcast',
+            event: 'game_deleted',
+            payload: {
+              gameId: idToDelete,
+              sessionId: idToDelete,
+              inviteCode: targetSession.invite_code,
+            },
+          });
+        } catch {}
+      }
+
+      // 7. Notify joined participants
       if (Array.isArray(qRows) && qRows.length > 0) {
         for (const q of qRows) {
-          if (q.user_id && q.user_id !== authUser.id) {
+          if (q.user_id && q.user_id !== authUser.id && q.user_id !== authUser.auth_id) {
             try {
               const pName = q.partner_names?.[0] || 'Player';
               const cleanUserId = (q.user_id || pName || '').toLowerCase().trim();
@@ -751,7 +880,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return NextResponse.json({ success: true, deleted: true });
+      return NextResponse.json({ success: true, deleted: true, gameId: idToDelete, sessionId: idToDelete });
     }
 
     if (!game || !game.id) {

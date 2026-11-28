@@ -727,6 +727,136 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const action = body.action || 'create_game';
+
+    const supabase = getSupabase();
+
+    // Handle delete_game action
+    if (action === 'delete_game') {
+      if (!supabase || !isSupabaseConfigured) {
+        return NextResponse.json({ success: true, deleted: true, offline: true });
+      }
+
+      const authUser = await getAuthenticatedUserFromRequest(req);
+      if (!authUser) {
+        return NextResponse.json({ success: false, error: 'Authentication required.' }, { status: 401 });
+      }
+
+      const candidateId = (body.sessionId || body.gameId || body.game?.sessionId || body.game?.id || '').trim();
+      const candidateCode = (body.inviteCode || body.code || body.game?.inviteCode || '').trim().toUpperCase();
+
+      let targetSession: any = null;
+      let idToDelete: string | null = null;
+
+      if (candidateId && isValidUuid(candidateId)) {
+        const { data: s } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .eq('id', candidateId)
+          .maybeSingle();
+        if (s) {
+          targetSession = s;
+          idToDelete = s.id;
+        }
+      }
+
+      if (!targetSession && candidateCode) {
+        const { data: sByCode } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .eq('invite_code', candidateCode)
+          .maybeSingle();
+        if (sByCode) {
+          targetSession = sByCode;
+          idToDelete = sByCode.id;
+        }
+      }
+
+      if (!targetSession && candidateId) {
+        const { data: sByDesc } = await supabase
+          .from('sessions')
+          .select('id, host_id, title, invite_code, description')
+          .ilike('description', `%${candidateId}%`)
+          .limit(1)
+          .maybeSingle();
+        if (sByDesc) {
+          targetSession = sByDesc;
+          idToDelete = sByDesc.id;
+        }
+      }
+
+      if (!targetSession || !idToDelete) {
+        return NextResponse.json({ success: false, error: 'Game session not found.' }, { status: 404 });
+      }
+
+      const hostUserId = await resolveCanonicalHostUserId(supabase, authUser);
+      const normHostId = targetSession.host_id ? String(targetSession.host_id).trim().toLowerCase() : '';
+      const normAuthSub = authUser.sub ? String(authUser.sub).trim().toLowerCase() : '';
+      const normCanonical = hostUserId ? String(hostUserId).trim().toLowerCase() : '';
+      const normEmail = authUser.email ? authUser.email.trim().toLowerCase() : '';
+
+      let isHost = Boolean(
+        !normHostId ||
+        normHostId === normAuthSub ||
+        (normCanonical && normHostId === normCanonical) ||
+        (normEmail && normHostId === normEmail)
+      );
+
+      if (!isHost && targetSession.host_id) {
+        const { data: hostUser } = await supabase
+          .from('users')
+          .select('id, auth_id, email')
+          .or(`id.eq.${targetSession.host_id},auth_id.eq.${targetSession.host_id}`)
+          .maybeSingle();
+
+        if (hostUser) {
+          const hId = hostUser.id?.toLowerCase();
+          const hAuthId = hostUser.auth_id?.toLowerCase();
+          const hEmail = hostUser.email?.toLowerCase();
+          if (
+            hId === normAuthSub ||
+            hId === normCanonical ||
+            (hAuthId && (hAuthId === normAuthSub || hAuthId === normCanonical)) ||
+            (hEmail && normEmail && hEmail === normEmail)
+          ) {
+            isHost = true;
+          }
+        }
+      }
+
+      if (!isHost) {
+        return NextResponse.json({ success: false, error: 'Forbidden: Only the host can delete this game.' }, { status: 403 });
+      }
+
+      // Clean up participation, queues, matches, and payments
+      try { await supabase.from('session_participants').delete().eq('session_id', idToDelete); } catch {}
+      try { await supabase.from('queues').delete().eq('session_id', idToDelete); } catch {}
+      try { await supabase.from('matches').delete().eq('session_id', idToDelete); } catch {}
+      try { await supabase.from('payments').delete().eq('session_id', idToDelete); } catch {}
+
+      // Cancel and delete row
+      await supabase.from('sessions').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', idToDelete);
+      await supabase.from('sessions').delete().eq('id', idToDelete);
+
+      // Broadcast realtime deletion across all active match screens
+      const broadcastChannels = ['sportsync-live-match-rosters', 'sportsync-global-games'];
+      for (const chName of broadcastChannels) {
+        try {
+          const ch = supabase.channel(chName);
+          await ch.send({
+            type: 'broadcast',
+            event: 'game_deleted',
+            payload: {
+              gameId: idToDelete,
+              sessionId: idToDelete,
+              inviteCode: targetSession.invite_code,
+            },
+          });
+        } catch {}
+      }
+
+      return NextResponse.json({ success: true, deleted: true, gameId: idToDelete, sessionId: idToDelete });
+    }
+
     const game = body.game as CommunityGame;
 
     if (!game || !game.title) {
@@ -736,7 +866,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = getSupabase();
     if (!supabase || !isSupabaseConfigured) {
       // In local mode without Supabase credentials, return game successfully for local storage persistence
       const fallbackGame: CommunityGame = {
@@ -1167,4 +1296,23 @@ export async function POST(req: NextRequest) {
     console.error('[/api/games POST] Unexpected error:', err);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id') || searchParams.get('gameId') || searchParams.get('sessionId') || '';
+  const code = searchParams.get('code') || searchParams.get('inviteCode') || '';
+
+  const syntheticReq = new NextRequest(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify({
+      action: 'delete_game',
+      gameId: id,
+      sessionId: id,
+      inviteCode: code,
+    }),
+  });
+
+  return POST(syntheticReq);
 }

@@ -32,6 +32,7 @@ import {
   createOpenPlaySession as createDbOpenPlaySession,
   updateOpenPlaySession as updateDbOpenPlaySession,
   deleteOpenPlaySession as deleteDbOpenPlaySession,
+  getDeletedSessionTombstones,
 } from './services/sessions';
 import { getCurrentUser, updatePlayerProfile, updateFacultyProfile, resetOnboardingForTesting } from './services/auth';
 import { getSportDisplayName } from './utils';
@@ -412,12 +413,13 @@ export function useMatchiStore() {
   const refreshSessions = useCallback(async () => {
     try {
       const fetched = await getOpenPlaySessions();
+      const { ids: deletedIds } = getDeletedSessionTombstones();
       const prevMap = new Map(globalState.sessions.filter((s) => s && s.id).map((s) => [s.id, s]));
       const nextSessions: Session[] = [];
       const seenIds = new Set<string>();
 
       fetched.forEach((s) => {
-        if (s && s.id && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+        if (s && s.id && s.status !== 'cancelled' && !deletedIds.has(s.id) && !seenIds.has(s.id)) {
           seenIds.add(s.id);
           const prev = prevMap.get(s.id);
           if (prev) {
@@ -432,7 +434,7 @@ export function useMatchiStore() {
 
       if (!isSupabaseConfigured) {
         globalState.sessions.forEach((s) => {
-          if (s && s.id && s.status !== 'cancelled' && !seenIds.has(s.id)) {
+          if (s && s.id && s.status !== 'cancelled' && !deletedIds.has(s.id) && !seenIds.has(s.id)) {
             seenIds.add(s.id);
             nextSessions.push(s);
           }
@@ -440,6 +442,11 @@ export function useMatchiStore() {
       }
 
       globalState.sessions = nextSessions;
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('sportsync_user_sessions', JSON.stringify(nextSessions));
+        } catch {}
+      }
       notify();
       return globalState.sessions;
     } catch (err) {
