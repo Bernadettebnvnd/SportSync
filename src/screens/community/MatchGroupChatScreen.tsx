@@ -24,6 +24,7 @@ import { formatTimeRange12h, formatTime12h } from '@/lib/datetime';
 import { UserAvatar, AvatarId } from '../../illustrations/Avatars';
 import { CommunityGame } from '../../mock/types';
 import { shareMatch } from '../../lib/shareUtils';
+import { useVisualViewportKeyboard } from '@/lib/hooks/useVisualViewportKeyboard';
 import {
   fetchGameMessages,
   sendGameMessage,
@@ -72,7 +73,9 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
   const [joinedPlayers, setJoinedPlayers] = useState<GameParticipant[]>([]);
   const [loadingParticipants, setLoadingParticipants] = useState<boolean>(true);
 
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const { isKeyboardOpen, viewportHeight } = useVisualViewportKeyboard();
 
   const showFeedback = (msg: string, tone: 'success' | 'error' = 'success') => {
     if (onToast) {
@@ -83,12 +86,15 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  // Scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  // Scroll to bottom when new messages arrive or keyboard toggles
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    if (chatLogRef.current) {
+      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
     }
-  };
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
+  }, []);
 
   // 1. Fetch authenticated user profile directly from Supabase
   useEffect(() => {
@@ -181,11 +187,40 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
   const [failedMessages, setFailedMessages] = useState<LocalChatMessage[]>([]);
 
   const markCurrentChatRead = useCallback(() => {
-    markGameChatAsRead(game?.id || chatRoomId, altId, game?.title, {
-      id: currentUserId,
-      name: currentUserName,
-    }, true);
-  }, [chatRoomId, altId, game?.id, game?.title, currentUserId, currentUserName]);
+    const allGameKeys = Array.from(
+      new Set(
+        [
+          game?.id,
+          game?.sessionId,
+          chatRoomId,
+          altId,
+          ...(legacyRoomKeys || []),
+        ].filter(Boolean) as string[]
+      )
+    );
+    markGameChatAsRead(
+      allGameKeys,
+      undefined,
+      game?.title,
+      {
+        id: effectiveUserId,
+        name: effectiveUserName,
+      },
+      true
+    );
+  }, [chatRoomId, altId, game?.id, game?.sessionId, game?.title, legacyRoomKeys, effectiveUserId, effectiveUserName]);
+
+  // Auto-scroll down to latest messages whenever virtual keyboard opens or viewport adjusts
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+    scrollToBottom('smooth');
+    const timer1 = setTimeout(() => scrollToBottom('smooth'), 120);
+    const timer2 = setTimeout(() => scrollToBottom('smooth'), 280);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [isKeyboardOpen, viewportHeight, activeTab, scrollToBottom]);
 
   // 3. Fetch actual messages and subscribe to real-time updates + clean fallback poll
   useEffect(() => {
@@ -261,8 +296,10 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
         if (isInitial) {
           setLoadingMessages(false);
           markCurrentChatRead();
+          setTimeout(() => scrollToBottom('auto'), 50);
         } else if (hasNewMessages) {
           markCurrentChatRead();
+          setTimeout(() => scrollToBottom('smooth'), 50);
         }
       } catch (err) {
         console.warn('[MatchChat] Error loading messages:', err);
@@ -584,7 +621,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
 
   // Case C: Authorized Host or Joined Player — Full Match Group Chat & Roster
   return (
-    <div className="w-full h-[var(--vvh,100dvh)] max-h-[100dvh] flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative overflow-hidden">
+    <div className="w-full h-[var(--vvh,100%)] max-h-[var(--vvh,100%)] flex flex-col justify-between bg-[#0B0F0C] text-[#F4F7F0] select-none relative overflow-hidden">
       {/* Toast Feedback (fallback when parent onToast is not provided) */}
       {feedback && (
         <div
@@ -695,7 +732,7 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
       {activeTab === 'chat' ? (
         <>
           {/* Chat Log (Scrollable) */}
-          <div className="flex-1 p-4 overflow-y-auto no-scrollbar space-y-2">
+          <div ref={chatLogRef} className="flex-1 p-4 overflow-y-auto no-scrollbar space-y-2 overscroll-contain">
             <SystemMessage
               text={`Match scheduled • ${spotsJoined} spots confirmed • Pitch: ${game.locationName}`}
             />
@@ -750,11 +787,11 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
               </div>
             ))}
 
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} className="h-px w-full" />
           </div>
 
           {/* Quick Replies & Input Bar */}
-          <div className="p-3 bg-[#141A15] border-t border-white/5 space-y-2 shrink-0 safe-area-bottom-12">
+          <div className={`p-3 bg-[#141A15] border-t border-white/5 space-y-2 shrink-0 ${isKeyboardOpen ? 'pb-2' : 'safe-area-bottom-12'}`}>
             {/* Quick replies */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {['On my way! 🏃', 'Bringing bibs', 'Pitch 2 right?', '10 mins away'].map((qr) => (
@@ -775,8 +812,14 @@ export const MatchGroupChatScreen: React.FC<MatchGroupChatScreenProps> = ({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
+                onFocus={() => {
+                  scrollToBottom('smooth');
+                  setTimeout(() => scrollToBottom('smooth'), 120);
+                  setTimeout(() => scrollToBottom('smooth'), 300);
+                }}
                 placeholder="Message match group..."
                 disabled={isSending}
+                data-chat-input="true"
                 className="flex-1 h-11 px-4 rounded-2xl bg-[#1C241E] border border-white/10 text-xs text-[#F4F7F0] focus:border-[#C8FF2E] focus:outline-none placeholder:text-[#6F7B71]"
               />
 

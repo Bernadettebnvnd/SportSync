@@ -82,6 +82,15 @@ export function useVisualViewportKeyboard(options?: {
         if (nonTextTypes.has(target.type)) return;
       }
 
+      // Do not center fixed bottom chat inputs (chat containers handle their own message scroll)
+      if (
+        target.getAttribute('data-chat-input') === 'true' ||
+        target.closest('[data-chat-input]') ||
+        target.classList.contains('chat-input')
+      ) {
+        return;
+      }
+
       if (focusTimerId) clearTimeout(focusTimerId);
       focusTimerId = setTimeout(() => {
         try {

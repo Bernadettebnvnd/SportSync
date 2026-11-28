@@ -624,6 +624,22 @@ export async function fetchUserNotificationsFromSupabase(
       });
       if (res.ok) {
         const json = await res.json();
+        if (json.chatReads && typeof json.chatReads === 'object') {
+          try {
+            for (const [gameId, timestamp] of Object.entries(json.chatReads)) {
+              if (!gameId || !timestamp) continue;
+              const existing = localStorage.getItem(`sportsync_chat_read_${gameId}`);
+              const existingTime = existing ? new Date(existing).getTime() : 0;
+              const newTime = new Date(timestamp as string).getTime();
+              if (newTime > existingTime) {
+                localStorage.setItem(`sportsync_chat_read_${gameId}`, timestamp as string);
+              }
+            }
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('sportsync:chat_read_synced', { detail: json.chatReads }));
+            }
+          } catch {}
+        }
         if (json.success && Array.isArray(json.notifications)) {
           return json.notifications
             .map((item: any) => ({
@@ -1114,28 +1130,28 @@ export function markGameChatNotificationsAsRead(
 
   if (readIds.length > 0) {
     persistNotifications(updated);
+  }
 
-    // Sync to Supabase in background with a single batched PATCH call
-    if (typeof window !== 'undefined') {
-      fetch('/api/notifications', {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'mark_chat_read',
-          ids: readIds,
-          gameIds: cleanIds,
-          gameTitle: cleanTitle,
-          userId: userFilter?.id,
-          userName: userFilter?.name,
-        }),
-      }).catch(() => {});
-    }
+  // Always sync chat read status to Supabase in background so read state persists across devices and refreshes
+  if (typeof window !== 'undefined' && cleanIds.length > 0) {
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'mark_chat_read',
+        ids: readIds,
+        gameIds: cleanIds,
+        gameTitle: cleanTitle,
+        userId: userFilter?.id,
+        userName: userFilter?.name,
+      }),
+    }).catch(() => {});
+  }
 
-    const sb = getSupabaseClient();
-    if (sb && isSupabaseConfigured) {
-      sb.from('notifications').update({ read: true }).in('id', readIds).then();
-    }
+  const sb = getSupabaseClient();
+  if (sb && isSupabaseConfigured && readIds.length > 0) {
+    sb.from('notifications').update({ read: true }).in('id', readIds).then();
   }
 }
 

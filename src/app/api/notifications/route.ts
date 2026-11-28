@@ -166,6 +166,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, notifications: [] });
     }
 
+    // Check user profile for persisted chatReads and fallback notifications
+    let chatReads: Record<string, string> = {};
+    let fallbackNotifications: any[] = [];
+    try {
+      let query = supabase.from('users').select('id, full_name, equipped_gear');
+      if (userId && isUuid(userId)) {
+        query = query.or(`id.eq.${userId},auth_id.eq.${userId}`);
+      } else if (userEmail) {
+        query = query.eq('email', userEmail);
+      } else if (userName) {
+        query = query.ilike('full_name', userName);
+      }
+
+      const { data: userRow } = await query.limit(1).maybeSingle();
+      if (userRow?.equipped_gear && typeof userRow.equipped_gear === 'object') {
+        const gear = userRow.equipped_gear as any;
+        if (gear._sportsync_chat_reads && typeof gear._sportsync_chat_reads === 'object') {
+          chatReads = gear._sportsync_chat_reads;
+        }
+        if (Array.isArray(gear._sportsync_notifications) && gear._sportsync_notifications.length > 0) {
+          fallbackNotifications = gear._sportsync_notifications;
+        }
+      }
+    } catch {}
+
     // 1. Try public.notifications table scoped to authenticated user
     try {
       const conditions: string[] = ['type.eq.system'];
@@ -177,7 +202,7 @@ export async function GET(request: NextRequest) {
         conditions.push(`user_id.eq.${authUser.auth_id}`);
       }
       if (userEmail) conditions.push(`user_identifier.eq.${userEmail}`);
-      if (!userId && userName) conditions.push(`user_identifier.eq.${userName}`);
+      if (userName) conditions.push(`user_identifier.eq.${userName}`);
 
       const { data, error } = await supabase
         .from('notifications')
@@ -189,6 +214,7 @@ export async function GET(request: NextRequest) {
       if (!error && Array.isArray(data) && data.length > 0) {
         return NextResponse.json({
           success: true,
+          chatReads,
           notifications: data.map((row: any) => ({
             id: row.id,
             type: row.type || 'match',
@@ -216,31 +242,14 @@ export async function GET(request: NextRequest) {
     } catch {}
 
     // 2. Fallback to public.users table (equipped_gear._sportsync_notifications)
-    try {
-      let query = supabase.from('users').select('id, full_name, equipped_gear');
-      if (userId && isUuid(userId)) {
-        query = query.or(`id.eq.${userId},auth_id.eq.${userId}`);
-      } else if (userEmail) {
-        query = query.eq('email', userEmail);
-      } else if (userName) {
-        query = query.ilike('full_name', userName);
-      }
-
-      const { data: userRow } = await query.limit(1).maybeSingle();
-      if (userRow?.equipped_gear && typeof userRow.equipped_gear === 'object') {
-        const saved = (userRow.equipped_gear as any)._sportsync_notifications;
-        if (Array.isArray(saved) && saved.length > 0) {
-          return NextResponse.json({ success: true, notifications: saved });
-        }
-      }
-    } catch (e) {
-      console.warn('[/api/notifications GET fallback error]', e);
+    if (fallbackNotifications.length > 0) {
+      return NextResponse.json({ success: true, chatReads, notifications: fallbackNotifications });
     }
 
     // 3. Fallback to in-memory store
     const memKey = (userId || userName || userEmail || '').toLowerCase();
     const memList = notifStore.get(memKey) || [];
-    return NextResponse.json({ success: true, notifications: memList });
+    return NextResponse.json({ success: true, chatReads, notifications: memList });
   } catch (err: any) {
     console.error('[/api/notifications GET error]', err);
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
@@ -493,6 +502,7 @@ export async function PATCH(request: NextRequest) {
 
     const userId = authUser.id;
     const userName = authUser.full_name?.trim();
+    const userEmail = authUser.email?.trim();
     const isChatRead = action === 'mark_chat_read';
     const targetGameIds: string[] = Array.isArray(gameIds) ? gameIds.map((g: any) => String(g).toLowerCase().trim()) : [];
     const cleanGameTitle = typeof gameTitle === 'string' ? gameTitle.toLowerCase().trim() : '';
@@ -504,7 +514,8 @@ export async function PATCH(request: NextRequest) {
       if (authUser.auth_id && isUuid(authUser.auth_id) && authUser.auth_id !== userId) {
         userConditions.push(`user_id.eq.${authUser.auth_id}`);
       }
-      if (!userId && userName) userConditions.push(`user_identifier.eq.${userName}`);
+      if (userEmail) userConditions.push(`user_identifier.eq.${userEmail}`);
+      if (userName) userConditions.push(`user_identifier.eq.${userName}`);
 
       const explicitIds: string[] = Array.isArray(ids) ? ids.filter((v: any) => typeof v === 'string' && v.trim()) : [];
       if (explicitIds.length > 0 && userConditions.length > 0) {
@@ -558,7 +569,7 @@ export async function PATCH(request: NextRequest) {
       }
     } catch {}
 
-    // 2. Also update fallback storage in public.users table for authenticated user
+    // 2. Also update fallback storage and persistent chatReads in public.users table for authenticated user
     try {
       let userQuery = supabase.from('users').select('id, equipped_gear');
       if (userId && isUuid(userId)) {
@@ -568,13 +579,13 @@ export async function PATCH(request: NextRequest) {
       }
 
       const { data: userRow } = await userQuery.limit(1).maybeSingle();
-      if (userRow?.equipped_gear && typeof userRow.equipped_gear === 'object') {
-        const currentGear = userRow.equipped_gear as any;
+      if (userRow?.id) {
+        const currentGear = typeof userRow.equipped_gear === 'object' && userRow.equipped_gear ? (userRow.equipped_gear as any) : {};
         const savedNotifs = Array.isArray(currentGear._sportsync_notifications)
           ? currentGear._sportsync_notifications
           : [];
 
-        const updated = savedNotifs.map((n: any) => {
+        const updatedNotifs = savedNotifs.map((n: any) => {
           if (isChatRead && n.type === 'chat') {
             const meta = n.meta || {};
             const nGId = String(meta.gameId || meta.game_id || '').toLowerCase().trim();
@@ -594,10 +605,29 @@ export async function PATCH(request: NextRequest) {
           return n;
         });
 
+        const currentReads =
+          typeof currentGear._sportsync_chat_reads === 'object' && currentGear._sportsync_chat_reads
+            ? { ...currentGear._sportsync_chat_reads }
+            : {};
+
+        if (isChatRead) {
+          const nowIso = new Date().toISOString();
+          targetGameIds.forEach((tId) => {
+            if (tId) currentReads[tId] = nowIso;
+          });
+          if (cleanGameTitle) {
+            currentReads[cleanGameTitle] = nowIso;
+          }
+        }
+
         await supabase
           .from('users')
           .update({
-            equipped_gear: { ...currentGear, _sportsync_notifications: updated },
+            equipped_gear: {
+              ...currentGear,
+              _sportsync_notifications: updatedNotifs,
+              _sportsync_chat_reads: currentReads,
+            },
             updated_at: new Date().toISOString(),
           })
           .eq('id', userRow.id);

@@ -1050,9 +1050,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // Automatically mark the conversation as read whenever match-chat is opened
   useEffect(() => {
     if (currentScreen === 'match-chat' && selectedGame) {
+      const allIds = [selectedGame.id, selectedGame.sessionId].filter(Boolean) as string[];
       markGameChatAsRead(
-        selectedGame.id,
-        selectedGame.sessionId,
+        allIds,
+        undefined,
         selectedGame.title,
         userNotificationFilter,
         true
@@ -1068,10 +1069,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     window.addEventListener('sportsync:notification-received', updateNotifs);
     window.addEventListener('sportsync:notification-change', updateNotifs);
     window.addEventListener('sportsync:chat_read', updateNotifs);
+    window.addEventListener('sportsync:chat_read_synced', updateNotifs);
     return () => {
       window.removeEventListener('sportsync:notification-received', updateNotifs);
       window.removeEventListener('sportsync:notification-change', updateNotifs);
       window.removeEventListener('sportsync:chat_read', updateNotifs);
+      window.removeEventListener('sportsync:chat_read_synced', updateNotifs);
     };
   }, [userNotificationFilter]);
 
@@ -2114,7 +2117,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       <div
         className={`flex-1 w-full no-scrollbar ${
           currentScreen === 'create-match' || currentScreen === 'match-chat'
-            ? 'h-[100dvh] flex flex-col overflow-hidden'
+            ? 'h-[var(--vvh,100dvh)] max-h-[var(--vvh,100dvh)] flex flex-col overflow-hidden'
             : 'overflow-y-auto'
         } ${showBottomNav ? 'pb-28 sm:pb-32' : ''}`}
       >

@@ -534,62 +534,119 @@ export async function fetchGameParticipants(params: {
   };
 }
 
+// In-memory synchronized read timestamps map (populated from Supabase & localStorage)
+const inMemoryChatReads: Record<string, string> = {};
+
 /**
- * Get the last read timestamp for a specific game chat from localStorage.
+ * Hydrate and synchronize chat read timestamps from remote Supabase profile.
+ * Ensures read status persists across device changes and app refreshes.
  */
-/**
- * Get the last read timestamp for a specific game chat from localStorage.
- */
-export function getGameChatLastRead(gameId?: string, alternateId?: string): string | null {
-  if (typeof window === 'undefined' || (!gameId && !alternateId)) return null;
-  try {
-    const time1 = gameId ? localStorage.getItem(`sportsync_chat_read_${gameId}`) : null;
-    const time2 = alternateId ? localStorage.getItem(`sportsync_chat_read_${alternateId}`) : null;
-    if (!time1) return time2;
-    if (!time2) return time1;
-    return new Date(time1).getTime() >= new Date(time2).getTime() ? time1 : time2;
-  } catch {
-    return null;
+export function syncChatReadsFromRemote(remoteReads: Record<string, string>): void {
+  if (!remoteReads || typeof remoteReads !== 'object') return;
+  let changed = false;
+  for (const [gameId, timestamp] of Object.entries(remoteReads)) {
+    if (!gameId || !timestamp) continue;
+    const existing = getGameChatLastRead(gameId);
+    const existingTime = existing ? new Date(existing).getTime() : 0;
+    const newTime = new Date(timestamp).getTime();
+    if (newTime > existingTime) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`sportsync_chat_read_${gameId}`, timestamp);
+        } catch {}
+      }
+      inMemoryChatReads[gameId] = timestamp;
+      changed = true;
+    }
   }
+  if (changed && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sportsync:chat_read_synced'));
+  }
+}
+
+/**
+ * Get the last read timestamp for a specific game chat across all aliases and storage layers.
+ */
+export function getGameChatLastRead(...ids: (string | undefined)[]): string | null {
+  const cleanIds = ids.filter((id): id is string => Boolean(id && typeof id === 'string'));
+  if (cleanIds.length === 0) return null;
+
+  let latestTimestamp: string | null = null;
+  let latestMs = 0;
+
+  for (const id of cleanIds) {
+    const memTime = inMemoryChatReads[id];
+    if (memTime) {
+      const ms = new Date(memTime).getTime();
+      if (ms > latestMs) {
+        latestMs = ms;
+        latestTimestamp = memTime;
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const localTime = localStorage.getItem(`sportsync_chat_read_${id}`);
+        if (localTime) {
+          const ms = new Date(localTime).getTime();
+          if (ms > latestMs) {
+            latestMs = ms;
+            latestTimestamp = localTime;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return latestTimestamp;
 }
 
 const lastMarkedReadMap = new Map<string, number>();
 
 /**
- * Mark a specific game chat as read. Removes the unread count for that conversation.
- * Throttled to prevent infinite event ping-pong loops.
+ * Mark a specific game chat as read across all ID aliases and sync with Supabase.
+ * Immediately resets local badges, updates notifications, and persists read state.
  */
 export function markGameChatAsRead(
-  gameId?: string,
-  alternateId?: string,
+  gameIdentifier?: string | string[],
+  alternateId?: string | string[],
   gameTitle?: string,
-  userFilter?: { id?: string; name?: string },
+  userFilter?: { id?: string; name?: string; email?: string; username?: string },
   force = false
 ): void {
-  if (typeof window === 'undefined' || (!gameId && !alternateId)) return;
+  if (typeof window === 'undefined' || (!gameIdentifier && !alternateId)) return;
+
+  const rawList = [
+    ...(Array.isArray(gameIdentifier) ? gameIdentifier : [gameIdentifier]),
+    ...(Array.isArray(alternateId) ? alternateId : [alternateId]),
+  ].filter((id): id is string => Boolean(id && typeof id === 'string'));
+
+  const uniqueIds = Array.from(new Set(rawList.map((id) => id.trim())));
+  if (uniqueIds.length === 0) return;
+
   const now = Date.now();
-  const key = [gameId, alternateId].filter(Boolean).sort().join('_');
+  const key = [...uniqueIds].sort().join('_');
   const lastTime = lastMarkedReadMap.get(key) || 0;
-  if (!force && now - lastTime < 300) {
-    return; // Already marked read within last 300ms, skip redundant dispatch
+  if (!force && now - lastTime < 250) {
+    return;
   }
   lastMarkedReadMap.set(key, now);
 
   try {
     const nowIso = new Date(now).toISOString();
-    if (gameId) localStorage.setItem(`sportsync_chat_read_${gameId}`, nowIso);
-    if (alternateId && alternateId !== gameId) {
-      localStorage.setItem(`sportsync_chat_read_${alternateId}`, nowIso);
-    }
+    uniqueIds.forEach((id) => {
+      localStorage.setItem(`sportsync_chat_read_${id}`, nowIso);
+      inMemoryChatReads[id] = nowIso;
+    });
 
-    const ids = [gameId, alternateId].filter(Boolean) as string[];
-    markGameChatNotificationsAsRead(ids, gameTitle, userFilter);
+    markGameChatNotificationsAsRead(uniqueIds, gameTitle, userFilter);
 
     window.dispatchEvent(
       new CustomEvent('sportsync:chat_read', {
         detail: {
-          gameId,
-          alternateId,
+          gameId: uniqueIds[0],
+          alternateId: uniqueIds[1],
+          allIds: uniqueIds,
           gameTitle,
           timestamp: nowIso,
         },
@@ -706,56 +763,78 @@ export async function fetchUnreadCountsForAuthorizedGames(
             const unread = msgs.filter((m: any) => {
               if (m.senderId && userId && m.senderId === userId) return false;
               if (m.senderName && normUser && m.senderName.trim().toLowerCase() === normUser) return false;
-              if (!lastReadTime) return true;
-              return new Date(m.time || m.created_at).getTime() > lastReadTime;
+              if (!lastReadTime) return false;
+              return new Date(m.time || m.createdAt || m.created_at).getTime() > lastReadTime;
             }).length;
 
             byGame[g.id] = unread;
             if (g.sessionId) byGame[g.sessionId] = unread;
-            total += unread;
           }
         }
       } catch {}
     }
-    return { total, byGame };
-  }
+  } else {
+    try {
+      const queryIds = Array.from(
+        new Set(
+          authorizedGames.flatMap((g) => [g.id, g.sessionId].filter(Boolean) as string[])
+        )
+      );
+      const { data: messages, error } = await supabase
+        .from('game_chat_messages')
+        .select('id, game_id, sender_id, sender_name, created_at')
+        .in('game_id', queryIds);
 
-  try {
-    const queryIds = Array.from(
-      new Set(
-        authorizedGames.flatMap((g) => [g.id, g.sessionId].filter(Boolean) as string[])
-      )
-    );
-    const { data: messages, error } = await supabase
-      .from('game_chat_messages')
-      .select('id, game_id, sender_id, sender_name, created_at')
-      .in('game_id', queryIds);
+      if (!error && Array.isArray(messages)) {
+        const normUser = userName?.trim().toLowerCase();
 
-    if (!error && Array.isArray(messages)) {
-      const normUser = userName?.trim().toLowerCase();
+        for (const g of authorizedGames) {
+          const lastRead = getGameChatLastRead(g.id, g.sessionId);
+          const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
 
-      for (const g of authorizedGames) {
-        const lastRead = getGameChatLastRead(g.id, g.sessionId);
-        const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+          const unreadList = messages.filter((m) => {
+            if (m.game_id !== g.id && (!g.sessionId || m.game_id !== g.sessionId)) return false;
+            // Ignore messages sent by the user themselves
+            if (m.sender_id && userId && m.sender_id === userId) return false;
+            if (m.sender_name && normUser && m.sender_name.trim().toLowerCase() === normUser) return false;
+            // Check if message is newer than last read
+            const msgTime = new Date(m.created_at).getTime();
+            return msgTime > lastReadTime;
+          });
 
-        const unreadList = messages.filter((m) => {
-          if (m.game_id !== g.id && (!g.sessionId || m.game_id !== g.sessionId)) return false;
-          // Ignore messages sent by the user themselves
-          if (m.sender_id && userId && m.sender_id === userId) return false;
-          if (m.sender_name && normUser && m.sender_name.trim().toLowerCase() === normUser) return false;
-          // Check if message is newer than last read
-          const msgTime = new Date(m.created_at).getTime();
-          return msgTime > lastReadTime;
-        });
-
-        const count = unreadList.length;
-        byGame[g.id] = count;
-        if (g.sessionId) byGame[g.sessionId] = count;
-        total += count;
+          const count = unreadList.length;
+          byGame[g.id] = count;
+          if (g.sessionId) byGame[g.sessionId] = count;
+        }
+      } else if (typeof window !== 'undefined') {
+        // Fallback to locally cached messages if DB table is unavailable
+        const normUser = userName?.trim().toLowerCase();
+        for (const g of authorizedGames) {
+          const raw =
+            localStorage.getItem(`sportsync_chat_${g.id}`) ||
+            (g.sessionId ? localStorage.getItem(`sportsync_chat_${g.sessionId}`) : null);
+          if (raw) {
+            try {
+              const msgs = JSON.parse(raw);
+              if (Array.isArray(msgs)) {
+                const lastRead = getGameChatLastRead(g.id, g.sessionId);
+                const lastReadTime = lastRead ? new Date(lastRead).getTime() : 0;
+                const unread = msgs.filter((m: any) => {
+                  if (m.senderId && userId && m.senderId === userId) return false;
+                  if (m.senderName && normUser && m.senderName.trim().toLowerCase() === normUser) return false;
+                  if (!lastReadTime) return false;
+                  return new Date(m.createdAt || m.time || m.created_at).getTime() > lastReadTime;
+                }).length;
+                byGame[g.id] = unread;
+                if (g.sessionId) byGame[g.sessionId] = unread;
+              }
+            } catch {}
+          }
+        }
       }
+    } catch (err) {
+      console.warn('[Chat] Failed fetching unread counts:', err);
     }
-  } catch (err) {
-    console.warn('[Chat] Failed fetching unread counts:', err);
   }
 
   // Merge unread counts from notifications system (sportsync_notifications)
@@ -769,7 +848,6 @@ export async function fetchUnreadCountsForAuthorizedGames(
       if (notifCount > 0) {
         const existing = byGame[g.id] || 0;
         const effective = Math.max(existing, notifCount);
-        total += (effective - existing);
         byGame[g.id] = effective;
         if (g.sessionId) {
           byGame[g.sessionId] = effective;
@@ -777,6 +855,17 @@ export async function fetchUnreadCountsForAuthorizedGames(
       }
     }
   } catch {}
+
+  // Compute total strictly once per unique authorized game to prevent doubling
+  const countedKeys = new Set<string>();
+  for (const g of authorizedGames) {
+    const key = g.sessionId || g.id;
+    if (countedKeys.has(key)) continue;
+    countedKeys.add(key);
+    const c1 = byGame[g.id] || 0;
+    const c2 = g.sessionId ? (byGame[g.sessionId] || 0) : 0;
+    total += Math.max(c1, c2);
+  }
 
   return { total, byGame };
 }
@@ -887,18 +976,51 @@ export function useChatUnread(params: {
     const handleReadEvent = (e: any) => {
       const readGameId = e.detail?.gameId;
       const readSessionId = e.detail?.alternateId;
-      if (!readGameId && !readSessionId) return;
+      const allIds: string[] = Array.isArray(e.detail?.allIds)
+        ? e.detail.allIds
+        : [readGameId, readSessionId].filter(Boolean);
+      if (allIds.length === 0) return;
 
       setUnreadState((prev) => {
-        const c1 = readGameId ? (prev.byGame[readGameId] || 0) : 0;
-        const c2 = readSessionId ? (prev.byGame[readSessionId] || 0) : 0;
-        const prevGameCount = Math.max(c1, c2);
-        if (prevGameCount === 0) return prev; // Avoid unnecessary re-render
         const nextByGame = { ...prev.byGame };
-        if (readGameId) nextByGame[readGameId] = 0;
-        if (readSessionId) nextByGame[readSessionId] = 0;
+        let anyReset = false;
+
+        allIds.forEach((id) => {
+          if (nextByGame[id] && nextByGame[id] > 0) {
+            nextByGame[id] = 0;
+            anyReset = true;
+          }
+        });
+
+        for (const g of gamesRef.current) {
+          if (allIds.includes(g.id) || (g.sessionId && allIds.includes(g.sessionId))) {
+            if (g.id && nextByGame[g.id] > 0) {
+              nextByGame[g.id] = 0;
+              anyReset = true;
+            }
+            if (g.sessionId && nextByGame[g.sessionId] > 0) {
+              nextByGame[g.sessionId] = 0;
+              anyReset = true;
+            }
+          }
+        }
+
+        if (!anyReset) return prev;
+
+        // Recalculate true total strictly once per unique authorized game
+        let newTotal = 0;
+        const counted = new Set<string>();
+        for (const g of gamesRef.current) {
+          const key = g.sessionId || g.id;
+          if (counted.has(key)) continue;
+          counted.add(key);
+          const c1 = nextByGame[g.id] || 0;
+          const c2 = g.sessionId ? (nextByGame[g.sessionId] || 0) : 0;
+          newTotal += Math.max(c1, c2);
+        }
+
         return {
-          total: Math.max(0, prev.total - prevGameCount),
+          total: newTotal,
           byGame: nextByGame,
         };
       });
@@ -955,10 +1077,12 @@ export function useChatUnread(params: {
     };
 
     window.addEventListener('sportsync:chat_read', handleReadEvent);
+    window.addEventListener('sportsync:chat_read_synced', refreshUnread);
     window.addEventListener('sportsync:notification-received', handleChatNotificationReceived);
     window.addEventListener('sportsync:notification-change', refreshUnread);
     return () => {
       window.removeEventListener('sportsync:chat_read', handleReadEvent);
+      window.removeEventListener('sportsync:chat_read_synced', refreshUnread);
       window.removeEventListener('sportsync:notification-received', handleChatNotificationReceived);
       window.removeEventListener('sportsync:notification-change', refreshUnread);
     };
